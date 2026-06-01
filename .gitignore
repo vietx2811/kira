@@ -1,0 +1,20 @@
+node_modules/
+dist/
+.turbo/
+*.local
+
+# Tauri
+apps/desktop/src-tauri/target/
+apps/desktop/src-tauri/WixTools/
+
+# Extension
+apps/extension/.output/
+apps/extension/.wxt/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env
+.env
+.env.local
