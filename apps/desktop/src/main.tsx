@@ -196,6 +196,8 @@ type SlideLayout = {
   references: EvidenceImage[]
   relationCount: number
   layout: 'focus' | 'grid' | 'stack'
+  layoutReason: string
+  relationMix: Relation[]
   accent: string
 }
 type SlideLayoutMode = 'auto' | SlideLayout['layout']
@@ -2444,7 +2446,12 @@ function SlideshowView({
   }
 
   return (
-    <section className="slideshow-shell" data-slide-layout={activeSlide.layout} data-slide-layout-mode={layoutMode}>
+    <section
+      className="slideshow-shell"
+      data-slide-layout={activeSlide.layout}
+      data-slide-layout-mode={layoutMode}
+      data-slide-layout-reason={activeSlide.layoutReason}
+    >
       <div className="slideshow-rail" aria-label="Slides">
         {slides.map((slide, index) => (
           <button
@@ -2494,7 +2501,9 @@ function SlideshowView({
           <span style={{ color: activeSlide.accent }}>{activeSlide.idea.status}</span>
           <h2>{activeSlide.title}</h2>
           <p>{activeSlide.summary}</p>
-          <small>{activeSlide.relationCount} links · {activeSlide.references.length} references · {status}</small>
+          <small>
+            {activeSlide.relationCount} links · {activeSlide.references.length} references · {activeSlide.layoutReason} · {status}
+          </small>
         </div>
         <div className="slide-reference-layout">
           {activeSlide.references.length > 0 ? activeSlide.references.map((image, index) => (
@@ -4178,7 +4187,8 @@ function buildSlideLayouts(ideas: Idea[], images: EvidenceImage[], links: Eviden
         .map((link) => imageById.get(link.imageId))
         .filter((image): image is EvidenceImage => Boolean(image))
         .slice(0, 6)
-      const layout = references.length <= 1 ? 'focus' : references.length <= 4 ? 'grid' : 'stack'
+      const relationMix = getSlideRelationMix(ideaLinks)
+      const { layout, reason: layoutReason } = resolveSlideAutoLayout(idea, references, ideaLinks, relationMix)
       const accent = references[0]?.palette[0] ?? (idea.status === 'strong' ? '#84cdbc' : idea.status === 'forming' ? '#dfae67' : '#b7a4df')
 
       return {
@@ -4189,6 +4199,8 @@ function buildSlideLayouts(ideas: Idea[], images: EvidenceImage[], links: Eviden
         references,
         relationCount: ideaLinks.length,
         layout,
+        layoutReason,
+        relationMix,
         accent,
       }
     })
@@ -4199,7 +4211,46 @@ function applySlideLayoutMode(slides: SlideLayout[], layoutMode: SlideLayoutMode
   return slides.map((slide) => ({
     ...slide,
     layout: layoutMode,
+    layoutReason: layoutMode === 'focus' ? 'manual focus' : layoutMode === 'grid' ? 'manual grid' : 'manual stack',
   }))
+}
+
+function resolveSlideAutoLayout(
+  idea: Idea,
+  references: EvidenceImage[],
+  links: EvidenceLink[],
+  relationMix: Relation[],
+): { layout: SlideLayout['layout']; reason: string } {
+  const referenceCount = references.length
+  const bodyWordCount = countWords(idea.body)
+  const supportCount = links.filter((link) => link.relation === 'supports' || link.relation === 'example').length
+  const supportRatio = links.length === 0 ? 0 : supportCount / links.length
+  const denseEvidence = referenceCount >= 5 || links.length >= 6
+  const variedRelations = relationMix.length >= 3
+  const textHeavy = bodyWordCount >= 22
+
+  if (referenceCount <= 1) return { layout: 'focus', reason: referenceCount === 0 ? 'needs evidence' : 'single anchor' }
+  if (denseEvidence || (referenceCount >= 4 && (variedRelations || textHeavy))) {
+    return { layout: 'stack', reason: variedRelations ? 'mixed evidence' : 'dense board' }
+  }
+  if (supportRatio >= 0.72 && referenceCount <= 3 && !textHeavy) {
+    return { layout: 'focus', reason: 'hero support' }
+  }
+  return { layout: 'grid', reason: variedRelations ? 'relation compare' : 'balanced set' }
+}
+
+function getSlideRelationMix(links: EvidenceLink[]) {
+  const relations = new Set<Relation>()
+  links.forEach((link) => relations.add(link.relation))
+  return [...relations].sort((a, b) => relationWeight(a) - relationWeight(b))
+}
+
+function countWords(value: string) {
+  return value.trim().split(/\s+/).filter(Boolean).length
+}
+
+function formatRelationMix(relations: Relation[]) {
+  return relations.length === 0 ? 'no relations' : relations.map((relation) => relationLabels[relation]).join(', ')
 }
 
 function strengthRank(status: Idea['status']) {
@@ -4674,7 +4725,7 @@ function slideLayoutsToHtml(slides: SlideLayout[], metadata: { title: string; ge
             }).join('')
 
         return `
-          <section class="slide slide--${escapeAttribute(slide.layout)}" style="--accent: ${escapeAttribute(slide.accent)}">
+          <section class="slide slide--${escapeAttribute(slide.layout)}" data-layout-reason="${escapeAttribute(slide.layoutReason)}" style="--accent: ${escapeAttribute(slide.accent)}">
             <aside>
               <span>${String(index + 1).padStart(2, '0')} / ${slides.length}</span>
               <em>${escapeHtml(slide.idea.status)} · ${escapeHtml(slide.layout)}</em>
@@ -4682,7 +4733,7 @@ function slideLayoutsToHtml(slides: SlideLayout[], metadata: { title: string; ge
             <div class="copy">
               <h2>${escapeHtml(slide.title)}</h2>
               <p>${escapeHtml(slide.summary)}</p>
-              <small>${slide.relationCount} links · ${slide.references.length} references</small>
+              <small>${slide.relationCount} links · ${slide.references.length} references · ${escapeHtml(slide.layoutReason)} · ${escapeHtml(formatRelationMix(slide.relationMix))}</small>
             </div>
             <div class="refs">${references}</div>
           </section>
