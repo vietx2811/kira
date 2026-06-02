@@ -201,6 +201,7 @@ type SlideLayout = {
   accent: string
 }
 type SlideLayoutMode = 'auto' | SlideLayout['layout']
+type GlassStatus = 'browser' | 'native' | 'fallback'
 
 type VixioDevApi = {
   loadFixture: (referenceCount?: number) => ProjectSnapshot
@@ -433,6 +434,7 @@ function App() {
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null)
   const [isLibraryCollapsed, setIsLibraryCollapsed] = useState(false)
   const [isInspectorCollapsed, setIsInspectorCollapsed] = useState(false)
+  const [glassStatus, setGlassStatus] = useState<GlassStatus>(() => (isTauriRuntime() ? 'fallback' : 'browser'))
   const projectSnapshot = useMemo(
     () => toProjectSnapshot(ideas, images, links, outlineDrafts),
     [ideas, images, links, outlineDrafts],
@@ -450,7 +452,10 @@ function App() {
   const latestOutlineDraft = outlineDrafts[0]
 
   useEffect(() => {
-    if (!isTauriRuntime()) return
+    if (!isTauriRuntime()) {
+      setGlassStatus('browser')
+      return
+    }
     void getCurrentWindow().setEffects({
       effects: [
         Effect.UnderWindowBackground,
@@ -461,7 +466,10 @@ function App() {
       state: EffectState.FollowsWindowActiveState,
       radius: 14,
       color: { red: 11, green: 12, blue: 11, alpha: 190 },
+    }).then(() => {
+      setGlassStatus('native')
     }).catch(() => {
+      setGlassStatus('fallback')
       // Window effects are platform-dependent; transparent CSS remains the fallback.
     })
   }, [])
@@ -1170,7 +1178,7 @@ function App() {
   }
 
   return (
-    <main className="app-shell" onPaste={capturePastedReference}>
+    <main className="app-shell" data-glass-state={glassStatus} onPaste={capturePastedReference}>
       <TopBar
         activeView={activeView}
         projectPackage={projectPackage}
@@ -1348,7 +1356,12 @@ function TopBar({
   ]
 
   return (
-    <header className="topbar" data-tauri-drag-region>
+    <header
+      className="topbar"
+      data-tauri-drag-region
+      onDoubleClick={toggleWindowMaximizeFromChrome}
+      onPointerDown={startWindowDrag}
+    >
       <div className="brand-lockup" data-tauri-drag-region>
         <WindowControls />
         <div className="brand-mark">
@@ -1450,6 +1463,22 @@ function WindowControls() {
       />
     </div>
   )
+}
+
+function startWindowDrag(event: React.PointerEvent<HTMLElement>) {
+  if (!isTauriRuntime() || event.button !== 0) return
+  if (isInteractiveChromeTarget(event.target)) return
+  void getCurrentWindow().startDragging().catch(() => undefined)
+}
+
+function toggleWindowMaximizeFromChrome(event: React.MouseEvent<HTMLElement>) {
+  if (!isTauriRuntime()) return
+  if (isInteractiveChromeTarget(event.target)) return
+  void getCurrentWindow().toggleMaximize().catch(() => undefined)
+}
+
+function isInteractiveChromeTarget(target: EventTarget | null) {
+  return target instanceof Element && Boolean(target.closest('button, input, textarea, select, a, [role="button"]'))
 }
 
 function EvidenceInbox({
