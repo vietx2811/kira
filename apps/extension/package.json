@@ -1,0 +1,12 @@
+{
+  "name": "@vixio/extension",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node scripts/copy-static.mjs"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}

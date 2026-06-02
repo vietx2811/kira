@@ -1,0 +1,16 @@
+{
+  "manifest_version": 3,
+  "name": "Vixio Capture",
+  "version": "0.1.0",
+  "description": "Capture image and page references for Vixio.",
+  "permissions": ["activeTab", "contextMenus", "clipboardWrite", "scripting", "storage"],
+  "host_permissions": ["http://127.0.0.1:47653/*"],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Vixio Capture"
+  }
+}

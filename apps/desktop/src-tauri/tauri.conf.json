@@ -1,0 +1,41 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Vixio",
+  "version": "0.1.0",
+  "identifier": "studio.vixio.desktop",
+  "build": {
+    "beforeDevCommand": "pnpm dev",
+    "beforeBuildCommand": "pnpm build",
+    "devUrl": "http://127.0.0.1:5173",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Vixio",
+        "width": 1280,
+        "height": 820,
+        "minWidth": 1180,
+        "minHeight": 720,
+        "resizable": true,
+        "decorations": false,
+        "transparent": true,
+        "shadow": true,
+        "titleBarStyle": "Overlay"
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["app"],
+    "externalBin": [
+      "binaries/vixio-vision-ocr-helper",
+      "binaries/vixio-foundation-models-helper",
+      "binaries/vixio-natural-language-helper"
+    ],
+    "icon": []
+  }
+}

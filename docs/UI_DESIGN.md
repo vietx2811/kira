@@ -1,5 +1,7 @@
 # UI Design System
 
+> Historical design note. The current UI vocabulary and implemented app shape are governed by `PROJECT_PLAN.md` and the app in `apps/desktop`. References to Galaxy/Axis views and taxonomy axes are older concepts, not current Round 1 requirements.
+
 ---
 
 ## Visual direction

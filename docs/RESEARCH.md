@@ -1,5 +1,7 @@
 # Tech Stack Deep Research
 
+> Historical research note. The current implementation source of truth is `PROJECT_PLAN.md`, `ARCHITECTURE.md`, and `DATABASE.md`. Some options below describe earlier grid/taxonomy/WebSocket concepts that were not carried into the current standalone Vixio desktop architecture.
+
 > Research conducted: June 2026  
 > Purpose: Evaluate and select technologies for Visual Research Board
 

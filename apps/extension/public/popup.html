@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Vixio Capture</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <main class="popup-shell">
+      <header>
+        <strong>Vixio</strong>
+        <span id="capture-kind">Page</span>
+      </header>
+      <section class="capture-card">
+        <img id="capture-preview" alt="" hidden />
+        <div>
+          <h1 id="capture-title">Current tab</h1>
+          <p id="capture-source"></p>
+        </div>
+      </section>
+      <section id="image-section" class="image-section" hidden>
+        <div class="section-row">
+          <span>Images</span>
+          <button id="toggle-images" type="button">All</button>
+        </div>
+        <div id="image-grid" class="image-grid" aria-label="Page images"></div>
+      </section>
+      <button id="copy-capture" type="button">Send to Vixio</button>
+      <p id="status" role="status">Paste in Vixio Library</p>
+    </main>
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>

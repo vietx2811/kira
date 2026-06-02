@@ -1,0 +1,12 @@
+{
+  "name": "vixio",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "pnpm --filter @vixio/desktop dev",
+    "build": "pnpm --filter @vixio/desktop build && pnpm --filter @vixio/extension build",
+    "preview": "pnpm --filter @vixio/desktop preview"
+  },
+  "packageManager": "pnpm@10.32.1"
+}
