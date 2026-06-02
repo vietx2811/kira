@@ -2209,7 +2209,12 @@ function Graph3DView({
 }) {
   const hostRef = useRef<HTMLDivElement>(null)
   const graphRef = useRef<any>(null)
+  const [relationFilter3D, setRelationFilter3D] = useState<RelationFilter>('all')
   const graphData = useMemo(() => build3DGraphData(ideas, images, links), [ideas, images, links])
+  const filteredGraphData = useMemo(
+    () => filter3DGraphDataByRelation(graphData, relationFilter3D),
+    [graphData, relationFilter3D],
+  )
   const visibleRelations = useMemo(() => get3DRelationLegend(graphData.links), [graphData.links])
   const selectedLabel = useMemo(() => {
     if (selected.type === 'idea') return ideas.find((idea) => idea.id === selected.id)?.title
@@ -2256,7 +2261,7 @@ function Graph3DView({
       resize()
       window.addEventListener('resize', resize)
       cleanupResize = () => window.removeEventListener('resize', resize)
-      graph.graphData(graphData)
+      graph.graphData(clone3DGraphData(filteredGraphData))
       graph.cameraPosition({ x: 0, y: 0, z: 360 })
     })
 
@@ -2273,7 +2278,7 @@ function Graph3DView({
     const graph = graphRef.current
     if (!graph) return
     graph
-      .graphData(graphData)
+      .graphData(clone3DGraphData(filteredGraphData))
       .nodeColor((node: any) => {
         if (selected.type !== 'link' && selected.id === node.id) return '#d9fff6'
         return node.color
@@ -2282,7 +2287,7 @@ function Graph3DView({
         if (selected.type === 'link' && selected.id === link.id) return '#dfae67'
         return link.color
       })
-  }, [graphData, selected])
+  }, [filteredGraphData, selected])
 
   useEffect(() => {
     const graph = graphRef.current
@@ -2292,7 +2297,7 @@ function Graph3DView({
     }, 450)
 
     return () => window.clearTimeout(timeout)
-  }, [graphData, selected])
+  }, [filteredGraphData, selected])
 
   function reset3DView() {
     const graph = graphRef.current
@@ -2308,11 +2313,17 @@ function Graph3DView({
 
   return (
     <section className="graph3d-shell">
-      <div className="graph3d-stage" ref={hostRef} data-node-count={graphData.nodes.length} data-link-count={graphData.links.length} />
+      <div
+        className="graph3d-stage"
+        ref={hostRef}
+        data-node-count={filteredGraphData.nodes.length}
+        data-link-count={filteredGraphData.links.length}
+        data-relation-filter={relationFilter3D}
+      />
       <div className="graph3d-hud">
         <span>3D</span>
-        <strong>{graphData.nodes.length}</strong>
-        <small>{graphData.links.length} links</small>
+        <strong>{filteredGraphData.nodes.length}</strong>
+        <small>{filteredGraphData.links.length}/{graphData.links.length} links</small>
         {selectedLabel && <em>{selectedLabel}</em>}
         <button type="button" aria-label="Focus selected in 3D" disabled={selected.type === 'link'} onClick={focusSelectedIn3D}>
           <LocateFixed size={13} />
@@ -2322,14 +2333,23 @@ function Graph3DView({
         </button>
       </div>
       <div className="graph3d-legend" aria-label="3D relation legend">
+        <button
+          className={relationFilter3D === 'all' ? 'is-active' : ''}
+          type="button"
+          aria-pressed={relationFilter3D === 'all'}
+          onClick={() => setRelationFilter3D('all')}
+        >
+          <i />
+          <span>All</span>
+          <small>{graphData.links.length}</small>
+        </button>
         {visibleRelations.map((relation) => (
           <button
             key={relation.relation}
+            className={relationFilter3D === relation.relation ? 'is-active' : ''}
             type="button"
-            onClick={() => {
-              const link = links.find((candidate) => candidate.relation === relation.relation)
-              if (link) onSelect({ type: 'link', id: link.id })
-            }}
+            aria-pressed={relationFilter3D === relation.relation}
+            onClick={() => setRelationFilter3D((current) => (current === relation.relation ? 'all' : relation.relation))}
           >
             <i style={{ background: relation.color }} />
             <span>{relationLabels[relation.relation]}</span>
@@ -4078,6 +4098,37 @@ function build3DGraphData(ideas: Idea[], images: EvidenceImage[], links: Evidenc
         color: link.relation === 'supports' ? '#84cdbc' : link.relation === 'contrasts' ? '#b7a4df' : '#dfae67',
       })),
   }
+}
+
+function filter3DGraphDataByRelation(graphData: ReturnType<typeof build3DGraphData>, relationFilter: RelationFilter) {
+  if (relationFilter === 'all') return graphData
+
+  const links = graphData.links.filter((link) => link.relation === relationFilter)
+  const connectedNodeIds = new Set<string>()
+  links.forEach((link) => {
+    connectedNodeIds.add(get3DGraphEndpointId(link.source))
+    connectedNodeIds.add(get3DGraphEndpointId(link.target))
+  })
+
+  return {
+    nodes: graphData.nodes.filter((node) => connectedNodeIds.has(node.id)),
+    links,
+  }
+}
+
+function clone3DGraphData(graphData: ReturnType<typeof build3DGraphData>) {
+  return {
+    nodes: graphData.nodes.map((node) => ({ ...node })),
+    links: graphData.links.map((link) => ({ ...link })),
+  }
+}
+
+function get3DGraphEndpointId(endpoint: unknown) {
+  if (typeof endpoint === 'string' || typeof endpoint === 'number') return String(endpoint)
+  if (endpoint && typeof endpoint === 'object' && 'id' in endpoint) {
+    return String((endpoint as { id: unknown }).id)
+  }
+  return String(endpoint)
 }
 
 function focus3DSelection(graph: any, selectedId: string) {
