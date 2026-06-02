@@ -114,6 +114,11 @@ Implemented in `apps/desktop`:
 - graph node cap for large libraries, plus dev-only benchmark fixtures exposed through `window.__vixioDev`
 - graph Edit / Discover mode with inferred weak-support edges that do not mutate saved links
 - Discover support filter for all, candidate, and open references
+- 3D discovery view using `3d-force-graph`, with relation filters, All / Linked / Focus scope controls, camera focus/reset, and non-mutating cloned graph data
+- Slideshow view with autolayout (`focus`, `grid`, `stack`) derived from evidence density, relation mix, support ratio, and content length
+- Slideshow presenter mode with browser CSS fallback and Tauri fullscreen support
+- Slideshow HTML export writes layout reason and relation mix into the generated file
+- Tauri shell uses a frameless transparent window with custom controls, drag fallback, native window effects where available, and CSS liquid-glass fallback
 - create idea
 - outline drafts are stored in project snapshots and SQLite packages
 - Library can export the current reference view as a static contact sheet
@@ -483,6 +488,7 @@ Tasks:
 - add graph layout persistence
 - add node cap and visibility filters (node cap and scope filter done)
 - add relation filters (done)
+- add 3D discovery view with relation + scope filtering (done)
 - add local discovery layout for idea/reference support clusters (done)
 - add weak-support filters for large graphs (done)
 - add repeatable browser benchmark fixture for 120/300 references (done)
@@ -500,7 +506,9 @@ Current benchmark notes:
 - Browser QA at 1180x760 with dev fixture 300 references and cap 75 in Discover: 75 visible nodes, no document overflow.
 - Browser QA at 1180x760 with dev fixture 300 references: selecting a high-degree idea renders 8 Inspector references by default, exposes `Show 21 more`, and does not create document overflow.
 - Browser QA at 1180x760 with dev fixture 300 references: Outline renders 8 sections, caps the first section to 6 references by default, exposes `Show 23 more`, expands to 29 references, and does not create document overflow.
-- Interpretation: keep the current DOM/SVG graph for Round 1 editing. Evaluate `react-force-graph-2d` or `3d-force-graph` only after importing real libraries where graph readability, not just node count, becomes the bottleneck.
+- Browser QA at 1180x760 with dev fixture 120 references: Canvas, 3D discovery, and slideshow presenter mode render without horizontal or vertical document overflow.
+- Browser QA at 1440x900 with dev fixture 120 references: 3D discovery renders 126 nodes / 90 links in All scope with a WebGL canvas, while slideshow presenter mode hides the rail and keeps the slide surface one-column.
+- Interpretation: keep the current DOM/SVG graph for Round 1 editing. Use the 3D force graph as a discovery view only; 2D remains the source of editing and CRUD.
 
 ### Phase 6: Eagle integration
 
