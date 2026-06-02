@@ -2241,10 +2241,15 @@ function Graph3DView({
   const hostRef = useRef<HTMLDivElement>(null)
   const graphRef = useRef<any>(null)
   const [relationFilter3D, setRelationFilter3D] = useState<RelationFilter>('all')
+  const [graphScope3D, setGraphScope3D] = useState<GraphScope>('all')
   const graphData = useMemo(() => build3DGraphData(ideas, images, links), [ideas, images, links])
-  const filteredGraphData = useMemo(
+  const relationGraphData = useMemo(
     () => filter3DGraphDataByRelation(graphData, relationFilter3D),
     [graphData, relationFilter3D],
+  )
+  const filteredGraphData = useMemo(
+    () => filter3DGraphDataByScope(relationGraphData, graphScope3D, selected),
+    [relationGraphData, graphScope3D, selected],
   )
   const visibleRelations = useMemo(() => get3DRelationLegend(graphData.links), [graphData.links])
   const selectedLabel = useMemo(() => {
@@ -2350,10 +2355,11 @@ function Graph3DView({
         data-node-count={filteredGraphData.nodes.length}
         data-link-count={filteredGraphData.links.length}
         data-relation-filter={relationFilter3D}
+        data-graph-scope={graphScope3D}
       />
       <div className="graph3d-hud">
         <span>3D</span>
-        <strong>{filteredGraphData.nodes.length}</strong>
+        <strong>{filteredGraphData.nodes.length}/{graphData.nodes.length}</strong>
         <small>{filteredGraphData.links.length}/{graphData.links.length} links</small>
         {selectedLabel && <em>{selectedLabel}</em>}
         <button type="button" aria-label="Focus selected in 3D" disabled={selected.type === 'link'} onClick={focusSelectedIn3D}>
@@ -2362,6 +2368,19 @@ function Graph3DView({
         <button type="button" aria-label="Reset 3D camera" onClick={reset3DView}>
           <ZoomOut size={13} />
         </button>
+      </div>
+      <div className="graph3d-scope" aria-label="3D graph scope">
+        {(Object.keys(graphScopeLabels) as GraphScope[]).map((scope) => (
+          <button
+            key={scope}
+            className={graphScope3D === scope ? 'is-active' : ''}
+            type="button"
+            aria-pressed={graphScope3D === scope}
+            onClick={() => setGraphScope3D(scope)}
+          >
+            {graphScopeLabels[scope]}
+          </button>
+        ))}
       </div>
       <div className="graph3d-legend" aria-label="3D relation legend">
         <button
@@ -4151,6 +4170,35 @@ function filter3DGraphDataByRelation(graphData: ReturnType<typeof build3DGraphDa
   return {
     nodes: graphData.nodes.filter((node) => connectedNodeIds.has(node.id)),
     links,
+  }
+}
+
+function filter3DGraphDataByScope(
+  graphData: ReturnType<typeof build3DGraphData>,
+  graphScope: GraphScope,
+  selected: Selection,
+) {
+  if (graphScope === 'all') return graphData
+
+  const connectedNodeIds = new Set<string>()
+  const scopedLinks = graphData.links.filter((link) => {
+    const sourceId = get3DGraphEndpointId(link.source)
+    const targetId = get3DGraphEndpointId(link.target)
+    const isSelectedLink = selected.type === 'link' && link.id === selected.id
+    const isSelectedEndpoint = selected.type !== 'link' && (sourceId === selected.id || targetId === selected.id)
+
+    if (graphScope === 'selection' && !isSelectedLink && !isSelectedEndpoint) return false
+
+    connectedNodeIds.add(sourceId)
+    connectedNodeIds.add(targetId)
+    return true
+  })
+
+  if (graphScope === 'selection' && selected.type !== 'link') connectedNodeIds.add(selected.id)
+
+  return {
+    nodes: graphData.nodes.filter((node) => connectedNodeIds.has(node.id)),
+    links: scopedLinks,
   }
 }
 

@@ -1303,6 +1303,33 @@ p {
   gap: var(--space-2);
 }
 
+.graph3d-scope {
+  position: absolute;
+  top: var(--space-4);
+  left: var(--space-4);
+  display: inline-flex;
+  padding: 3px;
+  border-radius: 999px;
+  background: rgb(12 13 12 / 0.64);
+  gap: 2px;
+}
+
+.graph3d-scope button {
+  min-height: 26px;
+  padding: 0 var(--space-2);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.68rem;
+}
+
+.graph3d-scope button:hover,
+.graph3d-scope button.is-active {
+  background: rgb(132 205 188 / 0.13);
+  color: var(--text-main);
+}
+
 .graph3d-legend button {
   display: inline-flex;
   align-items: center;
