@@ -1373,6 +1373,30 @@ p {
   padding: var(--space-1);
 }
 
+.slideshow-shell[data-presenting="true"] {
+  grid-template-columns: minmax(0, 1fr);
+  padding: 0;
+  background: #080909;
+}
+
+.slideshow-shell[data-presenting="true"] .slideshow-rail {
+  display: none;
+}
+
+.slideshow-shell[data-presenting="true"] .slide-canvas {
+  border-radius: var(--radius-3);
+}
+
+.slideshow-shell[data-presenting="true"] .slideshow-controls {
+  opacity: 0.32;
+  transition: opacity 160ms ease;
+}
+
+.slideshow-shell[data-presenting="true"] .slideshow-controls:hover,
+.slideshow-shell[data-presenting="true"] .slideshow-controls:focus-within {
+  opacity: 1;
+}
+
 .slideshow-rail {
   display: grid;
   align-content: start;

@@ -22,6 +22,8 @@ import {
   ImagePlus,
   Link2,
   LocateFixed,
+  Maximize2,
+  Minimize2,
   MoreHorizontal,
   Network,
   PanelLeft,
@@ -2432,6 +2434,7 @@ function SlideshowView({
   const selectedSlideIndex = Math.max(0, slides.findIndex((slide) => selected.type === 'idea' && slide.idea.id === selected.id))
   const [activeSlideIndex, setActiveSlideIndex] = useState(0)
   const [isPlaying, setIsPlaying] = useState(false)
+  const [isPresenting, setIsPresenting] = useState(false)
   const [layoutMode, setLayoutMode] = useState<SlideLayoutMode>('auto')
   const activeIndex = selectedSlideIndex >= 0 && selected.type === 'idea' ? selectedSlideIndex : Math.min(activeSlideIndex, slides.length - 1)
   const activeSlide = applySlideLayoutMode(slides, layoutMode)[activeIndex]
@@ -2476,11 +2479,19 @@ function SlideshowView({
         event.preventDefault()
         setIsPlaying((current) => !current)
       }
+      if (event.key === 'Escape') {
+        setIsPresenting(false)
+      }
     }
 
     document.addEventListener('keydown', handleKeydown)
     return () => document.removeEventListener('keydown', handleKeydown)
   }, [activeIndex, slides])
+
+  useEffect(() => {
+    if (!isTauriRuntime()) return
+    void getCurrentWindow().setFullscreen(isPresenting).catch(() => undefined)
+  }, [isPresenting])
 
   if (!activeSlide) {
     return (
@@ -2499,6 +2510,7 @@ function SlideshowView({
       data-slide-layout={activeSlide.layout}
       data-slide-layout-mode={layoutMode}
       data-slide-layout-reason={activeSlide.layoutReason}
+      data-presenting={isPresenting}
     >
       <div className="slideshow-rail" aria-label="Slides">
         {slides.map((slide, index) => (
@@ -2528,6 +2540,14 @@ function SlideshowView({
           </button>
           <button type="button" aria-label="Next slide" onClick={() => goToSlide(activeIndex + 1)}>
             <ChevronRight size={14} />
+          </button>
+          <button
+            type="button"
+            aria-label={isPresenting ? 'Exit presenter mode' : 'Enter presenter mode'}
+            aria-pressed={isPresenting}
+            onClick={() => setIsPresenting((current) => !current)}
+          >
+            {isPresenting ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
           </button>
           <span>{activeIndex + 1}/{slides.length}</span>
           <em>{activeSlide.layout}</em>
