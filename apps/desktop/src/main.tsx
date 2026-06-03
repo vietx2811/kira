@@ -1,9 +1,12 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
+import { create, useStore } from 'zustand'
+import { temporal } from 'zundo'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { Effect, EffectState, getCurrentWindow } from '@tauri-apps/api/window'
 import { open, save } from '@tauri-apps/plugin-dialog'
+import { Rnd } from 'react-rnd'
 import {
   ArrowDownToLine,
   Bot,
@@ -33,22 +36,34 @@ import {
   Plus,
   Save,
   Search,
+  Settings,
   Sparkles,
   Tag,
+  Redo2,
+  Undo2,
   ZoomIn,
   ZoomOut,
   X,
 } from 'lucide-react'
+import { HexColorPicker } from 'react-colorful'
+import { converter, formatHex } from 'culori'
 import './styles.css'
 
 type Relation = 'supports' | 'contrasts' | 'example' | 'mood' | 'material' | 'reference'
 type Selection =
   | { type: 'idea'; id: string }
   | { type: 'image'; id: string }
+  | { type: 'palette'; id: string }
+  | { type: 'diagram'; id: string }
+  | { type: 'placeholder'; id: string }
   | { type: 'link'; id: string }
 
 type PendingDelete =
   | { type: 'idea'; id: string; title: string }
+  | { type: 'image'; id: string; title: string }
+  | { type: 'palette'; id: string; title: string }
+  | { type: 'diagram'; id: string; title: string }
+  | { type: 'placeholder'; id: string; title: string }
   | { type: 'link'; id: string; title: string }
 
 type Idea = {
@@ -58,6 +73,12 @@ type Idea = {
   status: 'forming' | 'strong' | 'thin'
   x: number
   y: number
+  importance?: number
+  createdAt?: string
+  addedAt?: string
+  updatedAt?: string
+  sourceUrl?: string
+  notes?: string
 }
 
 type EvidenceImage = {
@@ -73,6 +94,12 @@ type EvidenceImage = {
   x: number
   y: number
   thumb: string
+  importance?: number
+  createdAt?: string
+  addedAt?: string
+  updatedAt?: string
+  sourceUrl?: string
+  notes?: string
   fingerprint?: string
   perceptualHash?: string
 }
@@ -90,9 +117,63 @@ type EvidenceLink = {
   id: string
   imageId: string
   ideaId: string
+  sourceNodeId?: string
+  targetNodeId?: string
+  sourceKind?: GraphNodeKind
+  targetKind?: GraphNodeKind
   relation: Relation
   note: string
   confidence: number
+  createdAt?: string
+  updatedAt?: string
+}
+
+type PaletteHarmony = 'complementary' | 'analogous' | 'triadic' | 'split' | 'monochrome' | 'shades'
+
+type PaletteNode = {
+  id: string
+  title: string
+  colors: string[]
+  algorithm: PaletteHarmony | 'manual' | 'image_extract'
+  sourceImageId?: string
+  x: number
+  y: number
+  importance?: number
+  createdAt?: string
+  addedAt?: string
+  updatedAt?: string
+  sourceUrl?: string
+  notes?: string
+}
+
+type DiagramNode = {
+  id: string
+  title: string
+  format: 'mermaid'
+  source: string
+  nodeIds: string[]
+  x: number
+  y: number
+  importance?: number
+  createdAt?: string
+  addedAt?: string
+  updatedAt?: string
+  sourceUrl?: string
+  notes?: string
+}
+
+type PlaceholderNode = {
+  id: string
+  title: string
+  targetKind: 'image'
+  x: number
+  y: number
+  importance?: number
+  createdAt?: string
+  addedAt?: string
+  updatedAt?: string
+  sourceUrl?: string
+  notes?: string
 }
 
 type OutlineDraftSection = {
@@ -112,11 +193,23 @@ type OutlineDraft = {
 }
 
 type ProjectSnapshot = {
-  version: 1
+  version: 2
   ideas: Idea[]
   images: EvidenceImage[]
+  palettes: PaletteNode[]
+  diagrams: DiagramNode[]
+  placeholders: PlaceholderNode[]
+  aiSettings: AiSettingsSnapshot
+  versionHistory: ProjectVersionRecord[]
   links: EvidenceLink[]
   outlineDrafts: OutlineDraft[]
+}
+
+type ProjectVersionRecord = {
+  id: string
+  label: string
+  createdAt: string
+  snapshotJson: string
 }
 
 type ProjectPackageInfo = {
@@ -155,21 +248,94 @@ type VixioCapturePayload = {
 
 type LibraryDensity = 'compact' | 'relaxed'
 type SortMode = 'recent' | 'title' | 'source'
-type GraphNodeKind = 'idea' | 'image'
+type GraphNodeKind = 'idea' | 'image' | 'palette' | 'diagram' | 'placeholder'
 type GraphMode = 'edit' | 'discover'
 type GraphScope = 'all' | 'linked' | 'selection'
 type RelationFilter = 'all' | Relation
 type DiscoveryFilter = 'all' | 'candidates' | 'open'
 type GraphCap = 75 | 150 | 300
 type OutlineFilter = 'all' | 'strong' | 'weak'
-type ActiveView = 'Canvas' | '3D' | 'Slides' | 'Outline'
+type ActiveView = 'Canvas' | '3D' | 'Slides' | 'Outline' | 'Settings'
+type GraphOrganizeMode = 'manual' | 'cluster' | 'flow' | 'timeline' | 'palette' | 'importance' | 'grid'
+type AiTaskKind =
+  | 'tag_reference'
+  | 'classify_reference'
+  | 'find_similar'
+  | 'generate_palette'
+  | 'rebalance_palette'
+  | 'generate_outline'
+  | 'summarize_diagram'
+type AiProviderType =
+  | 'apple_foundation'
+  | 'openai'
+  | 'anthropic'
+  | 'gemini'
+  | 'openrouter'
+  | 'ollama'
+  | 'lm_studio'
+  | 'custom_openai_compatible'
+type AiAuthMode = 'local' | 'api_key' | 'oauth' | 'openai_compatible'
+type AiProviderStatus = 'connected' | 'unavailable' | 'billing_separate' | 'key_missing'
+type AiRoutingMode = 'local_only' | 'prefer_local' | 'selected_remote'
+type AiProviderProfile = {
+  id: string
+  type: AiProviderType
+  name: string
+  authMode: AiAuthMode
+  baseUrl?: string
+  model: string
+  status: AiProviderStatus
+  secretRef?: string
+  defaultFor: AiTaskKind[]
+}
+type AiSettingsSnapshot = {
+  providers: AiProviderProfile[]
+  routingMode: AiRoutingMode
+  selectedProviderId: string
+}
+type AiProviderTestResult = {
+  connected: boolean
+  status: string
+  message: string
+}
+type AiModelListResult = {
+  status: string
+  models: string[]
+}
+type AiTaskRoute = {
+  task: AiTaskKind
+  providerId: string | null
+  providerName: string
+  status: AiProviderStatus | 'local_fallback'
+  reason: string
+}
+type CanvasHistoryEntry = Pick<ProjectSnapshot, 'ideas' | 'images' | 'palettes' | 'diagrams' | 'placeholders' | 'links'> & {
+  selection: Selection
+}
+type CanvasHistoryStore = {
+  entry: CanvasHistoryEntry | null
+  setEntry: (entry: CanvasHistoryEntry) => void
+}
 type DiscoverySuggestion = {
   imageId: string
   ideaId: string
   score: number
 }
 
-const storageKey = 'vixio.project.v1'
+const useCanvasHistoryStore = create<CanvasHistoryStore>()(
+  temporal(
+    (set) => ({
+      entry: null,
+      setEntry: (entry) => set({ entry }),
+    }),
+    {
+      limit: 50,
+      partialize: (state) => ({ entry: state.entry }),
+    },
+  ),
+)
+
+const storageKey = 'vixio.project.v2'
 const inspectorLinkedListLimit = 8
 const outlineReferenceLimit = 6
 const libraryOverscan = 5
@@ -196,8 +362,10 @@ type SlideLayout = {
   title: string
   summary: string
   references: EvidenceImage[]
+  palettes: PaletteNode[]
+  diagrams: DiagramNode[]
   relationCount: number
-  layout: 'focus' | 'grid' | 'stack'
+  layout: 'focus' | 'grid' | 'stack' | 'palette' | 'diagram'
   layoutReason: string
   relationMix: Relation[]
   accent: string
@@ -212,6 +380,9 @@ type VixioDevApi = {
   snapshot: () => {
     ideas: number
     images: number
+    palettes: number
+    diagrams: number
+    placeholders: number
     links: number
     outlineDrafts: number
     selection: Selection
@@ -401,17 +572,145 @@ const graphCapLabels: Record<GraphCap, string> = {
   300: '300',
 }
 
+const graphOrganizeLabels: Record<GraphOrganizeMode, string> = {
+  manual: 'Manual',
+  cluster: 'Cluster by Idea',
+  flow: 'Evidence Flow',
+  timeline: 'Timeline',
+  palette: 'Palette',
+  importance: 'Importance Focus',
+  grid: 'Grid Cleanup',
+}
+
 const outlineFilterLabels: Record<OutlineFilter, string> = {
   all: 'All',
   strong: 'Strong',
   weak: 'Needs work',
 }
 
+const aiTaskLabels: Record<AiTaskKind, string> = {
+  tag_reference: 'Tag reference',
+  classify_reference: 'Classify reference',
+  find_similar: 'Find similar',
+  generate_palette: 'Generate palette',
+  rebalance_palette: 'Rebalance palette',
+  generate_outline: 'Generate outline',
+  summarize_diagram: 'Summarize diagram',
+}
+
+const aiProviderTypeLabels: Record<AiProviderType, string> = {
+  apple_foundation: 'Apple Foundation Models',
+  openai: 'OpenAI',
+  anthropic: 'Anthropic',
+  gemini: 'Gemini',
+  openrouter: 'OpenRouter',
+  ollama: 'Ollama',
+  lm_studio: 'LM Studio',
+  custom_openai_compatible: 'OpenAI-compatible',
+}
+
+const aiProviderStatusLabels: Record<AiProviderStatus, string> = {
+  connected: 'connected',
+  unavailable: 'unavailable',
+  billing_separate: 'billing separate',
+  key_missing: 'key missing',
+}
+
+const aiRoutingLabels: Record<AiRoutingMode, string> = {
+  local_only: 'Local only',
+  prefer_local: 'Prefer local, fallback remote',
+  selected_remote: 'Selected remote provider',
+}
+
+const defaultAiProviderProfiles: AiProviderProfile[] = [
+  {
+    id: 'apple-foundation',
+    type: 'apple_foundation',
+    name: 'Apple Foundation Models',
+    authMode: 'local',
+    model: 'system default',
+    status: 'unavailable',
+    defaultFor: ['tag_reference', 'classify_reference', 'generate_outline', 'summarize_diagram'],
+  },
+  {
+    id: 'openai',
+    type: 'openai',
+    name: 'OpenAI Platform',
+    authMode: 'api_key',
+    baseUrl: 'https://api.openai.com/v1',
+    model: 'gpt-4.1-mini',
+    status: 'key_missing',
+    defaultFor: ['generate_outline', 'summarize_diagram'],
+  },
+  {
+    id: 'anthropic',
+    type: 'anthropic',
+    name: 'Anthropic Console',
+    authMode: 'api_key',
+    baseUrl: 'https://api.anthropic.com',
+    model: 'claude-3-5-sonnet-latest',
+    status: 'key_missing',
+    defaultFor: ['generate_outline'],
+  },
+  {
+    id: 'gemini',
+    type: 'gemini',
+    name: 'Gemini API',
+    authMode: 'api_key',
+    baseUrl: 'https://generativelanguage.googleapis.com',
+    model: 'gemini-1.5-pro',
+    status: 'key_missing',
+    defaultFor: ['classify_reference', 'generate_palette'],
+  },
+  {
+    id: 'openrouter',
+    type: 'openrouter',
+    name: 'OpenRouter',
+    authMode: 'openai_compatible',
+    baseUrl: 'https://openrouter.ai/api/v1',
+    model: 'auto',
+    status: 'key_missing',
+    defaultFor: ['find_similar', 'generate_outline'],
+  },
+  {
+    id: 'ollama',
+    type: 'ollama',
+    name: 'Ollama',
+    authMode: 'openai_compatible',
+    baseUrl: 'http://localhost:11434/v1',
+    model: 'llama3.2',
+    status: 'unavailable',
+    defaultFor: ['tag_reference', 'classify_reference'],
+  },
+  {
+    id: 'lm-studio',
+    type: 'lm_studio',
+    name: 'LM Studio',
+    authMode: 'openai_compatible',
+    baseUrl: 'http://localhost:1234/v1',
+    model: 'local-model',
+    status: 'unavailable',
+    defaultFor: ['tag_reference'],
+  },
+]
+
+function defaultAiSettingsSnapshot(): AiSettingsSnapshot {
+  return {
+    providers: defaultAiProviderProfiles,
+    routingMode: 'prefer_local',
+    selectedProviderId: 'openai',
+  }
+}
+
 function App() {
   const initialProject = useMemo(() => readProjectSnapshot(), [])
   const [ideas, setIdeas] = useState(initialProject.ideas)
   const [images, setImages] = useState(initialProject.images)
+  const [palettes, setPalettes] = useState(initialProject.palettes)
+  const [diagrams, setDiagrams] = useState(initialProject.diagrams)
+  const [placeholders, setPlaceholders] = useState(initialProject.placeholders)
   const [links, setLinks] = useState(initialProject.links)
+  const [versionHistory, setVersionHistory] = useState(initialProject.versionHistory)
   const [outlineDrafts, setOutlineDrafts] = useState(initialProject.outlineDrafts)
   const [lastSavedHash, setLastSavedHash] = useState(() => JSON.stringify(initialProject))
   const [projectPackage, setProjectPackage] = useState<ProjectPackageInfo | null>(null)
@@ -429,6 +728,11 @@ function App() {
   const [ocrRunningImageId, setOcrRunningImageId] = useState<string | null>(null)
   const [ocrStatusByImageId, setOcrStatusByImageId] = useState<Record<string, string>>({})
   const [localModelAvailable, setLocalModelAvailable] = useState(false)
+  const [localModelStatus, setLocalModelStatus] = useState('Not checked')
+  const [aiProviders, setAiProviders] = useState<AiProviderProfile[]>(initialProject.aiSettings.providers)
+  const [aiRoutingMode, setAiRoutingMode] = useState<AiRoutingMode>(initialProject.aiSettings.routingMode)
+  const [selectedAiProviderId, setSelectedAiProviderId] = useState(initialProject.aiSettings.selectedProviderId)
+  const [aiSettingsStatus, setAiSettingsStatus] = useState('Local-first routing is active')
   const [modelRunningImageId, setModelRunningImageId] = useState<string | null>(null)
   const [modelStatusByImageId, setModelStatusByImageId] = useState<Record<string, string>>({})
   const [selectedReferenceIds, setSelectedReferenceIds] = useState<Set<string>>(new Set())
@@ -436,15 +740,26 @@ function App() {
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null)
   const [isLibraryCollapsed, setIsLibraryCollapsed] = useState(false)
   const [isInspectorCollapsed, setIsInspectorCollapsed] = useState(false)
+  const [isLibraryFloating, setIsLibraryFloating] = useState(false)
+  const [isInspectorFloating, setIsInspectorFloating] = useState(false)
+  const [isVersionHistoryOpen, setIsVersionHistoryOpen] = useState(false)
   const [glassStatus, setGlassStatus] = useState<GlassStatus>(() => (isTauriRuntime() ? 'fallback' : 'browser'))
+  const pendingCanvasHistoryCommitRef = useRef(false)
+  const suppressCanvasHistoryCommitRef = useRef(false)
+  const canUndoCanvas = useStore(useCanvasHistoryStore.temporal, (state) => state.pastStates.length > 0)
+  const canRedoCanvas = useStore(useCanvasHistoryStore.temporal, (state) => state.futureStates.length > 0)
   const projectSnapshot = useMemo(
-    () => toProjectSnapshot(ideas, images, links, outlineDrafts),
-    [ideas, images, links, outlineDrafts],
+    () => toProjectSnapshot(ideas, images, links, outlineDrafts, palettes, diagrams, placeholders, {
+      providers: aiProviders,
+      routingMode: aiRoutingMode,
+      selectedProviderId: selectedAiProviderId,
+    }, versionHistory),
+    [aiProviders, aiRoutingMode, diagrams, ideas, images, links, outlineDrafts, palettes, placeholders, selectedAiProviderId, versionHistory],
   )
   const projectHash = useMemo(() => JSON.stringify(projectSnapshot), [projectSnapshot])
   const selected = useMemo(
-    () => resolveSelection(selection, ideas, images, links),
-    [selection, ideas, images, links],
+    () => resolveSelection(selection, ideas, images, links, palettes, diagrams, placeholders),
+    [selection, ideas, images, links, palettes, diagrams, placeholders],
   )
   const visibleImages = useMemo(
     () => filterImages(images, searchQuery, selectedTag, sortMode),
@@ -486,6 +801,13 @@ function App() {
     () => buildProjectDiagnostics(ideas, images, links),
     [ideas, images, links],
   )
+  const aiTaskRoutes = useMemo(
+    () =>
+      (Object.keys(aiTaskLabels) as AiTaskKind[]).map((task) =>
+        selectAiProviderForTask(task, aiProviders, aiRoutingMode, selectedAiProviderId),
+      ),
+    [aiProviders, aiRoutingMode, selectedAiProviderId],
+  )
 
   useEffect(() => {
     if (!isTauriRuntime()) return
@@ -500,8 +822,26 @@ function App() {
     if (!isTauriRuntime()) return
 
     void checkNativeFoundationModelAvailability()
-      .then((availability) => setLocalModelAvailable(availability.available))
-      .catch(() => setLocalModelAvailable(false))
+      .then((availability) => {
+        setLocalModelAvailable(availability.available)
+        setLocalModelStatus(availability.reason || availability.status)
+        setAiProviders((current) =>
+          current.map((provider) =>
+            provider.id === 'apple-foundation'
+              ? { ...provider, status: availability.available ? 'connected' : 'unavailable' }
+              : provider,
+          ),
+        )
+      })
+      .catch(() => {
+        setLocalModelAvailable(false)
+        setLocalModelStatus('Unavailable')
+        setAiProviders((current) =>
+          current.map((provider) =>
+            provider.id === 'apple-foundation' ? { ...provider, status: 'unavailable' } : provider,
+          ),
+        )
+      })
   }, [])
 
   useEffect(() => {
@@ -521,9 +861,16 @@ function App() {
 
   useEffect(() => {
     function handleGlobalKeydown(event: KeyboardEvent) {
-      if (!isCreateIdeaShortcut(event) || isEditableEventTarget(event.target)) return
-      event.preventDefault()
-      createIdea({ focusTitle: true })
+      if (isSettingsShortcut(event)) {
+        event.preventDefault()
+        setActiveView('Settings')
+        return
+      }
+
+      if (isCreateIdeaShortcut(event) && !isEditableEventTarget(event.target)) {
+        event.preventDefault()
+        createIdea({ focusTitle: true })
+      }
     }
 
     window.addEventListener('keydown', handleGlobalKeydown)
@@ -555,6 +902,9 @@ function App() {
         return {
           ideas: ideas.length,
           images: images.length,
+          palettes: palettes.length,
+          diagrams: diagrams.length,
+          placeholders: placeholders.length,
           links: links.length,
           outlineDrafts: outlineDrafts.length,
           selection,
@@ -566,18 +916,101 @@ function App() {
     return () => {
       delete devWindow.__vixioDev
     }
-  }, [ideas, images, links, outlineDrafts, selection])
+  }, [diagrams, ideas, images, links, outlineDrafts, palettes, placeholders, selection])
+
+  useEffect(() => {
+    resetCanvasHistory(currentCanvasHistoryEntry())
+  }, [])
+
+  useEffect(() => {
+    if (suppressCanvasHistoryCommitRef.current) {
+      suppressCanvasHistoryCommitRef.current = false
+      return
+    }
+    if (!pendingCanvasHistoryCommitRef.current) return
+    pendingCanvasHistoryCommitRef.current = false
+    useCanvasHistoryStore.getState().setEntry(currentCanvasHistoryEntry())
+  }, [diagrams, ideas, images, links, palettes, placeholders, selection])
 
   function applyProjectSnapshot(snapshot: ProjectSnapshot) {
     const hash = JSON.stringify(snapshot)
     setIdeas(snapshot.ideas)
     setImages(snapshot.images)
+    setPalettes(snapshot.palettes)
+    setDiagrams(snapshot.diagrams)
+    setPlaceholders(snapshot.placeholders)
     setLinks(snapshot.links)
     setOutlineDrafts(snapshot.outlineDrafts)
+    setAiProviders(snapshot.aiSettings.providers)
+    setAiRoutingMode(snapshot.aiSettings.routingMode)
+    setSelectedAiProviderId(snapshot.aiSettings.selectedProviderId)
+    setVersionHistory(snapshot.versionHistory)
     setSelectedReferenceIds(new Set())
     setSelection({ type: 'idea', id: snapshot.ideas[0]?.id ?? 'idea-ritual-tools' })
     setLastSavedHash(hash)
     window.localStorage.setItem(storageKey, hash)
+    resetCanvasHistory({
+      ideas: snapshot.ideas,
+      images: snapshot.images,
+      palettes: snapshot.palettes,
+      diagrams: snapshot.diagrams,
+      placeholders: snapshot.placeholders,
+      links: snapshot.links,
+      selection: { type: 'idea', id: snapshot.ideas[0]?.id ?? 'idea-ritual-tools' },
+    })
+  }
+
+  function currentCanvasHistoryEntry(): CanvasHistoryEntry {
+    return {
+      ideas,
+      images,
+      palettes,
+      diagrams,
+      placeholders,
+      links,
+      selection,
+    }
+  }
+
+  function restoreCanvasHistoryEntry(entry: CanvasHistoryEntry) {
+    suppressCanvasHistoryCommitRef.current = true
+    setIdeas(entry.ideas)
+    setImages(entry.images)
+    setPalettes(entry.palettes)
+    setDiagrams(entry.diagrams)
+    setPlaceholders(entry.placeholders)
+    setLinks(entry.links)
+    setSelection(entry.selection)
+  }
+
+  function resetCanvasHistory(entry: CanvasHistoryEntry) {
+    const temporalHistory = useCanvasHistoryStore.temporal.getState()
+    temporalHistory.pause()
+    useCanvasHistoryStore.getState().setEntry(entry)
+    temporalHistory.clear()
+    temporalHistory.resume()
+    pendingCanvasHistoryCommitRef.current = false
+    suppressCanvasHistoryCommitRef.current = false
+  }
+
+  function pushCanvasHistory() {
+    pendingCanvasHistoryCommitRef.current = true
+  }
+
+  function undoCanvas() {
+    const temporalHistory = useCanvasHistoryStore.temporal.getState()
+    if (temporalHistory.pastStates.length === 0) return
+    temporalHistory.undo()
+    const entry = useCanvasHistoryStore.getState().entry
+    if (entry) restoreCanvasHistoryEntry(entry)
+  }
+
+  function redoCanvas() {
+    const temporalHistory = useCanvasHistoryStore.temporal.getState()
+    if (temporalHistory.futureStates.length === 0) return
+    temporalHistory.redo()
+    const entry = useCanvasHistoryStore.getState().entry
+    if (entry) restoreCanvasHistoryEntry(entry)
   }
 
   function acceptSuggestion(imageId: string, tag: string) {
@@ -756,37 +1189,215 @@ function App() {
       return
     }
 
+    const timestamp = nowIso()
     const link: EvidenceLink = {
       id: `link-${Date.now()}`,
       imageId,
       ideaId,
+      sourceNodeId: imageId,
+      targetNodeId: ideaId,
+      sourceKind: 'image',
+      targetKind: 'idea',
       relation,
       note: 'New evidence link created from the graph canvas.',
       confidence: 0.52,
+      createdAt: timestamp,
+      updatedAt: timestamp,
     }
     setLinks((current) => [...current, link])
     setSelection({ type: 'link', id: link.id })
   }
 
   function updateRelation(linkId: string, relation: Relation) {
-    setLinks((current) => current.map((link) => (link.id === linkId ? { ...link, relation } : link)))
+    setLinks((current) => current.map((link) => (link.id === linkId ? { ...link, relation, updatedAt: nowIso() } : link)))
   }
 
   function updateIdea(ideaId: string, patch: Partial<Pick<Idea, 'title' | 'body'>>) {
-    setIdeas((current) => current.map((idea) => (idea.id === ideaId ? { ...idea, ...patch } : idea)))
+    setIdeas((current) => current.map((idea) => (idea.id === ideaId ? { ...idea, ...patch, updatedAt: nowIso() } : idea)))
+  }
+
+  function updateImage(imageId: string, patch: Partial<Pick<EvidenceImage, 'title' | 'sourceUrl' | 'notes'>>) {
+    setImages((current) => current.map((image) => (image.id === imageId ? { ...image, ...patch, updatedAt: nowIso() } : image)))
   }
 
   function updateLink(linkId: string, patch: Partial<Pick<EvidenceLink, 'relation' | 'note'>>) {
-    setLinks((current) => current.map((link) => (link.id === linkId ? { ...link, ...patch } : link)))
+    setLinks((current) => current.map((link) => (link.id === linkId ? { ...link, ...patch, updatedAt: nowIso() } : link)))
+  }
+
+  function updatePalette(paletteId: string, patch: Partial<Pick<PaletteNode, 'title' | 'sourceUrl' | 'notes'>>) {
+    setPalettes((current) => current.map((palette) => (palette.id === paletteId ? { ...palette, ...patch, updatedAt: nowIso() } : palette)))
+  }
+
+  function updateDiagram(diagramId: string, patch: Partial<Pick<DiagramNode, 'title' | 'sourceUrl' | 'notes'>>) {
+    setDiagrams((current) => current.map((diagram) => (diagram.id === diagramId ? { ...diagram, ...patch, updatedAt: nowIso() } : diagram)))
+  }
+
+  function updatePlaceholder(placeholderId: string, patch: Partial<Pick<PlaceholderNode, 'title' | 'sourceUrl' | 'notes'>>) {
+    setPlaceholders((current) => current.map((placeholder) => (placeholder.id === placeholderId ? { ...placeholder, ...patch, updatedAt: nowIso() } : placeholder)))
   }
 
   function moveGraphNode(kind: GraphNodeKind, id: string, position: Pick<Idea, 'x' | 'y'>) {
+    const timestamp = nowIso()
     if (kind === 'idea') {
-      setIdeas((current) => current.map((idea) => (idea.id === id ? { ...idea, ...position } : idea)))
+      setIdeas((current) => current.map((idea) => (idea.id === id ? { ...idea, ...position, updatedAt: timestamp } : idea)))
       return
     }
 
-    setImages((current) => current.map((image) => (image.id === id ? { ...image, ...position } : image)))
+    if (kind === 'image') {
+      setImages((current) => current.map((image) => (image.id === id ? { ...image, ...position, updatedAt: timestamp } : image)))
+      return
+    }
+
+    if (kind === 'palette') {
+      setPalettes((current) => current.map((palette) => (palette.id === id ? { ...palette, ...position, updatedAt: timestamp } : palette)))
+      return
+    }
+
+    if (kind === 'diagram') {
+      setDiagrams((current) => current.map((diagram) => (diagram.id === id ? { ...diagram, ...position, updatedAt: timestamp } : diagram)))
+      return
+    }
+
+    setPlaceholders((current) => current.map((placeholder) => (placeholder.id === id ? { ...placeholder, ...position, updatedAt: timestamp } : placeholder)))
+  }
+
+  function changeNodeImportance(kind: GraphNodeKind, id: string, delta: number) {
+    pushCanvasHistory()
+    const timestamp = nowIso()
+    if (kind === 'idea') {
+      setIdeas((current) =>
+        current.map((idea) =>
+          idea.id === id
+            ? { ...idea, importance: adjustImportance(idea.importance, delta), updatedAt: timestamp }
+            : idea,
+        ),
+      )
+      return
+    }
+
+    setImages((current) =>
+      current.map((image) =>
+        image.id === id
+          ? { ...image, importance: adjustImportance(image.importance, delta), updatedAt: timestamp }
+          : image,
+      ),
+    )
+
+    if (kind === 'palette') {
+      setPalettes((current) =>
+        current.map((palette) =>
+          palette.id === id
+            ? { ...palette, importance: adjustImportance(palette.importance, delta), updatedAt: timestamp }
+            : palette,
+        ),
+      )
+      return
+    }
+
+    if (kind === 'diagram') {
+      setDiagrams((current) =>
+        current.map((diagram) =>
+          diagram.id === id
+            ? { ...diagram, importance: adjustImportance(diagram.importance, delta), updatedAt: timestamp }
+            : diagram,
+        ),
+      )
+      return
+    }
+
+    if (kind === 'placeholder') {
+      setPlaceholders((current) =>
+        current.map((placeholder) =>
+          placeholder.id === id
+            ? { ...placeholder, importance: adjustImportance(placeholder.importance, delta), updatedAt: timestamp }
+            : placeholder,
+        ),
+      )
+    }
+  }
+
+  function organizeCanvas(mode: GraphOrganizeMode) {
+    if (mode === 'manual') return
+    pushCanvasHistory()
+    const layout = organizeGraphLayout(mode, ideas, images, links, selection)
+    const auxiliaryLayout = organizeAuxiliaryNodes(mode, palettes, diagrams, placeholders)
+    setIdeas(layout.ideas)
+    setImages(layout.images)
+    setPalettes(auxiliaryLayout.palettes)
+    setDiagrams(auxiliaryLayout.diagrams)
+    setPlaceholders(auxiliaryLayout.placeholders)
+  }
+
+  function updateAiProvider(providerId: string, patch: Partial<Pick<AiProviderProfile, 'baseUrl' | 'model' | 'authMode'>>) {
+    setAiProviders((current) =>
+      current.map((provider) => (provider.id === providerId ? { ...provider, ...patch } : provider)),
+    )
+  }
+
+  async function saveAiProviderSecret(providerId: string, secret: string) {
+    if (!secret.trim()) {
+      setAiSettingsStatus('Secret is empty')
+      return
+    }
+    try {
+      await saveNativeProviderSecret(providerId, secret)
+      setAiProviders((current) =>
+        current.map((provider) =>
+          provider.id === providerId ? { ...provider, secretRef: `keychain:${providerId}` } : provider,
+        ),
+      )
+      setAiSettingsStatus('Secret saved to macOS Keychain')
+    } catch (error) {
+      setAiSettingsStatus(error instanceof Error ? error.message : 'Secret save failed')
+    }
+  }
+
+  async function deleteAiProviderSecret(providerId: string) {
+    try {
+      await deleteNativeProviderSecret(providerId)
+      setAiProviders((current) =>
+        current.map((provider) =>
+          provider.id === providerId ? { ...provider, secretRef: undefined, status: 'key_missing' } : provider,
+        ),
+      )
+      setAiSettingsStatus('Secret deleted')
+    } catch (error) {
+      setAiSettingsStatus(error instanceof Error ? error.message : 'Secret delete failed')
+    }
+  }
+
+  async function testAiProvider(providerId: string) {
+    const provider = aiProviders.find((candidate) => candidate.id === providerId)
+    if (!provider) return
+
+    try {
+      const result = await testNativeAiProvider(provider)
+      setAiSettingsStatus(`${provider.name}: ${result.message}`)
+      setAiProviders((current) =>
+        current.map((candidate) =>
+          candidate.id === providerId
+            ? { ...candidate, status: providerStatusFromNative(result.status, result.connected) }
+            : candidate,
+        ),
+      )
+    } catch (error) {
+      setAiSettingsStatus(error instanceof Error ? error.message : 'Provider test failed')
+    }
+  }
+
+  async function listAiModels(providerId: string) {
+    const provider = aiProviders.find((candidate) => candidate.id === providerId)
+    if (!provider) return
+    try {
+      const result = await listNativeAiModels(provider)
+      setAiSettingsStatus(
+        result.models.length > 0
+          ? `${provider.name}: ${result.models.join(', ')}`
+          : `${provider.name}: ${result.status}`,
+      )
+    } catch (error) {
+      setAiSettingsStatus(error instanceof Error ? error.message : 'Model listing failed')
+    }
   }
 
   function addReferenceTag(imageId: string, rawTag: string) {
@@ -896,6 +1507,8 @@ function App() {
   }
 
   function createIdea(options: { focusTitle?: boolean } = {}) {
+    pushCanvasHistory()
+    const timestamp = nowIso()
     const idea: Idea = {
       id: `idea-${Date.now()}`,
       title: 'Untitled idea',
@@ -903,14 +1516,182 @@ function App() {
       status: 'thin',
       x: 58,
       y: 42,
+      importance: 1,
+      createdAt: timestamp,
+      addedAt: timestamp,
+      updatedAt: timestamp,
     }
     setIdeas((current) => [...current, idea])
     setSelection({ type: 'idea', id: idea.id })
     if (options.focusTitle) setIdeaTitleFocusId(idea.id)
   }
 
+  function createPlaceholder() {
+    pushCanvasHistory()
+    const timestamp = nowIso()
+    const placeholder: PlaceholderNode = {
+      id: `placeholder-${Date.now()}`,
+      title: 'Image placeholder',
+      targetKind: 'image',
+      x: 72,
+      y: 38,
+      importance: 1,
+      createdAt: timestamp,
+      addedAt: timestamp,
+      updatedAt: timestamp,
+    }
+    setPlaceholders((current) => [...current, placeholder])
+    setSelection({ type: 'placeholder', id: placeholder.id })
+  }
+
+  function createPaletteNode(sourceImage?: EvidenceImage) {
+    pushCanvasHistory()
+    const timestamp = nowIso()
+    const base = sourceImage?.palette?.[0] ?? '#84cdbc'
+    const palette: PaletteNode = {
+      id: `palette-${Date.now()}`,
+      title: sourceImage ? `${sourceImage.title} palette` : 'Palette',
+      colors: sourceImage?.palette?.length ? sourceImage.palette.slice(0, 6) : generatePaletteHarmony(base, 'analogous'),
+      algorithm: sourceImage ? 'image_extract' : 'analogous',
+      sourceImageId: sourceImage?.id,
+      x: sourceImage ? clamp(sourceImage.x + 10, 8, 92) : 70,
+      y: sourceImage ? clamp(sourceImage.y + 10, 8, 92) : 58,
+      importance: sourceImage?.importance ?? 1,
+      createdAt: timestamp,
+      addedAt: timestamp,
+      updatedAt: timestamp,
+      sourceUrl: sourceImage?.sourceUrl,
+    }
+    setPalettes((current) => [...current, palette])
+    setSelection({ type: 'palette', id: palette.id })
+  }
+
+  function updatePaletteColor(paletteId: string, colorIndex: number, color: string) {
+    setPalettes((current) =>
+      current.map((palette) =>
+        palette.id === paletteId
+          ? {
+              ...palette,
+              colors: palette.colors.map((candidate, index) => (index === colorIndex ? color : candidate)),
+              algorithm: 'manual',
+              updatedAt: nowIso(),
+            }
+          : palette,
+      ),
+    )
+  }
+
+  function regeneratePalette(paletteId: string, algorithm: PaletteHarmony) {
+    pushCanvasHistory()
+    setPalettes((current) =>
+      current.map((palette) => {
+        if (palette.id !== paletteId) return palette
+        return {
+          ...palette,
+          colors: generatePaletteHarmony(palette.colors[0] ?? '#84cdbc', algorithm),
+          algorithm,
+          updatedAt: nowIso(),
+        }
+      }),
+    )
+  }
+
+  function findSimilarReferences(imageId: string) {
+    const source = images.find((image) => image.id === imageId)
+    if (!source) return
+    const sourceTags = new Set(source.tags.map(normalizeTag))
+    const sourceHue = hueFromHex(source.palette[0])
+    const similarIds = images
+      .filter((image) => image.id !== imageId)
+      .map((image) => {
+        const tagScore = image.tags.filter((tag) => sourceTags.has(normalizeTag(tag))).length
+        const hueDistance = Math.abs(hueFromHex(image.palette[0]) - sourceHue)
+        const colorScore = 1 - Math.min(hueDistance, 360 - hueDistance) / 180
+        return { image, score: tagScore * 2 + colorScore }
+      })
+      .filter((entry) => entry.score > 0.45)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 8)
+      .map((entry) => entry.image.id)
+    setSelectedReferenceIds(new Set([imageId, ...similarIds]))
+    setLibraryStatus(`${similarIds.length} similar reference${similarIds.length === 1 ? '' : 's'} selected`)
+  }
+
+  async function importMermaidDiagram(source: string) {
+    try {
+      const { default: mermaid } = await import('mermaid')
+      mermaid.initialize({ startOnLoad: false, securityLevel: 'strict' })
+      await mermaid.parse(source, { suppressErrors: false })
+    } catch {
+      setLibraryStatus('Mermaid syntax could not be parsed')
+      return
+    }
+
+    const parsed = parseMermaidFlowchart(source)
+    if (parsed.nodes.length === 0 && parsed.edges.length === 0) {
+      setLibraryStatus('Mermaid import needs graph or flowchart syntax')
+      return
+    }
+
+    pushCanvasHistory()
+    const timestamp = nowIso()
+    const diagramId = `diagram-${Date.now()}`
+    const importedIdeas: Idea[] = parsed.nodes.map((node, index) => ({
+      id: `idea-${diagramId}-${node.id}`,
+      title: node.label,
+      body: `Imported from Mermaid diagram "${parsed.title}".`,
+      status: 'forming',
+      x: clamp(28 + (index % 4) * 14, 10, 90),
+      y: clamp(28 + Math.floor(index / 4) * 14, 10, 90),
+      importance: 1,
+      createdAt: timestamp,
+      addedAt: timestamp,
+      updatedAt: timestamp,
+    }))
+    const diagram: DiagramNode = {
+      id: diagramId,
+      title: parsed.title,
+      format: 'mermaid',
+      source,
+      nodeIds: importedIdeas.map((idea) => idea.id),
+      x: 50,
+      y: 18,
+      importance: 1.2,
+      createdAt: timestamp,
+      addedAt: timestamp,
+      updatedAt: timestamp,
+    }
+    const importedIdeaIdByMermaidId = new Map(parsed.nodes.map((node, index) => [node.id, importedIdeas[index].id]))
+    const importedLinks: EvidenceLink[] = []
+    parsed.edges.forEach((edge, index) => {
+      const sourceIdeaId = importedIdeaIdByMermaidId.get(edge.source)
+      const targetIdeaId = importedIdeaIdByMermaidId.get(edge.target)
+      if (!sourceIdeaId || !targetIdeaId) return
+      importedLinks.push({
+        id: `link-${diagramId}-${index}`,
+        imageId: sourceIdeaId,
+        ideaId: targetIdeaId,
+        sourceNodeId: sourceIdeaId,
+        targetNodeId: targetIdeaId,
+        sourceKind: 'idea',
+        targetKind: 'idea',
+        relation: 'supports',
+        note: edge.label ? `Mermaid edge: ${edge.label}` : `Imported edge from ${parsed.title}.`,
+        confidence: 0.74,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      })
+    })
+    setIdeas((current) => [...current, ...importedIdeas])
+    setDiagrams((current) => [...current, diagram])
+    setLinks((current) => [...current, ...importedLinks])
+    setSelection({ type: 'diagram', id: diagram.id })
+    setLibraryStatus(`${importedIdeas.length} diagram idea${importedIdeas.length === 1 ? '' : 's'} and ${importedLinks.length} link${importedLinks.length === 1 ? '' : 's'} imported`)
+  }
+
   function deleteIdea(ideaId: string) {
     if (ideas.length <= 1) return
+    pushCanvasHistory()
     const nextIdeas = ideas.filter((idea) => idea.id !== ideaId)
     setIdeas(nextIdeas)
     setLinks((current) => current.filter((link) => link.ideaId !== ideaId))
@@ -918,8 +1699,54 @@ function App() {
     if (fallback) setSelection({ type: 'idea', id: fallback.id })
   }
 
+  function deleteImage(imageId: string) {
+    pushCanvasHistory()
+    const nextImages = images.filter((image) => image.id !== imageId)
+    setImages(nextImages)
+    setLinks((current) => current.filter((link) => link.imageId !== imageId))
+    setPalettes((current) => current.filter((palette) => palette.sourceImageId !== imageId))
+    const fallbackIdea = ideas[0]
+    const fallbackImage = nextImages[0]
+    setSelection(fallbackImage ? { type: 'image', id: fallbackImage.id } : { type: 'idea', id: fallbackIdea?.id ?? 'idea-ritual-tools' })
+  }
+
+  function deletePalette(paletteId: string) {
+    pushCanvasHistory()
+    const nextPalettes = palettes.filter((palette) => palette.id !== paletteId)
+    setPalettes(nextPalettes)
+    setSelection(nextPalettes[0] ? { type: 'palette', id: nextPalettes[0].id } : { type: 'idea', id: ideas[0]?.id ?? 'idea-ritual-tools' })
+  }
+
+  function deleteDiagram(diagramId: string) {
+    const diagram = diagrams.find((candidate) => candidate.id === diagramId)
+    if (!diagram) return
+    pushCanvasHistory()
+    const diagramIdeaIds = new Set(diagram.nodeIds)
+    const nextIdeas = ideas.filter((idea) => !diagramIdeaIds.has(idea.id))
+    const fallbackIdeas = nextIdeas.length > 0 ? nextIdeas : [createFallbackIdea()]
+    setDiagrams((current) => current.filter((candidate) => candidate.id !== diagramId))
+    setIdeas(fallbackIdeas)
+    setLinks((current) =>
+      current.filter(
+        (link) =>
+          !diagramIdeaIds.has(link.ideaId) &&
+          !diagramIdeaIds.has(link.sourceNodeId ?? '') &&
+          !diagramIdeaIds.has(link.targetNodeId ?? ''),
+      ),
+    )
+    setSelection({ type: 'idea', id: fallbackIdeas[0].id })
+  }
+
+  function deletePlaceholder(placeholderId: string) {
+    pushCanvasHistory()
+    const nextPlaceholders = placeholders.filter((placeholder) => placeholder.id !== placeholderId)
+    setPlaceholders(nextPlaceholders)
+    setSelection(nextPlaceholders[0] ? { type: 'placeholder', id: nextPlaceholders[0].id } : { type: 'idea', id: ideas[0]?.id ?? 'idea-ritual-tools' })
+  }
+
   function deleteLink(linkId: string) {
     const link = links.find((candidate) => candidate.id === linkId)
+    pushCanvasHistory()
     setLinks((current) => current.filter((candidate) => candidate.id !== linkId))
     if (link) setSelection({ type: 'idea', id: link.ideaId })
   }
@@ -928,6 +1755,30 @@ function App() {
     const idea = ideas.find((candidate) => candidate.id === ideaId)
     if (!idea || ideas.length <= 1) return
     setPendingDelete({ type: 'idea', id: idea.id, title: idea.title })
+  }
+
+  function requestImageDelete(imageId: string) {
+    const image = images.find((candidate) => candidate.id === imageId)
+    if (!image) return
+    setPendingDelete({ type: 'image', id: image.id, title: image.title })
+  }
+
+  function requestPaletteDelete(paletteId: string) {
+    const palette = palettes.find((candidate) => candidate.id === paletteId)
+    if (!palette) return
+    setPendingDelete({ type: 'palette', id: palette.id, title: palette.title })
+  }
+
+  function requestDiagramDelete(diagramId: string) {
+    const diagram = diagrams.find((candidate) => candidate.id === diagramId)
+    if (!diagram) return
+    setPendingDelete({ type: 'diagram', id: diagram.id, title: diagram.title })
+  }
+
+  function requestPlaceholderDelete(placeholderId: string) {
+    const placeholder = placeholders.find((candidate) => candidate.id === placeholderId)
+    if (!placeholder) return
+    setPendingDelete({ type: 'placeholder', id: placeholder.id, title: placeholder.title })
   }
 
   function requestLinkDelete(linkId: string) {
@@ -948,6 +1799,22 @@ function App() {
     setPendingDelete(null)
     if (deleteTarget.type === 'idea') {
       deleteIdea(deleteTarget.id)
+      return
+    }
+    if (deleteTarget.type === 'image') {
+      deleteImage(deleteTarget.id)
+      return
+    }
+    if (deleteTarget.type === 'palette') {
+      deletePalette(deleteTarget.id)
+      return
+    }
+    if (deleteTarget.type === 'diagram') {
+      deleteDiagram(deleteTarget.id)
+      return
+    }
+    if (deleteTarget.type === 'placeholder') {
+      deletePlaceholder(deleteTarget.id)
       return
     }
     deleteLink(deleteTarget.id)
@@ -1014,7 +1881,7 @@ function App() {
   }
 
   async function exportSlideshowHtml(layoutMode: SlideLayoutMode = 'auto') {
-    const slides = applySlideLayoutMode(buildSlideLayouts(ideas, images, links), layoutMode)
+    const slides = applySlideLayoutMode(buildSlideLayouts(ideas, images, links, palettes, diagrams), layoutMode)
     const html = slideLayoutsToHtml(slides, {
       title: 'Slides',
       generatedAt: new Date().toISOString(),
@@ -1092,6 +1959,48 @@ function App() {
     setSelectedReferenceIds(new Set())
   }
 
+  function snapshotForVersionArchive(label = 'Version') {
+    return {
+      ...projectSnapshot,
+      versionHistory: [],
+      outlineDrafts,
+      aiSettings: {
+        providers: aiProviders,
+        routingMode: aiRoutingMode,
+        selectedProviderId: selectedAiProviderId,
+      },
+    } satisfies ProjectSnapshot
+  }
+
+  function saveAsNewVersion(label = `Version ${versionHistory.length + 1}`) {
+    const timestamp = nowIso()
+    const record: ProjectVersionRecord = {
+      id: `version-${Date.now()}`,
+      label,
+      createdAt: timestamp,
+      snapshotJson: JSON.stringify(snapshotForVersionArchive(label)),
+    }
+    setVersionHistory((current) => [record, ...current].slice(0, 50))
+    setLibraryStatus('Version saved')
+  }
+
+  function restoreProjectVersion(versionId: string) {
+    const record = versionHistory.find((candidate) => candidate.id === versionId)
+    if (!record) return
+    try {
+      const parsed = JSON.parse(record.snapshotJson)
+      if (!isProjectSnapshot(parsed)) return
+      applyProjectSnapshot({
+        ...parsed,
+        versionHistory,
+      })
+      setLibraryStatus(`Restored ${record.label}`)
+      setIsVersionHistoryOpen(false)
+    } catch {
+      setLibraryStatus('Version restore failed')
+    }
+  }
+
   async function saveProject() {
     window.localStorage.setItem(storageKey, projectHash)
 
@@ -1122,6 +2031,11 @@ function App() {
     const savedPackage = await saveNativeProjectPackage(projectHash, selectedPath)
     setProjectPackage(savedPackage)
     setLastSavedHash(projectHash)
+  }
+
+  async function saveProjectAsNewVersion() {
+    saveAsNewVersion()
+    await Promise.resolve()
   }
 
   async function newProject() {
@@ -1190,14 +2104,35 @@ function App() {
         onImportProject={importProject}
         onNewProject={newProject}
         onOpenProject={openProject}
+        onUndo={undoCanvas}
+        onRedo={redoCanvas}
+        canUndo={canUndoCanvas}
+        canRedo={canRedoCanvas}
         onSaveProject={saveProject}
         onSaveProjectAs={saveProjectAs}
+        onSaveVersion={saveProjectAsNewVersion}
+        onOpenVersionHistory={() => setIsVersionHistoryOpen(true)}
+      />
+      <SecondaryRail
+        canUndo={canUndoCanvas}
+        canRedo={canRedoCanvas}
+        saveLabel={projectHash === lastSavedHash ? 'Saved' : 'Save'}
+        onNewProject={newProject}
+        onOpenProject={openProject}
+        onSaveProject={saveProject}
+        onSaveVersion={saveProjectAsNewVersion}
+        onOpenVersionHistory={() => setIsVersionHistoryOpen(true)}
+        onUndo={undoCanvas}
+        onRedo={redoCanvas}
+        onOpenSettings={() => setActiveView('Settings')}
       />
       <section
         className={[
           'workspace',
           isLibraryCollapsed ? 'is-library-collapsed' : '',
           isInspectorCollapsed ? 'is-inspector-collapsed' : '',
+          isLibraryFloating ? 'is-library-floating' : '',
+          isInspectorFloating ? 'is-inspector-floating' : '',
         ].filter(Boolean).join(' ')}
       >
         <EvidenceInbox
@@ -1229,6 +2164,7 @@ function App() {
           onToggleReference={toggleReferenceSelection}
           onSelect={(id) => setSelection({ type: 'image', id })}
           onToggleCollapsed={() => setIsLibraryCollapsed((current) => !current)}
+          onToggleFloating={() => setIsLibraryFloating((current) => !current)}
         />
         {activeView === 'Outline' ? (
           <OutlineView
@@ -1256,6 +2192,9 @@ function App() {
           <Graph3DView
             ideas={ideas}
             images={images}
+            palettes={palettes}
+            diagrams={diagrams}
+            placeholders={placeholders}
             links={links}
             selected={selection}
             onSelect={setSelection}
@@ -1264,23 +2203,51 @@ function App() {
           <SlideshowView
             ideas={ideas}
             images={images}
+            palettes={palettes}
+            diagrams={diagrams}
             links={links}
             selected={selection}
             status={slideshowStatus}
             onExportHtml={exportSlideshowHtml}
             onSelect={setSelection}
           />
+        ) : activeView === 'Settings' ? (
+          <SettingsView
+            providers={aiProviders}
+            taskRoutes={aiTaskRoutes}
+            routingMode={aiRoutingMode}
+            selectedProviderId={selectedAiProviderId}
+            localModelAvailable={localModelAvailable}
+            localModelStatus={localModelStatus}
+            status={aiSettingsStatus}
+            onProviderChange={updateAiProvider}
+            onProviderSecretSave={saveAiProviderSecret}
+            onProviderSecretDelete={deleteAiProviderSecret}
+            onProviderTest={testAiProvider}
+            onProviderModelsList={listAiModels}
+            onRoutingModeChange={setAiRoutingMode}
+            onSelectedProviderChange={setSelectedAiProviderId}
+          />
         ) : (
           <GraphCanvas
             ideas={ideas}
             images={images}
+            palettes={palettes}
+            diagrams={diagrams}
+            placeholders={placeholders}
             links={links}
             linkCreationRelation={linkCreationRelation}
             selected={selection}
             onSelect={setSelection}
             onCreateLink={createLink}
+            onCreateIdea={() => createIdea({ focusTitle: true })}
+            onCreatePalette={() => createPaletteNode(selection.type === 'image' ? images.find((image) => image.id === selection.id) : undefined)}
+            onCreatePlaceholder={createPlaceholder}
+            onImportMermaid={importMermaidDiagram}
             onLinkCreationRelationChange={setLinkCreationRelation}
             onNodeMove={moveGraphNode}
+            onNodeImportanceChange={changeNodeImportance}
+            onOrganize={organizeCanvas}
           />
         )}
         <Inspector
@@ -1288,16 +2255,31 @@ function App() {
           selected={selected}
           images={images}
           ideas={ideas}
+          palettes={palettes}
+          diagrams={diagrams}
+          placeholders={placeholders}
           links={links}
           onSelect={setSelection}
           onAcceptSuggestion={acceptSuggestion}
           onRejectSuggestion={rejectSuggestion}
           onRelationChange={updateRelation}
           onIdeaChange={updateIdea}
+          onImageChange={updateImage}
           onLinkChange={updateLink}
+          onPaletteChange={updatePalette}
+          onDiagramChange={updateDiagram}
+          onPlaceholderChange={updatePlaceholder}
+          onPaletteColorChange={updatePaletteColor}
+          onPaletteRegenerate={regeneratePalette}
           onReferenceTagAdd={addReferenceTag}
           onReferenceTagRemove={removeReferenceTag}
           onIdeaDelete={requestIdeaDelete}
+          onReferenceFindSimilar={findSimilarReferences}
+          onReferenceConvertToPalette={(imageId) => createPaletteNode(images.find((image) => image.id === imageId))}
+          onImageDelete={requestImageDelete}
+          onPaletteDelete={requestPaletteDelete}
+          onDiagramDelete={requestDiagramDelete}
+          onPlaceholderDelete={requestPlaceholderDelete}
           onLinkSelectedReferences={linkSelectedReferencesToIdea}
           onLinkDelete={requestLinkDelete}
           onOpenOutline={() => setActiveView('Outline')}
@@ -1315,14 +2297,144 @@ function App() {
           onIdeaTitleFocused={() => setIdeaTitleFocusId(null)}
           selectedReferenceCount={selectedReferenceIds.size}
           onToggleCollapsed={() => setIsInspectorCollapsed((current) => !current)}
+          onToggleFloating={() => setIsInspectorFloating((current) => !current)}
         />
       </section>
+      {isLibraryFloating && (
+        <FloatingPanel title="Library" defaultPosition={{ x: 72, y: 92 }} defaultSize={{ width: 330, height: 620 }}>
+          <EvidenceInbox
+            allTags={libraryTags}
+            density={density}
+            isCollapsed={false}
+            images={visibleImages}
+            selectedTag={selectedTag}
+            sortMode={sortMode}
+            totalCount={images.length}
+            batchTag={batchTag}
+            searchQuery={searchQuery}
+            status={libraryStatus}
+            selectedReferenceIds={selectedReferenceIds}
+            selected={selection}
+            onCaptureClipboard={pasteReferenceFromClipboard}
+            onCaptureScreen={captureScreenReference}
+            onBatchTagChange={setBatchTag}
+            onApplyBatchTag={applyBatchTag}
+            onClearSelection={clearReferenceSelection}
+            onDensityChange={setDensity}
+            onExportContactSheet={exportContactSheetHtml}
+            onImportEagleWebItems={importEagleWebItems}
+            onImportFolder={importReferenceFolder}
+            onImportReferences={importReferences}
+            onSearchChange={setSearchQuery}
+            onSelectedTagChange={(tag) => setSelectedTag((current) => (current === tag ? null : tag))}
+            onSortModeChange={setSortMode}
+            onToggleReference={toggleReferenceSelection}
+            onSelect={(id) => setSelection({ type: 'image', id })}
+            onToggleCollapsed={() => setIsLibraryCollapsed((current) => !current)}
+            onToggleFloating={() => setIsLibraryFloating(false)}
+          />
+        </FloatingPanel>
+      )}
+      {isInspectorFloating && (
+        <FloatingPanel title="Inspector" defaultPosition={{ x: 820, y: 92 }} defaultSize={{ width: 370, height: 620 }}>
+          <Inspector
+            isCollapsed={false}
+            selected={selected}
+            images={images}
+            ideas={ideas}
+            palettes={palettes}
+            diagrams={diagrams}
+            placeholders={placeholders}
+            links={links}
+            onSelect={setSelection}
+            onAcceptSuggestion={acceptSuggestion}
+            onRejectSuggestion={rejectSuggestion}
+            onRelationChange={updateRelation}
+            onIdeaChange={updateIdea}
+            onImageChange={updateImage}
+            onLinkChange={updateLink}
+            onPaletteChange={updatePalette}
+            onDiagramChange={updateDiagram}
+            onPlaceholderChange={updatePlaceholder}
+            onPaletteColorChange={updatePaletteColor}
+            onPaletteRegenerate={regeneratePalette}
+            onReferenceTagAdd={addReferenceTag}
+            onReferenceTagRemove={removeReferenceTag}
+            onIdeaDelete={requestIdeaDelete}
+            onReferenceFindSimilar={findSimilarReferences}
+            onReferenceConvertToPalette={(imageId) => createPaletteNode(images.find((image) => image.id === imageId))}
+            onImageDelete={requestImageDelete}
+            onPaletteDelete={requestPaletteDelete}
+            onDiagramDelete={requestDiagramDelete}
+            onPlaceholderDelete={requestPlaceholderDelete}
+            onLinkSelectedReferences={linkSelectedReferencesToIdea}
+            onLinkDelete={requestLinkDelete}
+            onOpenOutline={() => setActiveView('Outline')}
+            onRebuildOutline={rebuildOutlineDraft}
+            onReferenceOcr={runReferenceOcr}
+            onReferenceTagRefine={refineReferenceTags}
+            linkCreationRelation={linkCreationRelation}
+            onLinkCreationRelationChange={setLinkCreationRelation}
+            localModelAvailable={localModelAvailable}
+            modelRunningImageId={modelRunningImageId}
+            modelStatusByImageId={modelStatusByImageId}
+            ocrRunningImageId={ocrRunningImageId}
+            ocrStatusByImageId={ocrStatusByImageId}
+            ideaTitleFocusId={ideaTitleFocusId}
+            onIdeaTitleFocused={() => setIdeaTitleFocusId(null)}
+            selectedReferenceCount={selectedReferenceIds.size}
+            onToggleCollapsed={() => setIsInspectorCollapsed((current) => !current)}
+            onToggleFloating={() => setIsInspectorFloating(false)}
+          />
+        </FloatingPanel>
+      )}
       <ConfirmDeleteDialog
         pendingDelete={pendingDelete}
         onCancel={() => setPendingDelete(null)}
         onConfirm={confirmPendingDelete}
       />
+      <VersionHistoryDialog
+        isOpen={isVersionHistoryOpen}
+        versions={versionHistory}
+        onClose={() => setIsVersionHistoryOpen(false)}
+        onRestore={restoreProjectVersion}
+      />
     </main>
+  )
+}
+
+function FloatingPanel({
+  title,
+  defaultPosition,
+  defaultSize,
+  children,
+}: {
+  title: string
+  defaultPosition: { x: number; y: number }
+  defaultSize: { width: number; height: number }
+  children: React.ReactNode
+}) {
+  return (
+    <Rnd
+      className="floating-panel"
+      default={{
+        x: defaultPosition.x,
+        y: defaultPosition.y,
+        width: defaultSize.width,
+        height: defaultSize.height,
+      }}
+      minWidth={280}
+      minHeight={360}
+      bounds="window"
+      dragHandleClassName="floating-panel-handle"
+    >
+      <div className="floating-panel-handle" aria-label={`${title} panel`}>
+        <span>{title}</span>
+      </div>
+      <div className="floating-panel-body">
+        {children}
+      </div>
+    </Rnd>
   )
 }
 
@@ -1335,8 +2447,14 @@ function TopBar({
   onImportProject,
   onNewProject,
   onOpenProject,
+  onUndo,
+  onRedo,
+  canUndo,
+  canRedo,
   onSaveProject,
   onSaveProjectAs,
+  onSaveVersion,
+  onOpenVersionHistory,
 }: {
   activeView: ActiveView
   projectPackage: ProjectPackageInfo | null
@@ -1346,8 +2464,14 @@ function TopBar({
   onImportProject: (file: File) => void
   onNewProject: () => void
   onOpenProject: () => void
+  onUndo: () => void
+  onRedo: () => void
+  canUndo: boolean
+  canRedo: boolean
   onSaveProject: () => void
   onSaveProjectAs: () => void
+  onSaveVersion: () => void
+  onOpenVersionHistory: () => void
 }) {
   const importInput = useRef<HTMLInputElement>(null)
   const views: { label: ActiveView; icon: typeof Network }[] = [
@@ -1355,6 +2479,7 @@ function TopBar({
     { label: '3D', icon: CircleDot },
     { label: 'Slides', icon: FileText },
     { label: 'Outline', icon: FileText },
+    { label: 'Settings', icon: Settings },
   ]
 
   return (
@@ -1390,18 +2515,6 @@ function TopBar({
       </nav>
 
       <div className="top-actions">
-        {isTauriRuntime() && (
-          <>
-            <button className="quiet-button" type="button" onClick={onNewProject}>
-              <FilePlus2 size={15} />
-              New
-            </button>
-            <button className="quiet-button" type="button" onClick={onOpenProject}>
-              <FolderOpen size={15} />
-              Open
-            </button>
-          </>
-        )}
         {!isTauriRuntime() && (
           <button className="quiet-button" type="button" onClick={() => importInput.current?.click()}>
             <ArrowDownToLine size={15} />
@@ -1420,22 +2533,289 @@ function TopBar({
             event.target.value = ''
           }}
         />
-        <button className="quiet-button" type="button" onClick={onCreateIdea}>
-          <Plus size={15} />
-          Idea
-        </button>
-        <button className="primary-button" type="button" onClick={onSaveProject}>
-          <Save size={15} />
-          {saveLabel}
-        </button>
-        {isTauriRuntime() && (
-          <button className="quiet-button" type="button" onClick={onSaveProjectAs}>
-            Save As
-          </button>
-        )}
         {projectPackage && <span className="package-status">Package</span>}
       </div>
     </header>
+  )
+}
+
+function SecondaryRail({
+  canUndo,
+  canRedo,
+  saveLabel,
+  onNewProject,
+  onOpenProject,
+  onSaveProject,
+  onSaveVersion,
+  onOpenVersionHistory,
+  onUndo,
+  onRedo,
+  onOpenSettings,
+}: {
+  canUndo: boolean
+  canRedo: boolean
+  saveLabel: string
+  onNewProject: () => void
+  onOpenProject: () => void
+  onSaveProject: () => void
+  onSaveVersion: () => void
+  onOpenVersionHistory: () => void
+  onUndo: () => void
+  onRedo: () => void
+  onOpenSettings: () => void
+}) {
+  const items = [
+    { label: 'New', icon: FilePlus2, onClick: onNewProject, disabled: false },
+    { label: 'Open', icon: FolderOpen, onClick: onOpenProject, disabled: !isTauriRuntime() },
+    { label: saveLabel, icon: Save, onClick: onSaveProject, disabled: false },
+    { label: 'New version', icon: GitBranch, onClick: onSaveVersion, disabled: false },
+    { label: 'Version history', icon: FileText, onClick: onOpenVersionHistory, disabled: false },
+    { label: 'Undo', icon: Undo2, onClick: onUndo, disabled: !canUndo },
+    { label: 'Redo', icon: Redo2, onClick: onRedo, disabled: !canRedo },
+    { label: 'Settings', icon: Settings, onClick: onOpenSettings, disabled: false },
+  ]
+
+  return (
+    <aside className="secondary-rail" aria-label="File and history tools">
+      {items.map(({ label, icon: Icon, onClick, disabled }) => (
+        <button
+          key={label}
+          className="secondary-rail-button"
+          type="button"
+          aria-label={label}
+          title={label}
+          disabled={disabled}
+          onClick={onClick}
+        >
+          <Icon size={16} />
+        </button>
+      ))}
+    </aside>
+  )
+}
+
+function SettingsView({
+  providers,
+  taskRoutes,
+  routingMode,
+  selectedProviderId,
+  localModelAvailable,
+  localModelStatus,
+  status,
+  onProviderChange,
+  onProviderSecretSave,
+  onProviderSecretDelete,
+  onProviderTest,
+  onProviderModelsList,
+  onRoutingModeChange,
+  onSelectedProviderChange,
+}: {
+  providers: AiProviderProfile[]
+  taskRoutes: AiTaskRoute[]
+  routingMode: AiRoutingMode
+  selectedProviderId: string
+  localModelAvailable: boolean
+  localModelStatus: string
+  status: string
+  onProviderChange: (providerId: string, patch: Partial<Pick<AiProviderProfile, 'baseUrl' | 'model' | 'authMode'>>) => void
+  onProviderSecretSave: (providerId: string, secret: string) => void
+  onProviderSecretDelete: (providerId: string) => void
+  onProviderTest: (providerId: string) => void
+  onProviderModelsList: (providerId: string) => void
+  onRoutingModeChange: (mode: AiRoutingMode) => void
+  onSelectedProviderChange: (providerId: string) => void
+}) {
+  const remoteProviders = providers.filter((provider) => provider.authMode !== 'local')
+  const [secretDrafts, setSecretDrafts] = useState<Record<string, string>>({})
+
+  return (
+    <section className="settings-shell" aria-label="Settings">
+      <div className="settings-scroll">
+        <div className="settings-header">
+          <div>
+            <h2>Settings</h2>
+            <p>Chat subscription is not API access. Use official API key or official OAuth only.</p>
+          </div>
+          <span className="settings-status">{status}</span>
+        </div>
+
+        <section className="settings-section">
+          <div className="settings-section-heading">
+            <h3>AI Providers</h3>
+            <p>Provider profiles store metadata in the project. Secrets must live in secure storage.</p>
+          </div>
+          <div className="provider-grid">
+            {providers.map((provider) => (
+              <article className="provider-card" key={provider.id} data-status={provider.status}>
+                <div className="provider-card-header">
+                  <div>
+                    <strong>{provider.name}</strong>
+                    <span>{aiProviderTypeLabels[provider.type]}</span>
+                  </div>
+                  <em>{aiProviderStatusLabels[provider.status]}</em>
+                </div>
+                <label>
+                  <span>Auth mode</span>
+                  <select
+                    value={provider.authMode}
+                    onChange={(event) => onProviderChange(provider.id, { authMode: event.target.value as AiAuthMode })}
+                    disabled={provider.authMode === 'local'}
+                  >
+                    <option value="local">local</option>
+                    <option value="api_key">api_key</option>
+                    <option value="oauth">oauth</option>
+                    <option value="openai_compatible">openai_compatible</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Base URL</span>
+                  <input
+                    value={provider.baseUrl ?? ''}
+                    placeholder={provider.authMode === 'local' ? 'local runtime' : 'https://api.example.com/v1'}
+                    onChange={(event) => onProviderChange(provider.id, { baseUrl: event.target.value })}
+                    disabled={provider.authMode === 'local'}
+                  />
+                </label>
+                <label>
+                  <span>Model</span>
+                  <input
+                    value={provider.model}
+                    onChange={(event) => onProviderChange(provider.id, { model: event.target.value })}
+                    disabled={provider.authMode === 'local'}
+                  />
+                </label>
+                <div className="provider-task-list">
+                  {provider.defaultFor.slice(0, 3).map((task) => (
+                    <span key={task}>{aiTaskLabels[task]}</span>
+                  ))}
+                </div>
+                {provider.authMode === 'oauth' && (
+                  <div className="oauth-ready-note">
+                    <strong>OAuth-ready profile</strong>
+                    <span>Connect is disabled until this provider exposes an official desktop-safe OAuth flow for API billing.</span>
+                  </div>
+                )}
+                {provider.authMode !== 'local' && (
+                  <label>
+                    <span>Secret</span>
+                    <input
+                      value={secretDrafts[provider.id] ?? ''}
+                      type="password"
+                      placeholder={provider.secretRef ? 'Stored in Keychain' : 'API key'}
+                      onChange={(event) =>
+                        setSecretDrafts((current) => ({ ...current, [provider.id]: event.target.value }))
+                      }
+                    />
+                  </label>
+                )}
+                <div className="provider-actions-row">
+                  {provider.authMode !== 'local' && (
+                    <>
+                      <button
+                        className="quiet-button provider-test-button"
+                        type="button"
+                        onClick={() => {
+                          onProviderSecretSave(provider.id, secretDrafts[provider.id] ?? '')
+                          setSecretDrafts((current) => ({ ...current, [provider.id]: '' }))
+                        }}
+                      >
+                        Save secret
+                      </button>
+                      <button className="quiet-button provider-test-button" type="button" onClick={() => onProviderSecretDelete(provider.id)}>
+                        Delete
+                      </button>
+                    </>
+                  )}
+                  <button className="quiet-button provider-test-button" type="button" onClick={() => onProviderTest(provider.id)}>
+                    Test
+                  </button>
+                  <button className="quiet-button provider-test-button" type="button" onClick={() => onProviderModelsList(provider.id)}>
+                    Models
+                  </button>
+                  {provider.authMode === 'oauth' && (
+                    <button className="quiet-button provider-test-button" type="button" disabled>
+                      Connect OAuth
+                    </button>
+                  )}
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <section className="settings-section settings-two-column">
+          <div className="settings-panel">
+            <h3>Local Models</h3>
+            <dl className="settings-definition-list">
+              <div>
+                <dt>Apple Foundation Models</dt>
+                <dd>{localModelAvailable ? 'available' : 'unavailable'}</dd>
+              </div>
+              <div>
+                <dt>Status</dt>
+                <dd>{localModelStatus}</dd>
+              </div>
+            </dl>
+          </div>
+
+          <div className="settings-panel">
+            <h3>Defaults</h3>
+            <label>
+              <span>Task routing</span>
+              <select value={routingMode} onChange={(event) => onRoutingModeChange(event.target.value as AiRoutingMode)}>
+                {Object.keys(aiRoutingLabels).map((mode) => (
+                  <option key={mode} value={mode}>
+                    {aiRoutingLabels[mode as AiRoutingMode]}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span>Remote provider</span>
+              <select value={selectedProviderId} onChange={(event) => onSelectedProviderChange(event.target.value)}>
+                {remoteProviders.map((provider) => (
+                  <option key={provider.id} value={provider.id}>
+                    {provider.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="task-route-list" aria-label="AI task routing preview">
+              {taskRoutes.map((route) => (
+                <div className="task-route-row" key={route.task}>
+                  <span>{aiTaskLabels[route.task]}</span>
+                  <strong>{route.providerName}</strong>
+                  <em>{route.reason}</em>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <section className="settings-section settings-two-column">
+          <div className="settings-panel">
+            <h3>Secrets</h3>
+            <p>API keys and OAuth tokens are not written to project files. Provider cards save secrets to macOS Keychain and keep only a secret reference id in project metadata.</p>
+            <div className="settings-command-list">
+              <code>save_provider_secret(providerId, secret)</code>
+              <code>delete_provider_secret(providerId)</code>
+              <code>test_ai_provider(providerId)</code>
+              <code>list_ai_models(providerId)</code>
+            </div>
+          </div>
+
+          <div className="settings-panel">
+            <h3>Usage</h3>
+            <p>Remote AI remains optional. Outputs from tagging, classification, palette, outline, and diagram tasks are suggestions until accepted.</p>
+            <ul className="settings-note-list">
+              <li>OpenAI, Claude, and Gemini subscriptions have separate API billing.</li>
+              <li>Browser cookies and session tokens are never accepted.</li>
+              <li>OAuth is enabled only for official desktop-safe provider flows.</li>
+            </ul>
+          </div>
+        </section>
+      </div>
+    </section>
   )
 }
 
@@ -1512,6 +2892,7 @@ function EvidenceInbox({
   onToggleReference,
   onSelect,
   onToggleCollapsed,
+  onToggleFloating,
 }: {
   allTags: string[]
   density: LibraryDensity
@@ -1541,6 +2922,7 @@ function EvidenceInbox({
   onToggleReference: (id: string) => void
   onSelect: (id: string) => void
   onToggleCollapsed: () => void
+  onToggleFloating: () => void
 }) {
   const importInput = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
@@ -1617,6 +2999,9 @@ function EvidenceInbox({
         <div className="panel-actions">
           <button className="icon-button" type="button" aria-label="Collapse library" onClick={onToggleCollapsed}>
             <PanelLeft size={16} />
+          </button>
+          <button className="icon-button" type="button" aria-label="Undock library" onClick={onToggleFloating}>
+            <Maximize2 size={15} />
           </button>
           <button className="icon-button" type="button" aria-label="Import image" onClick={() => importInput.current?.click()}>
             <ImagePlus size={16} />
@@ -1814,23 +3199,41 @@ function EvidenceInbox({
 function GraphCanvas({
   ideas,
   images,
+  palettes,
+  diagrams,
+  placeholders,
   links,
   linkCreationRelation,
   selected,
   onSelect,
   onCreateLink,
+  onCreateIdea,
+  onCreatePalette,
+  onCreatePlaceholder,
+  onImportMermaid,
   onLinkCreationRelationChange,
   onNodeMove,
+  onNodeImportanceChange,
+  onOrganize,
 }: {
   ideas: Idea[]
   images: EvidenceImage[]
+  palettes: PaletteNode[]
+  diagrams: DiagramNode[]
+  placeholders: PlaceholderNode[]
   links: EvidenceLink[]
   linkCreationRelation: Relation
   selected: Selection
   onSelect: (selection: Selection) => void
   onCreateLink: (imageId: string, ideaId: string, relation?: Relation) => void
+  onCreateIdea: () => void
+  onCreatePalette: () => void
+  onCreatePlaceholder: () => void
+  onImportMermaid: (source: string) => void | Promise<void>
   onLinkCreationRelationChange: (relation: Relation) => void
   onNodeMove: (kind: GraphNodeKind, id: string, position: Pick<Idea, 'x' | 'y'>) => void
+  onNodeImportanceChange: (kind: GraphNodeKind, id: string, delta: number) => void
+  onOrganize: (mode: GraphOrganizeMode) => void
 }) {
   const canvasRef = useRef<HTMLDivElement>(null)
   const draggingNodeRef = useRef<{
@@ -1853,6 +3256,7 @@ function GraphCanvas({
   const [relationFilter, setRelationFilter] = useState<RelationFilter>('all')
   const [discoveryFilter, setDiscoveryFilter] = useState<DiscoveryFilter>('all')
   const [graphCap, setGraphCap] = useState<GraphCap>(300)
+  const [organizeMode, setOrganizeMode] = useState<GraphOrganizeMode>('cluster')
   const [isGraphToolsOpen, setIsGraphToolsOpen] = useState(false)
   const graphView = useMemo(
     () => filterGraphView(ideas, images, links, selected, graphScope, relationFilter),
@@ -1873,18 +3277,39 @@ function GraphCanvas({
   const graphMetrics = useMemo<GraphMetrics>(() => ({
     mode: graphMode,
     cap: graphCap,
-    totalNodes: ideas.length + images.length,
-    visibleNodes: displayView.ideas.length + displayView.images.length,
+    totalNodes: ideas.length + images.length + palettes.length + diagrams.length + placeholders.length,
+    visibleNodes: displayView.ideas.length + displayView.images.length + palettes.length + diagrams.length + placeholders.length,
     visibleIdeas: displayView.ideas.length,
     visibleImages: displayView.images.length,
     visibleLinks: displayView.links.length,
     visibleSuggestions: displaySuggestions.length,
-  }), [displaySuggestions.length, displayView, graphCap, graphMode, ideas.length, images.length])
+  }), [diagrams.length, displaySuggestions.length, displayView, graphCap, graphMode, ideas.length, images.length, palettes.length, placeholders.length])
 
   useEffect(() => {
     if (!isDevRuntime()) return
     ;(window as VixioWindow).__vixioGraphMetrics = graphMetrics
   }, [graphMetrics])
+
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+
+    function handleWheel(event: WheelEvent) {
+      if (!event.ctrlKey && !event.metaKey) return
+      const target = event.target instanceof Element ? event.target.closest<HTMLElement>('[data-node-kind][data-node-id]') : null
+      if (!target) return
+      const kind = target.dataset.nodeKind as GraphNodeKind | undefined
+      const id = target.dataset.nodeId
+      if ((kind !== 'idea' && kind !== 'image') || !id) return
+      event.preventDefault()
+      event.stopPropagation()
+      onSelect({ type: kind, id } as Selection)
+      onNodeImportanceChange(kind, id, event.deltaY < 0 ? 0.1 : -0.1)
+    }
+
+    document.addEventListener('wheel', handleWheel, { passive: false, capture: true })
+    return () => document.removeEventListener('wheel', handleWheel, { capture: true })
+  }, [onNodeImportanceChange, onSelect])
 
   function pointerPercent(event: React.PointerEvent<HTMLElement>) {
     const rect = canvasRef.current?.getBoundingClientRect()
@@ -1992,6 +3417,30 @@ function GraphCanvas({
         data-visible-nodes={graphMetrics.visibleNodes}
         ref={canvasRef}
       >
+        <div className="canvas-tool-rail" aria-label="Canvas tools">
+          <button type="button" aria-label="Select" className="is-active">
+            <LocateFixed size={15} />
+          </button>
+          <button type="button" aria-label="Add image placeholder" onClick={onCreatePlaceholder}>
+            <ImagePlus size={15} />
+          </button>
+          <button type="button" aria-label="Add palette" onClick={onCreatePalette}>
+            <CircleDot size={15} />
+          </button>
+          <button type="button" aria-label="Add idea" onClick={onCreateIdea}>
+            <Plus size={15} />
+          </button>
+          <button
+            type="button"
+            aria-label="Import Mermaid diagram"
+            onClick={() => {
+              const source = window.prompt('Paste Mermaid graph or flowchart')
+              if (source?.trim()) void onImportMermaid(source)
+            }}
+          >
+            <FileText size={15} />
+          </button>
+        </div>
         <div
           className="graph-viewport"
           style={{ transform: `translate(${graphTransform.x}px, ${graphTransform.y}px) scale(${graphTransform.scale})` }}
@@ -2008,23 +3457,37 @@ function GraphCanvas({
               </linearGradient>
             </defs>
             {displayView.links.map((link) => {
-              const image = displayView.images.find((candidate) => candidate.id === link.imageId)
-              const idea = displayView.ideas.find((candidate) => candidate.id === link.ideaId)
-              if (!image || !idea) return null
+              const source = resolveGraphNodePosition(
+                link.sourceNodeId ?? link.imageId,
+                displayView.ideas,
+                displayView.images,
+                palettes,
+                diagrams,
+                placeholders,
+              )
+              const target = resolveGraphNodePosition(
+                link.targetNodeId ?? link.ideaId,
+                displayView.ideas,
+                displayView.images,
+                palettes,
+                diagrams,
+                placeholders,
+              )
+              if (!source || !target) return null
               const active = selected.type === 'link' && selected.id === link.id
               const relatedLink = related.linkIds.has(link.id)
               return (
                 <g key={link.id} onClick={() => onSelect({ type: 'link', id: link.id })}>
                   <line
-                    x1={image.x}
-                    y1={image.y}
-                    x2={idea.x}
-                    y2={idea.y}
+                    x1={source.x}
+                    y1={source.y}
+                    x2={target.x}
+                    y2={target.y}
                     className={active ? 'edge-line is-active' : relatedLink ? 'edge-line is-related' : 'edge-line'}
                   />
                   <circle
-                    cx={(image.x + idea.x) / 2}
-                    cy={(image.y + idea.y) / 2}
+                    cx={(source.x + target.x) / 2}
+                    cy={(source.y + target.y) / 2}
                     r={active ? 1.2 : 0.65}
                     className="edge-joint"
                   />
@@ -2056,8 +3519,14 @@ function GraphCanvas({
                 selected.type === 'idea' && selected.id === idea.id ? 'is-selected' : '',
                 related.ideaIds.has(idea.id) ? 'is-related' : '',
               ].filter(Boolean).join(' ')}
+              data-node-kind="idea"
+              data-node-id={idea.id}
               type="button"
-              style={{ left: `${idea.x}%`, top: `${idea.y}%` }}
+              style={{
+                left: `${idea.x}%`,
+                top: `${idea.y}%`,
+                '--node-scale': nodeScale(idea.importance),
+              } as React.CSSProperties}
               onClick={() => onSelect({ type: 'idea', id: idea.id })}
               onPointerDown={(event) => startNodeDrag('idea', idea, event)}
               onPointerMove={(event) => moveNode('idea', idea.id, event)}
@@ -2087,8 +3556,14 @@ function GraphCanvas({
                 selected.type === 'image' && selected.id === image.id ? 'is-selected' : '',
                 related.imageIds.has(image.id) ? 'is-related' : '',
               ].filter(Boolean).join(' ')}
+              data-node-kind="image"
+              data-node-id={image.id}
               type="button"
-              style={{ left: `${image.x}%`, top: `${image.y}%` }}
+              style={{
+                left: `${image.x}%`,
+                top: `${image.y}%`,
+                '--node-scale': nodeScale(image.importance),
+              } as React.CSSProperties}
               onClick={() => onSelect({ type: 'image', id: image.id })}
               onPointerDown={(event) => startNodeDrag('image', image, event)}
               onPointerMove={(event) => moveNode('image', image.id, event)}
@@ -2097,10 +3572,94 @@ function GraphCanvas({
             >
               <ReferenceThumb image={image} />
               <span className="node-palette">
-                {image.palette.map((color) => (
-                  <i key={color} style={{ background: color }} />
+                {image.palette.map((color, index) => (
+                  <i key={`${image.id}-${index}-${color}`} style={{ background: color }} />
                 ))}
               </span>
+            </button>
+          ))}
+
+          {palettes.map((palette) => (
+            <button
+              key={palette.id}
+              className={[
+                'palette-node',
+                selected.type === 'palette' && selected.id === palette.id ? 'is-selected' : '',
+              ].filter(Boolean).join(' ')}
+              data-node-kind="palette"
+              data-node-id={palette.id}
+              type="button"
+              style={{
+                left: `${palette.x}%`,
+                top: `${palette.y}%`,
+                '--node-scale': nodeScale(palette.importance),
+              } as React.CSSProperties}
+              onClick={() => onSelect({ type: 'palette', id: palette.id })}
+              onPointerDown={(event) => startNodeDrag('palette', palette, event)}
+              onPointerMove={(event) => moveNode('palette', palette.id, event)}
+              onPointerUp={stopNodeDrag}
+              onPointerCancel={stopNodeDrag}
+            >
+              <span className="palette-strip">
+                {palette.colors.map((color, index) => (
+                  <i key={`${palette.id}-${index}-${color}`} style={{ background: color }} />
+                ))}
+              </span>
+              <strong>{palette.title}</strong>
+              <small>{palette.algorithm}</small>
+            </button>
+          ))}
+
+          {diagrams.map((diagram) => (
+            <button
+              key={diagram.id}
+              className={[
+                'diagram-node',
+                selected.type === 'diagram' && selected.id === diagram.id ? 'is-selected' : '',
+              ].filter(Boolean).join(' ')}
+              data-node-kind="diagram"
+              data-node-id={diagram.id}
+              type="button"
+              style={{
+                left: `${diagram.x}%`,
+                top: `${diagram.y}%`,
+                '--node-scale': nodeScale(diagram.importance),
+              } as React.CSSProperties}
+              onClick={() => onSelect({ type: 'diagram', id: diagram.id })}
+              onPointerDown={(event) => startNodeDrag('diagram', diagram, event)}
+              onPointerMove={(event) => moveNode('diagram', diagram.id, event)}
+              onPointerUp={stopNodeDrag}
+              onPointerCancel={stopNodeDrag}
+            >
+              <FileText size={15} />
+              <strong>{diagram.title}</strong>
+              <small>{diagram.nodeIds.length} nodes</small>
+            </button>
+          ))}
+
+          {placeholders.map((placeholder) => (
+            <button
+              key={placeholder.id}
+              className={[
+                'placeholder-node',
+                selected.type === 'placeholder' && selected.id === placeholder.id ? 'is-selected' : '',
+              ].filter(Boolean).join(' ')}
+              data-node-kind="placeholder"
+              data-node-id={placeholder.id}
+              type="button"
+              style={{
+                left: `${placeholder.x}%`,
+                top: `${placeholder.y}%`,
+                '--node-scale': nodeScale(placeholder.importance),
+              } as React.CSSProperties}
+              onClick={() => onSelect({ type: 'placeholder', id: placeholder.id })}
+              onPointerDown={(event) => startNodeDrag('placeholder', placeholder, event)}
+              onPointerMove={(event) => moveNode('placeholder', placeholder.id, event)}
+              onPointerUp={stopNodeDrag}
+              onPointerCancel={stopNodeDrag}
+            >
+              <ImagePlus size={16} />
+              <span>{placeholder.title}</span>
             </button>
           ))}
         </div>
@@ -2193,12 +3752,31 @@ function GraphCanvas({
                 ))}
               </select>
             </label>
+            <label className="graph-tools-wide">
+              <span>Organize</span>
+              <div className="graph-organize-row">
+                <select
+                  aria-label="Canvas organize mode"
+                  value={organizeMode}
+                  onChange={(event) => setOrganizeMode(event.target.value as GraphOrganizeMode)}
+                >
+                  {Object.keys(graphOrganizeLabels).map((mode) => (
+                    <option key={mode} value={mode}>
+                      {graphOrganizeLabels[mode as GraphOrganizeMode]}
+                    </option>
+                  ))}
+                </select>
+                <button type="button" onClick={() => onOrganize(organizeMode)}>
+                  Apply
+                </button>
+              </div>
+            </label>
           </div>
         )}
 
         <div className="graph-status">
           <CircleDot size={13} />
-          <span>{displayView.images.length + displayView.ideas.length}/{images.length + ideas.length}</span>
+          <span>{graphMetrics.visibleNodes}/{graphMetrics.totalNodes}</span>
           <div className="graph-mode-toggle" aria-label="Canvas mode">
             {Object.keys(graphModeLabels).map((mode) => (
               <button
@@ -2230,21 +3808,31 @@ function GraphCanvas({
 function Graph3DView({
   ideas,
   images,
+  palettes,
+  diagrams,
+  placeholders,
   links,
   selected,
   onSelect,
 }: {
   ideas: Idea[]
   images: EvidenceImage[]
+  palettes: PaletteNode[]
+  diagrams: DiagramNode[]
+  placeholders: PlaceholderNode[]
   links: EvidenceLink[]
   selected: Selection
   onSelect: (selection: Selection) => void
 }) {
   const hostRef = useRef<HTMLDivElement>(null)
   const graphRef = useRef<any>(null)
+  const threeRef = useRef<any>(null)
   const [relationFilter3D, setRelationFilter3D] = useState<RelationFilter>('all')
   const [graphScope3D, setGraphScope3D] = useState<GraphScope>('all')
-  const graphData = useMemo(() => build3DGraphData(ideas, images, links), [ideas, images, links])
+  const graphData = useMemo(
+    () => build3DGraphData(ideas, images, links, palettes, diagrams, placeholders),
+    [diagrams, ideas, images, links, palettes, placeholders],
+  )
   const relationGraphData = useMemo(
     () => filter3DGraphDataByRelation(graphData, relationFilter3D),
     [graphData, relationFilter3D],
@@ -2257,17 +3845,21 @@ function Graph3DView({
   const selectedLabel = useMemo(() => {
     if (selected.type === 'idea') return ideas.find((idea) => idea.id === selected.id)?.title
     if (selected.type === 'image') return images.find((image) => image.id === selected.id)?.title
+    if (selected.type === 'palette') return palettes.find((palette) => palette.id === selected.id)?.title
+    if (selected.type === 'diagram') return diagrams.find((diagram) => diagram.id === selected.id)?.title
+    if (selected.type === 'placeholder') return placeholders.find((placeholder) => placeholder.id === selected.id)?.title
     return links.find((link) => link.id === selected.id)?.relation
-  }, [ideas, images, links, selected])
+  }, [diagrams, ideas, images, links, palettes, placeholders, selected])
 
   useEffect(() => {
     let canceled = false
     let cleanupResize: (() => void) | null = null
 
-    import('3d-force-graph').then(({ default: ForceGraph3D }) => {
+    Promise.all([import('3d-force-graph'), import('three')]).then(([{ default: ForceGraph3D }, THREE]) => {
       if (canceled || !hostRef.current) return
       const host = hostRef.current
       const createForceGraph = ForceGraph3D as unknown as (options?: Record<string, unknown>) => any
+      threeRef.current = THREE
       const graph = createForceGraph({
         rendererConfig: { alpha: true, antialias: true, preserveDrawingBuffer: true },
       })(host)
@@ -2284,12 +3876,13 @@ function Graph3DView({
         .nodeLabel((node: any) => node.name)
         .nodeRelSize(4)
         .nodeOpacity(0.92)
+        .nodeThreeObject((node: any) => createGraph3DNodeObject(THREE, node, selected.type !== 'link' && selected.id === node.id))
         .linkOpacity(0.34)
         .cooldownTicks(120)
         .linkDirectionalParticles(1)
         .linkDirectionalParticleSpeed(0.003)
         .onNodeClick((node: any) => {
-          onSelect({ type: node.kind === 'idea' ? 'idea' : 'image', id: node.id })
+          onSelect({ type: node.kind, id: node.id } as Selection)
         })
         .linkLabel((link: any) => link.relation)
         .onLinkClick((link: any) => {
@@ -2315,8 +3908,10 @@ function Graph3DView({
   useEffect(() => {
     const graph = graphRef.current
     if (!graph) return
+    const THREE = threeRef.current
     graph
       .graphData(clone3DGraphData(filteredGraphData))
+      .nodeThreeObject((node: any) => THREE ? createGraph3DNodeObject(THREE, node, selected.type !== 'link' && selected.id === node.id) : undefined)
       .nodeColor((node: any) => {
         if (selected.type !== 'link' && selected.id === node.id) return '#d9fff6'
         return node.color
@@ -2416,6 +4011,8 @@ function Graph3DView({
 function SlideshowView({
   ideas,
   images,
+  palettes,
+  diagrams,
   links,
   selected,
   status,
@@ -2424,13 +4021,15 @@ function SlideshowView({
 }: {
   ideas: Idea[]
   images: EvidenceImage[]
+  palettes: PaletteNode[]
+  diagrams: DiagramNode[]
   links: EvidenceLink[]
   selected: Selection
   status: string
   onExportHtml: (layoutMode?: SlideLayoutMode) => void
   onSelect: (selection: Selection) => void
 }) {
-  const slides = useMemo(() => buildSlideLayouts(ideas, images, links), [ideas, images, links])
+  const slides = useMemo(() => buildSlideLayouts(ideas, images, links, palettes, diagrams), [diagrams, ideas, images, links, palettes])
   const selectedSlideIndex = Math.max(0, slides.findIndex((slide) => selected.type === 'idea' && slide.idea.id === selected.id))
   const [activeSlideIndex, setActiveSlideIndex] = useState(0)
   const [isPlaying, setIsPlaying] = useState(false)
@@ -2560,6 +4159,8 @@ function SlideshowView({
             <option value="focus">Focus</option>
             <option value="grid">Grid</option>
             <option value="stack">Stack</option>
+            <option value="palette">Palette</option>
+            <option value="diagram">Diagram</option>
           </select>
           <button type="button" aria-label="Export slides HTML" onClick={() => onExportHtml(layoutMode)}>
             <ArrowDownToLine size={14} />
@@ -2574,7 +4175,28 @@ function SlideshowView({
           </small>
         </div>
         <div className="slide-reference-layout">
-          {activeSlide.references.length > 0 ? activeSlide.references.map((image, index) => (
+          {activeSlide.layout === 'palette' && activeSlide.palettes.length > 0 ? (
+            <div className="slide-palette-layout">
+              {activeSlide.palettes.slice(0, 3).map((palette) => (
+                <button key={palette.id} type="button" className="slide-palette" onClick={() => onSelect({ type: 'palette', id: palette.id })}>
+                  <span>
+                    {palette.colors.map((color, index) => <i key={`${palette.id}-${index}-${color}`} style={{ background: color }} />)}
+                  </span>
+                  <strong>{palette.title}</strong>
+                </button>
+              ))}
+            </div>
+          ) : activeSlide.layout === 'diagram' && activeSlide.diagrams.length > 0 ? (
+            <div className="slide-diagram-layout">
+              {activeSlide.diagrams.slice(0, 2).map((diagram) => (
+                <button key={diagram.id} type="button" className="slide-diagram" onClick={() => onSelect({ type: 'diagram', id: diagram.id })}>
+                  <FileText size={24} />
+                  <strong>{diagram.title}</strong>
+                  <span>{diagram.nodeIds.length} nodes</span>
+                </button>
+              ))}
+            </div>
+          ) : activeSlide.references.length > 0 ? activeSlide.references.map((image, index) => (
             <button
               key={image.id}
               className="slide-reference"
@@ -2788,6 +4410,9 @@ function Inspector({
   selected,
   ideas,
   images,
+  palettes,
+  diagrams,
+  placeholders,
   links,
   linkCreationRelation,
   localModelAvailable,
@@ -2801,18 +4426,31 @@ function Inspector({
   onRejectSuggestion,
   onRelationChange,
   onIdeaChange,
+  onImageChange,
   onLinkChange,
+  onPaletteChange,
+  onDiagramChange,
+  onPlaceholderChange,
+  onPaletteColorChange,
+  onPaletteRegenerate,
   onLinkCreationRelationChange,
   onReferenceTagAdd,
   onReferenceTagRemove,
   onReferenceOcr,
   onReferenceTagRefine,
+  onReferenceFindSimilar,
+  onReferenceConvertToPalette,
   onIdeaTitleFocused,
   onIdeaDelete,
+  onImageDelete,
+  onPaletteDelete,
+  onDiagramDelete,
+  onPlaceholderDelete,
   onLinkSelectedReferences,
   onLinkDelete,
   onOpenOutline,
   onRebuildOutline,
+  onToggleFloating,
   ocrRunningImageId,
   ocrStatusByImageId,
 }: {
@@ -2820,6 +4458,9 @@ function Inspector({
   selected: ReturnType<typeof resolveSelection>
   ideas: Idea[]
   images: EvidenceImage[]
+  palettes: PaletteNode[]
+  diagrams: DiagramNode[]
+  placeholders: PlaceholderNode[]
   links: EvidenceLink[]
   linkCreationRelation: Relation
   localModelAvailable: boolean
@@ -2835,18 +4476,31 @@ function Inspector({
   onRejectSuggestion: (imageId: string, tag: string) => void
   onRelationChange: (linkId: string, relation: Relation) => void
   onIdeaChange: (ideaId: string, patch: Partial<Pick<Idea, 'title' | 'body'>>) => void
+  onImageChange: (imageId: string, patch: Partial<Pick<EvidenceImage, 'title' | 'sourceUrl' | 'notes'>>) => void
   onLinkChange: (linkId: string, patch: Partial<Pick<EvidenceLink, 'relation' | 'note'>>) => void
+  onPaletteChange: (paletteId: string, patch: Partial<Pick<PaletteNode, 'title' | 'sourceUrl' | 'notes'>>) => void
+  onDiagramChange: (diagramId: string, patch: Partial<Pick<DiagramNode, 'title' | 'sourceUrl' | 'notes'>>) => void
+  onPlaceholderChange: (placeholderId: string, patch: Partial<Pick<PlaceholderNode, 'title' | 'sourceUrl' | 'notes'>>) => void
+  onPaletteColorChange: (paletteId: string, colorIndex: number, color: string) => void
+  onPaletteRegenerate: (paletteId: string, algorithm: PaletteHarmony) => void
   onLinkCreationRelationChange: (relation: Relation) => void
   onReferenceTagAdd: (imageId: string, tag: string) => void
   onReferenceTagRemove: (imageId: string, tag: string) => void
   onReferenceOcr: (imageId: string) => void
   onReferenceTagRefine: (imageId: string) => void
+  onReferenceFindSimilar: (imageId: string) => void
+  onReferenceConvertToPalette: (imageId: string) => void
   onIdeaTitleFocused: () => void
   onIdeaDelete: (ideaId: string) => void
+  onImageDelete: (imageId: string) => void
+  onPaletteDelete: (paletteId: string) => void
+  onDiagramDelete: (diagramId: string) => void
+  onPlaceholderDelete: (placeholderId: string) => void
   onLinkSelectedReferences: (ideaId: string) => void
   onLinkDelete: (linkId: string) => void
   onOpenOutline: () => void
   onRebuildOutline: () => void
+  onToggleFloating: () => void
 }) {
   const titleInputRef = useRef<HTMLInputElement>(null)
   const ideaLinks = selected.kind === 'idea'
@@ -2894,9 +4548,14 @@ function Inspector({
           <p className="panel-kicker">Inspector</p>
           <h2>{selected.heading}</h2>
         </div>
-        <button className="icon-button" type="button" aria-label="Collapse inspector" onClick={onToggleCollapsed}>
-          <PanelRight size={16} />
-        </button>
+        <div className="panel-actions">
+          <button className="icon-button" type="button" aria-label="Undock inspector" onClick={onToggleFloating}>
+            <Maximize2 size={15} />
+          </button>
+          <button className="icon-button" type="button" aria-label="Collapse inspector" onClick={onToggleCollapsed}>
+            <PanelRight size={16} />
+          </button>
+        </div>
       </div>
 
       {selected.kind === 'idea' && (
@@ -2962,6 +4621,7 @@ function Inspector({
             <Bot size={15} />
             Create outline
           </button>
+          <NodeMetadata node={selected.idea} />
           <button className="danger-action" type="button" onClick={() => onIdeaDelete(selected.idea.id)}>
             Delete idea
           </button>
@@ -2972,7 +4632,23 @@ function Inspector({
         <>
           <ReferenceThumb image={selected.image} className="inspector-image" />
           <section className="inspector-card inspector-lede">
-            <h3>{selected.image.title}</h3>
+            <input
+              className="title-input"
+              value={selected.image.title}
+              onChange={(event) => onImageChange(selected.image.id, { title: event.target.value })}
+            />
+            <textarea
+              className="note-input"
+              placeholder="Notes..."
+              value={selected.image.notes ?? ''}
+              onChange={(event) => onImageChange(selected.image.id, { notes: event.target.value })}
+            />
+            <input
+              className="title-input"
+              placeholder="Source URL"
+              value={selected.image.sourceUrl ?? ''}
+              onChange={(event) => onImageChange(selected.image.id, { sourceUrl: event.target.value })}
+            />
             <details className="metadata-disclosure">
               <summary>
                 <Database size={13} />
@@ -3019,6 +4695,16 @@ function Inspector({
             onRunOcr={() => onReferenceOcr(selected.image.id)}
             onRefineTags={() => onReferenceTagRefine(selected.image.id)}
           />
+          <section className="inspector-card utility-card">
+            <button className="inline-action" type="button" onClick={() => onReferenceFindSimilar(selected.image.id)}>
+              <Search size={13} />
+              Find similar
+            </button>
+            <button className="inline-action" type="button" onClick={() => onReferenceConvertToPalette(selected.image.id)}>
+              <CircleDot size={13} />
+              Convert to palette
+            </button>
+          </section>
           <section className="inspector-card">
             <div className="section-heading">
               <Link2 size={14} />
@@ -3040,6 +4726,10 @@ function Inspector({
               ))}
             />
           </section>
+          <NodeMetadata node={selected.image} />
+          <button className="danger-action" type="button" onClick={() => onImageDelete(selected.image.id)}>
+            Delete reference
+          </button>
         </>
       )}
 
@@ -3108,6 +4798,144 @@ function Inspector({
           </button>
         </>
       )}
+
+      {selected.kind === 'palette' && (
+        <>
+          <section className="inspector-card">
+            <div className="section-heading">
+              <CircleDot size={14} />
+              Palette
+              <span>{palettes.length}</span>
+            </div>
+            <input
+              className="title-input"
+              value={selected.palette.title}
+              onChange={(event) => onPaletteChange(selected.palette.id, { title: event.target.value })}
+            />
+            <div className="palette-inspector-strip">
+              {selected.palette.colors.map((color, index) => (
+                <i key={`${selected.palette.id}-${index}-${color}`} style={{ background: color }} />
+              ))}
+            </div>
+            <textarea
+              className="note-input"
+              placeholder="Notes..."
+              value={selected.palette.notes ?? ''}
+              onChange={(event) => onPaletteChange(selected.palette.id, { notes: event.target.value })}
+            />
+            <input
+              className="title-input"
+              placeholder="Source URL"
+              value={selected.palette.sourceUrl ?? ''}
+              onChange={(event) => onPaletteChange(selected.palette.id, { sourceUrl: event.target.value })}
+            />
+          </section>
+          <section className="inspector-card">
+            <label className="field-label" htmlFor="palette-color">
+              Color
+            </label>
+            <HexColorPicker
+              color={selected.palette.colors[0] ?? '#84cdbc'}
+              onChange={(color) => onPaletteColorChange(selected.palette.id, 0, color)}
+            />
+            <div className="palette-algorithms">
+              {(['complementary', 'analogous', 'triadic', 'split', 'monochrome', 'shades'] as PaletteHarmony[]).map((algorithm) => (
+                <button key={algorithm} type="button" onClick={() => onPaletteRegenerate(selected.palette.id, algorithm)}>
+                  {algorithm}
+                </button>
+              ))}
+            </div>
+            <button className="inline-action" type="button" onClick={() => onPaletteRegenerate(selected.palette.id, 'analogous')}>
+              <Sparkles size={13} />
+              Rebalance palette
+            </button>
+          </section>
+          <NodeMetadata node={selected.palette} />
+          <button className="danger-action" type="button" onClick={() => onPaletteDelete(selected.palette.id)}>
+            Delete palette
+          </button>
+        </>
+      )}
+
+      {selected.kind === 'diagram' && (
+        <>
+          <section className="inspector-card">
+            <div className="section-heading">
+              <FileText size={14} />
+              Diagram
+              <span>{diagrams.length}</span>
+            </div>
+            <input
+              className="title-input"
+              value={selected.diagram.title}
+              onChange={(event) => onDiagramChange(selected.diagram.id, { title: event.target.value })}
+            />
+            <dl>
+              <div>
+                <dt>Format</dt>
+                <dd>{selected.diagram.format}</dd>
+              </div>
+              <div>
+                <dt>Nodes</dt>
+                <dd>{selected.diagram.nodeIds.length}</dd>
+              </div>
+            </dl>
+            <textarea
+              className="note-input"
+              placeholder="Notes..."
+              value={selected.diagram.notes ?? ''}
+              onChange={(event) => onDiagramChange(selected.diagram.id, { notes: event.target.value })}
+            />
+            <input
+              className="title-input"
+              placeholder="Source URL"
+              value={selected.diagram.sourceUrl ?? ''}
+              onChange={(event) => onDiagramChange(selected.diagram.id, { sourceUrl: event.target.value })}
+            />
+          </section>
+          <section className="inspector-card">
+            <pre className="diagram-source-preview">{selected.diagram.source}</pre>
+          </section>
+          <NodeMetadata node={selected.diagram} />
+          <button className="danger-action" type="button" onClick={() => onDiagramDelete(selected.diagram.id)}>
+            Delete diagram
+          </button>
+        </>
+      )}
+
+      {selected.kind === 'placeholder' && (
+        <>
+          <section className="inspector-card">
+            <div className="section-heading">
+              <ImagePlus size={14} />
+              Placeholder
+              <span>{placeholders.length}</span>
+            </div>
+            <input
+              className="title-input"
+              value={selected.placeholder.title}
+              onChange={(event) => onPlaceholderChange(selected.placeholder.id, { title: event.target.value })}
+            />
+            <p className="inspector-lede">Drop or import an image later and use this as a planned evidence slot.</p>
+            <textarea
+              className="note-input"
+              placeholder="Notes..."
+              value={selected.placeholder.notes ?? ''}
+              onChange={(event) => onPlaceholderChange(selected.placeholder.id, { notes: event.target.value })}
+            />
+            <input
+              className="title-input"
+              placeholder="Source URL"
+              value={selected.placeholder.sourceUrl ?? ''}
+              onChange={(event) => onPlaceholderChange(selected.placeholder.id, { sourceUrl: event.target.value })}
+            />
+          </section>
+          <NodeMetadata node={selected.placeholder} />
+          <button className="danger-action" type="button" onClick={() => onPlaceholderDelete(selected.placeholder.id)}>
+            Delete placeholder
+          </button>
+        </>
+      )}
     </aside>
   )
 }
@@ -3137,7 +4965,7 @@ function ConfirmDeleteDialog({
 
   if (!pendingDelete) return null
 
-  const isIdea = pendingDelete.type === 'idea'
+  const deleteCopy = deleteDialogCopy(pendingDelete)
   return (
     <div className="dialog-overlay">
       <section
@@ -3148,20 +4976,151 @@ function ConfirmDeleteDialog({
         role="alertdialog"
       >
         <div>
-          <h2 id="delete-dialog-title">{isIdea ? 'Delete idea?' : 'Remove link?'}</h2>
-          <p id="delete-dialog-copy">
-            {isIdea
-              ? `Delete "${pendingDelete.title}" and its links from this project.`
-              : `Remove "${pendingDelete.title}" from the graph.`}
-          </p>
+          <h2 id="delete-dialog-title">{deleteCopy.title}</h2>
+          <p id="delete-dialog-copy">{deleteCopy.body}</p>
         </div>
         <div className="dialog-actions">
           <button ref={cancelRef} className="quiet-button" type="button" onClick={onCancel}>
             Cancel
           </button>
           <button className="danger-button" type="button" onClick={onConfirm}>
-            {isIdea ? 'Delete' : 'Remove'}
+            {deleteCopy.action}
           </button>
+        </div>
+      </section>
+    </div>
+  )
+}
+
+function NodeMetadata({
+  node,
+}: {
+  node: Pick<Idea | EvidenceImage | PaletteNode | DiagramNode | PlaceholderNode, 'importance' | 'createdAt' | 'addedAt' | 'updatedAt' | 'sourceUrl'>
+}) {
+  return (
+    <details className="inspector-card metadata-disclosure">
+      <summary>
+        <Database size={14} />
+        Properties
+      </summary>
+      <dl>
+        <div>
+          <dt>Importance</dt>
+          <dd>{formatImportance(node.importance)}</dd>
+        </div>
+        {node.sourceUrl && (
+          <div>
+            <dt>Source URL</dt>
+            <dd>{node.sourceUrl}</dd>
+          </div>
+        )}
+        {node.createdAt && (
+          <div>
+            <dt>Created</dt>
+            <dd>{formatMetadataTime(node.createdAt)}</dd>
+          </div>
+        )}
+        {node.addedAt && (
+          <div>
+            <dt>Added</dt>
+            <dd>{formatMetadataTime(node.addedAt)}</dd>
+          </div>
+        )}
+        {node.updatedAt && (
+          <div>
+            <dt>Updated</dt>
+            <dd>{formatMetadataTime(node.updatedAt)}</dd>
+          </div>
+        )}
+      </dl>
+    </details>
+  )
+}
+
+function formatImportance(value: number | undefined) {
+  return `${(value ?? 1).toFixed(1)}x`
+}
+
+function formatMetadataTime(value: string) {
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
+}
+
+function deleteDialogCopy(pendingDelete: PendingDelete) {
+  if (pendingDelete.type === 'link') {
+    return {
+      title: 'Remove link?',
+      body: `Remove "${pendingDelete.title}" from the graph.`,
+      action: 'Remove',
+    }
+  }
+  if (pendingDelete.type === 'diagram') {
+    return {
+      title: 'Delete diagram?',
+      body: `Delete "${pendingDelete.title}" and its imported idea nodes from this project.`,
+      action: 'Delete',
+    }
+  }
+  if (pendingDelete.type === 'image') {
+    return {
+      title: 'Delete reference?',
+      body: `Delete "${pendingDelete.title}" and its links from this project.`,
+      action: 'Delete',
+    }
+  }
+  return {
+    title: `Delete ${pendingDelete.type}?`,
+    body: `Delete "${pendingDelete.title}" from this project.`,
+    action: 'Delete',
+  }
+}
+
+function VersionHistoryDialog({
+  isOpen,
+  versions,
+  onClose,
+  onRestore,
+}: {
+  isOpen: boolean
+  versions: ProjectVersionRecord[]
+  onClose: () => void
+  onRestore: (versionId: string) => void
+}) {
+  if (!isOpen) return null
+
+  return (
+    <div className="dialog-overlay">
+      <section
+        aria-labelledby="version-history-title"
+        aria-modal="true"
+        className="version-dialog"
+        role="dialog"
+      >
+        <div className="version-dialog-header">
+          <div>
+            <h2 id="version-history-title">Version History</h2>
+            <p>{versions.length} saved version{versions.length === 1 ? '' : 's'}</p>
+          </div>
+          <button className="icon-button" type="button" aria-label="Close version history" onClick={onClose}>
+            <X size={15} />
+          </button>
+        </div>
+        <div className="version-list">
+          {versions.length === 0 ? (
+            <p className="empty-state">No saved versions</p>
+          ) : (
+            versions.map((version) => (
+              <article key={version.id} className="version-row">
+                <div>
+                  <strong>{version.label}</strong>
+                  <span>{formatVersionTime(version.createdAt)}</span>
+                </div>
+                <button className="quiet-button" type="button" onClick={() => onRestore(version.id)}>
+                  Restore
+                </button>
+              </article>
+            ))
+          )}
         </div>
       </section>
     </div>
@@ -3310,7 +5269,15 @@ function TagBlock({
   )
 }
 
-function resolveSelection(selection: Selection, ideas: Idea[], images: EvidenceImage[], links: EvidenceLink[]) {
+function resolveSelection(
+  selection: Selection,
+  ideas: Idea[],
+  images: EvidenceImage[],
+  links: EvidenceLink[],
+  palettes: PaletteNode[],
+  diagrams: DiagramNode[],
+  placeholders: PlaceholderNode[],
+) {
   if (selection.type === 'idea') {
     const idea = ideas.find((candidate) => candidate.id === selection.id) ?? ideas[0]
     return { kind: 'idea' as const, heading: 'Idea', idea }
@@ -3321,10 +5288,41 @@ function resolveSelection(selection: Selection, ideas: Idea[], images: EvidenceI
     return { kind: 'image' as const, heading: 'Reference', image }
   }
 
+  if (selection.type === 'palette') {
+    const palette = palettes.find((candidate) => candidate.id === selection.id) ?? palettes[0]
+    return { kind: 'palette' as const, heading: 'Palette', palette }
+  }
+
+  if (selection.type === 'diagram') {
+    const diagram = diagrams.find((candidate) => candidate.id === selection.id) ?? diagrams[0]
+    return { kind: 'diagram' as const, heading: 'Diagram', diagram }
+  }
+
+  if (selection.type === 'placeholder') {
+    const placeholder = placeholders.find((candidate) => candidate.id === selection.id) ?? placeholders[0]
+    return { kind: 'placeholder' as const, heading: 'Placeholder', placeholder }
+  }
+
   const link = links.find((candidate) => candidate.id === selection.id) ?? links[0]
   const image = images.find((candidate) => candidate.id === link.imageId) ?? images[0]
   const idea = ideas.find((candidate) => candidate.id === link.ideaId) ?? ideas[0]
   return { kind: 'link' as const, heading: 'Link', link, image, idea }
+}
+
+function resolveGraphNodePosition(
+  id: string,
+  ideas: Idea[],
+  images: EvidenceImage[],
+  palettes: PaletteNode[] = [],
+  diagrams: DiagramNode[] = [],
+  placeholders: PlaceholderNode[] = [],
+) {
+  return ideas.find((node) => node.id === id)
+    ?? images.find((node) => node.id === id)
+    ?? palettes.find((node) => node.id === id)
+    ?? diagrams.find((node) => node.id === id)
+    ?? placeholders.find((node) => node.id === id)
+    ?? null
 }
 
 function filterGraphView(
@@ -3341,12 +5339,15 @@ function filterGraphView(
 
   if (scope === 'selection') {
     const focusLinks = relationLinks.filter((link) => {
-      if (selected.type === 'idea') return link.ideaId === selected.id
-      if (selected.type === 'image') return link.imageId === selected.id
+      const source = link.sourceNodeId ?? link.imageId
+      const target = link.targetNodeId ?? link.ideaId
+      if (selected.type === 'idea') return link.ideaId === selected.id || source === selected.id || target === selected.id
+      if (selected.type === 'image') return link.imageId === selected.id || source === selected.id || target === selected.id
+      if (selected.type !== 'link') return false
       return link.id === selected.id
     })
-    const ideaIds = new Set(focusLinks.map((link) => link.ideaId))
-    const imageIds = new Set(focusLinks.map((link) => link.imageId))
+    const ideaIds = new Set(focusLinks.flatMap((link) => [link.ideaId, link.sourceKind === 'idea' ? link.sourceNodeId : undefined, link.targetKind === 'idea' ? link.targetNodeId : undefined].filter(Boolean) as string[]))
+    const imageIds = new Set(focusLinks.flatMap((link) => [link.imageId, link.sourceKind === 'image' ? link.sourceNodeId : undefined, link.targetKind === 'image' ? link.targetNodeId : undefined].filter(Boolean) as string[]))
     if (selected.type === 'idea') ideaIds.add(selected.id)
     if (selected.type === 'image') imageIds.add(selected.id)
 
@@ -3379,14 +5380,20 @@ function getSelectionNeighborhood(selected: Selection, links: EvidenceLink[]) {
   const linkIds = new Set<string>()
 
   links.forEach((link) => {
+    const source = link.sourceNodeId ?? link.imageId
+    const target = link.targetNodeId ?? link.ideaId
     const matches = selected.type === 'idea'
-      ? link.ideaId === selected.id
+      ? link.ideaId === selected.id || source === selected.id || target === selected.id
       : selected.type === 'image'
-        ? link.imageId === selected.id
+        ? link.imageId === selected.id || source === selected.id || target === selected.id
         : link.id === selected.id
     if (!matches) return
     ideaIds.add(link.ideaId)
+    if (link.sourceKind === 'idea' && link.sourceNodeId) ideaIds.add(link.sourceNodeId)
+    if (link.targetKind === 'idea' && link.targetNodeId) ideaIds.add(link.targetNodeId)
     imageIds.add(link.imageId)
+    if (link.sourceKind === 'image' && link.sourceNodeId) imageIds.add(link.sourceNodeId)
+    if (link.targetKind === 'image' && link.targetNodeId) imageIds.add(link.targetNodeId)
     linkIds.add(link.id)
   })
 
@@ -3653,6 +5660,7 @@ async function createReferenceFromFile(file: File, index: number): Promise<Evide
   const tags = mergeUniqueTags(tagsFromFilename(file.name), analysis.tags)
   const slot = Math.max(0, index - imagesSeed.length)
   const column = Math.floor(slot / 5)
+  const timestamp = nowIso()
 
   return {
     id: `img-import-${Date.now()}-${index}`,
@@ -3664,6 +5672,10 @@ async function createReferenceFromFile(file: File, index: number): Promise<Evide
     x: Math.max(62, 84 - column * 9),
     y: 18 + (slot % 5) * 14,
     thumb,
+    importance: 1,
+    createdAt: timestamp,
+    addedAt: timestamp,
+    updatedAt: timestamp,
     fingerprint: await fingerprintFile(file),
     perceptualHash: analysis.perceptualHash,
   }
@@ -3676,6 +5688,7 @@ function createReferenceFromUrl(url: URL, index: number): EvidenceImage {
   const tags = tagsFromFilename(`${url.hostname} ${fileName}`)
   const slot = Math.max(0, index - imagesSeed.length)
   const column = Math.floor(slot / 5)
+  const timestamp = nowIso()
 
   return {
     id: `img-url-${Date.now()}-${index}`,
@@ -3687,6 +5700,11 @@ function createReferenceFromUrl(url: URL, index: number): EvidenceImage {
     x: Math.max(62, 84 - column * 9),
     y: 18 + (slot % 5) * 14,
     thumb: displayUrl,
+    importance: 1,
+    createdAt: timestamp,
+    addedAt: timestamp,
+    updatedAt: timestamp,
+    sourceUrl: displayUrl,
     fingerprint: fingerprintUrl(url),
   }
 }
@@ -3698,6 +5716,7 @@ function createReferenceFromCapture(capture: VixioCapturePayload, index: number)
   const sourceTags = tagsFromFilename(`${title} ${sourceText}`)
   const slot = Math.max(0, index - imagesSeed.length)
   const column = Math.floor(slot / 5)
+  const timestamp = capture.capturedAt || nowIso()
 
   return {
     id: `img-browser-${Date.now()}-${index}`,
@@ -3713,6 +5732,11 @@ function createReferenceFromCapture(capture: VixioCapturePayload, index: number)
     x: Math.max(62, 84 - column * 9),
     y: 18 + (slot % 5) * 14,
     thumb: capture.kind === 'image' ? capture.url : capture.url,
+    importance: 1,
+    createdAt: timestamp,
+    addedAt: nowIso(),
+    updatedAt: nowIso(),
+    sourceUrl: capture.url,
     fingerprint: `browser:${capture.kind}:${capture.url.toLowerCase()}`,
   }
 }
@@ -4144,9 +6168,21 @@ function buildDuplicateCandidateDiagnostics(images: EvidenceImage[]): ProjectDia
   return diagnostics
 }
 
-function build3DGraphData(ideas: Idea[], images: EvidenceImage[], links: EvidenceLink[]) {
-  const ideaIds = new Set(ideas.map((idea) => idea.id))
-  const imageIds = new Set(images.map((image) => image.id))
+function build3DGraphData(
+  ideas: Idea[],
+  images: EvidenceImage[],
+  links: EvidenceLink[],
+  palettes: PaletteNode[] = [],
+  diagrams: DiagramNode[] = [],
+  placeholders: PlaceholderNode[] = [],
+) {
+  const nodeIds = new Set([
+    ...ideas.map((idea) => idea.id),
+    ...images.map((image) => image.id),
+    ...palettes.map((palette) => palette.id),
+    ...diagrams.map((diagram) => diagram.id),
+    ...placeholders.map((placeholder) => placeholder.id),
+  ])
 
   return {
     nodes: [
@@ -4155,22 +6191,58 @@ function build3DGraphData(ideas: Idea[], images: EvidenceImage[], links: Evidenc
         kind: 'idea',
         name: idea.title,
         color: idea.status === 'strong' ? '#84cdbc' : idea.status === 'forming' ? '#dfae67' : '#b7a4df',
-        val: idea.status === 'strong' ? 8 : 6,
+        palette: [idea.status === 'strong' ? '#84cdbc' : idea.status === 'forming' ? '#dfae67' : '#b7a4df'],
+        importance: nodeImportance(idea.importance),
+        val: (idea.status === 'strong' ? 8 : 6) * nodeImportance(idea.importance),
       })),
       ...images.map((image) => ({
         id: image.id,
         kind: 'image',
         name: image.title,
         color: image.palette[0] ?? '#b3afa5',
-        val: 3,
+        palette: image.palette,
+        thumb: image.thumb,
+        importance: nodeImportance(image.importance),
+        val: 3 * nodeImportance(image.importance),
+      })),
+      ...palettes.map((palette) => ({
+        id: palette.id,
+        kind: 'palette',
+        name: palette.title,
+        color: palette.colors[0] ?? '#84cdbc',
+        palette: palette.colors,
+        importance: nodeImportance(palette.importance),
+        val: 4 * nodeImportance(palette.importance),
+      })),
+      ...diagrams.map((diagram) => ({
+        id: diagram.id,
+        kind: 'diagram',
+        name: diagram.title,
+        color: '#dfae67',
+        palette: ['#dfae67', '#84cdbc'],
+        importance: nodeImportance(diagram.importance),
+        val: 5 * nodeImportance(diagram.importance),
+      })),
+      ...placeholders.map((placeholder) => ({
+        id: placeholder.id,
+        kind: 'placeholder',
+        name: placeholder.title,
+        color: '#7c817c',
+        palette: ['#7c817c', '#242624'],
+        importance: nodeImportance(placeholder.importance),
+        val: 3 * nodeImportance(placeholder.importance),
       })),
     ],
     links: links
-      .filter((link) => ideaIds.has(link.ideaId) && imageIds.has(link.imageId))
+      .filter((link) => {
+        const source = link.sourceNodeId ?? link.imageId
+        const target = link.targetNodeId ?? link.ideaId
+        return nodeIds.has(source) && nodeIds.has(target)
+      })
       .map((link) => ({
         id: link.id,
-        source: link.imageId,
-        target: link.ideaId,
+        source: link.sourceNodeId ?? link.imageId,
+        target: link.targetNodeId ?? link.ideaId,
         relation: link.relation,
         color: link.relation === 'supports' ? '#84cdbc' : link.relation === 'contrasts' ? '#b7a4df' : '#dfae67',
       })),
@@ -4229,6 +6301,116 @@ function clone3DGraphData(graphData: ReturnType<typeof build3DGraphData>) {
   }
 }
 
+function createGraph3DNodeObject(THREE: any, node: any, isSelected: boolean) {
+  const canvas = document.createElement('canvas')
+  canvas.width = node.kind === 'image' ? 256 : 288
+  canvas.height = node.kind === 'image' ? 170 : 92
+  const context = canvas.getContext('2d')
+  if (!context) return undefined
+
+  drawGraph3DNodeCanvas(context, canvas, node, isSelected)
+  const texture = new THREE.CanvasTexture(canvas)
+  texture.colorSpace = THREE.SRGBColorSpace
+  const material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false })
+  const sprite = new THREE.Sprite(material)
+  const importance = nodeImportance(node.importance)
+  const width = node.kind === 'image' ? 36 * importance : 42 * importance
+  const height = width * (canvas.height / canvas.width)
+  sprite.scale.set(width, height, 1)
+
+  if (node.kind === 'image' && typeof node.thumb === 'string' && node.thumb.startsWith('data:image/')) {
+    const image = new Image()
+    image.onload = () => {
+      drawGraph3DNodeCanvas(context, canvas, node, isSelected, image)
+      texture.needsUpdate = true
+    }
+    image.src = node.thumb
+  }
+
+  return sprite
+}
+
+function drawGraph3DNodeCanvas(
+  context: CanvasRenderingContext2D,
+  canvas: HTMLCanvasElement,
+  node: any,
+  isSelected: boolean,
+  thumbnail?: HTMLImageElement,
+) {
+  const radius = node.kind === 'image' ? 18 : 22
+  context.clearRect(0, 0, canvas.width, canvas.height)
+  context.fillStyle = isSelected ? 'rgba(217, 255, 246, 0.94)' : 'rgba(18, 20, 19, 0.88)'
+  drawCanvasRoundRect(context, 0, 0, canvas.width, canvas.height, radius)
+  context.fill()
+  context.strokeStyle = isSelected ? 'rgba(132, 205, 188, 0.9)' : 'rgba(255, 255, 255, 0.18)'
+  context.lineWidth = 3
+  context.stroke()
+
+  const textColor = isSelected ? '#101211' : '#f0f0ec'
+  if (node.kind === 'image') {
+    context.save()
+    drawCanvasRoundRect(context, 14, 14, canvas.width - 28, 98, 12)
+    context.clip()
+    if (thumbnail) {
+      context.drawImage(thumbnail, 14, 14, canvas.width - 28, 98)
+    } else {
+      const gradient = context.createLinearGradient(14, 14, canvas.width - 14, 112)
+      gradient.addColorStop(0, node.palette?.[0] ?? node.color ?? '#84cdbc')
+      gradient.addColorStop(1, node.palette?.[1] ?? '#232523')
+      context.fillStyle = gradient
+      context.fillRect(14, 14, canvas.width - 28, 98)
+    }
+    context.restore()
+
+    const palette = Array.isArray(node.palette) && node.palette.length > 0 ? node.palette.slice(0, 5) : [node.color ?? '#84cdbc']
+    palette.forEach((color: string, index: number) => {
+      context.fillStyle = color
+      context.fillRect(18 + index * 22, 120, 20, 10)
+    })
+    context.fillStyle = textColor
+    context.font = '600 22px system-ui, -apple-system, BlinkMacSystemFont, sans-serif'
+    context.fillText(truncateCanvasText(context, node.name ?? 'Reference', 220), 16, 154)
+    return
+  }
+
+  context.fillStyle = node.color ?? '#84cdbc'
+  context.beginPath()
+  context.arc(28, 34, 10, 0, Math.PI * 2)
+  context.fill()
+  context.fillStyle = textColor
+  context.font = '650 24px system-ui, -apple-system, BlinkMacSystemFont, sans-serif'
+  context.fillText(truncateCanvasText(context, node.name ?? 'Idea', 230), 48, 39)
+  context.fillStyle = isSelected ? 'rgba(16, 18, 17, 0.72)' : 'rgba(240, 240, 236, 0.62)'
+  context.font = '500 15px system-ui, -apple-system, BlinkMacSystemFont, sans-serif'
+  context.fillText(node.kind === 'diagram' ? 'Diagram' : node.kind === 'palette' ? 'Palette' : node.kind === 'placeholder' ? 'Placeholder' : 'Idea', 48, 64)
+}
+
+function drawCanvasRoundRect(
+  context: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  radius: number,
+) {
+  context.beginPath()
+  context.moveTo(x + radius, y)
+  context.arcTo(x + width, y, x + width, y + height, radius)
+  context.arcTo(x + width, y + height, x, y + height, radius)
+  context.arcTo(x, y + height, x, y, radius)
+  context.arcTo(x, y, x + width, y, radius)
+  context.closePath()
+}
+
+function truncateCanvasText(context: CanvasRenderingContext2D, value: string, maxWidth: number) {
+  if (context.measureText(value).width <= maxWidth) return value
+  let text = value
+  while (text.length > 4 && context.measureText(`${text}...`).width > maxWidth) {
+    text = text.slice(0, -1)
+  }
+  return `${text.trim()}...`
+}
+
 function get3DGraphEndpointId(endpoint: unknown) {
   if (typeof endpoint === 'string' || typeof endpoint === 'number') return String(endpoint)
   if (endpoint && typeof endpoint === 'object' && 'id' in endpoint) {
@@ -4271,7 +6453,13 @@ function get3DRelationLegend(links: ReturnType<typeof build3DGraphData>['links']
   return [...relationMap.values()].sort((a, b) => b.count - a.count || a.relation.localeCompare(b.relation))
 }
 
-function buildSlideLayouts(ideas: Idea[], images: EvidenceImage[], links: EvidenceLink[]): SlideLayout[] {
+function buildSlideLayouts(
+  ideas: Idea[],
+  images: EvidenceImage[],
+  links: EvidenceLink[],
+  palettes: PaletteNode[] = [],
+  diagrams: DiagramNode[] = [],
+): SlideLayout[] {
   const imageById = new Map(images.map((image) => [image.id, image]))
 
   return [...ideas]
@@ -4285,8 +6473,14 @@ function buildSlideLayouts(ideas: Idea[], images: EvidenceImage[], links: Eviden
         .filter((image): image is EvidenceImage => Boolean(image))
         .slice(0, 6)
       const relationMix = getSlideRelationMix(ideaLinks)
-      const { layout, reason: layoutReason } = resolveSlideAutoLayout(idea, references, ideaLinks, relationMix)
-      const accent = references[0]?.palette[0] ?? (idea.status === 'strong' ? '#84cdbc' : idea.status === 'forming' ? '#dfae67' : '#b7a4df')
+      const relatedDiagrams = diagrams.filter((diagram) => diagram.nodeIds.includes(idea.id))
+      const referenceIds = new Set(references.map((reference) => reference.id))
+      const relatedPalettes = [
+        ...palettes.filter((palette) => palette.sourceImageId && referenceIds.has(palette.sourceImageId)),
+        ...palettes.filter((palette) => !palette.sourceImageId).slice(0, 1),
+      ].slice(0, 3)
+      const { layout, reason: layoutReason } = resolveSlideAutoLayout(idea, references, ideaLinks, relationMix, relatedPalettes, relatedDiagrams)
+      const accent = relatedPalettes[0]?.colors[0] ?? references[0]?.palette[0] ?? (idea.status === 'strong' ? '#84cdbc' : idea.status === 'forming' ? '#dfae67' : '#b7a4df')
 
       return {
         id: `slide-${idea.id}`,
@@ -4294,6 +6488,8 @@ function buildSlideLayouts(ideas: Idea[], images: EvidenceImage[], links: Eviden
         title: idea.title,
         summary: idea.body || 'No summary yet.',
         references,
+        palettes: relatedPalettes,
+        diagrams: relatedDiagrams,
         relationCount: ideaLinks.length,
         layout,
         layoutReason,
@@ -4308,7 +6504,7 @@ function applySlideLayoutMode(slides: SlideLayout[], layoutMode: SlideLayoutMode
   return slides.map((slide) => ({
     ...slide,
     layout: layoutMode,
-    layoutReason: layoutMode === 'focus' ? 'manual focus' : layoutMode === 'grid' ? 'manual grid' : 'manual stack',
+    layoutReason: `manual ${layoutMode}`,
   }))
 }
 
@@ -4317,6 +6513,8 @@ function resolveSlideAutoLayout(
   references: EvidenceImage[],
   links: EvidenceLink[],
   relationMix: Relation[],
+  palettes: PaletteNode[],
+  diagrams: DiagramNode[],
 ): { layout: SlideLayout['layout']; reason: string } {
   const referenceCount = references.length
   const bodyWordCount = countWords(idea.body)
@@ -4326,6 +6524,8 @@ function resolveSlideAutoLayout(
   const variedRelations = relationMix.length >= 3
   const textHeavy = bodyWordCount >= 22
 
+  if (diagrams.length > 0) return { layout: 'diagram', reason: 'diagram structure' }
+  if (palettes.length > 0 && referenceCount <= 4) return { layout: 'palette', reason: 'palette evidence' }
   if (referenceCount <= 1) return { layout: 'focus', reason: referenceCount === 0 ? 'needs evidence' : 'single anchor' }
   if (denseEvidence || (referenceCount >= 4 && (variedRelations || textHeavy))) {
     return { layout: 'stack', reason: variedRelations ? 'mixed evidence' : 'dense board' }
@@ -4433,16 +6633,350 @@ function formatDraftTime(value: string) {
   return `Saved ${date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`
 }
 
+function formatVersionTime(value: string) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return 'Saved version'
+  return date.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+}
+
+function nowIso() {
+  return new Date().toISOString()
+}
+
+function nodeImportance(value: number | undefined) {
+  return clamp(value ?? 1, 0.25, 3)
+}
+
+function adjustImportance(value: number | undefined, delta: number) {
+  return Number(clamp(nodeImportance(value) + delta, 0.25, 3).toFixed(2))
+}
+
+function nodeScale(value: number | undefined) {
+  return Number((0.84 + nodeImportance(value) * 0.16).toFixed(2))
+}
+
+function organizeGraphLayout(
+  mode: GraphOrganizeMode,
+  ideas: Idea[],
+  images: EvidenceImage[],
+  links: EvidenceLink[],
+  selected: Selection,
+) {
+  const timestamp = nowIso()
+  const linkCountByIdea = new Map<string, number>()
+  links.forEach((link) => linkCountByIdea.set(link.ideaId, (linkCountByIdea.get(link.ideaId) ?? 0) + 1))
+
+  const nextIdeas = ideas.map((idea) => ({ ...idea }))
+  const nextImages = images.map((image) => ({ ...image }))
+  const ideaById = new Map(nextIdeas.map((idea) => [idea.id, idea]))
+  const imageById = new Map(nextImages.map((image) => [image.id, image]))
+  const selectedIdea = selected.type === 'idea' ? ideaById.get(selected.id) : undefined
+  const selectedImage = selected.type === 'image' ? imageById.get(selected.id) : undefined
+
+  function placeIdea(idea: Idea, x: number, y: number) {
+    idea.x = clamp(x, 8, 92)
+    idea.y = clamp(y, 8, 92)
+    idea.updatedAt = timestamp
+  }
+
+  function placeImage(image: EvidenceImage, x: number, y: number) {
+    image.x = clamp(x, 5, 95)
+    image.y = clamp(y, 6, 94)
+    image.updatedAt = timestamp
+  }
+
+  function placeImageGrid(items: EvidenceImage[], startX: number, startY: number, columns: number, stepX = 10, stepY = 12) {
+    items.forEach((image, index) => {
+      placeImage(image, startX + (index % columns) * stepX, startY + Math.floor(index / columns) * stepY)
+    })
+  }
+
+  if (mode === 'grid') {
+    nextIdeas.forEach((idea, index) => placeIdea(idea, 18 + (index % 4) * 20, 16 + Math.floor(index / 4) * 16))
+    placeImageGrid(nextImages, 12, 42, 8)
+    return { ideas: nextIdeas, images: nextImages }
+  }
+
+  if (mode === 'timeline') {
+    const dated = [...nextIdeas, ...nextImages].sort((a, b) => {
+      const aDate = new Date(a.createdAt || a.addedAt || a.updatedAt || 0).getTime()
+      const bDate = new Date(b.createdAt || b.addedAt || b.updatedAt || 0).getTime()
+      return aDate - bDate || a.title.localeCompare(b.title)
+    })
+    dated.forEach((node, index) => {
+      const x = 12 + (index % 7) * 13
+      const y = 18 + Math.floor(index / 7) * 13
+      if ('status' in node) placeIdea(node, x, y)
+      else placeImage(node, x, y)
+    })
+    return { ideas: nextIdeas, images: nextImages }
+  }
+
+  if (mode === 'palette') {
+    nextIdeas.forEach((idea, index) => placeIdea(idea, 16 + (index % 5) * 17, 16))
+    const sortedImages = [...nextImages].sort((a, b) => hueFromHex(a.palette[0]) - hueFromHex(b.palette[0]))
+    placeImageGrid(sortedImages, 10, 38, 8)
+    return { ideas: nextIdeas, images: nextImages }
+  }
+
+  if (mode === 'importance') {
+    const focus = selectedIdea || selectedImage || [...nextIdeas, ...nextImages].sort((a, b) => nodeImportance(b.importance) - nodeImportance(a.importance))[0]
+    if (focus) {
+      if ('status' in focus) placeIdea(focus, 50, 46)
+      else placeImage(focus, 50, 46)
+      const relatedLinks = 'status' in focus
+        ? links.filter((link) => link.ideaId === focus.id)
+        : links.filter((link) => link.imageId === focus.id)
+      const relatedImages = relatedLinks.map((link) => imageById.get(link.imageId)).filter(Boolean) as EvidenceImage[]
+      const relatedIdeas = relatedLinks.map((link) => ideaById.get(link.ideaId)).filter(Boolean) as Idea[]
+      relatedIdeas.forEach((idea, index) => placeIdea(idea, 34 + index * 16, 28))
+      relatedImages.forEach((image, index) => {
+        const angle = (-Math.PI / 2) + (index / Math.max(relatedImages.length, 1)) * Math.PI * 2
+        placeImage(image, 50 + Math.cos(angle) * 24, 48 + Math.sin(angle) * 20)
+      })
+      placeImageGrid(nextImages.filter((image) => image.id !== focus.id && !relatedImages.some((related) => related.id === image.id)), 10, 74, 8, 10, 9)
+    }
+    return { ideas: nextIdeas, images: nextImages }
+  }
+
+  const sortedIdeas = [...nextIdeas].sort((a, b) => {
+    if (mode === 'flow') return (linkCountByIdea.get(b.id) ?? 0) - (linkCountByIdea.get(a.id) ?? 0) || a.title.localeCompare(b.title)
+    return a.title.localeCompare(b.title)
+  })
+
+  sortedIdeas.forEach((idea, index) => {
+    if (mode === 'flow') {
+      placeIdea(idea, 18 + (index / Math.max(sortedIdeas.length - 1, 1)) * 64, 32 + (index % 2) * 12)
+      return
+    }
+    const angle = (-Math.PI / 2) + (index / Math.max(sortedIdeas.length, 1)) * Math.PI * 2
+    placeIdea(idea, 50 + Math.cos(angle) * 26, 48 + Math.sin(angle) * 22)
+  })
+
+  const linkedImageIds = new Set<string>()
+  sortedIdeas.forEach((idea, ideaIndex) => {
+    const ideaLinks = links.filter((link) => link.ideaId === idea.id)
+    ideaLinks.forEach((link, linkIndex) => {
+      const image = imageById.get(link.imageId)
+      if (!image || linkedImageIds.has(image.id)) return
+      linkedImageIds.add(image.id)
+      const ringSize = Math.max(ideaLinks.length, 1)
+      const angle = (-Math.PI / 2) + (linkIndex / ringSize) * Math.PI * 2
+      const radiusX = mode === 'flow' ? 8 + nodeImportance(image.importance) * 2 : 14
+      const radiusY = mode === 'flow' ? 10 : 12
+      placeImage(image, idea.x + Math.cos(angle) * radiusX, idea.y + Math.sin(angle) * radiusY + (ideaIndex % 2) * 2)
+    })
+  })
+  placeImageGrid(nextImages.filter((image) => !linkedImageIds.has(image.id)), 10, 76, 8, 10, 9)
+
+  return { ideas: nextIdeas, images: nextImages }
+}
+
+function organizeAuxiliaryNodes(
+  mode: GraphOrganizeMode,
+  palettes: PaletteNode[],
+  diagrams: DiagramNode[],
+  placeholders: PlaceholderNode[],
+) {
+  const timestamp = nowIso()
+  const nextPalettes = palettes.map((palette) => ({ ...palette }))
+  const nextDiagrams = diagrams.map((diagram) => ({ ...diagram }))
+  const nextPlaceholders = placeholders.map((placeholder) => ({ ...placeholder }))
+  const all = [
+    ...nextDiagrams.map((node) => ({ kind: 'diagram' as const, node })),
+    ...nextPalettes.map((node) => ({ kind: 'palette' as const, node })),
+    ...nextPlaceholders.map((node) => ({ kind: 'placeholder' as const, node })),
+  ]
+
+  all.forEach((entry, index) => {
+    let x = 78
+    let y = 18 + index * 12
+    if (mode === 'grid') {
+      x = 14 + (index % 5) * 16
+      y = 78 + Math.floor(index / 5) * 10
+    } else if (mode === 'timeline') {
+      x = 12 + (index % 7) * 13
+      y = 70 + Math.floor(index / 7) * 10
+    } else if (mode === 'palette' && entry.kind === 'palette') {
+      x = 18 + (index % 4) * 18
+      y = 30
+    } else if (mode === 'importance') {
+      x = 72 + index * 6
+      y = 24 + index * 8
+    }
+    entry.node.x = clamp(x, 8, 92)
+    entry.node.y = clamp(y, 8, 92)
+    entry.node.updatedAt = timestamp
+  })
+
+  return {
+    palettes: nextPalettes,
+    diagrams: nextDiagrams,
+    placeholders: nextPlaceholders,
+  }
+}
+
+function hueFromHex(hex: string | undefined) {
+  if (!hex) return 0
+  const clean = hex.replace('#', '')
+  if (clean.length < 6) return 0
+  const red = Number.parseInt(clean.slice(0, 2), 16) / 255
+  const green = Number.parseInt(clean.slice(2, 4), 16) / 255
+  const blue = Number.parseInt(clean.slice(4, 6), 16) / 255
+  const max = Math.max(red, green, blue)
+  const min = Math.min(red, green, blue)
+  const delta = max - min
+  if (delta === 0) return 0
+  if (max === red) return ((green - blue) / delta + (green < blue ? 6 : 0)) * 60
+  if (max === green) return ((blue - red) / delta + 2) * 60
+  return ((red - green) / delta + 4) * 60
+}
+
+function parseMermaidFlowchart(source: string) {
+  const lines = source
+    .split(/\r?\n/)
+    .map((line) => line.replace(/%%.*$/, '').trim())
+    .filter(Boolean)
+  const title = lines.find((line) => /^(graph|flowchart)\s+/i.test(line))?.replace(/^(graph|flowchart)\s+/i, 'Mermaid ') || 'Mermaid diagram'
+  const nodeMap = new Map<string, string>()
+  const edges: { source: string; target: string; label?: string }[] = []
+  const edgePattern = /^(.+?)\s*[-.=]+(?:\|([^|]+)\|)?[->ox.]+\s*(.+)$/
+
+  function register(raw: string) {
+    const cleaned = raw.trim().replace(/[;,]$/, '')
+    const match = cleaned.match(/^([A-Za-z0-9_-]+)(?:\[(.+)\]|\((.+)\)|\{(.+)\}|"(.+)")?$/)
+    if (!match) return cleaned
+    const id = match[1]
+    const explicitLabel = match[2] || match[3] || match[4] || match[5]
+    if (explicitLabel || !nodeMap.has(id)) {
+      nodeMap.set(id, normalizeMermaidLabel(explicitLabel || id))
+    }
+    return id
+  }
+
+  lines.forEach((line) => {
+    if (/^(graph|flowchart)\s+/i.test(line)) return
+    const edgeMatch = line.match(edgePattern)
+    if (edgeMatch) {
+      const sourceId = register(edgeMatch[1])
+      const targetId = register(edgeMatch[3])
+      edges.push({ source: sourceId, target: targetId, label: edgeMatch[2]?.trim() })
+      return
+    }
+    register(line)
+  })
+
+  return {
+    title,
+    nodes: [...nodeMap.entries()].map(([id, label]) => ({ id, label })),
+    edges,
+  }
+}
+
+function normalizeMermaidLabel(value: string) {
+  return value
+    .replace(/^["']|["']$/g, '')
+    .replace(/<br\s*\/?>/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function generatePaletteHarmony(baseHex: string, harmony: PaletteHarmony) {
+  const baseHsl = hexToHsl(baseHex)
+  const hueSets: Record<PaletteHarmony, number[]> = {
+    complementary: [0, 180, 180, 0, 0],
+    analogous: [-32, -14, 0, 18, 36],
+    triadic: [0, 120, 240, 120, 240],
+    split: [0, 150, 210, 30, -30],
+    monochrome: [0, 0, 0, 0, 0],
+    shades: [0, 0, 0, 0, 0],
+  }
+  const lightnessSteps: Record<PaletteHarmony, number[]> = {
+    complementary: [0, 0.04, -0.08, 0.16, -0.18],
+    analogous: [-0.08, 0.02, 0, 0.08, -0.14],
+    triadic: [0, 0.02, 0.04, -0.12, 0.16],
+    split: [0, 0.04, -0.02, 0.12, -0.16],
+    monochrome: [-0.22, -0.1, 0, 0.12, 0.24],
+    shades: [-0.32, -0.16, 0, 0.16, 0.3],
+  }
+  const toOklch = converter('oklch')
+  return hueSets[harmony].map((offset, index) => {
+    const hex = hslToHex({
+      h: (baseHsl.h + offset + 360) % 360,
+      s: harmony === 'monochrome' || harmony === 'shades' ? baseHsl.s * (0.7 + index * 0.06) : baseHsl.s,
+      l: clamp(baseHsl.l + lightnessSteps[harmony][index], 0.12, 0.88),
+    })
+    const oklchColor = toOklch(hex)
+    return oklchColor ? formatHex(oklchColor) : hex
+  })
+}
+
+function hexToHsl(hex: string) {
+  const hslMatch = hex.match(/^hsl\(\s*([\d.]+)(?:deg)?[\s,]+([\d.]+)%[\s,]+([\d.]+)%\s*\)$/i)
+  if (hslMatch) {
+    return {
+      h: Number.parseFloat(hslMatch[1]) % 360,
+      s: clamp(Number.parseFloat(hslMatch[2]) / 100, 0, 1),
+      l: clamp(Number.parseFloat(hslMatch[3]) / 100, 0, 1),
+    }
+  }
+  const clean = hex.replace('#', '')
+  if (!/^[0-9a-f]{6}$/i.test(clean)) return { h: 176, s: 0.34, l: 0.66 }
+  const red = Number.parseInt(clean.slice(0, 2), 16) / 255
+  const green = Number.parseInt(clean.slice(2, 4), 16) / 255
+  const blue = Number.parseInt(clean.slice(4, 6), 16) / 255
+  const max = Math.max(red, green, blue)
+  const min = Math.min(red, green, blue)
+  const lightness = (max + min) / 2
+  const delta = max - min
+  if (delta === 0) return { h: 0, s: 0, l: lightness }
+  const saturation = delta / (1 - Math.abs(2 * lightness - 1))
+  let hue = 0
+  if (max === red) hue = ((green - blue) / delta + (green < blue ? 6 : 0)) * 60
+  else if (max === green) hue = ((blue - red) / delta + 2) * 60
+  else hue = ((red - green) / delta + 4) * 60
+  return { h: hue, s: saturation, l: lightness }
+}
+
+function hslToHex({ h, s, l }: { h: number; s: number; l: number }) {
+  const chroma = (1 - Math.abs(2 * l - 1)) * s
+  const x = chroma * (1 - Math.abs(((h / 60) % 2) - 1))
+  const match = l - chroma / 2
+  const [red, green, blue] = h < 60
+    ? [chroma, x, 0]
+    : h < 120
+      ? [x, chroma, 0]
+      : h < 180
+        ? [0, chroma, x]
+        : h < 240
+          ? [0, x, chroma]
+          : h < 300
+            ? [x, 0, chroma]
+            : [chroma, 0, x]
+  const toHex = (value: number) => Math.round((value + match) * 255).toString(16).padStart(2, '0')
+  return `#${toHex(red)}${toHex(green)}${toHex(blue)}`
+}
+
 function toProjectSnapshot(
   ideas: Idea[],
   images: EvidenceImage[],
   links: EvidenceLink[],
   outlineDrafts: OutlineDraft[] = [],
+  palettes: PaletteNode[] = [],
+  diagrams: DiagramNode[] = [],
+  placeholders: PlaceholderNode[] = [],
+  aiSettings: AiSettingsSnapshot = defaultAiSettingsSnapshot(),
+  versionHistory: ProjectVersionRecord[] = [],
 ): ProjectSnapshot {
   return {
-    version: 1,
+    version: 2,
     ideas,
     images,
+    palettes,
+    diagrams,
+    placeholders,
+    aiSettings,
+    versionHistory,
     links,
     outlineDrafts,
   }
@@ -4450,20 +6984,32 @@ function toProjectSnapshot(
 
 function createBlankProjectSnapshot(): ProjectSnapshot {
   return {
-    version: 1,
-    ideas: [
-      {
-        id: `idea-${Date.now()}`,
-        title: 'Untitled idea',
-        body: 'Add a working note for this idea.',
-        status: 'thin',
-        x: 50,
-        y: 46,
-      },
-    ],
+    version: 2,
+    ideas: [createFallbackIdea()],
     images: [],
+    palettes: [],
+    diagrams: [],
+    placeholders: [],
+    aiSettings: defaultAiSettingsSnapshot(),
+    versionHistory: [],
     links: [],
     outlineDrafts: [],
+  }
+}
+
+function createFallbackIdea(): Idea {
+  const timestamp = nowIso()
+  return {
+    id: `idea-${Date.now()}`,
+    title: 'Untitled idea',
+    body: 'Add a working note for this idea.',
+    status: 'thin',
+    x: 50,
+    y: 46,
+    importance: 1,
+    createdAt: timestamp,
+    addedAt: timestamp,
+    updatedAt: timestamp,
   }
 }
 
@@ -4532,9 +7078,14 @@ function createBenchmarkProjectSnapshot(referenceCount: number): ProjectSnapshot
     })
 
   return {
-    version: 1,
+    version: 2,
     ideas,
     images,
+    palettes: [],
+    diagrams: [],
+    placeholders: [],
+    aiSettings: defaultAiSettingsSnapshot(),
+    versionHistory: [],
     links,
     outlineDrafts: [],
   }
@@ -4565,9 +7116,14 @@ function createDuplicateCandidateProjectSnapshot(): ProjectSnapshot {
   }
 
   return {
-    version: 1,
+    version: 2,
     ideas: ideasSeed,
     images: [...baseImages, duplicateCandidate],
+    palettes: [],
+    diagrams: [],
+    placeholders: [],
+    aiSettings: defaultAiSettingsSnapshot(),
+    versionHistory: [],
     links: linksSeed,
     outlineDrafts: [],
   }
@@ -4603,12 +7159,46 @@ function isProjectSnapshot(value: unknown): value is ProjectSnapshot {
   if (!value || typeof value !== 'object') return false
   const snapshot = value as Partial<ProjectSnapshot>
   return (
-    snapshot.version === 1 &&
+    snapshot.version === 2 &&
     Array.isArray(snapshot.ideas) &&
     snapshot.ideas.length > 0 &&
     Array.isArray(snapshot.images) &&
+    Array.isArray(snapshot.palettes) &&
+    Array.isArray(snapshot.diagrams) &&
+    Array.isArray(snapshot.placeholders) &&
+    isAiSettingsSnapshot(snapshot.aiSettings) &&
+    Array.isArray(snapshot.versionHistory) &&
     Array.isArray(snapshot.links) &&
     Array.isArray(snapshot.outlineDrafts)
+  )
+}
+
+function isAiSettingsSnapshot(value: unknown): value is AiSettingsSnapshot {
+  if (!value || typeof value !== 'object') return false
+  const settings = value as Partial<AiSettingsSnapshot>
+  return (
+    Array.isArray(settings.providers) &&
+    settings.providers.every(isAiProviderProfile) &&
+    typeof settings.selectedProviderId === 'string' &&
+    typeof settings.routingMode === 'string' &&
+    settings.routingMode in aiRoutingLabels
+  )
+}
+
+function isAiProviderProfile(value: unknown): value is AiProviderProfile {
+  if (!value || typeof value !== 'object') return false
+  const provider = value as Partial<AiProviderProfile>
+  return (
+    typeof provider.id === 'string' &&
+    typeof provider.type === 'string' &&
+    provider.type in aiProviderTypeLabels &&
+    typeof provider.name === 'string' &&
+    typeof provider.authMode === 'string' &&
+    ['local', 'api_key', 'oauth', 'openai_compatible'].includes(provider.authMode) &&
+    typeof provider.model === 'string' &&
+    typeof provider.status === 'string' &&
+    provider.status in aiProviderStatusLabels &&
+    Array.isArray(provider.defaultFor)
   )
 }
 
@@ -4623,6 +7213,10 @@ function isDevRuntime() {
 
 function isCreateIdeaShortcut(event: KeyboardEvent) {
   return (event.metaKey || event.ctrlKey) && !event.shiftKey && !event.altKey && event.key.toLowerCase() === 'n'
+}
+
+function isSettingsShortcut(event: KeyboardEvent) {
+  return (event.metaKey || event.ctrlKey) && !event.shiftKey && !event.altKey && event.key === ','
 }
 
 function isEditableEventTarget(target: EventTarget | null) {
@@ -4672,6 +7266,99 @@ async function checkNativeFoundationModelAvailability() {
 
 async function normalizeNativeTagsWithFoundationModel(textContext: string) {
   return invoke<LocalModelTagResult>('normalize_tags_with_foundation_model', { textContext })
+}
+
+async function saveNativeProviderSecret(providerId: string, secret: string) {
+  return invoke<void>('save_provider_secret', { providerId, secret })
+}
+
+async function deleteNativeProviderSecret(providerId: string) {
+  return invoke<void>('delete_provider_secret', { providerId })
+}
+
+async function testNativeAiProvider(provider: AiProviderProfile) {
+  return invoke<AiProviderTestResult>('test_ai_provider', { provider: providerRequestPayload(provider) })
+}
+
+async function listNativeAiModels(provider: AiProviderProfile) {
+  return invoke<AiModelListResult>('list_ai_models', { provider: providerRequestPayload(provider) })
+}
+
+function providerRequestPayload(provider: AiProviderProfile) {
+  return {
+    providerId: provider.id,
+    providerType: provider.type,
+    authMode: provider.authMode,
+    baseUrl: provider.baseUrl,
+  }
+}
+
+function providerStatusFromNative(status: string, connected: boolean): AiProviderStatus {
+  if (connected) return 'connected'
+  if (status === 'key_missing') return 'key_missing'
+  if (status === 'billing_separate') return 'billing_separate'
+  return 'unavailable'
+}
+
+function selectAiProviderForTask(
+  task: AiTaskKind,
+  providers: AiProviderProfile[],
+  routingMode: AiRoutingMode,
+  selectedProviderId: string,
+  explicitProviderId?: string,
+): AiTaskRoute {
+  const localProvider = providers.find((provider) => provider.authMode === 'local')
+  const selectedProvider = providers.find((provider) => provider.id === (explicitProviderId ?? selectedProviderId))
+  const taskDefault = providers.find((provider) => provider.defaultFor.includes(task) && provider.status === 'connected')
+  const availableRemote = providers.find(
+    (provider) => provider.authMode !== 'local' && provider.defaultFor.includes(task) && provider.status === 'connected',
+  )
+
+  if (explicitProviderId && selectedProvider) {
+    return providerRoute(task, selectedProvider, 'explicit user override')
+  }
+
+  if (routingMode === 'local_only') {
+    return localProvider
+      ? providerRoute(task, localProvider, 'local-only default')
+      : unavailableRoute(task, 'No local provider configured')
+  }
+
+  if (routingMode === 'selected_remote' && selectedProvider) {
+    if (selectedProvider.status === 'connected') return providerRoute(task, selectedProvider, 'selected remote provider')
+    return localProvider
+      ? providerRoute(task, localProvider, `${selectedProvider.name} unavailable; local fallback`)
+      : providerRoute(task, selectedProvider, `${selectedProvider.name} unavailable`)
+  }
+
+  if (localProvider?.status === 'connected' && localProvider.defaultFor.includes(task)) {
+    return providerRoute(task, localProvider, 'prefer local')
+  }
+
+  if (taskDefault) return providerRoute(task, taskDefault, 'task default')
+  if (availableRemote) return providerRoute(task, availableRemote, 'remote fallback')
+  if (localProvider) return providerRoute(task, localProvider, 'local fallback')
+  return unavailableRoute(task, 'No provider configured')
+}
+
+function providerRoute(task: AiTaskKind, provider: AiProviderProfile, reason: string): AiTaskRoute {
+  return {
+    task,
+    providerId: provider.id,
+    providerName: provider.name,
+    status: provider.status,
+    reason,
+  }
+}
+
+function unavailableRoute(task: AiTaskKind, reason: string): AiTaskRoute {
+  return {
+    task,
+    providerId: null,
+    providerName: 'Unavailable',
+    status: 'unavailable',
+    reason,
+  }
 }
 
 async function exportNativeOutlineMarkdown(markdown: string, projectPath?: string) {
@@ -4807,7 +7494,27 @@ function slideLayoutsToHtml(slides: SlideLayout[], metadata: { title: string; ge
   const slideMarkup = slides.length === 0
     ? '<section class="slide slide--empty"><h2>No slides</h2><p>Create ideas and link references to generate a slideshow.</p></section>'
     : slides.map((slide, index) => {
-        const references = slide.references.length === 0
+        const paletteMarkup = slide.palettes.length === 0
+          ? ''
+          : slide.palettes.map((palette) => `
+              <figure class="palette-figure" data-algorithm="${escapeAttribute(palette.algorithm)}">
+                <div class="palette-strip">${palette.colors.map((color) => `<i style="background:${escapeAttribute(color)}"></i>`).join('')}</div>
+                <figcaption>${escapeHtml(palette.title)}</figcaption>
+              </figure>
+            `).join('')
+        const diagramMarkup = slide.diagrams.length === 0
+          ? ''
+          : slide.diagrams.map((diagram) => `
+              <figure class="diagram-figure" data-format="${escapeAttribute(diagram.format)}">
+                <strong>${escapeHtml(diagram.title)}</strong>
+                <figcaption>${diagram.nodeIds.length} nodes · ${escapeHtml(diagram.format)}</figcaption>
+              </figure>
+            `).join('')
+        const references = slide.layout === 'palette' && paletteMarkup
+          ? paletteMarkup
+          : slide.layout === 'diagram' && diagramMarkup
+            ? diagramMarkup
+            : slide.references.length === 0
           ? '<div class="missing">Needs references</div>'
           : slide.references.map((reference) => {
               const thumb = reference.thumb
@@ -4822,7 +7529,7 @@ function slideLayoutsToHtml(slides: SlideLayout[], metadata: { title: string; ge
             }).join('')
 
         return `
-          <section class="slide slide--${escapeAttribute(slide.layout)}" data-layout-reason="${escapeAttribute(slide.layoutReason)}" style="--accent: ${escapeAttribute(slide.accent)}">
+          <section class="slide slide--${escapeAttribute(slide.layout)}" data-layout-reason="${escapeAttribute(slide.layoutReason)}" data-node-kind="${escapeAttribute(slide.layout)}" data-importance="${escapeAttribute(String(nodeImportance(slide.idea.importance)))}" style="--accent: ${escapeAttribute(slide.accent)}">
             <aside>
               <span>${String(index + 1).padStart(2, '0')} / ${slides.length}</span>
               <em>${escapeHtml(slide.idea.status)} · ${escapeHtml(slide.layout)}</em>
@@ -4830,7 +7537,7 @@ function slideLayoutsToHtml(slides: SlideLayout[], metadata: { title: string; ge
             <div class="copy">
               <h2>${escapeHtml(slide.title)}</h2>
               <p>${escapeHtml(slide.summary)}</p>
-              <small>${slide.relationCount} links · ${slide.references.length} references · ${escapeHtml(slide.layoutReason)} · ${escapeHtml(formatRelationMix(slide.relationMix))}</small>
+              <small>${slide.relationCount} links · ${slide.references.length} references · ${slide.palettes.length} palettes · ${slide.diagrams.length} diagrams · ${escapeHtml(slide.layoutReason)} · ${escapeHtml(formatRelationMix(slide.relationMix))}</small>
             </div>
             <div class="refs">${references}</div>
           </section>

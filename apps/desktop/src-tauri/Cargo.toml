@@ -16,6 +16,7 @@ tauri-build = { version = "2.5.2", features = [] }
 base64 = "0.22.1"
 image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "webp"] }
 rusqlite = { version = "0.40.0", features = ["bundled"] }
+reqwest = { version = "0.12.24", default-features = false, features = ["blocking", "json", "rustls-tls"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tauri = { version = "2.9.5", features = [] }

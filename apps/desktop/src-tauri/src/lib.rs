@@ -10,7 +10,7 @@ use std::{
     path::{Path, PathBuf},
     process::{Command, Output},
     thread,
-    time::{SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -27,12 +27,23 @@ const MIGRATION_OUTLINE_DRAFTS: &str = "007_outline_drafts";
 const CAPTURE_SERVER_ADDR: &str = "127.0.0.1:47653";
 const CAPTURE_EVENT: &str = "vixio:capture";
 const EAGLE_WEB_API_ADDR: &str = "127.0.0.1:41595";
+const AI_PROVIDER_KEYCHAIN_SERVICE: &str = "studio.vixio.desktop.ai-provider";
 
 #[derive(Deserialize, Serialize)]
 struct ProjectSnapshot {
     version: i64,
     ideas: Vec<IdeaRecord>,
     images: Vec<ReferenceRecord>,
+    #[serde(default)]
+    palettes: Vec<serde_json::Value>,
+    #[serde(default)]
+    diagrams: Vec<serde_json::Value>,
+    #[serde(default)]
+    placeholders: Vec<serde_json::Value>,
+    #[serde(default, rename = "aiSettings")]
+    ai_settings: serde_json::Value,
+    #[serde(default, rename = "versionHistory")]
+    version_history: Vec<serde_json::Value>,
     links: Vec<LinkRecord>,
     #[serde(rename = "outlineDrafts")]
     outline_drafts: Vec<OutlineDraftRecord>,
@@ -216,6 +227,30 @@ struct LocalModelTagResult {
     suggestions: Vec<String>,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AiProviderTestRequest {
+    provider_id: String,
+    provider_type: String,
+    auth_mode: String,
+    base_url: Option<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AiProviderTestResult {
+    connected: bool,
+    status: String,
+    message: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AiModelListResult {
+    status: String,
+    models: Vec<String>,
+}
+
 #[tauri::command]
 fn save_project_package(
     app: AppHandle,
@@ -224,7 +259,7 @@ fn save_project_package(
 ) -> Result<ProjectPackageInfo, String> {
     let snapshot: ProjectSnapshot = serde_json::from_str(&snapshot_json)
         .map_err(|error| format!("Invalid project JSON: {error}"))?;
-    if snapshot.version != 1 {
+    if snapshot.version != 2 {
         return Err("Unsupported project snapshot version".to_string());
     }
 
@@ -290,6 +325,33 @@ fn normalize_tags_with_foundation_model(
 }
 
 #[tauri::command]
+fn save_provider_secret(provider_id: String, secret: String) -> Result<(), String> {
+    let clean_provider_id = validate_provider_id(&provider_id)?;
+    if secret.trim().is_empty() {
+        return Err("Secret is empty".to_string());
+    }
+    save_secret_to_keychain(&clean_provider_id, &secret)
+}
+
+#[tauri::command]
+fn delete_provider_secret(provider_id: String) -> Result<(), String> {
+    let clean_provider_id = validate_provider_id(&provider_id)?;
+    delete_secret_from_keychain(&clean_provider_id)
+}
+
+#[tauri::command]
+fn test_ai_provider(provider: AiProviderTestRequest) -> Result<AiProviderTestResult, String> {
+    let provider_id = validate_provider_id(&provider.provider_id)?;
+    test_ai_provider_native(&provider_id, &provider)
+}
+
+#[tauri::command]
+fn list_ai_models(provider: AiProviderTestRequest) -> Result<AiModelListResult, String> {
+    let provider_id = validate_provider_id(&provider.provider_id)?;
+    list_ai_models_native(&provider_id, &provider)
+}
+
+#[tauri::command]
 fn export_outline_markdown(
     app: AppHandle,
     markdown: String,
@@ -330,6 +392,13 @@ fn export_slideshow_html(
 }
 
 fn read_project_package(project_dir: &Path) -> Result<Option<String>, String> {
+    let manifest_path = project_dir.join(MANIFEST_NAME);
+    if manifest_path.exists() {
+        return fs::read_to_string(manifest_path)
+            .map(Some)
+            .map_err(|error| error.to_string());
+    }
+
     let sqlite_path = project_dir.join(SQLITE_NAME);
     if sqlite_path.exists() {
         let conn = Connection::open(sqlite_path).map_err(|error| error.to_string())?;
@@ -340,14 +409,7 @@ fn read_project_package(project_dir: &Path) -> Result<Option<String>, String> {
             .map_err(|error| error.to_string());
     }
 
-    let manifest_path = project_dir.join(MANIFEST_NAME);
-    if !manifest_path.exists() {
-        return Ok(None);
-    }
-
-    fs::read_to_string(manifest_path)
-        .map(Some)
-        .map_err(|error| error.to_string())
+    Ok(None)
 }
 
 fn ensure_project_dirs(project_dir: &PathBuf) -> Result<(), String> {
@@ -683,6 +745,15 @@ fn read_snapshot(conn: &Connection) -> Result<ProjectSnapshot, String> {
         version,
         ideas,
         images,
+        palettes: vec![],
+        diagrams: vec![],
+        placeholders: vec![],
+        ai_settings: serde_json::json!({
+            "providers": [],
+            "routingMode": "prefer_local",
+            "selectedProviderId": "openai"
+        }),
+        version_history: vec![],
         links,
         outline_drafts,
     })
@@ -1495,6 +1566,404 @@ fn check_foundation_model_availability_native() -> Result<LocalModelAvailability
     }
 }
 
+fn validate_provider_id(provider_id: &str) -> Result<String, String> {
+    let clean = provider_id.trim();
+    if clean.is_empty() {
+        return Err("Provider id is empty".to_string());
+    }
+    if !clean
+        .chars()
+        .all(|character| character.is_ascii_alphanumeric() || matches!(character, '-' | '_' | '.'))
+    {
+        return Err("Provider id contains unsupported characters".to_string());
+    }
+    Ok(clean.to_string())
+}
+
+fn save_secret_to_keychain(provider_id: &str, secret: &str) -> Result<(), String> {
+    if !cfg!(target_os = "macos") {
+        return Err("Secure provider secrets currently require macOS Keychain".to_string());
+    }
+    let output = Command::new("security")
+        .args([
+            "add-generic-password",
+            "-a",
+            provider_id,
+            "-s",
+            AI_PROVIDER_KEYCHAIN_SERVICE,
+            "-w",
+            secret,
+            "-U",
+        ])
+        .output()
+        .map_err(|error| error.to_string())?;
+    command_success_or_error(output, "Save provider secret")
+}
+
+fn read_secret_from_keychain(provider_id: &str) -> Result<String, String> {
+    if !cfg!(target_os = "macos") {
+        return Err("Secure provider secrets currently require macOS Keychain".to_string());
+    }
+    let output = Command::new("security")
+        .args([
+            "find-generic-password",
+            "-a",
+            provider_id,
+            "-s",
+            AI_PROVIDER_KEYCHAIN_SERVICE,
+            "-w",
+        ])
+        .output()
+        .map_err(|error| error.to_string())?;
+    if !output.status.success() {
+        return Err("key missing".to_string());
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
+fn delete_secret_from_keychain(provider_id: &str) -> Result<(), String> {
+    if !cfg!(target_os = "macos") {
+        return Err("Secure provider secrets currently require macOS Keychain".to_string());
+    }
+    let output = Command::new("security")
+        .args([
+            "delete-generic-password",
+            "-a",
+            provider_id,
+            "-s",
+            AI_PROVIDER_KEYCHAIN_SERVICE,
+        ])
+        .output()
+        .map_err(|error| error.to_string())?;
+    if output.status.success()
+        || String::from_utf8_lossy(&output.stderr).contains("could not be found")
+    {
+        return Ok(());
+    }
+    command_success_or_error(output, "Delete provider secret")
+}
+
+fn test_ai_provider_native(
+    provider_id: &str,
+    provider: &AiProviderTestRequest,
+) -> Result<AiProviderTestResult, String> {
+    if provider.auth_mode == "local" || provider.provider_type == "apple_foundation" {
+        let availability = check_foundation_model_availability_native()?;
+        return Ok(AiProviderTestResult {
+            connected: availability.available,
+            status: availability.status,
+            message: availability
+                .reason
+                .unwrap_or_else(|| "Apple Foundation Models checked".to_string()),
+        });
+    }
+
+    if provider.provider_type == "ollama" || provider.provider_type == "lm_studio" {
+        let base_url = provider.base_url.as_deref().unwrap_or_default();
+        let models = list_local_or_openai_compatible_models(provider, None).unwrap_or_default();
+        let connected = !models.is_empty() || can_connect_local_base_url(base_url);
+        return Ok(AiProviderTestResult {
+            connected,
+            status: if connected { "connected" } else { "unavailable" }.to_string(),
+            message: if connected {
+                if models.is_empty() {
+                    format!("Local server is reachable at {base_url}")
+                } else {
+                    format!("Local server is reachable at {base_url}; {} model(s) found", models.len())
+                }
+            } else {
+                format!("Local server is not reachable at {base_url}")
+            },
+        });
+    }
+
+    match read_secret_from_keychain(provider_id) {
+        Ok(secret) if !secret.is_empty() => match list_remote_provider_models(provider, &secret) {
+            Ok(models) => Ok(AiProviderTestResult {
+                connected: true,
+                status: "connected".to_string(),
+                message: format!("API reachable; {} model(s) discovered", models.len()),
+            }),
+            Err(error) => Ok(AiProviderTestResult {
+                connected: false,
+                status: "unavailable".to_string(),
+                message: error,
+            }),
+        },
+        _ => Ok(AiProviderTestResult {
+            connected: false,
+            status: "key_missing".to_string(),
+            message: "API key is missing from secure storage".to_string(),
+        }),
+    }
+}
+
+fn list_ai_models_native(
+    provider_id: &str,
+    provider: &AiProviderTestRequest,
+) -> Result<AiModelListResult, String> {
+    if provider.provider_type == "apple_foundation" {
+        return Ok(AiModelListResult {
+            status: "local".to_string(),
+            models: vec!["system default".to_string()],
+        });
+    }
+
+    if provider.provider_type == "ollama" {
+        return match list_local_or_openai_compatible_models(provider, None) {
+            Ok(models) => Ok(AiModelListResult {
+                status: "local endpoint".to_string(),
+                models,
+            }),
+            Err(error) => Ok(AiModelListResult {
+                status: error,
+                models: vec![],
+            }),
+        };
+    }
+
+    if provider.provider_type == "lm_studio" || provider.auth_mode == "openai_compatible" {
+        let secret = read_secret_from_keychain(provider_id).ok();
+        return match list_local_or_openai_compatible_models(provider, secret.as_deref()) {
+            Ok(models) => Ok(AiModelListResult {
+                status: "openai-compatible".to_string(),
+                models,
+            }),
+            Err(error) => Ok(AiModelListResult {
+                status: error,
+                models: vec![],
+            }),
+        };
+    }
+
+    match read_secret_from_keychain(provider_id) {
+        Ok(secret) if !secret.is_empty() => match list_remote_provider_models(provider, &secret) {
+            Ok(models) => Ok(AiModelListResult {
+                status: "configured".to_string(),
+                models,
+            }),
+            Err(error) => Ok(AiModelListResult {
+                status: error,
+                models: vec![],
+            }),
+        },
+        _ => Ok(AiModelListResult {
+            status: "key_missing".to_string(),
+            models: vec![],
+        }),
+    }
+}
+
+fn can_connect_local_base_url(base_url: &str) -> bool {
+    let trimmed = base_url.trim();
+    let without_scheme = trimmed
+        .strip_prefix("http://")
+        .or_else(|| trimmed.strip_prefix("https://"))
+        .unwrap_or(trimmed);
+    let host_port = without_scheme.split('/').next().unwrap_or_default();
+    if host_port.is_empty() {
+        return false;
+    }
+    let mut parts = host_port.split(':');
+    let host = parts.next().unwrap_or("127.0.0.1");
+    let port = parts
+        .next()
+        .and_then(|value| value.parse::<u16>().ok())
+        .unwrap_or(if trimmed.starts_with("https://") { 443 } else { 80 });
+    TcpStream::connect((host, port)).is_ok()
+}
+
+fn list_remote_provider_models(
+    provider: &AiProviderTestRequest,
+    secret: &str,
+) -> Result<Vec<String>, String> {
+    match provider.provider_type.as_str() {
+        "openai" | "openrouter" => list_openai_compatible_models(provider, Some(secret)),
+        "anthropic" => list_anthropic_models(provider, secret),
+        "gemini" => list_gemini_models(provider, secret),
+        _ if provider.auth_mode == "openai_compatible" => {
+            list_openai_compatible_models(provider, Some(secret))
+        }
+        _ => Err("Provider model discovery is not supported yet".to_string()),
+    }
+}
+
+fn list_local_or_openai_compatible_models(
+    provider: &AiProviderTestRequest,
+    secret: Option<&str>,
+) -> Result<Vec<String>, String> {
+    if provider.provider_type == "ollama" {
+        return list_ollama_models(provider);
+    }
+    list_openai_compatible_models(provider, secret)
+}
+
+fn list_ollama_models(provider: &AiProviderTestRequest) -> Result<Vec<String>, String> {
+    let url = format!("{}/api/tags", normalized_provider_base_url(provider)?);
+    let response = http_client()
+        .get(url)
+        .send()
+        .map_err(|error| format!("Ollama model list failed: {error}"))?;
+    let value = response_json(response, "Ollama model list")?;
+    non_empty_models(parse_ollama_models(&value), "Ollama returned no models")
+}
+
+fn list_openai_compatible_models(
+    provider: &AiProviderTestRequest,
+    secret: Option<&str>,
+) -> Result<Vec<String>, String> {
+    let url = format!("{}/v1/models", normalized_provider_base_url(provider)?);
+    let mut request = http_client().get(url);
+    if let Some(secret) = secret.filter(|secret| !secret.trim().is_empty()) {
+        request = request.bearer_auth(secret);
+    }
+    let response = request
+        .send()
+        .map_err(|error| format!("Model list failed: {error}"))?;
+    let value = response_json(response, "Model list")?;
+    non_empty_models(parse_openai_compatible_models(&value), "Provider returned no models")
+}
+
+fn list_anthropic_models(
+    provider: &AiProviderTestRequest,
+    secret: &str,
+) -> Result<Vec<String>, String> {
+    let url = format!("{}/v1/models", normalized_provider_base_url(provider)?);
+    let response = http_client()
+        .get(url)
+        .header("x-api-key", secret)
+        .header("anthropic-version", "2023-06-01")
+        .send()
+        .map_err(|error| format!("Anthropic model list failed: {error}"))?;
+    let value = response_json(response, "Anthropic model list")?;
+    non_empty_models(parse_openai_compatible_models(&value), "Anthropic returned no models")
+}
+
+fn list_gemini_models(
+    provider: &AiProviderTestRequest,
+    secret: &str,
+) -> Result<Vec<String>, String> {
+    let url = format!(
+        "{}/v1beta/models?key={}",
+        normalized_provider_base_url(provider)?,
+        secret
+    );
+    let response = http_client()
+        .get(url)
+        .send()
+        .map_err(|error| format!("Gemini model list failed: {error}"))?;
+    let value = response_json(response, "Gemini model list")?;
+    non_empty_models(parse_gemini_models(&value), "Gemini returned no models")
+}
+
+fn parse_ollama_models(value: &serde_json::Value) -> Vec<String> {
+    value
+        .get("models")
+        .and_then(serde_json::Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|model| model.get("name").and_then(serde_json::Value::as_str))
+        .map(ToString::to_string)
+        .collect()
+}
+
+fn parse_openai_compatible_models(value: &serde_json::Value) -> Vec<String> {
+    value
+        .get("data")
+        .and_then(serde_json::Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|model| model.get("id").and_then(serde_json::Value::as_str))
+        .map(ToString::to_string)
+        .collect()
+}
+
+fn parse_gemini_models(value: &serde_json::Value) -> Vec<String> {
+    value
+        .get("models")
+        .and_then(serde_json::Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|model| model.get("name").and_then(serde_json::Value::as_str))
+        .map(|name| name.strip_prefix("models/").unwrap_or(name).to_string())
+        .collect()
+}
+
+fn normalized_provider_base_url(provider: &AiProviderTestRequest) -> Result<String, String> {
+    let base_url = provider
+        .base_url
+        .as_deref()
+        .filter(|url| !url.trim().is_empty())
+        .unwrap_or(match provider.provider_type.as_str() {
+            "openai" => "https://api.openai.com",
+            "anthropic" => "https://api.anthropic.com",
+            "gemini" => "https://generativelanguage.googleapis.com",
+            "openrouter" => "https://openrouter.ai/api",
+            "ollama" => "http://127.0.0.1:11434",
+            "lm_studio" => "http://127.0.0.1:1234",
+            _ => "",
+        })
+        .trim()
+        .trim_end_matches('/')
+        .to_string();
+    if base_url.is_empty() {
+        Err("Base URL is missing".to_string())
+    } else {
+        Ok(base_url)
+    }
+}
+
+fn http_client() -> reqwest::blocking::Client {
+    reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(8))
+        .build()
+        .expect("build reqwest client")
+}
+
+fn response_json(
+    response: reqwest::blocking::Response,
+    action: &str,
+) -> Result<serde_json::Value, String> {
+    let status = response.status();
+    let value = response
+        .json::<serde_json::Value>()
+        .map_err(|error| format!("{action} returned invalid JSON: {error}"))?;
+    if status.is_success() {
+        Ok(value)
+    } else {
+        let message = value
+            .get("error")
+            .and_then(|error| {
+                error
+                    .get("message")
+                    .and_then(serde_json::Value::as_str)
+                    .or_else(|| error.as_str())
+            })
+            .unwrap_or("request failed");
+        Err(format!("{action} failed with HTTP {status}: {message}"))
+    }
+}
+
+fn non_empty_models(models: Vec<String>, empty_message: &str) -> Result<Vec<String>, String> {
+    if models.is_empty() {
+        Err(empty_message.to_string())
+    } else {
+        Ok(models)
+    }
+}
+
+fn command_success_or_error(output: Output, action: &str) -> Result<(), String> {
+    if output.status.success() {
+        return Ok(());
+    }
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    Err(if stderr.is_empty() {
+        format!("{action} failed")
+    } else {
+        format!("{action} failed: {stderr}")
+    })
+}
+
 fn normalize_tags_with_foundation_model_native(
     text_context: &str,
 ) -> Result<LocalModelTagResult, String> {
@@ -2103,6 +2572,10 @@ pub fn run() {
             run_apple_vision_ocr,
             check_foundation_model_availability,
             normalize_tags_with_foundation_model,
+            save_provider_secret,
+            delete_provider_secret,
+            test_ai_provider,
+            list_ai_models,
             export_outline_markdown,
             export_outline_html,
             export_contact_sheet_html,
@@ -2134,7 +2607,7 @@ mod tests {
             .expect("write png fixture");
         let thumb = format!("data:image/png;base64,{}", BASE64.encode(png.into_inner()));
         let snapshot = ProjectSnapshot {
-            version: 1,
+            version: 2,
             ideas: vec![IdeaRecord {
                 id: "idea-a".to_string(),
                 title: "Idea A".to_string(),
@@ -2164,6 +2637,15 @@ mod tests {
                 fingerprint: "sha256:test-fixture".to_string(),
                 perceptual_hash: "ahash:test-fixture".to_string(),
             }],
+            palettes: vec![],
+            diagrams: vec![],
+            placeholders: vec![],
+            ai_settings: serde_json::json!({
+                "providers": [],
+                "routingMode": "prefer_local",
+                "selectedProviderId": "openai"
+            }),
+            version_history: vec![],
             links: vec![LinkRecord {
                 id: "link-a".to_string(),
                 image_id: "img-a".to_string(),
@@ -2190,7 +2672,7 @@ mod tests {
         write_snapshot(&mut conn, &snapshot, &project_dir).expect("write snapshot");
         let restored = read_snapshot(&conn).expect("read snapshot");
 
-        assert_eq!(restored.version, 1);
+        assert_eq!(restored.version, 2);
         assert_eq!(restored.ideas[0].title, "Idea A");
         assert!(project_dir.join("images/img-a.png").exists());
         assert!(project_dir.join("thumbs/img-a.png").exists());
@@ -2584,5 +3066,140 @@ mod tests {
             CaptureHttpRequest::Invalid => {}
             _ => panic!("expected invalid"),
         }
+    }
+
+    #[test]
+    fn project_manifest_roundtrip_preserves_v2_metadata() {
+        let id = timestamp_millis();
+        let project_dir = std::env::temp_dir().join(format!("vixio-v2-manifest-test-{id}.vixio"));
+        ensure_project_dirs(&project_dir).expect("create project dirs");
+        let snapshot_json = serde_json::json!({
+            "version": 2,
+            "ideas": [{
+                "id": "idea-a",
+                "title": "Idea A",
+                "body": "Body",
+                "status": "forming",
+                "x": 10,
+                "y": 20,
+                "importance": 1.4,
+                "createdAt": "2026-06-02T00:00:00.000Z"
+            }],
+            "images": [],
+            "palettes": [{
+                "id": "palette-a",
+                "title": "Palette A",
+                "colors": ["#84cdbc", "#dfae67"],
+                "algorithm": "analogous",
+                "x": 30,
+                "y": 40
+            }],
+            "diagrams": [{
+                "id": "diagram-a",
+                "title": "Diagram A",
+                "format": "mermaid",
+                "source": "flowchart LR\nA --> B",
+                "nodeIds": ["idea-a"],
+                "x": 50,
+                "y": 20
+            }],
+            "placeholders": [{
+                "id": "placeholder-a",
+                "title": "Image placeholder",
+                "targetKind": "image",
+                "x": 60,
+                "y": 70
+            }],
+            "aiSettings": {
+                "providers": [{
+                    "id": "openai",
+                    "type": "openai",
+                    "name": "OpenAI Platform",
+                    "authMode": "api_key",
+                    "model": "gpt-4.1-mini",
+                    "status": "key_missing",
+                    "secretRef": "keychain:openai",
+                    "defaultFor": ["generate_outline"]
+                }],
+                "routingMode": "prefer_local",
+                "selectedProviderId": "openai"
+            },
+            "versionHistory": [{
+                "id": "version-a",
+                "label": "Version A",
+                "createdAt": "2026-06-02T00:00:00.000Z",
+                "snapshotJson": "{}"
+            }],
+            "links": [{
+                "id": "link-a",
+                "imageId": "idea-a",
+                "ideaId": "idea-a",
+                "sourceNodeId": "idea-a",
+                "targetNodeId": "idea-a",
+                "sourceKind": "idea",
+                "targetKind": "idea",
+                "relation": "supports",
+                "note": "Diagram link",
+                "confidence": 0.74
+            }],
+            "outlineDrafts": []
+        })
+        .to_string();
+
+        fs::write(project_dir.join(MANIFEST_NAME), &snapshot_json).expect("write manifest");
+        let restored = read_project_package(&project_dir)
+            .expect("read project package")
+            .expect("manifest contents");
+        let restored_json: serde_json::Value =
+            serde_json::from_str(&restored).expect("parse restored manifest");
+
+        assert_eq!(restored_json["version"], 2);
+        assert_eq!(restored_json["palettes"][0]["title"], "Palette A");
+        assert_eq!(restored_json["diagrams"][0]["format"], "mermaid");
+        assert_eq!(restored_json["placeholders"][0]["targetKind"], "image");
+        assert_eq!(
+            restored_json["aiSettings"]["providers"][0]["secretRef"],
+            "keychain:openai"
+        );
+        assert_eq!(restored_json["versionHistory"][0]["label"], "Version A");
+        assert_eq!(restored_json["links"][0]["sourceNodeId"], "idea-a");
+
+        let _ = fs::remove_dir_all(project_dir);
+    }
+
+    #[test]
+    fn ai_model_parsers_extract_provider_model_ids() {
+        let openai = serde_json::json!({
+            "data": [
+                { "id": "gpt-4.1-mini" },
+                { "id": "gpt-4o" },
+                { "object": "ignored" }
+            ]
+        });
+        let ollama = serde_json::json!({
+            "models": [
+                { "name": "llama3.2:latest" },
+                { "name": "qwen2.5" }
+            ]
+        });
+        let gemini = serde_json::json!({
+            "models": [
+                { "name": "models/gemini-2.5-flash" },
+                { "name": "gemini-custom" }
+            ]
+        });
+
+        assert_eq!(
+            parse_openai_compatible_models(&openai),
+            vec!["gpt-4.1-mini", "gpt-4o"]
+        );
+        assert_eq!(
+            parse_ollama_models(&ollama),
+            vec!["llama3.2:latest", "qwen2.5"]
+        );
+        assert_eq!(
+            parse_gemini_models(&gemini),
+            vec!["gemini-2.5-flash", "gemini-custom"]
+        );
     }
 }
