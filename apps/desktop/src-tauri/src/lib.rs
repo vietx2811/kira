@@ -24,6 +24,7 @@ const MIGRATION_REFERENCE_PERCEPTUAL_HASH: &str = "004_reference_perceptual_hash
 const MIGRATION_REFERENCE_ORIGIN: &str = "005_reference_origin";
 const MIGRATION_TAG_SUGGESTION_META: &str = "006_tag_suggestion_meta";
 const MIGRATION_OUTLINE_DRAFTS: &str = "007_outline_drafts";
+const MIGRATION_GRAPH_V2_FIELDS: &str = "008_graph_v2_fields";
 const CAPTURE_SERVER_ADDR: &str = "127.0.0.1:47653";
 const CAPTURE_EVENT: &str = "vixio:capture";
 const EAGLE_WEB_API_ADDR: &str = "127.0.0.1:41595";
@@ -57,6 +58,18 @@ struct IdeaRecord {
     status: String,
     x: f64,
     y: f64,
+    #[serde(default)]
+    importance: Option<f64>,
+    #[serde(default, rename = "createdAt")]
+    created_at: Option<String>,
+    #[serde(default, rename = "addedAt")]
+    added_at: Option<String>,
+    #[serde(default, rename = "updatedAt")]
+    updated_at: Option<String>,
+    #[serde(default, rename = "sourceUrl")]
+    source_url: Option<String>,
+    #[serde(default)]
+    notes: Option<String>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -70,12 +83,32 @@ struct ReferenceRecord {
     origin_id: Option<String>,
     #[serde(default, rename = "sourcePath")]
     source_path: Option<String>,
+    #[serde(default)]
+    width: Option<u32>,
+    #[serde(default)]
+    height: Option<u32>,
+    #[serde(default, rename = "sizeBytes")]
+    size_bytes: Option<u64>,
+    #[serde(default, rename = "mimeType")]
+    mime_type: Option<String>,
     palette: Vec<String>,
     tags: Vec<String>,
     suggestions: Vec<TagSuggestionRecord>,
     x: f64,
     y: f64,
     thumb: String,
+    #[serde(default)]
+    importance: Option<f64>,
+    #[serde(default, rename = "createdAt")]
+    created_at: Option<String>,
+    #[serde(default, rename = "addedAt")]
+    added_at: Option<String>,
+    #[serde(default, rename = "updatedAt")]
+    updated_at: Option<String>,
+    #[serde(default, rename = "sourceUrl")]
+    source_url: Option<String>,
+    #[serde(default)]
+    notes: Option<String>,
     #[serde(default)]
     fingerprint: String,
     #[serde(default, rename = "perceptualHash")]
@@ -91,6 +124,10 @@ struct ImportedReferenceRecord {
     origin_app: Option<String>,
     origin_id: Option<String>,
     source_path: Option<String>,
+    width: Option<u32>,
+    height: Option<u32>,
+    size_bytes: Option<u64>,
+    mime_type: Option<String>,
     palette: Vec<String>,
     tags: Vec<String>,
     suggestions: Vec<String>,
@@ -159,9 +196,21 @@ struct LinkRecord {
     image_id: String,
     #[serde(rename = "ideaId")]
     idea_id: String,
+    #[serde(default, rename = "sourceNodeId")]
+    source_node_id: Option<String>,
+    #[serde(default, rename = "targetNodeId")]
+    target_node_id: Option<String>,
+    #[serde(default, rename = "sourceKind")]
+    source_kind: Option<String>,
+    #[serde(default, rename = "targetKind")]
+    target_kind: Option<String>,
     relation: String,
     note: String,
     confidence: f64,
+    #[serde(default, rename = "createdAt")]
+    created_at: Option<String>,
+    #[serde(default, rename = "updatedAt")]
+    updated_at: Option<String>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -466,7 +515,13 @@ fn migrate(conn: &Connection) -> Result<(), String> {
           body TEXT NOT NULL,
           status TEXT NOT NULL,
           x REAL NOT NULL,
-          y REAL NOT NULL
+          y REAL NOT NULL,
+          importance REAL,
+          created_at TEXT,
+          added_at TEXT,
+          updated_at TEXT,
+          source_url TEXT,
+          notes TEXT
         );
 
         CREATE TABLE IF NOT EXISTS reference_assets (
@@ -483,18 +538,32 @@ fn migrate(conn: &Connection) -> Result<(), String> {
           fingerprint TEXT NOT NULL DEFAULT '',
           perceptual_hash TEXT NOT NULL DEFAULT '',
           x REAL NOT NULL,
-          y REAL NOT NULL
+          y REAL NOT NULL,
+          width INTEGER,
+          height INTEGER,
+          size_bytes INTEGER,
+          mime_type TEXT,
+          importance REAL,
+          created_at TEXT,
+          added_at TEXT,
+          updated_at TEXT,
+          source_url TEXT,
+          notes TEXT
         );
 
         CREATE TABLE IF NOT EXISTS links (
           id TEXT PRIMARY KEY,
           image_id TEXT NOT NULL,
           idea_id TEXT NOT NULL,
+          source_node_id TEXT,
+          target_node_id TEXT,
+          source_kind TEXT,
+          target_kind TEXT,
           relation TEXT NOT NULL,
           note TEXT NOT NULL,
           confidence REAL NOT NULL,
-          FOREIGN KEY(image_id) REFERENCES reference_assets(id) ON DELETE CASCADE,
-          FOREIGN KEY(idea_id) REFERENCES ideas(id) ON DELETE CASCADE
+          created_at TEXT,
+          updated_at TEXT
         );
 
         CREATE TABLE IF NOT EXISTS reference_tags (
@@ -522,6 +591,11 @@ fn migrate(conn: &Connection) -> Result<(), String> {
           created_at TEXT NOT NULL,
           sections_json TEXT NOT NULL,
           position INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS canvas_collections (
+          key TEXT PRIMARY KEY,
+          value TEXT NOT NULL
         );
         ",
     )
@@ -569,6 +643,30 @@ fn migrate(conn: &Connection) -> Result<(), String> {
     )?;
     record_migration(conn, MIGRATION_TAG_SUGGESTION_META)?;
     record_migration(conn, MIGRATION_OUTLINE_DRAFTS)?;
+    add_column_if_missing(conn, "ideas", "importance", "REAL")?;
+    add_column_if_missing(conn, "ideas", "created_at", "TEXT")?;
+    add_column_if_missing(conn, "ideas", "added_at", "TEXT")?;
+    add_column_if_missing(conn, "ideas", "updated_at", "TEXT")?;
+    add_column_if_missing(conn, "ideas", "source_url", "TEXT")?;
+    add_column_if_missing(conn, "ideas", "notes", "TEXT")?;
+    add_column_if_missing(conn, "reference_assets", "width", "INTEGER")?;
+    add_column_if_missing(conn, "reference_assets", "height", "INTEGER")?;
+    add_column_if_missing(conn, "reference_assets", "size_bytes", "INTEGER")?;
+    add_column_if_missing(conn, "reference_assets", "mime_type", "TEXT")?;
+    add_column_if_missing(conn, "reference_assets", "importance", "REAL")?;
+    add_column_if_missing(conn, "reference_assets", "created_at", "TEXT")?;
+    add_column_if_missing(conn, "reference_assets", "added_at", "TEXT")?;
+    add_column_if_missing(conn, "reference_assets", "updated_at", "TEXT")?;
+    add_column_if_missing(conn, "reference_assets", "source_url", "TEXT")?;
+    add_column_if_missing(conn, "reference_assets", "notes", "TEXT")?;
+    rebuild_links_table_for_graph_v2(conn)?;
+    add_column_if_missing(conn, "links", "source_node_id", "TEXT")?;
+    add_column_if_missing(conn, "links", "target_node_id", "TEXT")?;
+    add_column_if_missing(conn, "links", "source_kind", "TEXT")?;
+    add_column_if_missing(conn, "links", "target_kind", "TEXT")?;
+    add_column_if_missing(conn, "links", "created_at", "TEXT")?;
+    add_column_if_missing(conn, "links", "updated_at", "TEXT")?;
+    record_migration(conn, MIGRATION_GRAPH_V2_FIELDS)?;
     Ok(())
 }
 
@@ -607,6 +705,43 @@ fn add_column_if_missing(
     Ok(())
 }
 
+fn rebuild_links_table_for_graph_v2(conn: &Connection) -> Result<(), String> {
+    let foreign_key_count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM pragma_foreign_key_list('links')", [], |row| {
+            row.get(0)
+        })
+        .unwrap_or(0);
+    if foreign_key_count == 0 {
+        return Ok(());
+    }
+
+    conn.execute_batch(
+        "
+        PRAGMA foreign_keys = OFF;
+        ALTER TABLE links RENAME TO links_legacy_fk;
+        CREATE TABLE links (
+          id TEXT PRIMARY KEY,
+          image_id TEXT NOT NULL,
+          idea_id TEXT NOT NULL,
+          source_node_id TEXT,
+          target_node_id TEXT,
+          source_kind TEXT,
+          target_kind TEXT,
+          relation TEXT NOT NULL,
+          note TEXT NOT NULL,
+          confidence REAL NOT NULL,
+          created_at TEXT,
+          updated_at TEXT
+        );
+        INSERT INTO links (id, image_id, idea_id, relation, note, confidence)
+          SELECT id, image_id, idea_id, relation, note, confidence FROM links_legacy_fk;
+        DROP TABLE links_legacy_fk;
+        PRAGMA foreign_keys = ON;
+        ",
+    )
+    .map_err(|error| error.to_string())
+}
+
 fn write_snapshot(
     conn: &mut Connection,
     snapshot: &ProjectSnapshot,
@@ -627,6 +762,8 @@ fn write_snapshot(
         .map_err(|error| error.to_string())?;
     tx.execute("DELETE FROM project_meta", [])
         .map_err(|error| error.to_string())?;
+    tx.execute("DELETE FROM canvas_collections", [])
+        .map_err(|error| error.to_string())?;
 
     tx.execute(
         "INSERT INTO project_meta (key, value) VALUES ('version', ?1)",
@@ -636,8 +773,21 @@ fn write_snapshot(
 
     for idea in &snapshot.ideas {
         tx.execute(
-            "INSERT INTO ideas (id, title, body, status, x, y) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![idea.id, idea.title, idea.body, idea.status, idea.x, idea.y],
+            "INSERT INTO ideas (id, title, body, status, x, y, importance, created_at, added_at, updated_at, source_url, notes) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+            params![
+                idea.id,
+                idea.title,
+                idea.body,
+                idea.status,
+                idea.x,
+                idea.y,
+                idea.importance,
+                idea.created_at,
+                idea.added_at,
+                idea.updated_at,
+                idea.source_url,
+                idea.notes
+            ],
         )
         .map_err(|error| error.to_string())?;
     }
@@ -646,8 +796,11 @@ fn write_snapshot(
         let palette_json =
             serde_json::to_string(&reference.palette).map_err(|error| error.to_string())?;
         let materialized = materialize_reference(project_dir, reference)?;
+        let width = reference.width.map(i64::from);
+        let height = reference.height.map(i64::from);
+        let size_bytes = reference.size_bytes.map(|value| value as i64);
         tx.execute(
-            "INSERT INTO reference_assets (id, title, source, origin_app, origin_id, source_path, palette_json, thumb, asset_path, thumb_path, fingerprint, perceptual_hash, x, y) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+            "INSERT INTO reference_assets (id, title, source, origin_app, origin_id, source_path, palette_json, thumb, asset_path, thumb_path, fingerprint, perceptual_hash, x, y, width, height, size_bytes, mime_type, importance, created_at, added_at, updated_at, source_url, notes) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24)",
             params![
                 reference.id,
                 reference.title,
@@ -662,7 +815,17 @@ fn write_snapshot(
                 reference.fingerprint,
                 reference.perceptual_hash,
                 reference.x,
-                reference.y
+                reference.y,
+                width,
+                height,
+                size_bytes,
+                reference.mime_type,
+                reference.importance,
+                reference.created_at,
+                reference.added_at,
+                reference.updated_at,
+                reference.source_url,
+                reference.notes
             ],
         )
         .map_err(|error| error.to_string())?;
@@ -693,14 +856,20 @@ fn write_snapshot(
 
     for link in &snapshot.links {
         tx.execute(
-            "INSERT INTO links (id, image_id, idea_id, relation, note, confidence) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            "INSERT INTO links (id, image_id, idea_id, source_node_id, target_node_id, source_kind, target_kind, relation, note, confidence, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
             params![
                 link.id,
                 link.image_id,
                 link.idea_id,
+                link.source_node_id,
+                link.target_node_id,
+                link.source_kind,
+                link.target_kind,
                 link.relation,
                 link.note,
-                link.confidence
+                link.confidence,
+                link.created_at,
+                link.updated_at
             ],
         )
         .map_err(|error| error.to_string())?;
@@ -722,7 +891,27 @@ fn write_snapshot(
         .map_err(|error| error.to_string())?;
     }
 
+    write_json_collection(&tx, "palettes", &snapshot.palettes)?;
+    write_json_collection(&tx, "diagrams", &snapshot.diagrams)?;
+    write_json_collection(&tx, "placeholders", &snapshot.placeholders)?;
+    write_json_collection(&tx, "aiSettings", &snapshot.ai_settings)?;
+    write_json_collection(&tx, "versionHistory", &snapshot.version_history)?;
+
     tx.commit().map_err(|error| error.to_string())
+}
+
+fn write_json_collection<T: Serialize>(
+    conn: &Connection,
+    key: &str,
+    value: &T,
+) -> Result<(), String> {
+    let json = serde_json::to_string(value).map_err(|error| error.to_string())?;
+    conn.execute(
+        "INSERT INTO canvas_collections (key, value) VALUES (?1, ?2)",
+        params![key, json],
+    )
+    .map_err(|error| error.to_string())?;
+    Ok(())
 }
 
 fn read_snapshot(conn: &Connection) -> Result<ProjectSnapshot, String> {
@@ -740,20 +929,27 @@ fn read_snapshot(conn: &Connection) -> Result<ProjectSnapshot, String> {
     let images = read_references(conn)?;
     let links = read_links(conn)?;
     let outline_drafts = read_outline_drafts(conn)?;
+    let palettes = read_json_collection(conn, "palettes")?.unwrap_or_default();
+    let diagrams = read_json_collection(conn, "diagrams")?.unwrap_or_default();
+    let placeholders = read_json_collection(conn, "placeholders")?.unwrap_or_default();
+    let ai_settings = read_json_collection(conn, "aiSettings")?.unwrap_or_else(|| {
+        serde_json::json!({
+            "providers": [],
+            "routingMode": "prefer_local",
+            "selectedProviderId": "openai"
+        })
+    });
+    let version_history = read_json_collection(conn, "versionHistory")?.unwrap_or_default();
 
     Ok(ProjectSnapshot {
         version,
         ideas,
         images,
-        palettes: vec![],
-        diagrams: vec![],
-        placeholders: vec![],
-        ai_settings: serde_json::json!({
-            "providers": [],
-            "routingMode": "prefer_local",
-            "selectedProviderId": "openai"
-        }),
-        version_history: vec![],
+        palettes,
+        diagrams,
+        placeholders,
+        ai_settings,
+        version_history,
         links,
         outline_drafts,
     })
@@ -761,7 +957,7 @@ fn read_snapshot(conn: &Connection) -> Result<ProjectSnapshot, String> {
 
 fn read_ideas(conn: &Connection) -> Result<Vec<IdeaRecord>, String> {
     let mut statement = conn
-        .prepare("SELECT id, title, body, status, x, y FROM ideas ORDER BY rowid")
+        .prepare("SELECT id, title, body, status, x, y, importance, created_at, added_at, updated_at, source_url, notes FROM ideas ORDER BY rowid")
         .map_err(|error| error.to_string())?;
     let rows = statement
         .query_map([], |row| {
@@ -772,6 +968,12 @@ fn read_ideas(conn: &Connection) -> Result<Vec<IdeaRecord>, String> {
                 status: row.get(3)?,
                 x: row.get(4)?,
                 y: row.get(5)?,
+                importance: row.get(6)?,
+                created_at: row.get(7)?,
+                added_at: row.get(8)?,
+                updated_at: row.get(9)?,
+                source_url: row.get(10)?,
+                notes: row.get(11)?,
             })
         })
         .map_err(|error| error.to_string())?;
@@ -783,7 +985,7 @@ fn read_ideas(conn: &Connection) -> Result<Vec<IdeaRecord>, String> {
 fn read_references(conn: &Connection) -> Result<Vec<ReferenceRecord>, String> {
     let mut statement = conn
         .prepare(
-            "SELECT id, title, source, origin_app, origin_id, source_path, palette_json, thumb, asset_path, thumb_path, fingerprint, perceptual_hash, x, y FROM reference_assets ORDER BY rowid",
+            "SELECT id, title, source, origin_app, origin_id, source_path, palette_json, thumb, asset_path, thumb_path, fingerprint, perceptual_hash, x, y, width, height, size_bytes, mime_type, importance, created_at, added_at, updated_at, source_url, notes FROM reference_assets ORDER BY rowid",
         )
         .map_err(|error| error.to_string())?;
     let rows = statement
@@ -800,12 +1002,22 @@ fn read_references(conn: &Connection) -> Result<Vec<ReferenceRecord>, String> {
                 origin_app: row.get(3)?,
                 origin_id: row.get(4)?,
                 source_path: row.get(5)?,
+                width: row.get::<_, Option<i64>>(14)?.map(|value| value as u32),
+                height: row.get::<_, Option<i64>>(15)?.map(|value| value as u32),
+                size_bytes: row.get::<_, Option<i64>>(16)?.map(|value| value as u64),
+                mime_type: row.get(17)?,
                 palette,
                 thumb: read_thumb_for_frontend(row.get(9)?, row.get(7)?)?,
                 fingerprint: row.get(10)?,
                 perceptual_hash: row.get(11)?,
                 x: row.get(12)?,
                 y: row.get(13)?,
+                importance: row.get(18)?,
+                created_at: row.get(19)?,
+                added_at: row.get(20)?,
+                updated_at: row.get(21)?,
+                source_url: row.get(22)?,
+                notes: row.get(23)?,
             })
         })
         .map_err(|error| error.to_string())?;
@@ -817,7 +1029,7 @@ fn read_references(conn: &Connection) -> Result<Vec<ReferenceRecord>, String> {
 fn read_links(conn: &Connection) -> Result<Vec<LinkRecord>, String> {
     let mut statement = conn
         .prepare(
-            "SELECT id, image_id, idea_id, relation, note, confidence FROM links ORDER BY rowid",
+            "SELECT id, image_id, idea_id, source_node_id, target_node_id, source_kind, target_kind, relation, note, confidence, created_at, updated_at FROM links ORDER BY rowid",
         )
         .map_err(|error| error.to_string())?;
     let rows = statement
@@ -826,9 +1038,15 @@ fn read_links(conn: &Connection) -> Result<Vec<LinkRecord>, String> {
                 id: row.get(0)?,
                 image_id: row.get(1)?,
                 idea_id: row.get(2)?,
-                relation: row.get(3)?,
-                note: row.get(4)?,
-                confidence: row.get(5)?,
+                source_node_id: row.get(3)?,
+                target_node_id: row.get(4)?,
+                source_kind: row.get(5)?,
+                target_kind: row.get(6)?,
+                relation: row.get(7)?,
+                note: row.get(8)?,
+                confidence: row.get(9)?,
+                created_at: row.get(10)?,
+                updated_at: row.get(11)?,
             })
         })
         .map_err(|error| error.to_string())?;
@@ -858,6 +1076,25 @@ fn read_outline_drafts(conn: &Connection) -> Result<Vec<OutlineDraftRecord>, Str
         .map_err(|error| error.to_string())?;
 
     rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())
+}
+
+fn read_json_collection<T: for<'de> Deserialize<'de>>(
+    conn: &Connection,
+    key: &str,
+) -> Result<Option<T>, String> {
+    let value = conn
+        .query_row(
+            "SELECT value FROM canvas_collections WHERE key = ?1",
+            params![key],
+            |row| row.get::<_, String>(0),
+        )
+        .ok();
+    let Some(json) = value else {
+        return Ok(None);
+    };
+    serde_json::from_str(&json)
+        .map(Some)
         .map_err(|error| error.to_string())
 }
 
@@ -954,6 +1191,18 @@ fn extension_for_mime(mime: &str) -> &'static str {
     }
 }
 
+fn mime_for_image_path(path: &Path) -> Option<String> {
+    let extension = path.extension()?.to_string_lossy().to_ascii_lowercase();
+    let mime = match extension.as_str() {
+        "jpg" | "jpeg" => "image/jpeg",
+        "png" => "image/png",
+        "webp" => "image/webp",
+        "gif" => "image/gif",
+        _ => return None,
+    };
+    Some(mime.to_string())
+}
+
 fn safe_file_stem(value: &str) -> String {
     value
         .chars()
@@ -1031,6 +1280,10 @@ fn import_reference_folder_from_path(
                 .as_ref()
                 .and_then(|metadata| metadata.source_path.clone())
                 .or_else(|| Some(path.to_string_lossy().to_string())),
+            width: Some(analysis.width),
+            height: Some(analysis.height),
+            size_bytes: Some(bytes.len() as u64),
+            mime_type: mime_for_image_path(&path),
             palette: if analysis.palette.is_empty() {
                 palette_from_name(file_name)
             } else {
@@ -1169,6 +1422,10 @@ fn eagle_web_item_to_reference(
     .take(8)
     .collect();
     let column = index / 5;
+    let size_bytes = local_bytes.as_ref().map(|bytes| bytes.len() as u64);
+    let mime_type = source_path
+        .as_deref()
+        .and_then(|path| mime_for_image_path(Path::new(path)));
 
     ImportedReferenceRecord {
         id: format!("img-eagle-web-{import_id}-{index}"),
@@ -1177,6 +1434,10 @@ fn eagle_web_item_to_reference(
         origin_app: Some("eagle".to_string()),
         origin_id: Some(item_id.clone()),
         source_path,
+        width: analysis.as_ref().map(|analysis| analysis.width),
+        height: analysis.as_ref().map(|analysis| analysis.height),
+        size_bytes,
+        mime_type,
         palette: analysis
             .as_ref()
             .map(|analysis| analysis.palette.clone())
@@ -1379,6 +1640,10 @@ fn screenshot_reference_from_bytes(
         origin_app: None,
         origin_id: None,
         source_path: None,
+        width: Some(analysis.width),
+        height: Some(analysis.height),
+        size_bytes: Some(bytes.len() as u64),
+        mime_type: Some("image/png".to_string()),
         palette: if analysis.palette.is_empty() {
             palette_from_name(&name)
         } else {
@@ -2238,6 +2503,8 @@ struct ImageAnalysis {
     tags: Vec<String>,
     suggestions: Vec<String>,
     perceptual_hash: String,
+    width: u32,
+    height: u32,
 }
 
 fn analyze_image_bytes(bytes: &[u8]) -> Result<ImageAnalysis, String> {
@@ -2274,6 +2541,8 @@ fn analyze_image_bytes(bytes: &[u8]) -> Result<ImageAnalysis, String> {
             tags: orientation_tags(width, height),
             suggestions: vec![format!("{width}x{height}")],
             perceptual_hash: String::new(),
+            width,
+            height,
         });
     }
 
@@ -2322,6 +2591,8 @@ fn analyze_image_bytes(bytes: &[u8]) -> Result<ImageAnalysis, String> {
             },
         ],
         perceptual_hash: average_hash(&sample),
+        width,
+        height,
     })
 }
 
@@ -2615,6 +2886,12 @@ mod tests {
                 status: "forming".to_string(),
                 x: 12.0,
                 y: 34.0,
+                importance: Some(3.0),
+                created_at: Some("2026-06-01T00:00:00.000Z".to_string()),
+                added_at: Some("2026-06-01T00:01:00.000Z".to_string()),
+                updated_at: Some("2026-06-01T00:02:00.000Z".to_string()),
+                source_url: Some("https://example.com/idea".to_string()),
+                notes: Some("Idea notes".to_string()),
             }],
             images: vec![ReferenceRecord {
                 id: "img-a".to_string(),
@@ -2623,6 +2900,10 @@ mod tests {
                 origin_app: Some("eagle".to_string()),
                 origin_id: Some("eagle-item-a".to_string()),
                 source_path: Some("/library/reference-a.png".to_string()),
+                width: Some(1),
+                height: Some(1),
+                size_bytes: None,
+                mime_type: Some("image/png".to_string()),
                 palette: vec!["#111111".to_string(), "#222222".to_string()],
                 tags: vec!["archive".to_string(), "ritual".to_string()],
                 suggestions: vec![TagSuggestionRecord::Detailed {
@@ -2634,25 +2915,63 @@ mod tests {
                 x: 56.0,
                 y: 78.0,
                 thumb,
+                importance: Some(4.0),
+                created_at: Some("2026-06-01T01:00:00.000Z".to_string()),
+                added_at: Some("2026-06-01T01:01:00.000Z".to_string()),
+                updated_at: Some("2026-06-01T01:02:00.000Z".to_string()),
+                source_url: Some("https://example.com/reference".to_string()),
+                notes: Some("Reference notes".to_string()),
                 fingerprint: "sha256:test-fixture".to_string(),
                 perceptual_hash: "ahash:test-fixture".to_string(),
             }],
-            palettes: vec![],
-            diagrams: vec![],
-            placeholders: vec![],
+            palettes: vec![serde_json::json!({
+                "id": "palette-a",
+                "title": "Palette A",
+                "colors": ["#111111", "#222222"],
+                "algorithm": "manual",
+                "x": 16,
+                "y": 18
+            })],
+            diagrams: vec![serde_json::json!({
+                "id": "diagram-a",
+                "title": "Diagram A",
+                "format": "mermaid",
+                "source": "flowchart LR\\nA-->B",
+                "nodeIds": ["idea-a"],
+                "x": 20,
+                "y": 24
+            })],
+            placeholders: vec![serde_json::json!({
+                "id": "placeholder-a",
+                "title": "Placeholder A",
+                "targetKind": "image",
+                "x": 28,
+                "y": 32
+            })],
             ai_settings: serde_json::json!({
-                "providers": [],
+                "providers": [{"id": "local-apple", "providerType": "local_apple"}],
                 "routingMode": "prefer_local",
-                "selectedProviderId": "openai"
+                "selectedProviderId": "local-apple"
             }),
-            version_history: vec![],
+            version_history: vec![serde_json::json!({
+                "id": "version-a",
+                "label": "Version A",
+                "createdAt": "2026-06-01T02:00:00.000Z",
+                "snapshotJson": "{}"
+            })],
             links: vec![LinkRecord {
                 id: "link-a".to_string(),
                 image_id: "img-a".to_string(),
                 idea_id: "idea-a".to_string(),
+                source_node_id: Some("palette-a".to_string()),
+                target_node_id: Some("idea-a".to_string()),
+                source_kind: Some("palette".to_string()),
+                target_kind: Some("idea".to_string()),
                 relation: "supports".to_string(),
                 note: "Traceable note".to_string(),
                 confidence: 0.72,
+                created_at: Some("2026-06-01T03:00:00.000Z".to_string()),
+                updated_at: Some("2026-06-01T03:01:00.000Z".to_string()),
             }],
             outline_drafts: vec![OutlineDraftRecord {
                 id: "outline-a".to_string(),
@@ -2674,6 +2993,12 @@ mod tests {
 
         assert_eq!(restored.version, 2);
         assert_eq!(restored.ideas[0].title, "Idea A");
+        assert_eq!(restored.ideas[0].importance, Some(3.0));
+        assert_eq!(
+            restored.ideas[0].source_url.as_deref(),
+            Some("https://example.com/idea")
+        );
+        assert_eq!(restored.ideas[0].notes.as_deref(), Some("Idea notes"));
         assert!(project_dir.join("images/img-a.png").exists());
         assert!(project_dir.join("thumbs/img-a.png").exists());
         assert!(restored.images[0]
@@ -2693,10 +3018,44 @@ mod tests {
             restored.images[0].source_path.as_deref(),
             Some("/library/reference-a.png")
         );
+        assert_eq!(restored.images[0].width, Some(1));
+        assert_eq!(restored.images[0].height, Some(1));
+        assert_eq!(restored.images[0].mime_type.as_deref(), Some("image/png"));
+        assert_eq!(restored.images[0].importance, Some(4.0));
+        assert_eq!(
+            restored.images[0].source_url.as_deref(),
+            Some("https://example.com/reference")
+        );
+        assert_eq!(
+            restored.images[0].notes.as_deref(),
+            Some("Reference notes")
+        );
         assert_eq!(restored.images[0].fingerprint, "sha256:test-fixture");
         assert_eq!(restored.images[0].perceptual_hash, "ahash:test-fixture");
         assert_eq!(restored.links[0].image_id, "img-a");
         assert_eq!(restored.links[0].idea_id, "idea-a");
+        assert_eq!(
+            restored.links[0].source_node_id.as_deref(),
+            Some("palette-a")
+        );
+        assert_eq!(restored.links[0].source_kind.as_deref(), Some("palette"));
+        assert_eq!(
+            restored.links[0].target_node_id.as_deref(),
+            Some("idea-a")
+        );
+        assert_eq!(restored.links[0].target_kind.as_deref(), Some("idea"));
+        assert_eq!(
+            restored.links[0].created_at.as_deref(),
+            Some("2026-06-01T03:00:00.000Z")
+        );
+        assert_eq!(restored.palettes[0]["id"], "palette-a");
+        assert_eq!(restored.diagrams[0]["id"], "diagram-a");
+        assert_eq!(restored.placeholders[0]["id"], "placeholder-a");
+        assert_eq!(
+            restored.ai_settings["selectedProviderId"].as_str(),
+            Some("local-apple")
+        );
+        assert_eq!(restored.version_history[0]["id"], "version-a");
         assert_eq!(restored.outline_drafts[0].id, "outline-a");
         assert_eq!(restored.outline_drafts[0].sections[0].idea_id, "idea-a");
         assert_eq!(
@@ -2708,7 +3067,7 @@ mod tests {
                 row.get(0)
             })
             .expect("count migrations");
-        assert_eq!(migration_count, 7);
+        assert_eq!(migration_count, 8);
 
         fs::remove_dir_all(project_dir).expect("remove temp project");
     }
