@@ -1,3 +1,3 @@
 fn main() {
-    vixio_desktop_lib::run()
+    kira_desktop_lib::run()
 }

@@ -18,6 +18,17 @@ declare const chrome: {
     }
   }
   runtime: {
+    getURL: (path: string) => string
+    sendMessage: (message: unknown) => Promise<unknown>
+    onMessage: {
+      addListener: (
+        callback: (
+          message: unknown,
+          sender: unknown,
+          sendResponse: (response?: unknown) => void,
+        ) => boolean | void,
+      ) => void
+    }
     onInstalled: {
       addListener: (callback: () => void) => void
     }
@@ -37,5 +48,26 @@ declare const chrome: {
   }
   tabs: {
     query: (queryInfo: { active: boolean; currentWindow: boolean }) => Promise<Array<{ id?: number; title?: string; url?: string }>>
+  }
+  windows: {
+    create: (createData: {
+      url: string
+      type?: 'popup'
+      width?: number
+      height?: number
+      left?: number
+      top?: number
+      focused?: boolean
+    }) => Promise<{ id?: number }>
+    update: (windowId: number, updateInfo: {
+      focused?: boolean
+      width?: number
+      height?: number
+      left?: number
+      top?: number
+    }) => Promise<unknown>
+    onRemoved: {
+      addListener: (callback: (windowId: number) => void) => void
+    }
   }
 }

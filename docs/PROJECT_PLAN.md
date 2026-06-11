@@ -1,4 +1,4 @@
-# Vixio Project Plan
+# KIRA Project Plan
 
 > Updated: June 2026  
 > Current direction: standalone desktop app first, Eagle as workflow reference and later import/sync adapter.
@@ -7,7 +7,7 @@
 
 ## Product thesis
 
-Vixio is a visual research workspace where ideas are built from traceable visual references.
+KIRA is a visual research workspace where ideas are built from traceable visual references.
 
 The core loop is:
 
@@ -19,7 +19,7 @@ Import references
 → generate an outline with traceable sources
 ```
 
-Vixio is not primarily an image manager, moodboard, or graph toy. The product value is the relationship layer:
+KIRA is not primarily an image manager, moodboard, or graph toy. The product value is the relationship layer:
 
 ```txt
 Which reference supports which idea?
@@ -78,9 +78,9 @@ What to borrow from Eagle:
 
 What not to copy:
 
-- Vixio should not become a full image manager clone
+- KIRA should not become a full image manager clone
 - folder/tag organization is secondary to idea-reference links
-- references can come from Eagle later, but Vixio owns the meaning graph
+- references can come from Eagle later, but KIRA owns the meaning graph
 
 Integration stance:
 
@@ -90,7 +90,7 @@ Round 2: import from Eagle library or selected Eagle export
 Round 3: optional Eagle plugin/adapter if standalone workflow proves valuable
 ```
 
-Do not make Vixio an Eagle plugin first. That increases integration complexity before the core workflow is proven.
+Do not make KIRA an Eagle plugin first. That increases integration complexity before the core workflow is proven.
 
 ---
 
@@ -111,7 +111,7 @@ Implemented in `apps/desktop`:
 - direct graph node repositioning with persisted `x/y` layout
 - graph scope and relation filters in the canvas controls
 - graph zoom/reset controls and background panning
-- graph node cap for large libraries, plus dev-only benchmark fixtures exposed through `window.__vixioDev`
+- graph node cap for large libraries, plus dev-only benchmark fixtures exposed through `window.__kiraDev`
 - graph Edit / Discover mode with inferred weak-support edges that do not mutate saved links
 - Discover support filter for all, candidate, and open references
 - 3D discovery view using `3d-force-graph`, with relation filters, All / Linked / Focus scope controls, camera focus/reset, and non-mutating cloned graph data
@@ -140,8 +140,8 @@ Implemented in `apps/extension`:
 - popup capture for the active page
 - context-menu image capture
 - popup image discovery and multi-select capture from the active page
-- direct localhost delivery to the running Vixio app
-- clipboard payload fallback that Vixio can paste into the Library
+- direct localhost delivery to the running KIRA app
+- clipboard payload fallback that KIRA can paste into the Library
 
 Current prototype is moving from UI/workflow proof toward desktop architecture. The Tauri shell currently writes a package manifest, normalized SQLite database, imported image assets, generated PNG thumbnails, and a basic migration ledger.
 
@@ -152,7 +152,7 @@ Current prototype is moving from UI/workflow proof toward desktop architecture. 
 ### App layers
 
 ```txt
-Vixio Desktop Shell
+KIRA Desktop Shell
 ├── Library
 │   ├── references
 │   ├── import
@@ -184,7 +184,7 @@ Vixio Desktop Shell
 Round 1 should use a local project package:
 
 ```txt
-project.vixio/
+project.kira/
   project.sqlite
   images/
   thumbs/
@@ -310,7 +310,7 @@ Acceptance:
 
 ### Phase UI-5: Outline view
 
-Goal: prove Vixio is more than moodboarding.
+Goal: prove KIRA is more than moodboarding.
 
 Tasks:
 
@@ -361,9 +361,9 @@ Current state:
 
 - `src-tauri` app shell exists
 - frontend can call Rust through Tauri commands
-- native New, Open, and Save As dialogs are wired for `.vixio` project package paths
+- native New, Open, and Save As dialogs are wired for `.kira` project package paths
 - native folder import is wired from Library and creates local reference records
-- native folder import now detects Eagle-style item folders with metadata JSON and maps item metadata into Vixio references
+- native folder import now detects Eagle-style item folders with metadata JSON and maps item metadata into KIRA references
 - native screenshot capture is wired from Library through macOS `screencapture`
 - Chrome extension capture is scaffolded and sends image/page captures directly to the running app, with clipboard fallback
 - Chrome extension popup can discover page images and send selected images as separate references
@@ -374,7 +374,7 @@ Current state:
 - `save_project_package` creates:
 
 ```txt
-Vixio Demo.vixio/
+KIRA Demo.kira/
   manifest.json
   project.sqlite
   images/
@@ -393,7 +393,7 @@ Vixio Demo.vixio/
 
 Scope:
 
-- save/open `.vixio` project package
+- save/open `.kira` project package
 - SQLite schema
 - reference asset paths and thumbnails
 - ideas, tags, links, outline drafts
@@ -524,18 +524,18 @@ Options:
 
 Tasks:
 
-- map Eagle item metadata to Vixio Reference (folder/export metadata done)
+- map Eagle item metadata to KIRA Reference (folder/export metadata done)
 - preserve Eagle item id/source path where available (done through optional origin metadata)
 - import tags as candidate tags (done as tag suggestions, not accepted tags)
 - read first-page Eagle Web API V2 items from local `/api/v2/item/get` when Eagle is running (done)
-- never store Vixio idea links as Eagle-only tags
+- never store KIRA idea links as Eagle-only tags
 - optional write-back for accepted flat tags
 
 Acceptance:
 
-- Eagle can feed references into Vixio
-- Vixio project remains portable
-- idea/reference links stay in Vixio
+- Eagle can feed references into KIRA
+- KIRA project remains portable
+- idea/reference links stay in KIRA
 
 ---
 

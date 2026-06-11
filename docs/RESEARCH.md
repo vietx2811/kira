@@ -1,6 +1,6 @@
 # Tech Stack Deep Research
 
-> Historical research note. The current implementation source of truth is `PROJECT_PLAN.md`, `ARCHITECTURE.md`, and `DATABASE.md`. Some options below describe earlier grid/taxonomy/WebSocket concepts that were not carried into the current standalone Vixio desktop architecture.
+> Historical research note. The current implementation source of truth is `PROJECT_PLAN.md`, `ARCHITECTURE.md`, and `DATABASE.md`. Some options below describe earlier grid/taxonomy/WebSocket concepts that were not carried into the current standalone KIRA desktop architecture.
 
 > Research conducted: June 2026  
 > Purpose: Evaluate and select technologies for Visual Research Board
@@ -243,6 +243,47 @@ WebGPU is the default when available (Chrome 113+).
 
 ---
 
+## 9. AI provider onboarding and extension packaging
+
+**Status:** Implemented in the desktop app
+**Verdict:** API-key-first onboarding is the correct product shape
+
+### Subscription vs API billing
+
+KIRA should not ask users to "connect" a ChatGPT or Claude subscription as if it grants API entitlement.
+
+- OpenAI states that API usage is billed separately from ChatGPT Plus, Business, Enterprise, and Edu. The app should ask for an OpenAI Platform API key, not a ChatGPT plan login.
+- Anthropic states that paid Claude subscriptions and Claude Console/API billing are separate products. The app should ask for an Anthropic Console API key.
+- Local model routing remains useful as fallback when remote keys or billing are unavailable.
+
+### Providers to support
+
+The onboarding and Settings provider workbench should make OpenAI and Anthropic primary, then expose local and compatible providers:
+
+- OpenAI Platform
+- Anthropic Console
+- Gemini API
+- OpenRouter
+- Ollama
+- LM Studio
+- Custom OpenAI-compatible endpoint
+- Apple Foundation Models where available
+
+### Browser capture install path
+
+Chrome/Chromium can load the bundled `extension/dist` with Developer mode + Load unpacked. Safari Web Extensions require a containing macOS app, so KIRA bundles a built `KIRA Safari.app` alongside the Chrome dist in the Tauri app resources.
+
+### Product decisions
+
+- Onboarding shows API billing truth before key entry.
+- Settings can reset onboarding and detect extension install status.
+- The packaged app includes both the Chrome unpacked extension dist and the Safari container app.
+- Welcome.kira is a deterministic template that explains the canvas, library, AI setup, browser capture, templates, and AI node generation.
+- Zero-state templates are deterministic editable boards; prompt starter generates a lightweight structured board from user text.
+- Arc-menu AI node generation supports summarize, break down, synthesize, find gaps, and generate variations with selected/upstream/downstream/full-board scope.
+
+---
+
 ## Rejected technologies
 
 ### tldraw v2/v3
@@ -290,3 +331,7 @@ WebGPU is the default when available (Chrome 113+).
 - [colorthief](https://lokeshdhakar.com/projects/color-thief/)
 - [cmdk](https://github.com/pacocoursey/cmdk)
 - [Extension Framework Comparison 2025](https://www.devkit.best/blog/mdx/chrome-extension-framework-comparison-2025)
+- [OpenAI API Pricing FAQ](https://openai.com/api/pricing/)
+- [Anthropic support: paid Claude subscriptions and API billing](https://support.claude.com/en/articles/9876003-i-have-a-paid-claude-subscription-pro-max-team-or-enterprise-plans-why-do-i-have-to-pay-separately-to-use-the-claude-api-and-console)
+- [Chrome Extensions: Load an unpacked extension](https://developer.chrome.com/docs/extensions/get-started/tutorial/hello-world)
+- [Apple Developer: Safari web extensions](https://developer.apple.com/documentation/safariservices/safari-web-extensions)

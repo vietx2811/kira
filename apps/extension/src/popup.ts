@@ -1,4 +1,4 @@
-import type { PageImageCandidate, PendingCapture, VixioCapturePayload } from './types'
+import type { PageImageCandidate, PendingCapture, KiraCapturePayload } from './types'
 
 const pendingCaptureKey = 'pendingCapture'
 const captureEndpoint = 'http://127.0.0.1:47653/capture'
@@ -12,6 +12,11 @@ const statusNode = document.getElementById('status') as HTMLParagraphElement
 const imageSection = document.getElementById('image-section') as HTMLElement
 const imageGrid = document.getElementById('image-grid') as HTMLDivElement
 const toggleImagesButton = document.getElementById('toggle-images') as HTMLButtonElement
+const minWidthInput = document.getElementById('min-width') as HTMLInputElement
+const minHeightInput = document.getElementById('min-height') as HTMLInputElement
+const formatFilterInput = document.getElementById('format-filter') as HTMLSelectElement
+const tagsInput = document.getElementById('capture-tags') as HTMLInputElement
+const noteInput = document.getElementById('capture-note') as HTMLInputElement
 
 let currentCapture: PendingCapture | null = null
 let imageCandidates: PageImageCandidate[] = []
@@ -23,28 +28,33 @@ copyButton.addEventListener('click', async () => {
   const captures = selectedCaptures()
   if (captures.length === 0) return
 
-  const sent = await sendCapturesToVixio(captures)
+  const sent = await sendCapturesToKira(captures)
   if (sent === captures.length) {
-    statusNode.textContent = sent === 1 ? 'Sent to Vixio' : `${sent} sent to Vixio`
+    statusNode.textContent = sent === 1 ? 'Sent to KIRA' : `${sent} sent to KIRA`
     return
   }
 
   try {
     await navigator.clipboard.writeText(captures.map((capture) => JSON.stringify(capture)).join('\n'))
-    statusNode.textContent = 'Vixio unavailable. Copied'
+    statusNode.textContent = 'KIRA unavailable. Copied'
   } catch {
-    statusNode.textContent = 'Vixio unavailable'
+    statusNode.textContent = 'KIRA unavailable'
   }
 })
 
 toggleImagesButton.addEventListener('click', () => {
-  if (selectedImageUrls.size === imageCandidates.length) {
+  const filteredImages = filteredImageCandidates()
+  if (filteredImages.every((image) => selectedImageUrls.has(image.url))) {
     selectedImageUrls = new Set()
   } else {
-    selectedImageUrls = new Set(imageCandidates.map((image) => image.url))
+    selectedImageUrls = new Set(filteredImages.map((image) => image.url))
   }
   renderImageCandidates()
 })
+
+minWidthInput.addEventListener('input', renderImageCandidates)
+minHeightInput.addEventListener('input', renderImageCandidates)
+formatFilterInput.addEventListener('change', renderImageCandidates)
 
 async function loadCapture() {
   const stored = await chrome.storage.local.get<{ pendingCapture?: PendingCapture }>([pendingCaptureKey])
@@ -60,7 +70,7 @@ async function captureActiveTab(): Promise<PendingCapture | null> {
   if (!tab?.url) return null
 
   return {
-    vixioCapture: 1,
+    kiraCapture: 1,
     kind: 'page',
     url: tab.url,
     title: tab.title?.trim() || 'Untitled',
@@ -94,16 +104,18 @@ function renderCapture(capture: PendingCapture | null) {
 }
 
 function renderImageCandidates() {
+  const filteredImages = filteredImageCandidates()
   imageSection.hidden = imageCandidates.length === 0
   imageGrid.innerHTML = ''
-  toggleImagesButton.textContent = selectedImageUrls.size === imageCandidates.length ? 'None' : 'All'
+  toggleImagesButton.textContent = filteredImages.length > 0 && filteredImages.every((image) => selectedImageUrls.has(image.url)) ? 'None' : 'All'
 
-  for (const image of imageCandidates) {
+  for (const image of filteredImages) {
     const button = document.createElement('button')
     button.type = 'button'
     button.className = selectedImageUrls.has(image.url) ? 'image-option is-selected' : 'image-option'
     button.ariaLabel = image.alt || image.url
     button.title = `${image.width}x${image.height}`
+    button.dataset.meta = `${image.width}x${image.height} ${image.format.toUpperCase()}`
     button.addEventListener('click', () => {
       if (selectedImageUrls.has(image.url)) {
         selectedImageUrls.delete(image.url)
@@ -119,31 +131,41 @@ function renderImageCandidates() {
     button.append(img)
     imageGrid.append(button)
   }
+
+  statusNode.textContent = filteredImages.length === imageCandidates.length
+    ? 'Ready'
+    : `${filteredImages.length}/${imageCandidates.length} images after filters`
 }
 
-function toClipboardPayload(capture: PendingCapture): VixioCapturePayload {
+function toClipboardPayload(capture: PendingCapture): KiraCapturePayload {
   return {
-    vixioCapture: 1,
+    kiraCapture: 1,
     kind: capture.kind,
     url: capture.url,
     title: capture.title,
     source: capture.source,
     pageUrl: capture.pageUrl,
+    tags: captureTags(),
+    note: captureNote(),
     capturedAt: capture.capturedAt,
   }
 }
 
-function selectedCaptures(): VixioCapturePayload[] {
+function selectedCaptures(): KiraCapturePayload[] {
   if (!currentCapture) return []
-  const imageCaptures = imageCandidates
+  const tags = captureTags()
+  const note = captureNote()
+  const imageCaptures = filteredImageCandidates()
     .filter((image) => selectedImageUrls.has(image.url))
     .map((image) => ({
-      vixioCapture: 1 as const,
+      kiraCapture: 1 as const,
       kind: 'image' as const,
       url: image.url,
       title: image.alt || currentCapture?.title || 'Page image',
       source: currentCapture?.source || currentCapture?.url || image.url,
       pageUrl: currentCapture?.url,
+      tags,
+      note,
       capturedAt: new Date().toISOString(),
     }))
 
@@ -151,15 +173,15 @@ function selectedCaptures(): VixioCapturePayload[] {
   return [toClipboardPayload(currentCapture)]
 }
 
-async function sendCapturesToVixio(captures: VixioCapturePayload[]) {
+async function sendCapturesToKira(captures: KiraCapturePayload[]) {
   let sent = 0
   for (const capture of captures) {
-    if (await sendCaptureToVixio(capture)) sent += 1
+    if (await sendCaptureToKira(capture)) sent += 1
   }
   return sent
 }
 
-async function sendCaptureToVixio(capture: VixioCapturePayload) {
+async function sendCaptureToKira(capture: KiraCapturePayload) {
   try {
     const response = await fetch(captureEndpoint, {
       method: 'POST',
@@ -186,6 +208,23 @@ async function discoverPageImages(): Promise<PageImageCandidate[]> {
             width: image.naturalWidth,
             height: image.naturalHeight,
             alt: image.alt || image.title || '',
+            format: (() => {
+              const url = image.currentSrc || image.src
+              let path = ''
+              try {
+                path = new URL(url, location.href).pathname.toLowerCase()
+              } catch {
+                path = url.toLowerCase()
+              }
+              if (path.includes('.png')) return 'png'
+              if (path.includes('.webp')) return 'webp'
+              if (path.includes('.gif')) return 'gif'
+              if (path.includes('.svg')) return 'svg'
+              if (path.includes('.jpg') || path.includes('.jpeg')) return 'jpg'
+              return image.currentSrc?.startsWith('data:image/')
+                ? image.currentSrc.slice('data:image/'.length).split(';')[0].replace('jpeg', 'jpg')
+                : 'jpg'
+            })(),
           }))
           .filter((image) => image.url && image.width >= 160 && image.height >= 120)
           .slice(0, 20),
@@ -203,4 +242,27 @@ function dedupeImages(images: PageImageCandidate[]) {
     seen.add(image.url)
     return true
   })
+}
+
+function filteredImageCandidates() {
+  const minWidth = Number(minWidthInput.value) || 0
+  const minHeight = Number(minHeightInput.value) || 0
+  const format = formatFilterInput.value
+  return imageCandidates.filter((image) =>
+    image.width >= minWidth
+    && image.height >= minHeight
+    && (format === 'all' || image.format === format),
+  )
+}
+
+function captureTags() {
+  return tagsInput.value
+    .split(',')
+    .map((tag) => tag.trim())
+    .filter(Boolean)
+    .slice(0, 12)
+}
+
+function captureNote() {
+  return noteInput.value.trim() || undefined
 }

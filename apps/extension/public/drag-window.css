@@ -1,0 +1,179 @@
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 100%;
+  min-height: 100%;
+  margin: 0;
+  background: #0d0f0e;
+  color: #f2f4ef;
+  font: 12px/1.35 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+body {
+  display: grid;
+}
+
+.capture-shell {
+  display: grid;
+  gap: 12px;
+  min-height: 100vh;
+  padding: 14px;
+  background:
+    linear-gradient(180deg, rgba(132, 205, 188, 0.08), rgba(13, 15, 14, 0) 34%),
+    #0d0f0e;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+header strong,
+header span {
+  display: block;
+}
+
+header strong {
+  font-size: 13px;
+}
+
+header span,
+#status,
+.drop-target span,
+.drop-target small,
+.node-card span {
+  color: rgba(242, 244, 239, 0.62);
+  font-size: 11px;
+}
+
+#status {
+  max-width: 150px;
+  text-align: right;
+}
+
+.capture-grid {
+  display: grid;
+  grid-template-columns: minmax(136px, 0.72fr) minmax(0, 1.65fr);
+  gap: 10px;
+  min-height: 345px;
+}
+
+.target-column {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 10px;
+  min-width: 0;
+}
+
+.drop-target,
+.node-card {
+  border: 1px solid rgba(242, 244, 239, 0.14);
+  border-radius: 10px;
+  background: rgba(242, 244, 239, 0.045);
+  transition: background 120ms ease, border-color 120ms ease, transform 120ms ease;
+}
+
+.drop-target.is-over,
+.node-card.is-over {
+  border-color: rgba(132, 205, 188, 0.86);
+  background: rgba(132, 205, 188, 0.12);
+  transform: translateY(-1px);
+}
+
+.undecided {
+  display: grid;
+  align-content: center;
+  gap: 8px;
+  padding: 18px;
+}
+
+.undecided strong {
+  font-size: 25px;
+  line-height: 1;
+}
+
+.create-target {
+  display: grid;
+  gap: 10px;
+  min-height: 94px;
+  align-content: center;
+  padding: 12px;
+}
+
+.create-target > span {
+  color: #f2f4ef;
+  font-weight: 720;
+}
+
+.combo {
+  display: grid;
+  gap: 8px;
+}
+
+.combo[hidden] {
+  display: none;
+}
+
+.combo input {
+  width: 100%;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid rgba(132, 205, 188, 0.34);
+  border-radius: 8px;
+  outline: none;
+  background: rgba(0, 0, 0, 0.24);
+  color: #f2f4ef;
+  font: inherit;
+}
+
+.combo-list,
+.node-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  overflow: auto;
+}
+
+.combo-list {
+  max-height: 118px;
+}
+
+.node-list {
+  align-content: start;
+  max-height: 240px;
+}
+
+.node-card {
+  display: grid;
+  min-height: 82px;
+  align-content: start;
+  gap: 6px;
+  padding: 10px;
+  color: inherit;
+  text-align: left;
+}
+
+button.node-card {
+  cursor: pointer;
+}
+
+.node-card strong {
+  display: -webkit-box;
+  overflow: hidden;
+  font-size: 12px;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.node-card img {
+  width: 100%;
+  height: 68px;
+  object-fit: cover;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.08);
+}

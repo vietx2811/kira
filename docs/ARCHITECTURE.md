@@ -1,6 +1,6 @@
 # System Architecture
 
-Vixio is a standalone desktop-first visual research workspace. Eagle and the Chrome extension are adapters into Vixio; the idea/reference graph remains owned by the Vixio project package.
+KIRA is a standalone desktop-first visual research workspace. Eagle and the Chrome extension are adapters into KIRA; the idea/reference graph remains owned by the KIRA project package.
 
 ## Runtime Shape
 
@@ -8,7 +8,7 @@ Vixio is a standalone desktop-first visual research workspace. Eagle and the Chr
 Chrome Extension (MV3)
   ├─ context menu capture
   ├─ popup page image discovery
-  ├─ direct localhost POST to Vixio
+  ├─ direct localhost POST to KIRA
   └─ clipboard fallback
 
 Tauri Desktop App
@@ -30,7 +30,7 @@ Tauri Desktop App
 ## Project Package
 
 ```txt
-Project.vixio/
+Project.kira/
   manifest.json
   project.sqlite
   images/
@@ -133,11 +133,11 @@ Round 1 keeps the DOM/SVG Canvas as the editing surface:
 
 ## Extension Protocol
 
-The extension sends capture payloads directly to the local app listener. If the app is unavailable, it writes a Vixio capture payload to the clipboard for paste import.
+The extension sends capture payloads directly to the local app listener. If the app is unavailable, it writes a KIRA capture payload to the clipboard for paste import.
 
 ```ts
-type VixioCapturePayload = {
-  vixioCapture: 1
+type KIRACapturePayload = {
+  kiraCapture: 1
   kind: 'image' | 'page'
   url: string
   title: string

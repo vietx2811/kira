@@ -28,6 +28,9 @@ importers:
       culori:
         specifier: ^4.0.2
         version: 4.0.2
+      elkjs:
+        specifier: ^0.11.1
+        version: 0.11.1
       lucide-react:
         specifier: ^0.561.0
         version: 0.561.0(react@19.2.6)
@@ -977,6 +980,9 @@ packages:
 
   electron-to-chromium@1.5.364:
     resolution: {integrity: sha512-G/dYE3+AYhyHwzTwg8UbnXf7zqMERYh7l2jJ3QujhFsH8agSYwtnGAR2aZ7f0AakIKJXd5En/Hre4igIUrdlYw==}
+
+  elkjs@0.11.1:
+    resolution: {integrity: sha512-zxxR9k+rx5ktMwT/FwyLdPCrq7xN6e4VGGHH8hA01vVYKjTFik7nHOxBnAYtrgYUB1RpAiLvA1/U2YraWxyKKg==}
 
   es-toolkit@1.47.0:
     resolution: {integrity: sha512-n1GuoD0WEQZMBk5tttoZSqwgyLx01oqa5XsBmCHwPyNe1S9jPBEmtR2pSgp2kJuWE3ciFZ6yRHmY4pM4C3OOkw==}
@@ -2149,6 +2155,8 @@ snapshots:
       '@types/trusted-types': 2.0.7
 
   electron-to-chromium@1.5.364: {}
+
+  elkjs@0.11.1: {}
 
   es-toolkit@1.47.0: {}
 

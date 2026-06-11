@@ -68,6 +68,25 @@ type Selection =
 
 type CanvasNodeSelection = Pick<GraphNodeRef, 'kind' | 'id'>
 
+type ProjectTemplateId =
+  | 'welcome'
+  | 'moodboard_food_photo'
+  | 'brand_identity'
+  | 'brand_strategy_mindmap'
+  | 'content_strategy'
+  | 'kv_campaign_brief'
+
+type AiNodeAction = 'summarize' | 'break_down' | 'synthesize' | 'find_gaps' | 'generate_variations'
+
+type AiNodeScope = 'selected' | 'upstream_branch' | 'downstream_branch' | 'full_board'
+
+type AiNodeRequest = {
+  source: Pick<GraphNodeRef, 'kind' | 'id'>
+  action: AiNodeAction
+  scope: AiNodeScope
+  prompt: string
+}
+
 type PendingDelete =
   | { type: 'idea'; id: string; title: string }
   | { type: 'image'; id: string; title: string }
@@ -388,6 +407,7 @@ type AiTaskKind =
   | 'generate_palette'
   | 'rebalance_palette'
   | 'generate_outline'
+  | 'generate_node'
   | 'summarize_diagram'
 type AiProviderType =
   | 'apple_foundation'
@@ -430,6 +450,20 @@ type AiModelListResult = {
   status: string
   models: string[]
 }
+type AiGenerationResult = {
+  status: string
+  content: string
+}
+type ExtensionTargetStatus = {
+  installed: boolean
+  available: boolean
+  detail: string
+  installPath: string
+}
+type ExtensionInstallStatus = {
+  chrome: ExtensionTargetStatus
+  safari: ExtensionTargetStatus
+}
 type AiTaskRoute = {
   task: AiTaskKind
   providerId: string | null
@@ -464,6 +498,7 @@ const useCanvasHistoryStore = create<CanvasHistoryStore>()(
 )
 
 const storageKey = 'kira.project.v2'
+const onboardingStorageKey = 'kira.onboarding.v1.completed'
 const inspectorLinkedListLimit = 8
 const outlineReferenceLimit = 6
 const libraryOverscan = 5
@@ -747,6 +782,73 @@ const graphOrganizeLabels: Record<GraphOrganizeMode, string> = {
   grid: 'Grid Cleanup',
 }
 
+const projectTemplateDefinitions: Array<{
+  id: ProjectTemplateId
+  title: string
+  description: string
+  promptSeed: string
+}> = [
+  {
+    id: 'welcome',
+    title: 'Welcome.kira',
+    description: 'A guided board that explains canvas, library, browser capture, and AI setup.',
+    promptSeed: 'Teach me how to use KIRA as a creative workspace.',
+  },
+  {
+    id: 'moodboard_food_photo',
+    title: 'Moodboard Food Photo',
+    description: 'Build a direction around appetite, lighting, plating, props, and shot planning.',
+    promptSeed: 'Create a food photography moodboard for a premium seasonal menu.',
+  },
+  {
+    id: 'brand_identity',
+    title: 'Brand Identity',
+    description: 'Map brand promise, audience, visual principles, tone, and identity system.',
+    promptSeed: 'Create a brand identity workspace for a new premium consumer product.',
+  },
+  {
+    id: 'brand_strategy_mindmap',
+    title: 'Brand Strategy Mindmap',
+    description: 'Explore audience, positioning, competitors, messaging pillars, and proof.',
+    promptSeed: 'Create a brand strategy mindmap for a product entering a crowded category.',
+  },
+  {
+    id: 'content_strategy',
+    title: 'Content Strategy',
+    description: 'Plan audience intent, pillars, channels, cadence, and measurement signals.',
+    promptSeed: 'Create a content strategy board for a launch campaign.',
+  },
+  {
+    id: 'kv_campaign_brief',
+    title: 'KV / Campaign Brief',
+    description: 'Frame objective, key visual idea, message, deliverables, and rollout.',
+    promptSeed: 'Create a key visual and campaign brief for a new product launch.',
+  },
+]
+
+const aiNodeActionLabels: Record<AiNodeAction, string> = {
+  summarize: 'Summarize',
+  break_down: 'Break down',
+  synthesize: 'Synthesize',
+  find_gaps: 'Find gaps',
+  generate_variations: 'Generate variations',
+}
+
+const aiNodeActionPrompts: Record<AiNodeAction, string> = {
+  summarize: 'Summarize the key information into one compact direction.',
+  break_down: 'Break this into practical subnodes, decisions, and next questions.',
+  synthesize: 'Synthesize the relevant information into a sharper creative direction.',
+  find_gaps: 'Find missing evidence, weak assumptions, and questions to investigate.',
+  generate_variations: 'Generate alternative directions that still fit this branch.',
+}
+
+const aiNodeScopeLabels: Record<AiNodeScope, string> = {
+  selected: 'Selected node',
+  upstream_branch: 'Upstream branch',
+  downstream_branch: 'Downstream branch',
+  full_board: 'Full board',
+}
+
 const outlineFilterLabels: Record<OutlineFilter, string> = {
   all: 'All',
   strong: 'Strong',
@@ -760,6 +862,7 @@ const aiTaskLabels: Record<AiTaskKind, string> = {
   generate_palette: 'Generate palette',
   rebalance_palette: 'Rebalance palette',
   generate_outline: 'Generate outline',
+  generate_node: 'Generate node',
   summarize_diagram: 'Summarize diagram',
 }
 
@@ -794,6 +897,77 @@ const aiRoutingLabels: Record<AiRoutingMode, string> = {
   selected_remote: 'Selected remote provider',
 }
 
+const providerConnectionNotes = [
+  {
+    id: 'openai',
+    title: 'OpenAI / ChatGPT',
+    providerId: 'openai',
+    truth: 'A ChatGPT subscription cannot be connected as API billing. KIRA needs an OpenAI Platform API key.',
+    action: 'Paste an OpenAI API key',
+    href: 'https://platform.openai.com/api-keys',
+  },
+  {
+    id: 'anthropic',
+    title: 'Anthropic / Claude',
+    providerId: 'anthropic',
+    truth: 'A Claude subscription cannot be connected as API billing. KIRA needs an Anthropic Console API key.',
+    action: 'Paste an Anthropic API key',
+    href: 'https://console.anthropic.com/settings/keys',
+  },
+  {
+    id: 'local',
+    title: 'Local models',
+    providerId: 'apple-foundation',
+    truth: 'Local providers keep routing available when remote billing or keys are not ready.',
+    action: 'Check local runtime',
+    href: '',
+  },
+]
+
+const extensionInstallTargets = [
+  {
+    id: 'chrome',
+    title: 'Chrome / Chromium',
+    status: 'Manual load',
+    primary: 'Open bundled dist',
+    secondary: 'Open extensions page',
+    instruction: 'Open the bundled dist folder, then in Chrome Extensions enable Developer mode and Load unpacked.',
+    path: 'Bundled in KIRA.app/Contents/Resources/.../extension/dist',
+    href: 'chrome://extensions',
+    installActionId: 'chrome_dist',
+    settingsActionId: 'chrome',
+  },
+  {
+    id: 'safari',
+    title: 'Safari',
+    status: 'Container app',
+    primary: 'Open bundled app',
+    secondary: 'Open Safari settings',
+    instruction: 'Open the bundled KIRA Safari app once, then enable KIRA Capture in Safari Extensions.',
+    path: 'Bundled in KIRA.app/Contents/Resources/.../KIRA Safari.app',
+    href: 'x-apple.systempreferences:com.apple.Safari-Settings.extension',
+    installActionId: 'safari_app',
+    settingsActionId: 'safari',
+  },
+]
+
+function defaultExtensionInstallStatus(): ExtensionInstallStatus {
+  return {
+    chrome: {
+      installed: false,
+      available: true,
+      detail: 'Desktop status check not run',
+      installPath: 'Bundled in KIRA.app/Contents/Resources/.../extension/dist',
+    },
+    safari: {
+      installed: false,
+      available: true,
+      detail: 'Desktop status check not run',
+      installPath: 'Bundled in KIRA.app/Contents/Resources/.../KIRA Safari.app',
+    },
+  }
+}
+
 function useDismissableLayer(active: boolean, ignoreSelector: string, onDismiss: () => void) {
   useEffect(() => {
     if (!active) return
@@ -825,7 +999,7 @@ const defaultAiProviderProfiles: AiProviderProfile[] = [
     authMode: 'local',
     model: 'system default',
     status: 'unavailable',
-    defaultFor: ['tag_reference', 'classify_reference', 'generate_outline', 'summarize_diagram'],
+    defaultFor: ['tag_reference', 'classify_reference', 'generate_outline', 'generate_node', 'summarize_diagram'],
   },
   {
     id: 'openai',
@@ -835,7 +1009,7 @@ const defaultAiProviderProfiles: AiProviderProfile[] = [
     baseUrl: 'https://api.openai.com/v1',
     model: 'gpt-4.1-mini',
     status: 'key_missing',
-    defaultFor: ['generate_outline', 'summarize_diagram'],
+    defaultFor: ['generate_outline', 'generate_node', 'summarize_diagram'],
   },
   {
     id: 'anthropic',
@@ -845,7 +1019,7 @@ const defaultAiProviderProfiles: AiProviderProfile[] = [
     baseUrl: 'https://api.anthropic.com',
     model: 'claude-3-5-sonnet-latest',
     status: 'key_missing',
-    defaultFor: ['generate_outline'],
+    defaultFor: ['generate_outline', 'generate_node'],
   },
   {
     id: 'gemini',
@@ -855,7 +1029,7 @@ const defaultAiProviderProfiles: AiProviderProfile[] = [
     baseUrl: 'https://generativelanguage.googleapis.com',
     model: 'gemini-1.5-pro',
     status: 'key_missing',
-    defaultFor: ['classify_reference', 'generate_palette'],
+    defaultFor: ['classify_reference', 'generate_palette', 'generate_node'],
   },
   {
     id: 'openrouter',
@@ -865,7 +1039,7 @@ const defaultAiProviderProfiles: AiProviderProfile[] = [
     baseUrl: 'https://openrouter.ai/api/v1',
     model: 'auto',
     status: 'key_missing',
-    defaultFor: ['find_similar', 'generate_outline'],
+    defaultFor: ['find_similar', 'generate_outline', 'generate_node'],
   },
   {
     id: 'ollama',
@@ -875,7 +1049,7 @@ const defaultAiProviderProfiles: AiProviderProfile[] = [
     baseUrl: 'http://localhost:11434/v1',
     model: 'llama3.2',
     status: 'unavailable',
-    defaultFor: ['tag_reference', 'classify_reference'],
+    defaultFor: ['tag_reference', 'classify_reference', 'generate_node'],
   },
   {
     id: 'lm-studio',
@@ -885,7 +1059,7 @@ const defaultAiProviderProfiles: AiProviderProfile[] = [
     baseUrl: 'http://localhost:1234/v1',
     model: 'local-model',
     status: 'unavailable',
-    defaultFor: ['tag_reference'],
+    defaultFor: ['tag_reference', 'generate_node'],
   },
 ]
 
@@ -897,7 +1071,7 @@ const aiProviderTemplates: Record<Exclude<AiProviderType, 'apple_foundation'>, O
     baseUrl: 'https://api.openai.com/v1',
     model: 'gpt-4.1-mini',
     status: 'key_missing',
-    defaultFor: ['generate_outline', 'summarize_diagram'],
+    defaultFor: ['generate_outline', 'generate_node', 'summarize_diagram'],
   },
   anthropic: {
     type: 'anthropic',
@@ -906,7 +1080,7 @@ const aiProviderTemplates: Record<Exclude<AiProviderType, 'apple_foundation'>, O
     baseUrl: 'https://api.anthropic.com',
     model: 'claude-3-5-sonnet-latest',
     status: 'key_missing',
-    defaultFor: ['generate_outline'],
+    defaultFor: ['generate_outline', 'generate_node'],
   },
   gemini: {
     type: 'gemini',
@@ -915,7 +1089,7 @@ const aiProviderTemplates: Record<Exclude<AiProviderType, 'apple_foundation'>, O
     baseUrl: 'https://generativelanguage.googleapis.com',
     model: 'gemini-1.5-pro',
     status: 'key_missing',
-    defaultFor: ['classify_reference', 'generate_palette'],
+    defaultFor: ['classify_reference', 'generate_palette', 'generate_node'],
   },
   openrouter: {
     type: 'openrouter',
@@ -924,7 +1098,7 @@ const aiProviderTemplates: Record<Exclude<AiProviderType, 'apple_foundation'>, O
     baseUrl: 'https://openrouter.ai/api/v1',
     model: 'auto',
     status: 'key_missing',
-    defaultFor: ['find_similar', 'generate_outline'],
+    defaultFor: ['find_similar', 'generate_outline', 'generate_node'],
   },
   ollama: {
     type: 'ollama',
@@ -933,7 +1107,7 @@ const aiProviderTemplates: Record<Exclude<AiProviderType, 'apple_foundation'>, O
     baseUrl: 'http://localhost:11434/v1',
     model: 'llama3.2',
     status: 'unavailable',
-    defaultFor: ['tag_reference', 'classify_reference'],
+    defaultFor: ['tag_reference', 'classify_reference', 'generate_node'],
   },
   lm_studio: {
     type: 'lm_studio',
@@ -942,7 +1116,7 @@ const aiProviderTemplates: Record<Exclude<AiProviderType, 'apple_foundation'>, O
     baseUrl: 'http://localhost:1234/v1',
     model: 'local-model',
     status: 'unavailable',
-    defaultFor: ['tag_reference'],
+    defaultFor: ['tag_reference', 'generate_node'],
   },
   custom_openai_compatible: {
     type: 'custom_openai_compatible',
@@ -951,7 +1125,7 @@ const aiProviderTemplates: Record<Exclude<AiProviderType, 'apple_foundation'>, O
     baseUrl: 'http://localhost:8000/v1',
     model: 'model-id',
     status: 'key_missing',
-    defaultFor: [],
+    defaultFor: ['generate_node'],
   },
 }
 
@@ -1053,6 +1227,8 @@ function App() {
   const [selectedAiProviderId, setSelectedAiProviderId] = useState(initialProject.aiSettings.selectedProviderId)
   const [activeAiProviderId, setActiveAiProviderId] = useState(initialProject.aiSettings.selectedProviderId)
   const [aiSettingsStatus, setAiSettingsStatus] = useState('Local-first routing is active')
+  const [isOnboardingOpen, setIsOnboardingOpen] = useState(() => !readOnboardingCompleted())
+  const [extensionInstallStatus, setExtensionInstallStatus] = useState<ExtensionInstallStatus>(() => defaultExtensionInstallStatus())
   const [modelRunningImageId, setModelRunningImageId] = useState<string | null>(null)
   const [modelStatusByImageId, setModelStatusByImageId] = useState<Record<string, string>>({})
   const [selectedReferenceIds, setSelectedReferenceIds] = useState<Set<string>>(new Set())
@@ -1187,6 +1363,50 @@ function App() {
     [aiProviders, aiRoutingMode, selectedAiProviderId],
   )
 
+  async function refreshFoundationModelAvailability() {
+    if (!isTauriRuntime()) {
+      setLocalModelAvailable(false)
+      setLocalModelStatus('Desktop app required')
+      setAiProviders((current) =>
+        current.map((provider) =>
+          provider.id === 'apple-foundation' ? { ...provider, status: 'unavailable' } : provider,
+        ),
+      )
+      return
+    }
+    try {
+      const availability = await checkNativeFoundationModelAvailability()
+      setLocalModelAvailable(availability.available)
+      setLocalModelStatus(availability.reason || availability.status)
+      setAiProviders((current) =>
+        current.map((provider) =>
+          provider.id === 'apple-foundation'
+            ? { ...provider, status: availability.available ? 'connected' : 'unavailable' }
+            : provider,
+        ),
+      )
+    } catch {
+      setLocalModelAvailable(false)
+      setLocalModelStatus('Unavailable')
+      setAiProviders((current) =>
+        current.map((provider) =>
+          provider.id === 'apple-foundation' ? { ...provider, status: 'unavailable' } : provider,
+        ),
+      )
+    }
+  }
+
+  async function refreshExtensionInstallStatus() {
+    try {
+      const status = await getNativeExtensionInstallStatus()
+      setExtensionInstallStatus(status)
+      setAiSettingsStatus('Extension status refreshed')
+    } catch (error) {
+      setExtensionInstallStatus(defaultExtensionInstallStatus())
+      setAiSettingsStatus(error instanceof Error ? error.message : 'Extension status unavailable')
+    }
+  }
+
   useEffect(() => {
     if (!isTauriRuntime()) return
 
@@ -1202,29 +1422,11 @@ function App() {
   }, [captureContext])
 
   useEffect(() => {
-    if (!isTauriRuntime()) return
+    void refreshFoundationModelAvailability()
+  }, [])
 
-    void checkNativeFoundationModelAvailability()
-      .then((availability) => {
-        setLocalModelAvailable(availability.available)
-        setLocalModelStatus(availability.reason || availability.status)
-        setAiProviders((current) =>
-          current.map((provider) =>
-            provider.id === 'apple-foundation'
-              ? { ...provider, status: availability.available ? 'connected' : 'unavailable' }
-              : provider,
-          ),
-        )
-      })
-      .catch(() => {
-        setLocalModelAvailable(false)
-        setLocalModelStatus('Unavailable')
-        setAiProviders((current) =>
-          current.map((provider) =>
-            provider.id === 'apple-foundation' ? { ...provider, status: 'unavailable' } : provider,
-          ),
-        )
-      })
+  useEffect(() => {
+    void refreshExtensionInstallStatus()
   }, [])
 
   useEffect(() => {
@@ -1458,6 +1660,37 @@ function App() {
       links: snapshot.links,
       selection: { type: 'project' },
     })
+  }
+
+  function currentAiSettingsSnapshot(): AiSettingsSnapshot {
+    return {
+      providers: aiProviders,
+      routingMode: aiRoutingMode,
+      selectedProviderId: selectedAiProviderId,
+    }
+  }
+
+  function applyProjectTemplate(templateId: ProjectTemplateId) {
+    const snapshot = createProjectTemplateSnapshot(templateId, currentAiSettingsSnapshot())
+    applyProjectSnapshot(snapshot)
+    setProjectPackage(null)
+    setLibraryStatus(`${templateProjectMetadata(templateId).title} loaded`)
+  }
+
+  function openWelcomeProject(completeOnboarding = false) {
+    applyProjectTemplate('welcome')
+    setActiveView('Canvas')
+    if (completeOnboarding) {
+      writeOnboardingCompleted(true)
+      setIsOnboardingOpen(false)
+    }
+  }
+
+  function generatePromptStarter(prompt: string) {
+    const snapshot = createPromptStarterSnapshot(prompt, currentAiSettingsSnapshot())
+    applyProjectSnapshot(snapshot)
+    setProjectPackage(null)
+    setLibraryStatus('Prompt starter generated')
   }
 
   function currentCanvasHistoryEntry(): CanvasHistoryEntry {
@@ -2540,6 +2773,44 @@ function App() {
     setActiveAiProviderId(providerId)
   }
 
+  function finishOnboarding() {
+    writeOnboardingCompleted(true)
+    setIsOnboardingOpen(false)
+    setAiSettingsStatus('Onboarding completed')
+  }
+
+  function resetOnboarding() {
+    writeOnboardingCompleted(false)
+    setActiveView('Settings')
+    setIsOnboardingOpen(true)
+    setAiSettingsStatus('Onboarding reset')
+  }
+
+  function focusProviderSetup(providerId: string) {
+    setActiveView('Settings')
+    setActiveAiProviderId(providerId)
+    if (providerId !== 'apple-foundation') setSelectedAiProviderId(providerId)
+  }
+
+  async function handleExtensionInstallAction(targetId: string) {
+    const target = extensionInstallTargets.find((item) =>
+      item.id === targetId || item.installActionId === targetId || item.settingsActionId === targetId,
+    )
+    if (!target) return
+    if (isTauriRuntime()) {
+      await openNativeExtensionInstallTarget(targetId)
+      await refreshExtensionInstallStatus()
+      return
+    }
+    if (targetId === target.settingsActionId && target.href) window.open(target.href, '_blank', 'noopener,noreferrer')
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(target.path)
+      setAiSettingsStatus(`${target.title}: install path copied`)
+    } else {
+      setAiSettingsStatus(`${target.title}: ${target.path}`)
+    }
+  }
+
   async function saveAiProviderSecret(providerId: string, secret: string) {
     if (!secret.trim()) {
       setAiSettingsStatus('Secret is empty')
@@ -2895,6 +3166,130 @@ function App() {
     recordNodeVersion('diagram', undefined, diagram, 'created')
     setDiagrams((current) => [...current, diagram])
     createNodeLink(source, { kind: 'diagram', id: diagram.id }, 'related', { skipHistory: true })
+  }
+
+  async function createAiNode(request: AiNodeRequest) {
+    const sourceNode = resolveGraphNodeRef(request.source.id, ideas, images, palettes, diagrams, placeholders)
+    if (!sourceNode) return
+
+    const allNodes = [
+      ...ideas.map((idea) => ({ kind: 'idea' as const, id: idea.id, title: idea.title, x: idea.x, y: idea.y })),
+      ...images.map((image) => ({ kind: 'image' as const, id: image.id, title: image.title, x: image.x, y: image.y })),
+      ...palettes.map((palette) => ({ kind: 'palette' as const, id: palette.id, title: palette.title, x: palette.x, y: palette.y })),
+      ...diagrams.map((diagram) => ({ kind: 'diagram' as const, id: diagram.id, title: diagram.title, x: diagram.x, y: diagram.y })),
+      ...placeholders.map((placeholder) => ({ kind: 'placeholder' as const, id: placeholder.id, title: placeholder.title, x: placeholder.x, y: placeholder.y })),
+    ]
+    const nodeKey = (node: Pick<GraphNodeRef, 'kind' | 'id'>) => `${node.kind}:${node.id}`
+    const nodeByKey = new Map(allNodes.map((node) => [nodeKey(node), node]))
+    const inbound = new Map<string, string[]>()
+    const outbound = new Map<string, string[]>()
+    links.forEach((link) => {
+      const sourceKey = nodeKey({ kind: link.sourceKind ?? 'image', id: link.sourceNodeId ?? link.imageId })
+      const targetKey = nodeKey({ kind: link.targetKind ?? 'idea', id: link.targetNodeId ?? link.ideaId })
+      outbound.set(sourceKey, [...(outbound.get(sourceKey) ?? []), targetKey])
+      inbound.set(targetKey, [...(inbound.get(targetKey) ?? []), sourceKey])
+    })
+
+    function walk(start: string, graph: Map<string, string[]>) {
+      const seen = new Set([start])
+      const queue = [start]
+      while (queue.length > 0) {
+        const current = queue.shift()
+        if (!current) continue
+        for (const next of graph.get(current) ?? []) {
+          if (seen.has(next)) continue
+          seen.add(next)
+          queue.push(next)
+        }
+      }
+      return [...seen]
+    }
+
+    const sourceKey = nodeKey(sourceNode)
+    const baseKeys =
+      request.scope === 'full_board'
+        ? allNodes.map(nodeKey)
+        : request.scope === 'upstream_branch'
+          ? walk(sourceKey, inbound)
+          : request.scope === 'downstream_branch'
+            ? walk(sourceKey, outbound)
+            : [sourceKey]
+    const baseNodes = baseKeys.map((key) => nodeByKey.get(key)).filter(Boolean).slice(0, 12) as GraphNodeRef[]
+    const instruction = request.prompt.trim() || aiNodeActionPrompts[request.action]
+    const route = selectAiProviderForTask('generate_node', aiProviders, aiRoutingMode, selectedAiProviderId)
+    const provider = route.providerId ? aiProviders.find((candidate) => candidate.id === route.providerId) : undefined
+    const baseNodeLines = baseNodes.map((node) => `- ${graphNodeKindLabel(node.kind)}: ${node.title}`)
+    const generationPrompt = [
+      'You are KIRA, a creative workspace assistant. Generate concise, useful content for a new canvas node.',
+      `Action: ${aiNodeActionLabels[request.action]}`,
+      `Scope: ${aiNodeScopeLabels[request.scope]}`,
+      `User instruction: ${instruction}`,
+      `Source node: ${graphNodeKindLabel(sourceNode.kind)} - ${sourceNode.title}`,
+      '',
+      'Base nodes:',
+      ...baseNodeLines,
+      '',
+      'Return only the node body. Use short sections or bullets. Do not mention that you are an AI model.',
+    ].join('\n')
+    let generatedBody: string | null = null
+    let generationStatus = provider ? `${provider.name}: ${route.reason}` : route.reason
+    if (provider) {
+      try {
+        const result = await generateNativeAiText(provider, generationPrompt)
+        generatedBody = result.content.trim()
+        generationStatus = `${provider.name}: ${result.status}`
+      } catch (error) {
+        generationStatus = error instanceof Error ? error.message : 'AI generation failed'
+      }
+    }
+    const body = [
+      `AI action: ${aiNodeActionLabels[request.action]}`,
+      `Scope: ${aiNodeScopeLabels[request.scope]}`,
+      `Instruction: ${instruction}`,
+      `Provider: ${generationStatus}`,
+      '',
+      generatedBody || [
+        'Generated draft fallback.',
+        '',
+        'Base nodes:',
+        ...baseNodeLines,
+        '',
+        'Connect and test a provider in Settings to replace this fallback with live model output.',
+      ].join('\n'),
+    ].join('\n')
+    const timestamp = nowIso()
+    const idea: Idea = {
+      id: `idea-ai-${Date.now()}`,
+      title: `${aiNodeActionLabels[request.action]}: ${sourceNode.title}`.slice(0, 82),
+      body,
+      status: 'forming',
+      x: clamp(sourceNode.x + 14, 8, 92),
+      y: clamp(sourceNode.y + 12, 8, 92),
+      importance: 1.05,
+      createdAt: timestamp,
+      addedAt: timestamp,
+      updatedAt: timestamp,
+    }
+    const link: EvidenceLink = {
+      id: `link-ai-${Date.now()}`,
+      imageId: sourceNode.kind === 'image' ? sourceNode.id : '',
+      ideaId: idea.id,
+      sourceNodeId: sourceNode.id,
+      targetNodeId: idea.id,
+      sourceKind: sourceNode.kind,
+      targetKind: 'idea',
+      relation: 'derived-from',
+      note: `${aiNodeActionLabels[request.action]} generated from ${aiNodeScopeLabels[request.scope]}.`,
+      confidence: 0.62,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    }
+
+    pushCanvasHistory()
+    recordNodeVersion('idea', undefined, idea, 'created')
+    setIdeas((current) => [...current, idea])
+    setLinks((current) => [...current, link])
+    setSelection({ type: 'idea', id: idea.id })
   }
 
   function updatePaletteColor(paletteId: string, colorIndex: number, color: string) {
@@ -3853,6 +4248,7 @@ function App() {
                 activeProviderId={activeAiProviderId}
                 localModelAvailable={localModelAvailable}
                 localModelStatus={localModelStatus}
+                extensionInstallStatus={extensionInstallStatus}
                 status={aiSettingsStatus}
                 onActiveProviderChange={setActiveAiProviderId}
                 onProviderAdd={addAiProvider}
@@ -3865,6 +4261,10 @@ function App() {
                 onProviderTaskToggle={toggleAiProviderTask}
                 onRoutingModeChange={setAiRoutingMode}
                 onSelectedProviderChange={setSelectedProviderWithActive}
+                onOnboardingReset={resetOnboarding}
+                onWelcomeOpen={() => openWelcomeProject(false)}
+                onExtensionAction={handleExtensionInstallAction}
+                onExtensionRefresh={refreshExtensionInstallStatus}
               />
             ) : (
               <GraphCanvas
@@ -3881,6 +4281,9 @@ function App() {
                 onSelect={setSelection}
                 onCreateLink={createNodeLink}
                 onCreateLinkedNode={createLinkedNode}
+                onCreateAiNode={createAiNode}
+                onApplyProjectTemplate={applyProjectTemplate}
+                onGeneratePromptStarter={generatePromptStarter}
                 onActiveCanvasToolChange={setActiveCanvasTool}
                 onPendingLinkSourceChange={setPendingLinkSource}
                 onCreateIdea={() => createIdea({ focusTitle: true })}
@@ -4088,6 +4491,22 @@ function App() {
         onRestore={restoreProjectVersion}
         onSaveVersion={() => saveAsNewVersion()}
       />
+      {isOnboardingOpen && (
+        <OnboardingOverlay
+          providers={aiProviders}
+          localModelAvailable={localModelAvailable}
+          localModelStatus={localModelStatus}
+          extensionInstallStatus={extensionInstallStatus}
+          onClose={finishOnboarding}
+          onProviderFocus={focusProviderSetup}
+          onProviderSecretSave={saveAiProviderSecret}
+          onProviderTest={testAiProvider}
+          onLocalCheck={refreshFoundationModelAvailability}
+          onWelcomeOpen={() => openWelcomeProject(true)}
+          onExtensionAction={handleExtensionInstallAction}
+          onExtensionRefresh={refreshExtensionInstallStatus}
+        />
+      )}
     </main>
   )
 }
@@ -4124,6 +4543,159 @@ function FloatingPanel({
         {children}
       </div>
     </Rnd>
+  )
+}
+
+function OnboardingOverlay({
+  providers,
+  localModelAvailable,
+  localModelStatus,
+  extensionInstallStatus,
+  onClose,
+  onProviderFocus,
+  onProviderSecretSave,
+  onProviderTest,
+  onLocalCheck,
+  onWelcomeOpen,
+  onExtensionAction,
+  onExtensionRefresh,
+}: {
+  providers: AiProviderProfile[]
+  localModelAvailable: boolean
+  localModelStatus: string
+  extensionInstallStatus: ExtensionInstallStatus
+  onClose: () => void
+  onProviderFocus: (providerId: string) => void
+  onProviderSecretSave: (providerId: string, secret: string) => void
+  onProviderTest: (providerId: string) => void
+  onLocalCheck: () => void
+  onWelcomeOpen: () => void
+  onExtensionAction: (targetId: string) => void
+  onExtensionRefresh: () => void
+}) {
+  const [secretDrafts, setSecretDrafts] = useState<Record<string, string>>({})
+
+  return (
+    <div className="onboarding-backdrop" role="dialog" aria-modal="true" aria-label="KIRA onboarding">
+      <section className="onboarding-shell">
+        <header className="onboarding-header">
+          <div>
+            <span>KIRA setup</span>
+            <h2>Connect AI and browser capture</h2>
+          </div>
+          <button className="icon-button" type="button" aria-label="Close onboarding" onClick={onClose}>
+            <X size={16} />
+          </button>
+        </header>
+
+        <div className="onboarding-grid">
+          <section className="onboarding-panel onboarding-panel--primary">
+            <div className="section-heading">
+              <Bot size={14} />
+              AI providers
+            </div>
+            <div className="onboarding-provider-list">
+              {providerConnectionNotes.map((note) => {
+                const provider = providers.find((candidate) => candidate.id === note.providerId)
+                const secretDraft = secretDrafts[note.providerId] ?? ''
+                return (
+                  <article className="onboarding-provider-card" key={note.id}>
+                    <div>
+                      <strong>{note.title}</strong>
+                      <small>{provider ? aiProviderStatusLabels[provider.status] : localModelAvailable ? 'available' : 'unavailable'}</small>
+                    </div>
+                    <p>{note.truth}</p>
+                    {provider && provider.authMode !== 'local' && (
+                      <label>
+                        <span>{note.action}</span>
+                        <input
+                          type="password"
+                          value={secretDraft}
+                          placeholder={provider.secretRef ? 'Stored in Keychain' : 'API key'}
+                          onChange={(event) => setSecretDrafts((current) => ({ ...current, [note.providerId]: event.target.value }))}
+                        />
+                      </label>
+                    )}
+                    <div className="onboarding-action-row">
+                      {provider && provider.authMode !== 'local' && (
+                        <>
+                          <button
+                            className="primary-button"
+                            type="button"
+                            onClick={() => {
+                              onProviderSecretSave(note.providerId, secretDraft)
+                              setSecretDrafts((current) => ({ ...current, [note.providerId]: '' }))
+                            }}
+                          >
+                            Save key
+                          </button>
+                          <button className="quiet-button" type="button" onClick={() => onProviderTest(note.providerId)}>
+                            Test
+                          </button>
+                        </>
+                      )}
+                      {provider?.authMode === 'local' && (
+                        <button className="primary-button" type="button" onClick={onLocalCheck}>
+                          Check local
+                        </button>
+                      )}
+                      <button className="quiet-button" type="button" onClick={() => onProviderFocus(note.providerId)}>
+                        Settings
+                      </button>
+                      {note.href && (
+                        <button className="icon-button" type="button" aria-label={`Open ${note.title} key page`} onClick={() => window.open(note.href, '_blank', 'noopener,noreferrer')}>
+                          <ExternalLink size={14} />
+                        </button>
+                      )}
+                    </div>
+                  </article>
+                )
+              })}
+            </div>
+          </section>
+
+          <section className="onboarding-panel">
+            <div className="section-heading">
+              <Sparkles size={14} />
+              Browser capture
+              <button className="icon-button" type="button" aria-label="Refresh extension status" onClick={onExtensionRefresh}>
+                <LocateFixed size={13} />
+              </button>
+            </div>
+            <div className="extension-install-list">
+              {extensionInstallTargets.map((target) => (
+                <article className="extension-install-card" key={target.id}>
+                  <div>
+                    <strong>{target.title}</strong>
+                    <small>{extensionStatusForTarget(extensionInstallStatus, target.id).installed ? 'installed' : target.status}</small>
+                  </div>
+                  <p>{target.instruction}</p>
+                  <code>{extensionStatusForTarget(extensionInstallStatus, target.id).detail}</code>
+                  <div className="extension-card-actions">
+                    <button className="quiet-button" type="button" onClick={() => onExtensionAction(target.installActionId)}>
+                      {target.primary}
+                    </button>
+                    <button className="quiet-button" type="button" onClick={() => onExtensionAction(target.settingsActionId)}>
+                      {target.secondary}
+                    </button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </section>
+        </div>
+
+        <footer className="onboarding-footer">
+          <span>Local status: {localModelStatus}</span>
+          <button className="quiet-button" type="button" onClick={onWelcomeOpen}>
+            Open Welcome.kira
+          </button>
+          <button className="primary-button" type="button" onClick={onClose}>
+            Start workspace
+          </button>
+        </footer>
+      </section>
+    </div>
   )
 }
 
@@ -4359,6 +4931,7 @@ function SettingsView({
   activeProviderId,
   localModelAvailable,
   localModelStatus,
+  extensionInstallStatus,
   status,
   onActiveProviderChange,
   onProviderAdd,
@@ -4371,6 +4944,10 @@ function SettingsView({
   onProviderTaskToggle,
   onRoutingModeChange,
   onSelectedProviderChange,
+  onOnboardingReset,
+  onWelcomeOpen,
+  onExtensionAction,
+  onExtensionRefresh,
 }: {
   providers: AiProviderProfile[]
   taskRoutes: AiTaskRoute[]
@@ -4379,6 +4956,7 @@ function SettingsView({
   activeProviderId: string
   localModelAvailable: boolean
   localModelStatus: string
+  extensionInstallStatus: ExtensionInstallStatus
   status: string
   onActiveProviderChange: (providerId: string) => void
   onProviderAdd: (type: Exclude<AiProviderType, 'apple_foundation'>) => void
@@ -4391,6 +4969,10 @@ function SettingsView({
   onProviderTaskToggle: (providerId: string, task: AiTaskKind) => void
   onRoutingModeChange: (mode: AiRoutingMode) => void
   onSelectedProviderChange: (providerId: string) => void
+  onOnboardingReset: () => void
+  onWelcomeOpen: () => void
+  onExtensionAction: (targetId: string) => void
+  onExtensionRefresh: () => void
 }) {
   const remoteProviders = providers.filter((provider) => provider.authMode !== 'local')
   const selectedRemoteProvider = remoteProviders.find((provider) => provider.id === selectedProviderId) ?? remoteProviders[0]
@@ -4441,6 +5023,50 @@ function SettingsView({
             <span>Local</span>
             <strong>{localModelAvailable ? 'available' : 'unavailable'}</strong>
           </div>
+        </section>
+
+        <section className="settings-section settings-onboarding-grid" aria-label="Onboarding and extensions">
+          <article className="settings-panel settings-action-panel">
+            <div>
+              <h3>Onboarding</h3>
+              <p>Replay first-run setup for API keys, local fallback, and browser capture.</p>
+            </div>
+            <div className="settings-action-row">
+              <button className="quiet-button" type="button" onClick={onWelcomeOpen}>
+                Open Welcome.kira
+              </button>
+              <button className="quiet-button" type="button" onClick={onOnboardingReset}>
+                Reset onboarding
+              </button>
+            </div>
+          </article>
+
+          <article className="settings-panel settings-action-panel">
+            <div>
+              <h3>Extensions</h3>
+              <p>Install the current bundled capture helper into Chrome/Chromium or Safari.</p>
+            </div>
+            <div className="settings-extension-grid">
+              {extensionInstallTargets.map((target) => (
+                <div className="settings-extension-card" key={target.id}>
+                  <div>
+                    <span>{target.title}</span>
+                    <small>{extensionStatusForTarget(extensionInstallStatus, target.id).installed ? 'installed' : extensionStatusForTarget(extensionInstallStatus, target.id).detail}</small>
+                  </div>
+                  <button className="quiet-button" type="button" onClick={() => onExtensionAction(target.installActionId)}>
+                    {target.primary}
+                  </button>
+                  <button className="quiet-button" type="button" onClick={() => onExtensionAction(target.settingsActionId)}>
+                    {target.secondary}
+                  </button>
+                </div>
+              ))}
+              <button className="quiet-button" type="button" onClick={onExtensionRefresh}>
+                <span>Refresh</span>
+                <small>Detect installed extensions</small>
+              </button>
+            </div>
+          </article>
         </section>
 
         <section className="settings-section" id="settings-providers">
@@ -5223,6 +5849,9 @@ function GraphCanvas({
   onSelect,
   onCreateLink,
   onCreateLinkedNode,
+  onCreateAiNode,
+  onApplyProjectTemplate,
+  onGeneratePromptStarter,
   onActiveCanvasToolChange,
   onPendingLinkSourceChange,
   onCreateIdea,
@@ -5251,6 +5880,9 @@ function GraphCanvas({
   onSelect: (selection: Selection) => void
   onCreateLink: (source: Pick<GraphNodeRef, 'kind' | 'id'>, target: Pick<GraphNodeRef, 'kind' | 'id'>, relation?: Relation) => void
   onCreateLinkedNode: (source: Pick<GraphNodeRef, 'kind' | 'id'>, targetKind: GraphNodeKind) => void
+  onCreateAiNode: (request: AiNodeRequest) => void | Promise<void>
+  onApplyProjectTemplate: (templateId: ProjectTemplateId) => void
+  onGeneratePromptStarter: (prompt: string) => void
   onActiveCanvasToolChange: React.Dispatch<React.SetStateAction<CanvasTool>>
   onPendingLinkSourceChange: React.Dispatch<React.SetStateAction<Pick<GraphNodeRef, 'kind' | 'id'> | null>>
   onCreateIdea: () => void
@@ -5293,6 +5925,13 @@ function GraphCanvas({
   const [multiSelectedNodes, setMultiSelectedNodes] = useState<CanvasNodeSelection[]>([])
   const [nodeContextMenu, setNodeContextMenu] = useState<{ x: number; y: number; nodes: CanvasNodeSelection[] } | null>(null)
   const [editingIdeaField, setEditingIdeaField] = useState<{ id: string; field: 'title' | 'body' } | null>(null)
+  const [starterPrompt, setStarterPrompt] = useState('')
+  const [aiNodeDraft, setAiNodeDraft] = useState<{
+    source: Pick<GraphNodeRef, 'kind' | 'id'>
+    action: AiNodeAction
+    scope: AiNodeScope
+    prompt: string
+  } | null>(null)
 
   useDismissableLayer(
     isGraphToolsOpen || Boolean(arcMenu) || Boolean(nodeContextMenu),
@@ -5617,6 +6256,31 @@ function GraphCanvas({
     onCreateLinkedNode(source, targetKind)
   }
 
+  function openAiNodeDraftFromArc() {
+    if (!arcMenu) return
+    const source = { kind: arcMenu.kind, id: arcMenu.id }
+    setAiNodeDraft({
+      source,
+      action: 'summarize',
+      scope: 'downstream_branch',
+      prompt: aiNodeActionPrompts.summarize,
+    })
+    setArcMenu(null)
+  }
+
+  function submitAiNodeDraft() {
+    if (!aiNodeDraft) return
+    void onCreateAiNode(aiNodeDraft)
+    setAiNodeDraft(null)
+  }
+
+  function submitPromptStarter() {
+    const prompt = starterPrompt.trim()
+    if (!prompt) return
+    onGeneratePromptStarter(prompt)
+    setStarterPrompt('')
+  }
+
   function moveNode(kind: GraphNodeKind, id: string, event: React.PointerEvent<HTMLElement>) {
     const activeDrag = draggingNodeRef.current
     if (activeDrag?.kind !== kind || activeDrag.id !== id) return
@@ -5666,7 +6330,7 @@ function GraphCanvas({
 
   function startPan(event: React.PointerEvent<HTMLDivElement>) {
     const target = event.target instanceof Element ? event.target : null
-    if (target?.closest('[data-node-kind][data-node-id], button, input, textarea, select, .canvas-tool-rail, .canvas-secondary-rail, .graph-tools-drawer, .node-context-menu, .node-arc-menu')) return
+    if (target?.closest('[data-node-kind][data-node-id], button, input, textarea, select, .canvas-tool-rail, .canvas-secondary-rail, .graph-tools-drawer, .node-context-menu, .node-arc-menu, .canvas-zero-state, .ai-node-panel')) return
     onSelect({ type: 'project' })
     setNodeContextMenu(null)
     setArcMenu(null)
@@ -5713,7 +6377,10 @@ function GraphCanvas({
         data-visible-nodes={graphMetrics.visibleNodes}
         ref={canvasRef}
         onPointerDown={startPan}
-        onPointerMove={updateCanvasGridHotspot}
+        onPointerMove={(event) => {
+          updateCanvasGridHotspot(event)
+          movePan(event)
+        }}
         onPointerUp={stopPan}
         onPointerCancel={stopPan}
       >
@@ -5768,10 +6435,42 @@ function GraphCanvas({
             </button>
           </div>
         </div>
+        {graphMetrics.totalNodes === 0 && (
+          <section className="canvas-zero-state" aria-label="Start a KIRA project">
+            <div className="canvas-zero-heading">
+              <span><Sparkles size={14} /> Start board</span>
+              <h2>Choose a template or generate starter nodes</h2>
+            </div>
+            <div className="canvas-template-grid">
+              {projectTemplateDefinitions.map((template) => (
+                <button
+                  type="button"
+                  key={template.id}
+                  className={template.id === 'welcome' ? 'canvas-template-card is-welcome' : 'canvas-template-card'}
+                  onClick={() => onApplyProjectTemplate(template.id)}
+                >
+                  <strong>{template.title}</strong>
+                  <span>{template.description}</span>
+                </button>
+              ))}
+            </div>
+            <div className="canvas-prompt-starter">
+              <textarea
+                value={starterPrompt}
+                onChange={(event) => setStarterPrompt(event.target.value)}
+                placeholder="Describe the board you want KIRA to prepare..."
+                rows={3}
+              />
+              <button type="button" className="primary-button" disabled={!starterPrompt.trim()} onClick={submitPromptStarter}>
+                <Sparkles size={14} />
+                Generate nodes
+              </button>
+            </div>
+          </section>
+        )}
         <div
           className="graph-viewport"
           style={{ transform: `translate(${graphTransform.x}px, ${graphTransform.y}px) scale(${graphTransform.scale})` }}
-          onPointerMove={movePan}
           onDragOver={handleReferenceDragOver}
           onDrop={(event) => {
             const position = dragPercent(event) ?? { x: 50, y: 50 }
@@ -6181,12 +6880,63 @@ function GraphCanvas({
               <button type="button" role="menuitem" aria-label="Create linked diagram" title="Diagram" onClick={() => createLinkedNodeFromArc('diagram')}>
                 <FileText size={13} />
               </button>
+              <button type="button" role="menuitem" aria-label="Create AI node" title="AI node" onClick={openAiNodeDraftFromArc}>
+                <Bot size={13} />
+              </button>
               <button type="button" role="menuitem" aria-label="Begin link from node" title="Link" onClick={() => beginLinkFromArc(arcMenu)}>
                 <Link2 size={13} />
               </button>
             </div>
           )}
         </div>
+
+        {aiNodeDraft && (
+          <div className="ai-node-panel" role="dialog" aria-label="Create AI node">
+            <header>
+              <span><Bot size={14} /> AI node</span>
+              <button type="button" className="icon-button" aria-label="Close AI node panel" onClick={() => setAiNodeDraft(null)}>
+                <X size={13} />
+              </button>
+            </header>
+            <label>
+              Action
+              <select
+                value={aiNodeDraft.action}
+                onChange={(event) => {
+                  const action = event.target.value as AiNodeAction
+                  setAiNodeDraft((current) => current ? { ...current, action, prompt: aiNodeActionPrompts[action] } : current)
+                }}
+              >
+                {(Object.keys(aiNodeActionLabels) as AiNodeAction[]).map((action) => (
+                  <option key={action} value={action}>{aiNodeActionLabels[action]}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Scope
+              <select
+                value={aiNodeDraft.scope}
+                onChange={(event) => setAiNodeDraft((current) => current ? { ...current, scope: event.target.value as AiNodeScope } : current)}
+              >
+                {(Object.keys(aiNodeScopeLabels) as AiNodeScope[]).map((scope) => (
+                  <option key={scope} value={scope}>{aiNodeScopeLabels[scope]}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Prompt
+              <textarea
+                rows={4}
+                value={aiNodeDraft.prompt}
+                onChange={(event) => setAiNodeDraft((current) => current ? { ...current, prompt: event.target.value } : current)}
+              />
+            </label>
+            <button type="button" className="primary-button" onClick={submitAiNodeDraft}>
+              <Sparkles size={14} />
+              Create AI node
+            </button>
+          </div>
+        )}
 
         {nodeContextMenu && (
           <div
@@ -11524,12 +12274,205 @@ function toProjectSnapshot(
   }
 }
 
+function createTemplateIdea(
+  id: string,
+  title: string,
+  body: string,
+  x: number,
+  y: number,
+  status: Idea['status'] = 'forming',
+  importance = 1,
+): Idea {
+  const timestamp = nowIso()
+  return {
+    id,
+    title,
+    body,
+    status,
+    x,
+    y,
+    importance,
+    createdAt: timestamp,
+    addedAt: timestamp,
+    updatedAt: timestamp,
+  }
+}
+
+function createTemplateLink(id: string, sourceId: string, targetId: string, relation: Relation, note: string): EvidenceLink {
+  const timestamp = nowIso()
+  return {
+    id,
+    imageId: '',
+    ideaId: targetId,
+    sourceNodeId: sourceId,
+    targetNodeId: targetId,
+    sourceKind: 'idea',
+    targetKind: 'idea',
+    relation,
+    note,
+    confidence: 0.74,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  }
+}
+
+function templateProjectMetadata(template: ProjectTemplateId, prompt?: string): ProjectMetadata {
+  const definition = projectTemplateDefinitions.find((candidate) => candidate.id === template)
+  if (template === 'welcome') {
+    return {
+      title: 'Welcome.kira',
+      description: 'Guided starter project for KIRA canvas, library, capture, and AI workflow.',
+      author: '',
+      kind: 'ideaboard',
+      styleNote: 'Use this board as a working map, not a static tutorial.',
+    }
+  }
+  return {
+    title: definition?.title ?? 'KIRA Project',
+    description: prompt?.trim() || definition?.promptSeed || 'Creative workspace file.',
+    author: '',
+    kind: template === 'moodboard_food_photo' ? 'moodboard' : 'ideaboard',
+    styleNote: 'Start with these nodes, then attach references and generate branches as the project clarifies.',
+  }
+}
+
+function createProjectTemplateSnapshot(template: ProjectTemplateId, aiSettings: AiSettingsSnapshot = defaultAiSettingsSnapshot()): ProjectSnapshot {
+  const timestamp = Date.now()
+  const prefix = `template-${template}-${timestamp}`
+  const makeId = (slug: string) => `${prefix}-${slug}`
+  let ideas: Idea[] = []
+  let links: EvidenceLink[] = []
+
+  if (template === 'welcome') {
+    const canvas = makeId('canvas')
+    const library = makeId('library')
+    const ai = makeId('ai')
+    const capture = makeId('capture')
+    const templates = makeId('templates')
+    const arc = makeId('arc-ai')
+    ideas = [
+      createTemplateIdea(canvas, 'Canvas board', 'The canvas is the working surface. Add ideas, images, palettes, diagrams, and placeholders, then connect them with visible relations.', 48, 34, 'strong', 1.2),
+      createTemplateIdea(library, 'Library drawer', 'Images, links, and text captures live in the left drawer. Drag references into the board when they become part of the argument.', 22, 46),
+      createTemplateIdea(ai, 'AI setup', 'Connect OpenAI or Anthropic with API keys, or use local providers. ChatGPT and Claude subscriptions are separate from API billing.', 48, 58, 'forming', 1.08),
+      createTemplateIdea(capture, 'Browser capture', 'Install the Chrome or Safari extension to send images, URLs, and selected text into KIRA from the browser.', 74, 46),
+      createTemplateIdea(templates, 'Templates and zero-state', 'New empty boards can start from templates or a prompt. Templates create editable nodes, not locked documents.', 32, 72),
+      createTemplateIdea(arc, 'AI node generation', 'Use the + button on a node to open the arc menu. AI actions can summarize, break down, synthesize, find gaps, or generate variations from a chosen scope.', 64, 72),
+    ]
+    links = [
+      createTemplateLink(makeId('link-library'), canvas, library, 'contains', 'Library material becomes canvas evidence.'),
+      createTemplateLink(makeId('link-ai'), canvas, ai, 'supports', 'AI setup powers generated node branches.'),
+      createTemplateLink(makeId('link-capture'), capture, library, 'supports', 'Browser capture fills the library.'),
+      createTemplateLink(makeId('link-template'), templates, canvas, 'contains', 'Templates are editable starting boards.'),
+      createTemplateLink(makeId('link-arc'), arc, ai, 'derived-from', 'Arc-menu AI actions route through configured providers.'),
+    ]
+  } else {
+    const templateNodes: Record<Exclude<ProjectTemplateId, 'welcome'>, Array<[string, string, string, number, number, Idea['status']?, number?]>> = {
+      moodboard_food_photo: [
+        ['mood', 'Appetite mood', 'Define the sensory feeling: fresh, indulgent, rustic, precise, playful, or editorial.', 28, 32, 'strong', 1.15],
+        ['light', 'Lighting direction', 'Decide daylight, flash, hard shadow, tabletop glow, steam, condensation, and contrast.', 54, 26],
+        ['plate', 'Plating and surface', 'Capture plate geometry, garnish rhythm, table material, negative space, and portion scale.', 72, 42],
+        ['props', 'Props and hand cues', 'List utensils, linen, ingredient spill, hand interaction, packaging, and background logic.', 38, 58],
+        ['shot', 'Shot list', 'Plan hero, detail, process, ingredient, menu context, and social crop variations.', 62, 70],
+      ],
+      brand_identity: [
+        ['promise', 'Brand promise', 'State the single promise the identity must make believable.', 26, 34, 'strong', 1.18],
+        ['audience', 'Audience signal', 'Define who should feel recognized and what cues they already trust.', 52, 26],
+        ['principles', 'Visual principles', 'Choose shape, type, color, motion, layout, and material principles.', 72, 42],
+        ['voice', 'Tone and language', 'Map verbal personality, naming rules, claims, and what the brand avoids.', 38, 60],
+        ['system', 'Identity system', 'Plan logo, palette, type scale, components, image style, and usage examples.', 62, 72],
+      ],
+      brand_strategy_mindmap: [
+        ['position', 'Positioning', 'Name the category frame, alternative, reason to believe, and unfair advantage.', 48, 28, 'strong', 1.18],
+        ['audience', 'Audience jobs', 'Capture user jobs, anxieties, aspirations, and switching triggers.', 24, 48],
+        ['competitors', 'Competitive frame', 'Map direct, indirect, and cultural competitors plus whitespace.', 72, 48],
+        ['pillars', 'Messaging pillars', 'Turn strategy into repeatable claims and proof points.', 36, 70],
+        ['risks', 'Open questions', 'Track weak assumptions, missing evidence, and research tasks.', 62, 70],
+      ],
+      content_strategy: [
+        ['intent', 'Audience intent', 'List the moments, questions, and motivations that content must answer.', 26, 34, 'strong', 1.15],
+        ['pillars', 'Content pillars', 'Define three to five repeatable content territories with examples.', 52, 26],
+        ['channels', 'Channel map', 'Assign each pillar to channels, formats, and native behaviors.', 72, 44],
+        ['cadence', 'Cadence and workflow', 'Plan production rhythm, ownership, approval, and reusable assets.', 38, 62],
+        ['measure', 'Measurement', 'Define leading signals, conversion signals, and learning loops.', 62, 72],
+      ],
+      kv_campaign_brief: [
+        ['objective', 'Campaign objective', 'State the business goal, audience shift, and campaign role.', 26, 34, 'strong', 1.18],
+        ['message', 'Single-minded message', 'Write the one thing the audience should remember.', 52, 26],
+        ['kv', 'Key visual idea', 'Describe composition, subject, gesture, environment, color, and visual tension.', 72, 44],
+        ['assets', 'Asset system', 'List hero, social, OOH, motion, retail, landing, and adaptation needs.', 38, 62],
+        ['rollout', 'Rollout logic', 'Plan reveal sequence, context moments, and measurement checkpoints.', 62, 72],
+      ],
+    }
+    ideas = templateNodes[template].map(([slug, title, body, x, y, status, importance]) =>
+      createTemplateIdea(makeId(slug), title, body, x, y, status, importance),
+    )
+    links = ideas.slice(1).map((idea, index) =>
+      createTemplateLink(makeId(`link-${index}`), ideas[0].id, idea.id, index % 2 === 0 ? 'supports' : 'related', `${ideas[0].title} informs ${idea.title}.`),
+    )
+  }
+
+  const versionHistory: ProjectVersionRecord[] = []
+  return {
+    version: 2,
+    project: templateProjectMetadata(template),
+    appearance: defaultProjectAppearance(),
+    ideas,
+    images: [],
+    palettes: [],
+    diagrams: [],
+    placeholders: [],
+    aiSettings,
+    versionState: defaultVersionState(versionHistory),
+    versionHistory,
+    nodeVersions: [],
+    links,
+    outlineDrafts: [],
+  }
+}
+
+function createPromptStarterSnapshot(prompt: string, aiSettings: AiSettingsSnapshot = defaultAiSettingsSnapshot()): ProjectSnapshot {
+  const trimmed = prompt.trim() || 'Untitled creative project'
+  const timestamp = Date.now()
+  const rootId = `prompt-${timestamp}-root`
+  const ideas = [
+    createTemplateIdea(rootId, trimmed.slice(0, 72), `Prompt starter: ${trimmed}`, 48, 28, 'strong', 1.2),
+    createTemplateIdea(`prompt-${timestamp}-audience`, 'Audience and context', 'Who is this for, where will they encounter it, and what state are they in?', 24, 50),
+    createTemplateIdea(`prompt-${timestamp}-direction`, 'Creative direction', 'What should the work feel like, avoid, and make memorable?', 48, 62),
+    createTemplateIdea(`prompt-${timestamp}-evidence`, 'Evidence to collect', 'Images, links, quotes, examples, constraints, and references needed before deciding.', 72, 50),
+    createTemplateIdea(`prompt-${timestamp}-ai-next`, 'AI next steps', 'Use arc-menu AI actions to summarize, split, synthesize, find gaps, or generate variations from this board.', 48, 78),
+  ]
+  const links = ideas.slice(1).map((idea, index) =>
+    createTemplateLink(`prompt-${timestamp}-link-${index}`, rootId, idea.id, index === 2 ? 'reference' : 'supports', `Prompt starter branch for ${idea.title}.`),
+  )
+  const versionHistory: ProjectVersionRecord[] = []
+  return {
+    version: 2,
+    project: {
+      ...templateProjectMetadata('brand_strategy_mindmap', trimmed),
+      title: trimmed.slice(0, 64),
+      description: trimmed,
+    },
+    appearance: defaultProjectAppearance(),
+    ideas,
+    images: [],
+    palettes: [],
+    diagrams: [],
+    placeholders: [],
+    aiSettings,
+    versionState: defaultVersionState(versionHistory),
+    versionHistory,
+    nodeVersions: [],
+    links,
+    outlineDrafts: [],
+  }
+}
+
 function createBlankProjectSnapshot(): ProjectSnapshot {
   return {
     version: 2,
     project: defaultProjectMetadata(),
     appearance: defaultProjectAppearance(),
-    ideas: [createFallbackIdea()],
+    ideas: [],
     images: [],
     palettes: [],
     diagrams: [],
@@ -11714,6 +12657,20 @@ function readProjectSnapshot(): ProjectSnapshot {
     return isProjectSnapshot(parsed) ? parsed : toProjectSnapshot(ideasSeed, imagesSeed, linksSeed)
   } catch {
     return toProjectSnapshot(ideasSeed, imagesSeed, linksSeed)
+  }
+}
+
+function readOnboardingCompleted() {
+  if (typeof window === 'undefined') return true
+  return window.localStorage.getItem(onboardingStorageKey) === 'true'
+}
+
+function writeOnboardingCompleted(completed: boolean) {
+  if (typeof window === 'undefined') return
+  if (completed) {
+    window.localStorage.setItem(onboardingStorageKey, 'true')
+  } else {
+    window.localStorage.removeItem(onboardingStorageKey)
   }
 }
 
@@ -12045,12 +13002,34 @@ async function listNativeAiModels(provider: AiProviderProfile) {
   return invoke<AiModelListResult>('list_ai_models', { provider: providerRequestPayload(provider) })
 }
 
+async function generateNativeAiText(provider: AiProviderProfile, prompt: string) {
+  if (!isTauriRuntime()) {
+    throw new Error('AI generation runs in the desktop app because secrets and local endpoints are native-only.')
+  }
+  return invoke<AiGenerationResult>('generate_ai_text', { provider: providerRequestPayload(provider), prompt })
+}
+
+async function getNativeExtensionInstallStatus() {
+  if (!isTauriRuntime()) return defaultExtensionInstallStatus()
+  return invoke<ExtensionInstallStatus>('get_extension_install_status')
+}
+
+async function openNativeExtensionInstallTarget(targetId: string) {
+  if (!isTauriRuntime()) return
+  await invoke<void>('open_extension_install_target', { targetId })
+}
+
+function extensionStatusForTarget(status: ExtensionInstallStatus, targetId: string) {
+  return targetId === 'safari' ? status.safari : status.chrome
+}
+
 function providerRequestPayload(provider: AiProviderProfile) {
   return {
     providerId: provider.id,
     providerType: provider.type,
     authMode: provider.authMode,
     baseUrl: provider.baseUrl,
+    model: provider.model,
   }
 }
 

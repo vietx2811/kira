@@ -1,4 +1,4 @@
-# Vixio
+# KIRA
 
 Visual research workspace for linking references to ideas and producing traceable outlines.
 
@@ -8,7 +8,7 @@ Core loop:
 Import references -> create ideas -> link references to ideas -> tag the collection -> create outline
 ```
 
-Vixio is a standalone desktop app first. Eagle can become an import/sync adapter later, but Vixio owns the idea-reference graph.
+KIRA is a standalone desktop app first. Eagle can become an import/sync adapter later, but KIRA owns the idea-reference graph.
 
 ## Apps
 
@@ -28,20 +28,20 @@ pnpm dev
 Desktop shell:
 
 ```bash
-pnpm --filter @vixio/desktop tauri dev
+pnpm --filter @kira/desktop tauri dev
 ```
 
 Build gates:
 
 ```bash
 pnpm build
-pnpm --filter @vixio/desktop tauri build --debug
+pnpm --filter @kira/desktop tauri build --debug
 ```
 
 Chrome extension build:
 
 ```bash
-pnpm --filter @vixio/extension build
+pnpm --filter @kira/extension build
 ```
 
 Load `apps/extension/dist` as an unpacked Chrome extension.
@@ -49,7 +49,7 @@ Load `apps/extension/dist` as an unpacked Chrome extension.
 The debug desktop bundle is written to:
 
 ```txt
-apps/desktop/src-tauri/target/debug/bundle/macos/Vixio.app
+apps/desktop/src-tauri/target/debug/bundle/macos/KIRA.app
 ```
 
 ## Current State
@@ -58,9 +58,9 @@ apps/desktop/src-tauri/target/debug/bundle/macos/Vixio.app
 - Tauri desktop shell scaffold
 - Library / Canvas / Inspector / Outline
 - local image, native folder, pasted image, pasted URL, and native screenshot capture
-- native folder import can read Eagle-style item folders and map item metadata into Vixio references
+- native folder import can read Eagle-style item folders and map item metadata into KIRA references
 - Tauri can import the first page of local Eagle Web API V2 items when Eagle is running
-- Chrome extension helper captures image/page references and sends them directly to the running Vixio app
+- Chrome extension helper captures image/page references and sends them directly to the running KIRA app
 - extension popup can discover page images, select multiple references, and send them as individual captures
 - clipboard payload capture remains as fallback when the app is unavailable
 - duplicate reference skip through persisted fingerprints and local perceptual hashes
@@ -80,13 +80,13 @@ apps/desktop/src-tauri/target/debug/bundle/macos/Vixio.app
 - graph nodes can be repositioned directly and saved with the project
 - graph canvas has scope and relation filters for larger reference sets
 - graph canvas caps visible nodes for larger libraries while preserving the current selection neighborhood
-- dev builds expose `window.__vixioDev` for loading 120/300-reference benchmark fixtures and reading Canvas metrics
+- dev builds expose `window.__kiraDev` for loading 120/300-reference benchmark fixtures and reading Canvas metrics
 - graph canvas has compact zoom and reset controls, with background panning
 - graph canvas has an Edit / Discover mode; Discover clusters references around idea support and shows inferred weak-support edges without saving them as truth
 - Discover mode can filter all references, candidate support, or open references
 - project snapshot save/load through browser JSON fallback
 - Tauri package save/load in app data
-- native New, Open, and Save As for `.vixio` project packages
+- native New, Open, and Save As for `.kira` project packages
 - normalized SQLite tables for ideas, references, links, tags, and tag suggestions
 - schema migration ledger in SQLite
 - outline drafts and reference contact sheets can export to static files, with native exports written to `exports/`

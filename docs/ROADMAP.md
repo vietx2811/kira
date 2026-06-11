@@ -26,7 +26,7 @@ Goal: prove the core loop locally before adding heavier integrations.
 
 ## Round 2 — Large Library Readability
 
-Goal: keep Vixio usable when the reference set grows.
+Goal: keep KIRA usable when the reference set grows.
 
 - [x] Library search/filter/sort
 - [x] Library multi-select and batch tags
@@ -40,7 +40,7 @@ Goal: keep Vixio usable when the reference set grows.
 
 ## Round 3 — Eagle Adapter
 
-Goal: let Eagle feed references into Vixio without making Vixio an Eagle plugin.
+Goal: let Eagle feed references into KIRA without making KIRA an Eagle plugin.
 
 - [x] folder import maps Eagle-style item metadata
 - [x] preserve optional `originApp`, `originId`, and `sourcePath`

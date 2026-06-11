@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>KIRA Capture Targets</title>
+    <link rel="stylesheet" href="drag-window.css" />
+  </head>
+  <body>
+    <main class="capture-shell">
+      <header>
+        <div>
+          <strong>KIRA Capture</strong>
+          <span id="file-title">Current file</span>
+        </div>
+        <span id="status">Drop target ready</span>
+      </header>
+      <section class="capture-grid">
+        <div class="undecided drop-target" data-target="undecided">
+          <span>Undecided</span>
+          <strong>Inbox</strong>
+          <small>Drop here to keep the image unassigned.</small>
+        </div>
+        <div class="target-column">
+          <div class="create-target drop-target" data-target="create">
+            <span>Create New Node or Select Nodes</span>
+            <div id="combo" class="combo" hidden>
+              <input id="combo-input" type="text" placeholder="Search node or type new node name" autocomplete="off" />
+              <div id="combo-list" class="combo-list"></div>
+            </div>
+          </div>
+          <div id="node-list" class="node-list"></div>
+        </div>
+      </section>
+    </main>
+    <script type="module" src="drag-window.js"></script>
+  </body>
+</html>

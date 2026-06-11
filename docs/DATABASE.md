@@ -1,9 +1,9 @@
 # Database Schema
 
-Vixio stores each desktop project as a local package directory:
+KIRA stores each desktop project as a local package directory:
 
 ```txt
-Project.vixio/
+Project.kira/
   manifest.json
   project.sqlite
   images/
@@ -114,7 +114,7 @@ CREATE TABLE IF NOT EXISTS outline_drafts (
 - `tag_suggestions` stores pending/rejected/accepted suggestion metadata separately from accepted tags.
 - `outline_drafts` stores synthesis snapshots; each section keeps `ideaId`, `summary`, `referenceIds`, and `strength`.
 
-Graph links are never encoded as flat tags. Eagle metadata can seed references and tag suggestions, but Vixio-owned idea/reference links stay in Vixio.
+Graph links are never encoded as flat tags. Eagle metadata can seed references and tag suggestions, but KIRA-owned idea/reference links stay in KIRA.
 
 ## Current Migrations
 

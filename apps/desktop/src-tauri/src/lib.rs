@@ -1,5 +1,7 @@
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use image::{GenericImageView, ImageFormat};
+#[cfg(target_os = "macos")]
+use objc2_app_kit::{NSColor, NSView, NSWindow};
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -9,12 +11,13 @@ use std::{
     net::{TcpListener, TcpStream},
     path::{Path, PathBuf},
     process::{Command, Output},
+    sync::{Arc, Mutex},
     thread,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Emitter, Manager, State};
 
-const PROJECT_DIR_NAME: &str = "Vixio Demo.vixio";
+const PROJECT_DIR_NAME: &str = "Kira Demo.kira";
 const MANIFEST_NAME: &str = "manifest.json";
 const SQLITE_NAME: &str = "project.sqlite";
 const MIGRATION_BASE_SCHEMA: &str = "001_base_schema";
@@ -23,12 +26,17 @@ const MIGRATION_REFERENCE_FINGERPRINT: &str = "003_reference_fingerprint";
 const MIGRATION_REFERENCE_PERCEPTUAL_HASH: &str = "004_reference_perceptual_hash";
 const MIGRATION_REFERENCE_ORIGIN: &str = "005_reference_origin";
 const MIGRATION_TAG_SUGGESTION_META: &str = "006_tag_suggestion_meta";
+#[cfg(target_os = "macos")]
+const MACOS_WINDOW_CORNER_RADIUS: f64 = 22.0;
 const MIGRATION_OUTLINE_DRAFTS: &str = "007_outline_drafts";
 const MIGRATION_GRAPH_V2_FIELDS: &str = "008_graph_v2_fields";
 const CAPTURE_SERVER_ADDR: &str = "127.0.0.1:47653";
-const CAPTURE_EVENT: &str = "vixio:capture";
+const CAPTURE_EVENT: &str = "kira:capture";
 const EAGLE_WEB_API_ADDR: &str = "127.0.0.1:41595";
-const AI_PROVIDER_KEYCHAIN_SERVICE: &str = "studio.vixio.desktop.ai-provider";
+const AI_PROVIDER_KEYCHAIN_SERVICE: &str = "studio.kira.desktop.ai-provider";
+
+#[derive(Clone, Default)]
+struct CaptureContextState(Arc<Mutex<String>>);
 
 #[derive(Deserialize, Serialize)]
 struct ProjectSnapshot {
@@ -43,8 +51,12 @@ struct ProjectSnapshot {
     placeholders: Vec<serde_json::Value>,
     #[serde(default, rename = "aiSettings")]
     ai_settings: serde_json::Value,
+    #[serde(default, rename = "versionState")]
+    version_state: serde_json::Value,
     #[serde(default, rename = "versionHistory")]
     version_history: Vec<serde_json::Value>,
+    #[serde(default, rename = "nodeVersions")]
+    node_versions: Vec<serde_json::Value>,
     links: Vec<LinkRecord>,
     #[serde(rename = "outlineDrafts")]
     outline_drafts: Vec<OutlineDraftRecord>,
@@ -283,6 +295,7 @@ struct AiProviderTestRequest {
     provider_type: String,
     auth_mode: String,
     base_url: Option<String>,
+    model: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -300,11 +313,49 @@ struct AiModelListResult {
     models: Vec<String>,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AiGenerationRequest {
+    provider: AiProviderTestRequest,
+    prompt: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AiGenerationResult {
+    status: String,
+    content: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ExtensionTargetStatus {
+    installed: bool,
+    available: bool,
+    detail: String,
+    install_path: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ExtensionInstallStatus {
+    chrome: ExtensionTargetStatus,
+    safari: ExtensionTargetStatus,
+}
+
 #[tauri::command]
 fn save_project_package(
     app: AppHandle,
     snapshot_json: String,
     project_path: Option<String>,
+) -> Result<ProjectPackageInfo, String> {
+    let project_dir = resolve_project_dir(&app, project_path)?;
+    write_project_package_to_dir(project_dir, snapshot_json)
+}
+
+fn write_project_package_to_dir(
+    project_dir: PathBuf,
+    snapshot_json: String,
 ) -> Result<ProjectPackageInfo, String> {
     let snapshot: ProjectSnapshot = serde_json::from_str(&snapshot_json)
         .map_err(|error| format!("Invalid project JSON: {error}"))?;
@@ -312,22 +363,41 @@ fn save_project_package(
         return Err("Unsupported project snapshot version".to_string());
     }
 
-    let project_dir = resolve_project_dir(&app, project_path)?;
     ensure_project_dirs(&project_dir)?;
-
-    let manifest_path = project_dir.join(MANIFEST_NAME);
-    fs::write(&manifest_path, &snapshot_json).map_err(|error| error.to_string())?;
 
     let sqlite_path = project_dir.join(SQLITE_NAME);
     let mut conn = Connection::open(&sqlite_path).map_err(|error| error.to_string())?;
     migrate(&conn)?;
     write_snapshot(&mut conn, &snapshot, &project_dir)?;
 
+    let manifest_path = project_dir.join(MANIFEST_NAME);
+    atomic_write_text(&manifest_path, &snapshot_json)?;
+
     Ok(ProjectPackageInfo {
         path: project_dir.to_string_lossy().to_string(),
         manifest_path: manifest_path.to_string_lossy().to_string(),
         sqlite_path: sqlite_path.to_string_lossy().to_string(),
     })
+}
+
+fn atomic_write_text(path: &Path, contents: &str) -> Result<(), String> {
+    let parent = path.parent().ok_or_else(|| "Missing parent directory".to_string())?;
+    let file_name = path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .ok_or_else(|| "Invalid file name".to_string())?;
+    let tmp_path = parent.join(format!(".{file_name}.tmp-{}", timestamp_millis()));
+    {
+        let mut file = fs::File::create(&tmp_path).map_err(|error| error.to_string())?;
+        file.write_all(contents.as_bytes())
+            .map_err(|error| error.to_string())?;
+        file.sync_all().map_err(|error| error.to_string())?;
+    }
+    fs::rename(&tmp_path, path).map_err(|error| {
+        let _ = fs::remove_file(&tmp_path);
+        error.to_string()
+    })?;
+    Ok(())
 }
 
 #[tauri::command]
@@ -401,6 +471,28 @@ fn list_ai_models(provider: AiProviderTestRequest) -> Result<AiModelListResult, 
 }
 
 #[tauri::command]
+fn generate_ai_text(request: AiGenerationRequest) -> Result<AiGenerationResult, String> {
+    let provider_id = validate_provider_id(&request.provider.provider_id)?;
+    generate_ai_text_native(&provider_id, &request.provider, &request.prompt)
+}
+
+#[tauri::command]
+fn get_extension_install_status(app: AppHandle) -> Result<ExtensionInstallStatus, String> {
+    Ok(detect_extension_install_status(Some(&app)))
+}
+
+#[tauri::command]
+fn open_extension_install_target(app: AppHandle, target_id: String) -> Result<(), String> {
+    match target_id.as_str() {
+        "chrome" => open_system_target("chrome://extensions"),
+        "safari" => open_system_target("x-apple.systempreferences:com.apple.Safari-Settings.extension"),
+        "chrome_dist" => open_system_target(&extension_dist_path(Some(&app)).to_string_lossy()),
+        "safari_app" => open_system_target(&safari_container_app_path(Some(&app)).to_string_lossy()),
+        _ => Err(format!("Unknown extension target: {target_id}")),
+    }
+}
+
+#[tauri::command]
 fn export_outline_markdown(
     app: AppHandle,
     markdown: String,
@@ -440,14 +532,50 @@ fn export_slideshow_html(
     export_text_to_exports(&project_dir, "slides.html", &html).map(Some)
 }
 
+#[tauri::command]
+fn update_capture_context(
+    state: State<'_, CaptureContextState>,
+    context_json: String,
+) -> Result<(), String> {
+    let mut context = state.0.lock().map_err(|error| error.to_string())?;
+    *context = context_json;
+    Ok(())
+}
+
 fn read_project_package(project_dir: &Path) -> Result<Option<String>, String> {
-    let manifest_path = project_dir.join(MANIFEST_NAME);
-    if manifest_path.exists() {
-        return fs::read_to_string(manifest_path)
-            .map(Some)
-            .map_err(|error| error.to_string());
+    let sqlite_path = project_dir.join(SQLITE_NAME);
+    let sqlite_result = if sqlite_path.exists() {
+        Some(read_sqlite_project_package(project_dir))
+    } else {
+        None
+    };
+
+    if let Some(Ok(Some(snapshot))) = &sqlite_result {
+        return Ok(Some(snapshot.clone()));
     }
 
+    let manifest_path = project_dir.join(MANIFEST_NAME);
+    if manifest_path.exists() {
+        let manifest = fs::read_to_string(&manifest_path).map_err(|error| error.to_string())?;
+        if let Ok(snapshot) = serde_json::from_str::<ProjectSnapshot>(&manifest) {
+            if snapshot.version == 2 {
+                return Ok(Some(manifest));
+            }
+        }
+        if let Some(Err(error)) = sqlite_result {
+            return Err(format!("Project package is invalid: {error}"));
+        }
+        return Err("Project manifest is invalid and no SQLite fallback exists".to_string());
+    }
+
+    if let Some(result) = sqlite_result {
+        return result;
+    }
+
+    Ok(None)
+}
+
+fn read_sqlite_project_package(project_dir: &Path) -> Result<Option<String>, String> {
     let sqlite_path = project_dir.join(SQLITE_NAME);
     if sqlite_path.exists() {
         let conn = Connection::open(sqlite_path).map_err(|error| error.to_string())?;
@@ -488,8 +616,8 @@ fn resolve_project_dir(app: &AppHandle, project_path: Option<String>) -> Result<
 
 fn normalize_project_path(project_path: String) -> PathBuf {
     let mut path = PathBuf::from(project_path);
-    if path.extension().and_then(|extension| extension.to_str()) != Some("vixio") {
-        path.set_extension("vixio");
+    if path.extension().and_then(|extension| extension.to_str()) != Some("kira") {
+        path.set_extension("kira");
     }
     path
 }
@@ -895,7 +1023,9 @@ fn write_snapshot(
     write_json_collection(&tx, "diagrams", &snapshot.diagrams)?;
     write_json_collection(&tx, "placeholders", &snapshot.placeholders)?;
     write_json_collection(&tx, "aiSettings", &snapshot.ai_settings)?;
+    write_json_collection(&tx, "versionState", &snapshot.version_state)?;
     write_json_collection(&tx, "versionHistory", &snapshot.version_history)?;
+    write_json_collection(&tx, "nodeVersions", &snapshot.node_versions)?;
 
     tx.commit().map_err(|error| error.to_string())
 }
@@ -939,7 +1069,19 @@ fn read_snapshot(conn: &Connection) -> Result<ProjectSnapshot, String> {
             "selectedProviderId": "openai"
         })
     });
+    let version_state = read_json_collection(conn, "versionState")?.unwrap_or_else(|| {
+        serde_json::json!({
+            "schemaVersion": 1,
+            "currentBranchId": "main",
+            "branches": [{
+                "id": "main",
+                "name": "Main",
+                "createdAt": "1970-01-01T00:00:00.000Z"
+            }]
+        })
+    });
     let version_history = read_json_collection(conn, "versionHistory")?.unwrap_or_default();
+    let node_versions = read_json_collection(conn, "nodeVersions")?.unwrap_or_default();
 
     Ok(ProjectSnapshot {
         version,
@@ -949,7 +1091,9 @@ fn read_snapshot(conn: &Connection) -> Result<ProjectSnapshot, String> {
         diagrams,
         placeholders,
         ai_settings,
+        version_state,
         version_history,
+        node_versions,
         links,
         outline_drafts,
     })
@@ -1599,7 +1743,7 @@ fn eagle_suggestions(metadata: Option<&EagleItemMetadata>) -> Vec<String> {
 }
 
 fn capture_screen_reference_to_temp() -> Result<Option<ImportedReferenceRecord>, String> {
-    let path = std::env::temp_dir().join(format!("vixio-screen-{}.png", timestamp_millis()));
+    let path = std::env::temp_dir().join(format!("kira-screen-{}.png", timestamp_millis()));
     let status = Command::new("/usr/sbin/screencapture")
         .arg("-i")
         .arg(&path)
@@ -1678,7 +1822,7 @@ fn run_apple_vision_ocr_for_data_url(image_data_url: &str) -> Result<Option<OcrR
     };
     let extension = extension_for_mime(data_url.mime);
     let id = timestamp_millis();
-    let image_path = std::env::temp_dir().join(format!("vixio-ocr-{id}.{extension}"));
+    let image_path = std::env::temp_dir().join(format!("kira-ocr-{id}.{extension}"));
 
     fs::write(&image_path, data_url.bytes).map_err(|error| error.to_string())?;
     let output = run_apple_vision_ocr_process(&image_path)
@@ -1698,8 +1842,8 @@ fn run_apple_vision_ocr_for_data_url(image_data_url: &str) -> Result<Option<OcrR
 }
 
 fn run_apple_vision_ocr_process(image_path: &Path) -> Result<Output, String> {
-    let helper_path = bundled_sidecar_path("vixio-vision-ocr-helper").or_else(|| {
-        option_env!("VIXIO_VISION_OCR_HELPER")
+    let helper_path = bundled_sidecar_path("kira-vision-ocr-helper").or_else(|| {
+        option_env!("KIRA_VISION_OCR_HELPER")
             .filter(|path| !path.is_empty())
             .map(PathBuf::from)
     });
@@ -1745,7 +1889,7 @@ fn run_apple_vision_ocr_process_with_helper(
         }
     }
 
-    let script_path = std::env::temp_dir().join(format!("vixio-ocr-{}.swift", timestamp_millis()));
+    let script_path = std::env::temp_dir().join(format!("kira-ocr-{}.swift", timestamp_millis()));
     run_swift_script(&script_path, APPLE_VISION_OCR_SWIFT, &[image_path])
 }
 
@@ -1756,7 +1900,7 @@ fn natural_language_suggestions_from_text(text: &str) -> Option<Vec<String>> {
     }
 
     let id = timestamp_millis();
-    let text_path = std::env::temp_dir().join(format!("vixio-natural-language-{id}.txt"));
+    let text_path = std::env::temp_dir().join(format!("kira-natural-language-{id}.txt"));
     fs::write(&text_path, text).ok()?;
     let output = run_natural_language_process(&text_path).ok();
     let _ = fs::remove_file(&text_path);
@@ -1777,8 +1921,8 @@ fn natural_language_suggestions_from_text(text: &str) -> Option<Vec<String>> {
 }
 
 fn run_natural_language_process(text_path: &Path) -> Result<Output, String> {
-    let helper_path = bundled_sidecar_path("vixio-natural-language-helper").or_else(|| {
-        option_env!("VIXIO_NATURAL_LANGUAGE_HELPER")
+    let helper_path = bundled_sidecar_path("kira-natural-language-helper").or_else(|| {
+        option_env!("KIRA_NATURAL_LANGUAGE_HELPER")
             .filter(|path| !path.is_empty())
             .map(PathBuf::from)
     });
@@ -2019,6 +2163,207 @@ fn list_ai_models_native(
     }
 }
 
+fn generate_ai_text_native(
+    provider_id: &str,
+    provider: &AiProviderTestRequest,
+    prompt: &str,
+) -> Result<AiGenerationResult, String> {
+    let clean_prompt = prompt.trim();
+    if clean_prompt.is_empty() {
+        return Err("Prompt is empty".to_string());
+    }
+
+    let content = match provider.provider_type.as_str() {
+        "apple_foundation" => {
+            return Err("Apple Foundation text generation is not wired for canvas nodes yet".to_string());
+        }
+        "ollama" => generate_ollama_text(provider, clean_prompt)?,
+        "anthropic" => {
+            let secret = read_secret_from_keychain(provider_id)?;
+            generate_anthropic_text(provider, &secret, clean_prompt)?
+        }
+        "gemini" => {
+            let secret = read_secret_from_keychain(provider_id)?;
+            generate_gemini_text(provider, &secret, clean_prompt)?
+        }
+        "openai" | "openrouter" | "lm_studio" | "custom_openai_compatible" => {
+            let secret = if provider.provider_type == "lm_studio" {
+                read_secret_from_keychain(provider_id).ok()
+            } else {
+                Some(read_secret_from_keychain(provider_id)?)
+            };
+            generate_openai_compatible_text(provider, secret.as_deref(), clean_prompt)?
+        }
+        _ if provider.auth_mode == "openai_compatible" => {
+            let secret = read_secret_from_keychain(provider_id).ok();
+            generate_openai_compatible_text(provider, secret.as_deref(), clean_prompt)?
+        }
+        _ => return Err("Provider generation is not supported yet".to_string()),
+    };
+
+    Ok(AiGenerationResult {
+        status: "generated".to_string(),
+        content,
+    })
+}
+
+fn generation_model(provider: &AiProviderTestRequest, fallback: &str) -> String {
+    provider
+        .model
+        .as_deref()
+        .filter(|model| !model.trim().is_empty() && *model != "auto")
+        .unwrap_or(fallback)
+        .to_string()
+}
+
+fn generate_openai_compatible_text(
+    provider: &AiProviderTestRequest,
+    secret: Option<&str>,
+    prompt: &str,
+) -> Result<String, String> {
+    let url = format!("{}/chat/completions", normalized_openai_chat_base_url(provider)?);
+    let mut request = generation_http_client().post(url);
+    if let Some(secret) = secret.filter(|secret| !secret.trim().is_empty()) {
+        request = request.bearer_auth(secret);
+    }
+    let model = generation_model(provider, "gpt-4.1-mini");
+    let response = request
+        .json(&serde_json::json!({
+            "model": model,
+            "temperature": 0.35,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "You generate concise, structured canvas node notes for KIRA."
+                },
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ]
+        }))
+        .send()
+        .map_err(|error| format!("AI generation failed: {error}"))?;
+    let value = response_json(response, "AI generation")?;
+    value
+        .get("choices")
+        .and_then(serde_json::Value::as_array)
+        .and_then(|choices| choices.first())
+        .and_then(|choice| choice.get("message"))
+        .and_then(|message| message.get("content"))
+        .and_then(serde_json::Value::as_str)
+        .map(|content| content.trim().to_string())
+        .filter(|content| !content.is_empty())
+        .ok_or_else(|| "AI generation returned no content".to_string())
+}
+
+fn generate_anthropic_text(
+    provider: &AiProviderTestRequest,
+    secret: &str,
+    prompt: &str,
+) -> Result<String, String> {
+    let url = format!("{}/v1/messages", normalized_provider_base_url(provider)?);
+    let response = generation_http_client()
+        .post(url)
+        .header("x-api-key", secret)
+        .header("anthropic-version", "2023-06-01")
+        .json(&serde_json::json!({
+            "model": generation_model(provider, "claude-3-5-sonnet-latest"),
+            "max_tokens": 900,
+            "temperature": 0.35,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ]
+        }))
+        .send()
+        .map_err(|error| format!("Anthropic generation failed: {error}"))?;
+    let value = response_json(response, "Anthropic generation")?;
+    value
+        .get("content")
+        .and_then(serde_json::Value::as_array)
+        .map(|blocks| {
+            blocks
+                .iter()
+                .filter_map(|block| block.get("text").and_then(serde_json::Value::as_str))
+                .collect::<Vec<_>>()
+                .join("\n")
+        })
+        .map(|content| content.trim().to_string())
+        .filter(|content| !content.is_empty())
+        .ok_or_else(|| "Anthropic returned no content".to_string())
+}
+
+fn generate_gemini_text(
+    provider: &AiProviderTestRequest,
+    secret: &str,
+    prompt: &str,
+) -> Result<String, String> {
+    let url = format!(
+        "{}/v1beta/models/{}:generateContent?key={}",
+        normalized_provider_base_url(provider)?,
+        generation_model(provider, "gemini-1.5-pro"),
+        secret
+    );
+    let response = generation_http_client()
+        .post(url)
+        .json(&serde_json::json!({
+            "contents": [
+                {
+                    "parts": [
+                        { "text": prompt }
+                    ]
+                }
+            ],
+            "generationConfig": {
+                "temperature": 0.35,
+                "maxOutputTokens": 900
+            }
+        }))
+        .send()
+        .map_err(|error| format!("Gemini generation failed: {error}"))?;
+    let value = response_json(response, "Gemini generation")?;
+    value
+        .get("candidates")
+        .and_then(serde_json::Value::as_array)
+        .and_then(|candidates| candidates.first())
+        .and_then(|candidate| candidate.get("content"))
+        .and_then(|content| content.get("parts"))
+        .and_then(serde_json::Value::as_array)
+        .map(|parts| {
+            parts
+                .iter()
+                .filter_map(|part| part.get("text").and_then(serde_json::Value::as_str))
+                .collect::<Vec<_>>()
+                .join("\n")
+        })
+        .map(|content| content.trim().to_string())
+        .filter(|content| !content.is_empty())
+        .ok_or_else(|| "Gemini returned no content".to_string())
+}
+
+fn generate_ollama_text(provider: &AiProviderTestRequest, prompt: &str) -> Result<String, String> {
+    let url = format!("{}/api/generate", normalized_ollama_base_url(provider)?);
+    let response = generation_http_client()
+        .post(url)
+        .json(&serde_json::json!({
+            "model": generation_model(provider, "llama3.2"),
+            "prompt": prompt,
+            "stream": false,
+        }))
+        .send()
+        .map_err(|error| format!("Ollama generation failed: {error}"))?;
+    let value = response_json(response, "Ollama generation")?;
+    value
+        .get("response")
+        .and_then(serde_json::Value::as_str)
+        .map(|content| content.trim().to_string())
+        .filter(|content| !content.is_empty())
+        .ok_or_else(|| "Ollama returned no content".to_string())
+}
+
 fn can_connect_local_base_url(base_url: &str) -> bool {
     let trimmed = base_url.trim();
     let without_scheme = trimmed
@@ -2077,7 +2422,7 @@ fn list_openai_compatible_models(
     provider: &AiProviderTestRequest,
     secret: Option<&str>,
 ) -> Result<Vec<String>, String> {
-    let url = format!("{}/v1/models", normalized_provider_base_url(provider)?);
+    let url = format!("{}/models", normalized_openai_chat_base_url(provider)?);
     let mut request = http_client().get(url);
     if let Some(secret) = secret.filter(|secret| !secret.trim().is_empty()) {
         request = request.bearer_auth(secret);
@@ -2178,11 +2523,32 @@ fn normalized_provider_base_url(provider: &AiProviderTestRequest) -> Result<Stri
     }
 }
 
+fn normalized_openai_chat_base_url(provider: &AiProviderTestRequest) -> Result<String, String> {
+    let base = normalized_provider_base_url(provider)?;
+    Ok(if base.ends_with("/v1") {
+        base
+    } else {
+        format!("{base}/v1")
+    })
+}
+
+fn normalized_ollama_base_url(provider: &AiProviderTestRequest) -> Result<String, String> {
+    let base = normalized_provider_base_url(provider)?;
+    Ok(base.strip_suffix("/v1").unwrap_or(&base).to_string())
+}
+
 fn http_client() -> reqwest::blocking::Client {
     reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(8))
         .build()
         .expect("build reqwest client")
+}
+
+fn generation_http_client() -> reqwest::blocking::Client {
+    reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(45))
+        .build()
+        .expect("build generation reqwest client")
 }
 
 fn response_json(
@@ -2217,6 +2583,219 @@ fn non_empty_models(models: Vec<String>, empty_message: &str) -> Result<Vec<Stri
     }
 }
 
+fn detect_extension_install_status(app: Option<&AppHandle>) -> ExtensionInstallStatus {
+    ExtensionInstallStatus {
+        chrome: detect_chrome_extension_status(app),
+        safari: detect_safari_extension_status(app),
+    }
+}
+
+fn detect_chrome_extension_status(app: Option<&AppHandle>) -> ExtensionTargetStatus {
+    let install_path = extension_dist_path(app);
+    let path_string = install_path.to_string_lossy().to_string();
+    let mut checked_profiles = 0;
+    let mut matched_profile = None;
+    for preferences_path in chrome_preferences_paths() {
+        checked_profiles += 1;
+        if let Ok(contents) = fs::read_to_string(&preferences_path) {
+            if contents.contains(&path_string)
+                || contents.contains("KIRA Capture")
+                || contents.contains("kiraCapture")
+            {
+                matched_profile = preferences_path.parent().map(|path| path.to_string_lossy().to_string());
+                break;
+            }
+        }
+    }
+    let available = install_path.join("manifest.json").exists();
+    let detail = if let Some(profile) = &matched_profile {
+        format!("Detected in {profile}")
+    } else if checked_profiles > 0 {
+        format!("Not detected across {checked_profiles} Chromium profile(s)")
+    } else {
+        "No Chromium profile preferences found".to_string()
+    };
+    ExtensionTargetStatus {
+        installed: matched_profile.is_some(),
+        available,
+        detail,
+        install_path: path_string,
+    }
+}
+
+fn detect_safari_extension_status(app: Option<&AppHandle>) -> ExtensionTargetStatus {
+    let install_path = safari_container_app_path(app);
+    let available = install_path.exists();
+    let output = Command::new("pluginkit")
+        .args(["-m", "-p", "com.apple.Safari.web-extension"])
+        .output();
+    let (installed, detail) = match output {
+        Ok(output) if output.status.success() => {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let matched = stdout.contains("app.kira.safari.Extension")
+                || stdout.contains("KIRA Safari Extension");
+            let detail = if matched {
+                "Detected by pluginkit".to_string()
+            } else {
+                "Not detected by pluginkit".to_string()
+            };
+            (matched, detail)
+        }
+        Ok(output) => (
+            false,
+            format!("pluginkit failed: {}", String::from_utf8_lossy(&output.stderr).trim()),
+        ),
+        Err(error) => (false, format!("pluginkit unavailable: {error}")),
+    };
+    ExtensionTargetStatus {
+        installed,
+        available,
+        detail,
+        install_path: install_path.to_string_lossy().to_string(),
+    }
+}
+
+fn chrome_preferences_paths() -> Vec<PathBuf> {
+    let mut paths = Vec::new();
+    let Some(home) = home_dir() else {
+        return paths;
+    };
+    for browser_dir in [
+        "Google/Chrome",
+        "Google/Chrome Canary",
+        "Chromium",
+        "BraveSoftware/Brave-Browser",
+        "Microsoft Edge",
+    ] {
+        let user_data_dir = home
+            .join("Library")
+            .join("Application Support")
+            .join(browser_dir);
+        if let Ok(entries) = fs::read_dir(user_data_dir) {
+            for entry in entries.flatten() {
+                let preferences = entry.path().join("Preferences");
+                if preferences.exists() {
+                    paths.push(preferences);
+                }
+            }
+        }
+    }
+    paths
+}
+
+fn extension_dist_path(app: Option<&AppHandle>) -> PathBuf {
+    bundled_resource_path(app, Path::new("dist"))
+        .or_else(|| bundled_resource_dir_containing(app, "manifest.json", "extension/dist"))
+        .unwrap_or_else(|| {
+        workspace_root_guess().join("apps").join("extension").join("dist")
+    })
+}
+
+fn safari_container_app_path(app: Option<&AppHandle>) -> PathBuf {
+    bundled_resource_path(app, Path::new("KIRA Safari.app"))
+        .or_else(|| bundled_resource_named_dir(app, "KIRA Safari.app"))
+        .unwrap_or_else(|| {
+        workspace_root_guess()
+        .join("apps")
+        .join("extension")
+        .join("safari")
+        .join("DerivedData")
+        .join("Build")
+        .join("Products")
+        .join("Release")
+        .join("KIRA Safari.app")
+    })
+}
+
+fn bundled_resource_path(app: Option<&AppHandle>, resource_name: &Path) -> Option<PathBuf> {
+    let app = app?;
+    let resource_dir = app.path().resource_dir().ok()?;
+    let direct = resource_dir.join(resource_name);
+    if direct.exists() {
+        return Some(direct);
+    }
+    let nested = resource_dir.join("resources").join(resource_name);
+    if nested.exists() {
+        return Some(nested);
+    }
+    None
+}
+
+fn bundled_resource_dir_containing(
+    app: Option<&AppHandle>,
+    file_name: &str,
+    suffix_hint: &str,
+) -> Option<PathBuf> {
+    let resource_dir = app?.path().resource_dir().ok()?;
+    find_resource_path(&resource_dir, &|path| {
+        path.file_name() == Some(OsStr::new(file_name))
+            && path
+                .parent()
+                .map(|parent| normalize_path_for_match(parent).ends_with(suffix_hint))
+                .unwrap_or(false)
+    })
+    .and_then(|path| path.parent().map(Path::to_path_buf))
+}
+
+fn bundled_resource_named_dir(app: Option<&AppHandle>, dir_name: &str) -> Option<PathBuf> {
+    let resource_dir = app?.path().resource_dir().ok()?;
+    find_resource_path(&resource_dir, &|path| {
+        path.is_dir() && path.file_name() == Some(OsStr::new(dir_name))
+    })
+}
+
+fn find_resource_path(root: &Path, predicate: &dyn Fn(&Path) -> bool) -> Option<PathBuf> {
+    if predicate(root) {
+        return Some(root.to_path_buf());
+    }
+    let entries = fs::read_dir(root).ok()?;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if predicate(&path) {
+            return Some(path);
+        }
+        if path.is_dir() {
+            if let Some(found) = find_resource_path(&path, predicate) {
+                return Some(found);
+            }
+        }
+    }
+    None
+}
+
+fn normalize_path_for_match(path: &Path) -> String {
+    path.components()
+        .filter_map(|component| component.as_os_str().to_str())
+        .filter(|part| !part.is_empty() && *part != "_up_")
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
+fn workspace_root_guess() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(Path::parent)
+        .and_then(Path::parent)
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
+}
+
+fn home_dir() -> Option<PathBuf> {
+    std::env::var_os("HOME").map(PathBuf::from)
+}
+
+fn open_system_target(target: &str) -> Result<(), String> {
+    let status = Command::new("open")
+        .arg(target)
+        .status()
+        .map_err(|error| format!("Open failed: {error}"))?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!("Open failed with status {status}"))
+    }
+}
+
 fn command_success_or_error(output: Output, action: &str) -> Result<(), String> {
     if output.status.success() {
         return Ok(());
@@ -2243,7 +2822,7 @@ fn normalize_tags_with_foundation_model_native(
     }
 
     let id = timestamp_millis();
-    let context_path = std::env::temp_dir().join(format!("vixio-foundation-tags-{id}.txt"));
+    let context_path = std::env::temp_dir().join(format!("kira-foundation-tags-{id}.txt"));
     fs::write(&context_path, text_context).map_err(|error| error.to_string())?;
 
     let output = run_foundation_models_process("tags", Some(context_path.as_path()));
@@ -2272,8 +2851,8 @@ fn run_foundation_models_process(
     mode: &str,
     context_path: Option<&Path>,
 ) -> Result<Output, String> {
-    let helper_path = bundled_sidecar_path("vixio-foundation-models-helper").or_else(|| {
-        option_env!("VIXIO_FOUNDATION_MODELS_HELPER")
+    let helper_path = bundled_sidecar_path("kira-foundation-models-helper").or_else(|| {
+        option_env!("KIRA_FOUNDATION_MODELS_HELPER")
             .filter(|path| !path.is_empty())
             .map(PathBuf::from)
     });
@@ -2306,7 +2885,7 @@ fn run_foundation_models_process_with_helper(
     match mode {
         "availability" => {
             let script_path =
-                std::env::temp_dir().join(format!("vixio-foundation-check-{id}.swift"));
+                std::env::temp_dir().join(format!("kira-foundation-check-{id}.swift"));
             run_swift_script(&script_path, FOUNDATION_MODEL_AVAILABILITY_SWIFT, &[])
         }
         "tags" => {
@@ -2314,7 +2893,7 @@ fn run_foundation_models_process_with_helper(
                 return Err("Missing Foundation Models context path".to_string());
             };
             let script_path =
-                std::env::temp_dir().join(format!("vixio-foundation-tags-{id}.swift"));
+                std::env::temp_dir().join(format!("kira-foundation-tags-{id}.swift"));
             run_swift_script(
                 &script_path,
                 FOUNDATION_MODEL_TAG_NORMALIZE_SWIFT,
@@ -2778,6 +3357,15 @@ fn handle_capture_stream(mut stream: TcpStream, app: &AppHandle) -> Result<(), S
     let request = String::from_utf8_lossy(&buffer[..size]);
     let response = match parse_capture_http_request(&request) {
         CaptureHttpRequest::Options => http_response(204, "No Content", ""),
+        CaptureHttpRequest::Context => {
+            let state = app.state::<CaptureContextState>();
+            let context = state
+                .0
+                .lock()
+                .map(|value| value.clone())
+                .unwrap_or_else(|_| "{}".to_string());
+            http_response(200, "OK", &context)
+        }
         CaptureHttpRequest::Post(payload) => {
             app.emit(CAPTURE_EVENT, payload)
                 .map_err(|error| error.to_string())?;
@@ -2793,6 +3381,7 @@ fn handle_capture_stream(mut stream: TcpStream, app: &AppHandle) -> Result<(), S
 
 enum CaptureHttpRequest {
     Options,
+    Context,
     Post(String),
     Invalid,
 }
@@ -2802,8 +3391,11 @@ fn parse_capture_http_request(request: &str) -> CaptureHttpRequest {
     let headers = parts.next().unwrap_or_default();
     let body = parts.next().unwrap_or_default().trim();
 
-    if headers.starts_with("OPTIONS /capture ") {
+    if headers.starts_with("OPTIONS /capture ") || headers.starts_with("OPTIONS /context ") {
         return CaptureHttpRequest::Options;
+    }
+    if headers.starts_with("GET /context ") {
+        return CaptureHttpRequest::Context;
     }
     if !headers.starts_with("POST /capture ") || body.is_empty() {
         return CaptureHttpRequest::Invalid;
@@ -2814,7 +3406,7 @@ fn parse_capture_http_request(request: &str) -> CaptureHttpRequest {
 
 fn http_response(status: u16, reason: &str, body: &str) -> String {
     format!(
-        "HTTP/1.1 {status} {reason}\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: POST, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}",
+        "HTTP/1.1 {status} {reason}\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}",
         body.len()
     )
 }
@@ -2826,10 +3418,55 @@ fn project_dir(app: &AppHandle) -> Result<PathBuf, String> {
         .map_err(|error| error.to_string())
 }
 
+#[cfg(target_os = "macos")]
+unsafe fn apply_native_corner_radius(view: &NSView) {
+    view.setWantsLayer(true);
+    if let Some(layer) = view.layer() {
+        layer.setCornerRadius(MACOS_WINDOW_CORNER_RADIUS);
+        layer.setMasksToBounds(true);
+        layer.setOpaque(false);
+        layer.setBackgroundColor(None);
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn configure_native_macos_window(window: &tauri::WebviewWindow) -> Result<(), String> {
+    let ns_window = window.ns_window().map_err(|error| error.to_string())?;
+    let ns_view = window.ns_view().map_err(|error| error.to_string())?;
+
+    unsafe {
+        let ns_window = &*(ns_window.cast::<NSWindow>());
+        ns_window.setOpaque(false);
+        ns_window.setBackgroundColor(Some(&NSColor::clearColor()));
+        ns_window.setTitlebarAppearsTransparent(true);
+        ns_window.setHasShadow(true);
+
+        let ns_view = &*(ns_view.cast::<NSView>());
+        apply_native_corner_radius(ns_view);
+
+        if let Some(parent_view) = ns_view.superview() {
+            apply_native_corner_radius(&parent_view);
+        }
+
+        if let Some(content_view) = ns_window.contentView() {
+            apply_native_corner_radius(&content_view);
+        }
+    }
+
+    Ok(())
+}
+
 pub fn run() {
     tauri::Builder::default()
+        .manage(CaptureContextState::default())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
+            if let Some(window) = app.get_webview_window("main") {
+                #[cfg(target_os = "macos")]
+                if let Err(error) = configure_native_macos_window(&window) {
+                    eprintln!("KIRA native macOS window setup failed: {error}");
+                }
+            }
             start_capture_server(app.handle().clone());
             Ok(())
         })
@@ -2847,13 +3484,17 @@ pub fn run() {
             delete_provider_secret,
             test_ai_provider,
             list_ai_models,
+            generate_ai_text,
+            get_extension_install_status,
+            open_extension_install_target,
             export_outline_markdown,
             export_outline_html,
             export_contact_sheet_html,
-            export_slideshow_html
+            export_slideshow_html,
+            update_capture_context
         ])
         .run(tauri::generate_context!())
-        .expect("error while running Vixio desktop shell");
+        .expect("error while running KIRA desktop shell");
 }
 
 #[cfg(test)]
@@ -2864,7 +3505,7 @@ mod tests {
     fn sqlite_snapshot_roundtrip_preserves_graph_data_and_assets() {
         let mut conn = Connection::open_in_memory().expect("open sqlite memory db");
         let project_dir = std::env::temp_dir().join(format!(
-            "vixio-test-{}",
+            "kira-test-{}",
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .expect("system time")
@@ -2953,11 +3594,37 @@ mod tests {
                 "routingMode": "prefer_local",
                 "selectedProviderId": "local-apple"
             }),
+            version_state: serde_json::json!({
+                "schemaVersion": 1,
+                "currentBranchId": "main",
+                "currentVersionId": "version-a",
+                "branches": [{
+                    "id": "main",
+                    "name": "Main",
+                    "createdAt": "2026-06-01T02:00:00.000Z",
+                    "headVersionId": "version-a"
+                }]
+            }),
             version_history: vec![serde_json::json!({
                 "id": "version-a",
                 "label": "Version A",
                 "createdAt": "2026-06-01T02:00:00.000Z",
+                "trigger": "manual",
+                "branchId": "main",
                 "snapshotJson": "{}"
+            })],
+            node_versions: vec![serde_json::json!({
+                "id": "node-version-a",
+                "nodeId": "idea-a",
+                "nodeKind": "idea",
+                "versionNumber": 1,
+                "createdAt": "2026-06-01T02:05:00.000Z",
+                "trigger": "label_changed",
+                "snapshotJson": "{\"id\":\"idea-a\",\"title\":\"Idea A\"}",
+                "fields": ["title"],
+                "summary": "Changed Title",
+                "branchId": "main",
+                "aiGenerated": false
             })],
             links: vec![LinkRecord {
                 id: "link-a".to_string(),
@@ -3055,7 +3722,17 @@ mod tests {
             restored.ai_settings["selectedProviderId"].as_str(),
             Some("local-apple")
         );
+        assert_eq!(
+            restored.version_state["currentVersionId"].as_str(),
+            Some("version-a")
+        );
+        assert_eq!(
+            restored.version_state["branches"][0]["headVersionId"].as_str(),
+            Some("version-a")
+        );
         assert_eq!(restored.version_history[0]["id"], "version-a");
+        assert_eq!(restored.version_history[0]["branchId"], "main");
+        assert_eq!(restored.node_versions[0]["nodeId"], "idea-a");
         assert_eq!(restored.outline_drafts[0].id, "outline-a");
         assert_eq!(restored.outline_drafts[0].sections[0].idea_id, "idea-a");
         assert_eq!(
@@ -3075,7 +3752,7 @@ mod tests {
     #[test]
     fn outline_exports_write_exports_files() {
         let project_dir =
-            std::env::temp_dir().join(format!("vixio-outline-export-test-{}", timestamp_millis()));
+            std::env::temp_dir().join(format!("kira-outline-export-test-{}", timestamp_millis()));
         let markdown_path = export_text_to_exports(&project_dir, "outline.md", "# Outline\n")
             .expect("export outline markdown");
         let html_path = export_text_to_exports(&project_dir, "outline.html", "<h1>Outline</h1>\n")
@@ -3113,7 +3790,7 @@ mod tests {
     #[test]
     fn folder_import_reads_supported_images_with_local_taxonomy() {
         let folder =
-            std::env::temp_dir().join(format!("vixio-folder-import-test-{}", timestamp_millis()));
+            std::env::temp_dir().join(format!("kira-folder-import-test-{}", timestamp_millis()));
         fs::create_dir_all(&folder).expect("create import folder");
 
         let fixture_path = folder.join("ritual-tool-final.png");
@@ -3148,7 +3825,7 @@ mod tests {
     #[test]
     fn folder_import_maps_eagle_metadata_as_suggestions_and_origin() {
         let folder =
-            std::env::temp_dir().join(format!("vixio-eagle-import-test-{}", timestamp_millis()));
+            std::env::temp_dir().join(format!("kira-eagle-import-test-{}", timestamp_millis()));
         fs::create_dir_all(&folder).expect("create import folder");
 
         let fixture_path = folder.join("B7A1.info");
@@ -3294,8 +3971,8 @@ mod tests {
         use std::os::unix::fs::PermissionsExt;
 
         let id = timestamp_millis();
-        let helper_path = std::env::temp_dir().join(format!("vixio-ocr-helper-test-{id}.sh"));
-        let image_path = std::env::temp_dir().join(format!("vixio-ocr-helper-test-{id}.png"));
+        let helper_path = std::env::temp_dir().join(format!("kira-ocr-helper-test-{id}.sh"));
+        let image_path = std::env::temp_dir().join(format!("kira-ocr-helper-test-{id}.png"));
 
         {
             let mut helper = fs::File::create(&helper_path).expect("create helper");
@@ -3322,8 +3999,8 @@ mod tests {
         use std::os::unix::fs::PermissionsExt;
 
         let id = timestamp_millis();
-        let helper_path = std::env::temp_dir().join(format!("vixio-nl-helper-test-{id}.sh"));
-        let text_path = std::env::temp_dir().join(format!("vixio-nl-helper-test-{id}.txt"));
+        let helper_path = std::env::temp_dir().join(format!("kira-nl-helper-test-{id}.sh"));
+        let text_path = std::env::temp_dir().join(format!("kira-nl-helper-test-{id}.txt"));
 
         {
             let mut helper = fs::File::create(&helper_path).expect("create helper");
@@ -3352,9 +4029,9 @@ mod tests {
 
         let id = timestamp_millis();
         let helper_path =
-            std::env::temp_dir().join(format!("vixio-foundation-helper-test-{id}.sh"));
+            std::env::temp_dir().join(format!("kira-foundation-helper-test-{id}.sh"));
         let context_path =
-            std::env::temp_dir().join(format!("vixio-foundation-helper-test-{id}.txt"));
+            std::env::temp_dir().join(format!("kira-foundation-helper-test-{id}.txt"));
 
         {
             let mut helper = fs::File::create(&helper_path).expect("create helper");
@@ -3395,13 +4072,13 @@ mod tests {
     #[test]
     fn bundled_sidecar_discovery_accepts_tauri_triple_suffix() {
         let id = timestamp_millis();
-        let dir = std::env::temp_dir().join(format!("vixio-sidecar-discovery-{id}"));
-        let sidecar = dir.join("vixio-vision-ocr-helper-aarch64-apple-darwin");
+        let dir = std::env::temp_dir().join(format!("kira-sidecar-discovery-{id}"));
+        let sidecar = dir.join("kira-vision-ocr-helper-aarch64-apple-darwin");
         fs::create_dir_all(&dir).expect("create dir");
         fs::write(&sidecar, b"sidecar").expect("write sidecar");
 
         let discovered =
-            bundled_sidecar_path_in_dir(&dir, "vixio-vision-ocr-helper").expect("discover sidecar");
+            bundled_sidecar_path_in_dir(&dir, "kira-vision-ocr-helper").expect("discover sidecar");
 
         assert_eq!(discovered, sidecar);
         let _ = fs::remove_dir_all(dir);
@@ -3410,9 +4087,9 @@ mod tests {
     #[test]
     fn capture_http_request_parses_post_body_and_options() {
         let request =
-            "POST /capture HTTP/1.1\r\nContent-Type: application/json\r\n\r\n{\"vixioCapture\":1}";
+            "POST /capture HTTP/1.1\r\nContent-Type: application/json\r\n\r\n{\"kiraCapture\":1}";
         match parse_capture_http_request(request) {
-            CaptureHttpRequest::Post(payload) => assert_eq!(payload, "{\"vixioCapture\":1}"),
+            CaptureHttpRequest::Post(payload) => assert_eq!(payload, "{\"kiraCapture\":1}"),
             _ => panic!("expected capture post"),
         }
 
@@ -3430,7 +4107,7 @@ mod tests {
     #[test]
     fn project_manifest_roundtrip_preserves_v2_metadata() {
         let id = timestamp_millis();
-        let project_dir = std::env::temp_dir().join(format!("vixio-v2-manifest-test-{id}.vixio"));
+        let project_dir = std::env::temp_dir().join(format!("kira-v2-manifest-test-{id}.kira"));
         ensure_project_dirs(&project_dir).expect("create project dirs");
         let snapshot_json = serde_json::json!({
             "version": 2,
@@ -3487,7 +4164,34 @@ mod tests {
                 "id": "version-a",
                 "label": "Version A",
                 "createdAt": "2026-06-02T00:00:00.000Z",
+                "trigger": "manual",
+                "branchId": "main",
                 "snapshotJson": "{}"
+            }],
+            "versionState": {
+                "schemaVersion": 1,
+                "currentBranchId": "main",
+                "currentVersionId": "version-a",
+                "branches": [{
+                    "id": "main",
+                    "name": "Main",
+                    "createdAt": "2026-06-02T00:00:00.000Z",
+                    "headVersionId": "version-a"
+                }]
+            },
+            "nodeVersions": [{
+                "id": "node-version-a",
+                "nodeId": "idea-a",
+                "nodeKind": "idea",
+                "versionNumber": 2,
+                "createdAt": "2026-06-02T00:05:00.000Z",
+                "trigger": "label_changed",
+                "snapshotJson": "{\"id\":\"idea-a\",\"title\":\"Idea A\"}",
+                "fields": ["title"],
+                "summary": "Changed title",
+                "branchId": "main",
+                "restoredFromId": null,
+                "aiGenerated": false
             }],
             "links": [{
                 "id": "link-a",
@@ -3521,7 +4225,267 @@ mod tests {
             "keychain:openai"
         );
         assert_eq!(restored_json["versionHistory"][0]["label"], "Version A");
+        assert_eq!(restored_json["versionState"]["currentVersionId"], "version-a");
+        assert_eq!(restored_json["nodeVersions"][0]["nodeId"], "idea-a");
+        assert_eq!(restored_json["nodeVersions"][0]["versionNumber"], 2);
+        assert_eq!(restored_json["nodeVersions"][0]["fields"][0], "title");
         assert_eq!(restored_json["links"][0]["sourceNodeId"], "idea-a");
+
+        let _ = fs::remove_dir_all(project_dir);
+    }
+
+    #[test]
+    fn save_project_package_writes_manifest_sqlite_and_workspace_dirs() {
+        let id = timestamp_millis();
+        let project_dir = std::env::temp_dir().join(format!("kira-save-package-test-{id}.kira"));
+        let snapshot_json = serde_json::json!({
+            "version": 2,
+            "ideas": [{
+                "id": "idea-save",
+                "title": "Saved Package Idea",
+                "body": "Package roundtrip body.",
+                "status": "strong",
+                "x": 24,
+                "y": 42,
+                "importance": 2
+            }],
+            "images": [],
+            "palettes": [],
+            "diagrams": [],
+            "placeholders": [],
+            "aiSettings": {
+                "providers": [],
+                "routingMode": "prefer_local",
+                "selectedProviderId": "openai"
+            },
+            "versionState": {
+                "schemaVersion": 1,
+                "currentBranchId": "main",
+                "currentVersionId": "version-save",
+                "branches": [{
+                    "id": "main",
+                    "name": "Main",
+                    "createdAt": "2026-06-08T00:00:00.000Z",
+                    "headVersionId": "version-save"
+                }]
+            },
+            "versionHistory": [{
+                "id": "version-save",
+                "label": "Save Test",
+                "createdAt": "2026-06-08T00:00:00.000Z",
+                "trigger": "manual",
+                "branchId": "main",
+                "snapshotJson": "{}"
+            }],
+            "nodeVersions": [],
+            "links": [],
+            "outlineDrafts": []
+        })
+        .to_string();
+
+        let info = write_project_package_to_dir(project_dir.clone(), snapshot_json)
+            .expect("write project package");
+
+        assert_eq!(PathBuf::from(&info.path), project_dir);
+        assert!(project_dir.join(MANIFEST_NAME).exists());
+        assert!(project_dir.join(SQLITE_NAME).exists());
+        assert!(project_dir.join("images").is_dir());
+        assert!(project_dir.join("thumbs").is_dir());
+        assert!(project_dir.join("exports").is_dir());
+
+        let restored = read_project_package(&project_dir)
+            .expect("read saved package")
+            .expect("restored saved snapshot");
+        let restored_json: serde_json::Value =
+            serde_json::from_str(&restored).expect("parse restored saved snapshot");
+        assert_eq!(restored_json["ideas"][0]["title"], "Saved Package Idea");
+        assert_eq!(restored_json["versionState"]["currentVersionId"], "version-save");
+
+        let _ = fs::remove_dir_all(project_dir);
+    }
+
+    #[test]
+    fn atomic_write_text_replaces_manifest_without_tmp_leftovers() {
+        let id = timestamp_millis();
+        let project_dir = std::env::temp_dir().join(format!("kira-atomic-write-test-{id}.kira"));
+        fs::create_dir_all(&project_dir).expect("create project dir");
+        let manifest = project_dir.join(MANIFEST_NAME);
+
+        atomic_write_text(&manifest, "{\"version\":2,\"label\":\"first\"}")
+            .expect("write first manifest");
+        atomic_write_text(&manifest, "{\"version\":2,\"label\":\"second\"}")
+            .expect("replace manifest");
+
+        let contents = fs::read_to_string(&manifest).expect("read manifest");
+        assert!(contents.contains("\"second\""));
+        let temp_count = fs::read_dir(&project_dir)
+            .expect("read project dir")
+            .filter_map(Result::ok)
+            .filter(|entry| entry.file_name().to_string_lossy().contains(".tmp-"))
+            .count();
+        assert_eq!(temp_count, 0);
+
+        let _ = fs::remove_dir_all(project_dir);
+    }
+
+    #[test]
+    fn corrupt_manifest_falls_back_to_sqlite_snapshot() {
+        let id = timestamp_millis();
+        let project_dir = std::env::temp_dir().join(format!("kira-corrupt-manifest-test-{id}.kira"));
+        ensure_project_dirs(&project_dir).expect("create project dirs");
+        let mut conn =
+            Connection::open(project_dir.join(SQLITE_NAME)).expect("open sqlite project db");
+        migrate(&conn).expect("migrate db");
+        let snapshot = ProjectSnapshot {
+            version: 2,
+            ideas: vec![IdeaRecord {
+                id: "idea-sqlite".to_string(),
+                title: "SQLite fallback idea".to_string(),
+                body: "Recovered from SQLite.".to_string(),
+                status: "forming".to_string(),
+                x: 20.0,
+                y: 30.0,
+                importance: None,
+                created_at: None,
+                added_at: None,
+                updated_at: None,
+                source_url: None,
+                notes: None,
+            }],
+            images: vec![],
+            palettes: vec![],
+            diagrams: vec![],
+            placeholders: vec![],
+            ai_settings: serde_json::json!({
+                "providers": [],
+                "routingMode": "prefer_local",
+                "selectedProviderId": "openai"
+            }),
+            version_state: serde_json::json!({
+                "schemaVersion": 1,
+                "currentBranchId": "main",
+                "branches": [{
+                    "id": "main",
+                    "name": "Main",
+                    "createdAt": "2026-06-08T00:00:00.000Z"
+                }]
+            }),
+            version_history: vec![],
+            node_versions: vec![],
+            links: vec![],
+            outline_drafts: vec![],
+        };
+        write_snapshot(&mut conn, &snapshot, &project_dir).expect("write sqlite snapshot");
+        fs::write(project_dir.join(MANIFEST_NAME), "{not valid json")
+            .expect("write corrupt manifest");
+
+        let restored = read_project_package(&project_dir)
+            .expect("read package with fallback")
+            .expect("restored snapshot");
+        let restored_json: serde_json::Value =
+            serde_json::from_str(&restored).expect("parse restored fallback");
+        assert_eq!(restored_json["ideas"][0]["title"], "SQLite fallback idea");
+
+        let _ = fs::remove_dir_all(project_dir);
+    }
+
+    #[test]
+    fn sqlite_snapshot_is_authoritative_when_manifest_is_stale() {
+        let id = timestamp_millis();
+        let project_dir = std::env::temp_dir().join(format!("kira-sqlite-authority-test-{id}.kira"));
+        ensure_project_dirs(&project_dir).expect("create project dirs");
+        let mut conn =
+            Connection::open(project_dir.join(SQLITE_NAME)).expect("open sqlite project db");
+        migrate(&conn).expect("migrate db");
+        let snapshot = ProjectSnapshot {
+            version: 2,
+            ideas: vec![IdeaRecord {
+                id: "idea-authoritative".to_string(),
+                title: "SQLite authoritative title".to_string(),
+                body: "The normalized database should win over a stale manifest.".to_string(),
+                status: "strong".to_string(),
+                x: 34.0,
+                y: 44.0,
+                importance: Some(1.8),
+                created_at: None,
+                added_at: None,
+                updated_at: None,
+                source_url: None,
+                notes: None,
+            }],
+            images: vec![],
+            palettes: vec![],
+            diagrams: vec![],
+            placeholders: vec![],
+            ai_settings: serde_json::json!({
+                "providers": [],
+                "routingMode": "prefer_local",
+                "selectedProviderId": "openai"
+            }),
+            version_state: serde_json::json!({
+                "schemaVersion": 1,
+                "currentBranchId": "main",
+                "branches": [{
+                    "id": "main",
+                    "name": "Main",
+                    "createdAt": "2026-06-08T00:00:00.000Z"
+                }]
+            }),
+            version_history: vec![],
+            node_versions: vec![],
+            links: vec![],
+            outline_drafts: vec![],
+        };
+        write_snapshot(&mut conn, &snapshot, &project_dir).expect("write sqlite snapshot");
+        fs::write(
+            project_dir.join(MANIFEST_NAME),
+            serde_json::json!({
+                "version": 2,
+                "ideas": [{
+                    "id": "idea-stale",
+                    "title": "Stale manifest title",
+                    "body": "Old browser fallback.",
+                    "status": "forming",
+                    "x": 10,
+                    "y": 20
+                }],
+                "images": [],
+                "palettes": [],
+                "diagrams": [],
+                "placeholders": [],
+                "aiSettings": {
+                    "providers": [],
+                    "routingMode": "prefer_local",
+                    "selectedProviderId": "openai"
+                },
+                "versionState": {
+                    "schemaVersion": 1,
+                    "currentBranchId": "main",
+                    "branches": [{
+                        "id": "main",
+                        "name": "Main",
+                        "createdAt": "2026-06-08T00:00:00.000Z"
+                    }]
+                },
+                "versionHistory": [],
+                "nodeVersions": [],
+                "links": [],
+                "outlineDrafts": []
+            })
+            .to_string(),
+        )
+        .expect("write stale manifest");
+
+        let restored = read_project_package(&project_dir)
+            .expect("read package")
+            .expect("restored snapshot");
+        let restored_json: serde_json::Value =
+            serde_json::from_str(&restored).expect("parse restored snapshot");
+        assert_eq!(
+            restored_json["ideas"][0]["title"],
+            "SQLite authoritative title"
+        );
+        assert_eq!(restored_json["ideas"][0]["id"], "idea-authoritative");
 
         let _ = fs::remove_dir_all(project_dir);
     }

@@ -1,15 +1,15 @@
 fn main() {
     build_apple_helper(
-        "apple_helpers/vixio_vision_ocr.swift",
-        "vixio-vision-ocr-helper",
+        "apple_helpers/kira_vision_ocr.swift",
+        "kira-vision-ocr-helper",
     );
     build_apple_helper(
-        "apple_helpers/vixio_foundation_models.swift",
-        "vixio-foundation-models-helper",
+        "apple_helpers/kira_foundation_models.swift",
+        "kira-foundation-models-helper",
     );
     build_apple_helper(
-        "apple_helpers/vixio_natural_language.swift",
-        "vixio-natural-language-helper",
+        "apple_helpers/kira_natural_language.swift",
+        "kira-natural-language-helper",
     );
     tauri_build::build()
 }
@@ -69,9 +69,10 @@ fn build_apple_helper(source_relative_path: &str, binary_name: &str) {
 
 fn helper_env_name(binary_name: &str) -> String {
     format!(
-        "VIXIO_{}_HELPER",
+        "KIRA_{}_HELPER",
         binary_name
-            .trim_start_matches("vixio-")
+            .trim_start_matches("kira-")
+            .trim_end_matches("-helper")
             .replace('-', "_")
             .to_uppercase()
     )
@@ -86,7 +87,7 @@ fn stage_fallback_helper(
 ) {
     use std::os::unix::fs::PermissionsExt;
 
-    let source = if binary_name == "vixio-foundation-models-helper" {
+    let source = if binary_name == "kira-foundation-models-helper" {
         "#!/bin/sh\nif [ \"$1\" = \"availability\" ]; then echo 'unavailable\\tsdk-unavailable'; exit 0; fi\necho 'unavailable: sdk-unavailable' >&2\nexit 3\n"
     } else {
         "#!/bin/sh\necho 'helper unavailable' >&2\nexit 3\n"

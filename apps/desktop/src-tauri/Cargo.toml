@@ -1,12 +1,12 @@
 [package]
-name = "vixio-desktop"
+name = "kira-desktop"
 version = "0.1.0"
-description = "Vixio desktop shell"
-authors = ["Vixio"]
+description = "KIRA desktop shell"
+authors = ["KIRA"]
 edition = "2021"
 
 [lib]
-name = "vixio_desktop_lib"
+name = "kira_desktop_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
@@ -15,9 +15,11 @@ tauri-build = { version = "2.5.2", features = [] }
 [dependencies]
 base64 = "0.22.1"
 image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "webp"] }
+objc2-app-kit = "0.3.2"
+objc2-quartz-core = "0.3.2"
 rusqlite = { version = "0.40.0", features = ["bundled"] }
 reqwest = { version = "0.12.24", default-features = false, features = ["blocking", "json", "rustls-tls"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-tauri = { version = "2.9.5", features = [] }
+tauri = { version = "2.9.5", features = ["macos-private-api"] }
 tauri-plugin-dialog = "2.7.1"

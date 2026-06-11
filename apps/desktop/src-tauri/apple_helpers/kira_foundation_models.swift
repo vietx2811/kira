@@ -68,6 +68,6 @@ case .tags:
   }
   try await normalizeTags(contextPath: CommandLine.arguments[2])
 case .none:
-  fputs("usage: vixio-foundation-models-helper availability|tags [context-path]\n", stderr)
+  fputs("usage: kira-foundation-models-helper availability|tags [context-path]\n", stderr)
   exit(2)
 }

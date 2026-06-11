@@ -12,6 +12,14 @@ apps/desktop/src-tauri/binaries/
 # Extension
 apps/extension/.output/
 apps/extension/.wxt/
+apps/extension/safari/DerivedData/
+
+# Local QA artifacts
+.playwright-mcp/
+kira-*.png
+kira-*.json
+kira-*.log
+kira-goal-progress-snapshot.md
 
 # OS
 .DS_Store
