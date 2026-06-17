@@ -12,14 +12,16 @@
   --node-surface-selected: rgb(19 23 21 / 0.94);
   --node-border: rgb(255 255 255 / 0.045);
   --node-shadow: 0 18px 48px rgb(0 0 0 / 0.35);
-  --node-shadow-soft: 0 0 0 1px rgb(132 205 188 / 0.1);
+  --node-shadow-soft: 0 0 0 1px var(--accent-faint);
+  --node-shadow-rest: 0 6px 20px rgb(0 0 0 / 0.22);
+  --node-shadow-hover: 0 12px 34px rgb(0 0 0 / 0.3);
   --window-border: rgb(255 255 255 / 0.08);
   --glass-sidebar: rgb(12 14 13 / 0.34);
   --glass-drawer: rgb(15 17 16 / 0.58);
   --glass-content: rgb(10 12 11 / 0.34);
   --glass-inspector: rgb(16 18 16 / 0.5);
   --glass-hover: rgb(255 255 255 / 0.055);
-  --glass-active: rgb(132 205 188 / 0.15);
+  --glass-active: var(--accent-faint);
   --separator-hairline: rgb(255 255 255 / 0.052);
   --inset-field: rgb(0 0 0 / 0.12);
   --border-soft: rgb(255 255 255 / 0.06);
@@ -30,7 +32,7 @@
   --accent-cyan: #84cdbc;
   --accent-strong: #9edccd;
   --accent-weak: rgb(132 205 188 / 0.28);
-  --accent-faint: rgb(132 205 188 / 0.12);
+  --accent-faint: rgb(158 220 205 / 0.12);
   --accent-amber: #dfae67;
   --accent-sage: #9cae83;
   --accent-violet: #b7a4df;
@@ -48,6 +50,8 @@
   --shell-shadow: inset 0 1px 0 rgb(255 255 255 / 0.08);
   --panel-shadow: 0 20px 70px rgb(0 0 0 / 0.28);
   --edge-shadow: drop-shadow(0 6px 14px rgb(0 0 0 / 0.18));
+  --edge-stroke: rgb(255 255 255 / 0.3);
+  --edge-stroke-soft: rgb(255 255 255 / 0.12);
   --font-sans:
     Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
     sans-serif;
@@ -1260,7 +1264,7 @@ button {
 
 .inbox.is-dragging-files {
   background: rgb(18 25 22 / 0.9);
-  box-shadow: inset 0 0 0 1px rgb(132 205 188 / 0.36);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-strong), transparent 64%);
 }
 
 .inbox--collapsed {
@@ -1395,7 +1399,7 @@ p {
 
 .library-panel-tabs button:hover,
 .library-panel-tabs button.is-active {
-  background: rgb(132 205 188 / 0.11);
+  background: var(--accent-faint);
   color: var(--text-main);
 }
 
@@ -1891,7 +1895,7 @@ p {
 }
 
 .batch-bar button:hover {
-  background: rgb(132 205 188 / 0.12);
+  background: var(--accent-faint);
   color: var(--text-main);
 }
 
@@ -1919,8 +1923,8 @@ p {
   margin-top: var(--space-2);
   padding: 6px var(--space-2);
   border-radius: var(--radius-1);
-  background: rgb(132 205 188 / 0.12);
-  color: #d9fff6;
+  background: var(--accent-faint);
+  color: var(--accent-strong);
   cursor: pointer;
   font-size: 0.74rem;
 }
@@ -1934,8 +1938,8 @@ p {
   height: 42px;
   place-items: center;
   border-radius: var(--radius-2);
-  background: rgb(132 205 188 / 0.15);
-  color: #d9fff6;
+  background: var(--accent-faint);
+  color: var(--accent-strong);
   font-size: 0.78rem;
   pointer-events: none;
 }
@@ -1948,8 +1952,8 @@ p {
   width: 100%;
   height: 32px;
   border-radius: var(--radius-1);
-  background: rgb(132 205 188 / 0.11);
-  color: #d9fff6;
+  background: var(--accent-faint);
+  color: var(--accent-strong);
   cursor: pointer;
   gap: var(--space-2);
   font-size: 0.76rem;
@@ -2282,66 +2286,99 @@ p {
 
 .edge-line {
   fill: none;
-  stroke: url(#edgeGradient);
+  stroke: var(--edge-stroke);
   stroke-linecap: round;
   stroke-linejoin: round;
-  stroke-width: 0.18;
-  filter: var(--edge-shadow);
+  stroke-width: 1.4;
   pointer-events: none;
   vector-effect: non-scaling-stroke;
+  transition:
+    stroke 160ms ease,
+    stroke-width 160ms ease,
+    opacity 160ms ease;
+}
+
+/* Hovering anywhere on an edge group lifts the line out of the calm baseline. */
+.edge-layer g:hover .edge-line {
+  stroke: var(--accent-strong);
+  stroke-width: 2;
 }
 
 .edge-line.is-active {
   stroke: var(--accent-amber);
-  stroke-width: 0.34;
+  stroke-width: 2.6;
+  filter: drop-shadow(0 0 3px color-mix(in srgb, var(--accent-amber), transparent 55%));
 }
 
 .edge-line.is-related {
-  stroke: color-mix(in srgb, var(--accent-cyan), transparent 42%);
-  stroke-width: 0.28;
+  stroke: var(--accent-cyan);
+  stroke-width: 2;
 }
 
 .edge-line--suggested {
-  stroke: color-mix(in srgb, var(--accent-sage), transparent 64%);
+  stroke: color-mix(in srgb, var(--accent-sage), transparent 30%);
   stroke-linecap: round;
-  stroke-dasharray: 1.2 1.4;
-  stroke-width: 0.15;
+  stroke-dasharray: 3.4 3.4;
+  stroke-width: 1.4;
+}
+
+/* When a link or node is focused, fade unrelated edges so the active path reads cleanly. */
+.graph-canvas.has-focus .edge-line:not(.is-active):not(.is-related) {
+  opacity: 0.28;
 }
 
 .edge-hit-path {
   fill: none;
   stroke: transparent;
   stroke-linecap: round;
-  stroke-width: 12;
+  stroke-width: 14;
   cursor: pointer;
   pointer-events: stroke;
   vector-effect: non-scaling-stroke;
 }
 
+/* Joints are the link's selection handle. They stay hidden in the calm state and
+   only surface for the active/related edge, so the canvas reads as clean lines. */
 .edge-joint {
   position: absolute;
   z-index: 3;
   display: block;
-  width: 9px;
-  height: 9px;
+  width: 10px;
+  height: 10px;
   padding: 0;
-  border: 0;
+  border: 1.5px solid var(--bg-canvas);
   border-radius: 999px;
-  background: color-mix(in srgb, var(--accent-amber), transparent 35%);
+  background: var(--accent-cyan);
   cursor: pointer;
+  opacity: 0;
   appearance: none;
-  transform: translate(-50%, -50%);
+  transform: translate(-50%, -50%) scale(0.6);
+  pointer-events: none;
+  transition:
+    opacity 140ms ease,
+    transform 140ms ease;
+}
+
+.edge-joint.is-active,
+.edge-joint.is-related {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translate(-50%, -50%) scale(1);
 }
 
 .edge-joint.is-active {
   width: 13px;
   height: 13px;
   background: var(--accent-amber);
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent-amber), transparent 84%);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent-amber), transparent 80%);
 }
 
 .edge-joint.is-related {
-  background: color-mix(in srgb, var(--accent-cyan), transparent 24%);
+  background: var(--accent-cyan);
+}
+
+.edge-joint:hover {
+  transform: translate(-50%, -50%) scale(1.18);
 }
 
 .idea-node,
@@ -2389,7 +2426,18 @@ p {
   color: var(--text-main);
   gap: 2px var(--space-2);
   text-align: left;
+  box-shadow: var(--node-shadow-rest);
   backdrop-filter: blur(12px);
+}
+
+/* Calm resting state; hover lifts the card without shouting. */
+.idea-node:hover:not(.is-selected),
+.palette-node:hover:not(.is-selected),
+.diagram-node:hover:not(.is-selected),
+.placeholder-node:hover:not(.is-selected) {
+  border-color: var(--border-strong);
+  box-shadow: var(--node-shadow-hover);
+  transform: translate(-50%, -50%) scale(calc(var(--node-scale, 1) + 0.015));
 }
 
 .idea-node.is-selected {
@@ -2534,6 +2582,7 @@ p {
   color: var(--text-main);
   gap: 5px;
   text-align: left;
+  box-shadow: var(--node-shadow-rest);
   backdrop-filter: blur(12px);
 }
 
@@ -2761,9 +2810,9 @@ p {
 .palette-node.is-selected,
 .diagram-node.is-selected,
 .placeholder-node.is-selected {
-  border-color: color-mix(in srgb, var(--accent-cyan), transparent 42%);
+  border-color: color-mix(in srgb, var(--accent-strong), transparent 30%);
   box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--accent-cyan), transparent 82%),
+    0 0 0 1.5px var(--accent-strong),
     var(--node-shadow);
   transform: translate(-50%, -50%) scale(calc(var(--node-scale, 1) + 0.04));
 }
@@ -3053,7 +3102,7 @@ p {
   padding: 0 var(--space-3);
   border: 0;
   border-radius: var(--radius-1);
-  background: rgb(132 205 188 / 0.14);
+  background: var(--accent-faint);
   color: var(--text-main);
   cursor: pointer;
   font-size: 0.72rem;
@@ -3566,6 +3615,20 @@ p {
   font-size: 0.72rem;
 }
 
+.provider-key-help {
+  justify-self: start;
+  margin-top: 4px;
+  color: var(--accent-cyan);
+  font-size: 0.7rem;
+  text-decoration: none;
+  transition: color 140ms ease;
+}
+
+.provider-key-help:hover {
+  color: var(--accent-strong);
+  text-decoration: underline;
+}
+
 .provider-test-button {
   justify-self: start;
 }
@@ -3873,7 +3936,7 @@ p {
 
 .project-color-summary:hover,
 .project-color-summary.is-active {
-  border-color: color-mix(in srgb, var(--accent-cyan), transparent 42%);
+  border-color: color-mix(in srgb, var(--accent-strong), transparent 42%);
   background: var(--glass-active);
 }
 
@@ -3907,7 +3970,7 @@ p {
   width: 18px;
   height: 18px;
   margin-left: -5px;
-  border: 1px solid rgb(255 255 255 / 0.26);
+  border: 1px solid var(--border-soft);
   border-radius: 999px;
   box-shadow: 0 0 0 1px rgb(0 0 0 / 0.16);
 }
@@ -3930,22 +3993,45 @@ p {
 .color-formula-grid button {
   display: grid;
   min-width: 0;
-  min-height: 54px;
-  padding: 9px 10px;
+  padding: 0;
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-2);
   background: var(--inset-field);
   color: var(--text-soft);
   cursor: pointer;
-  gap: 2px;
+  gap: 0;
+  overflow: hidden;
   text-align: left;
 }
 
 .color-formula-grid button:hover,
 .color-formula-grid button.is-active {
-  border-color: color-mix(in srgb, var(--accent-cyan), transparent 42%);
+  border-color: color-mix(in srgb, var(--accent-strong), transparent 38%);
   background: var(--glass-active);
   color: var(--text-main);
+}
+
+.color-formula-grid button.is-active .formula-swatch-strip {
+  opacity: 1;
+}
+
+.formula-swatch-strip {
+  display: flex;
+  height: 28px;
+  overflow: hidden;
+  border-radius: 0;
+  opacity: 0.72;
+  transition: opacity 0.15s ease;
+}
+
+.formula-swatch-strip i {
+  flex: 1;
+}
+
+.formula-label-row {
+  display: grid;
+  gap: 2px;
+  padding: 7px 10px 8px;
 }
 
 .color-formula-grid span,
@@ -3956,7 +4042,7 @@ p {
 }
 
 .color-formula-grid span {
-  font-weight: 800;
+  font-weight: 600;
 }
 
 .color-formula-grid small {
@@ -3966,36 +4052,36 @@ p {
 
 .accent-color-recommendations {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
 }
 
 .accent-color-recommendations button {
   display: flex;
   align-items: center;
   min-width: 0;
-  height: 32px;
-  padding: 0 9px;
+  height: 30px;
+  padding: 0 8px;
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-2);
   background: var(--inset-field);
   color: var(--text-soft);
   cursor: pointer;
-  gap: 7px;
+  gap: 6px;
 }
 
 .accent-color-recommendations button:hover,
 .accent-color-recommendations button.is-active {
-  border-color: color-mix(in srgb, var(--accent-cyan), transparent 45%);
+  border-color: color-mix(in srgb, var(--accent-strong), transparent 40%);
   background: var(--glass-active);
   color: var(--text-main);
 }
 
 .accent-color-recommendations i {
   flex: 0 0 auto;
-  width: 12px;
-  height: 12px;
-  border: 1px solid rgb(255 255 255 / 0.24);
+  width: 11px;
+  height: 11px;
+  border: 1px solid var(--border-soft);
   border-radius: 999px;
 }
 
@@ -4170,7 +4256,7 @@ p {
 
 .graph3d-scope button:hover,
 .graph3d-scope button.is-active {
-  background: rgb(132 205 188 / 0.13);
+  background: var(--accent-faint);
   color: var(--text-main);
 }
 
@@ -4193,7 +4279,7 @@ p {
 }
 
 .graph3d-legend button.is-active {
-  background: rgb(132 205 188 / 0.13);
+  background: var(--accent-faint);
   color: var(--text-main);
 }
 
@@ -4596,7 +4682,7 @@ p {
 
 .outline-filter button:hover,
 .outline-filter button.is-active {
-  background: rgb(132 205 188 / 0.12);
+  background: var(--accent-faint);
   color: var(--text-main);
 }
 
@@ -4716,8 +4802,8 @@ p {
   min-height: 30px;
   padding: 0 var(--space-3);
   border-radius: var(--radius-1);
-  background: rgb(132 205 188 / 0.12);
-  color: #d9fff6;
+  background: var(--accent-faint);
+  color: var(--accent-strong);
   cursor: pointer;
   font-size: 0.74rem;
 }
@@ -5027,7 +5113,7 @@ p {
 }
 
 .node-version-row button:hover {
-  background: rgb(132 205 188 / 0.12);
+  background: var(--accent-faint);
   color: var(--text-main);
 }
 
@@ -5085,7 +5171,7 @@ p {
 }
 
 .image-edge-action:hover {
-  border-color: rgb(132 205 188 / 0.36);
+  border-color: color-mix(in srgb, var(--accent-strong), transparent 64%);
   background: rgb(15 17 16 / 0.92);
   color: var(--text-main);
 }
@@ -5181,7 +5267,7 @@ p {
 }
 
 .linked-list-toggle:hover {
-  background: rgb(132 205 188 / 0.1);
+  background: var(--accent-faint);
   color: var(--text-main);
 }
 
@@ -5200,9 +5286,9 @@ p {
 .tag-chip {
   min-height: 24px;
   padding: 0 5px 0 8px;
-  border: 1px solid rgb(132 205 188 / 0.19);
+  border: 1px solid color-mix(in srgb, var(--accent-cyan), transparent 81%);
   border-radius: 999px;
-  background: rgb(132 205 188 / 0.08);
+  background: var(--accent-faint);
   color: #c7eee5;
   gap: 5px;
   font-size: 0.7rem;
@@ -5245,8 +5331,8 @@ p {
   height: 28px;
   padding: 0 var(--space-2);
   border-radius: var(--radius-1);
-  background: rgb(132 205 188 / 0.1);
-  color: #d9fff6;
+  background: var(--accent-faint);
+  color: var(--accent-strong);
   cursor: pointer;
   font-size: 0.72rem;
 }
@@ -5270,7 +5356,7 @@ p {
   height: 28px;
   place-items: center;
   border-radius: 999px;
-  background: rgb(132 205 188 / 0.1);
+  background: var(--accent-faint);
   color: #c7eee5;
 }
 
@@ -5507,7 +5593,7 @@ textarea {
 
 .title-input:focus-visible,
 .note-input:focus-visible {
-  box-shadow: inset 0 -1px 0 rgb(132 205 188 / 0.45);
+  box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--accent-cyan), transparent 55%);
 }
 
 .danger-action {
@@ -5604,7 +5690,7 @@ textarea {
 
 .version-branches button.is-active,
 .version-branches button:hover {
-  background: rgb(132 205 188 / 0.12);
+  background: var(--accent-faint);
   color: var(--text-main);
 }
 

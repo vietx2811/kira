@@ -924,6 +924,18 @@ const providerConnectionNotes = [
   },
 ]
 
+// Where to mint a personal API key for the "bring your own key" flow, per provider type.
+function aiProviderKeyHelp(type: AiProviderType): { href: string; label: string } | null {
+  switch (type) {
+    case 'openai':
+      return { href: 'https://platform.openai.com/api-keys', label: 'Get an OpenAI API key' }
+    case 'anthropic':
+      return { href: 'https://console.anthropic.com/settings/keys', label: 'Get an Anthropic API key' }
+    default:
+      return null
+  }
+}
+
 const extensionInstallTargets = [
   {
     id: 'chrome',
@@ -1017,7 +1029,7 @@ const defaultAiProviderProfiles: AiProviderProfile[] = [
     name: 'Anthropic Console',
     authMode: 'api_key',
     baseUrl: 'https://api.anthropic.com',
-    model: 'claude-3-5-sonnet-latest',
+    model: 'claude-sonnet-4-6',
     status: 'key_missing',
     defaultFor: ['generate_outline', 'generate_node'],
   },
@@ -1078,7 +1090,7 @@ const aiProviderTemplates: Record<Exclude<AiProviderType, 'apple_foundation'>, O
     name: 'Anthropic Console',
     authMode: 'api_key',
     baseUrl: 'https://api.anthropic.com',
-    model: 'claude-3-5-sonnet-latest',
+    model: 'claude-sonnet-4-6',
     status: 'key_missing',
     defaultFor: ['generate_outline', 'generate_node'],
   },
@@ -4599,7 +4611,7 @@ function OnboardingOverlay({
               <span className="onboarding-step-icon">🧠</span>
               <div>
                 <strong>Connect AI</strong>
-                <small>OpenAI or Claude API key</small>
+                <small>Bring your own OpenAI or Claude API key</small>
               </div>
               <button className="quiet-button" type="button" onClick={() => onProviderFocus('openai')}>
                 Settings
@@ -5255,22 +5267,34 @@ function SettingsView({
 
                 {activeProvider.authMode === 'oauth' && (
                   <div className="oauth-ready-note">
-                    <strong>OAuth-ready profile</strong>
-                    <span>Connect remains disabled until the provider exposes an official desktop-safe OAuth flow for API billing.</span>
+                    <strong>OAuth is for enterprise gateways only</strong>
+                    <span>
+                      Claude Pro/Max and ChatGPT Plus subscriptions cannot be connected by OAuth — since
+                      February 2026 Anthropic and OpenAI restrict subscription tokens to their own apps.
+                      For Claude or OpenAI, switch this profile to <strong>API key</strong> and bring your own key.
+                    </span>
                   </div>
                 )}
 
                 {activeProvider.authMode !== 'local' && (
                   <label>
-                    <span>Secret</span>
+                    <span>API key</span>
                     <input
                       value={secretDrafts[activeProvider.id] ?? ''}
                       type="password"
-                      placeholder={activeProvider.secretRef ? 'Stored in Keychain' : 'API key'}
+                      placeholder={activeProvider.secretRef ? 'Stored in Keychain' : 'Paste your own API key (sk-…)'}
                       onChange={(event) =>
                         setSecretDrafts((current) => ({ ...current, [activeProvider.id]: event.target.value }))
                       }
                     />
+                    {(() => {
+                      const help = aiProviderKeyHelp(activeProvider.type)
+                      return help ? (
+                        <a className="provider-key-help" href={help.href} target="_blank" rel="noreferrer">
+                          {help.label} ↗
+                        </a>
+                      ) : null
+                    })()}
                   </label>
                 )}
 
@@ -5285,10 +5309,10 @@ function SettingsView({
                           setSecretDrafts((current) => ({ ...current, [activeProvider.id]: '' }))
                         }}
                       >
-                        Save secret
+                        Save key
                       </button>
                       <button className="quiet-button provider-test-button" type="button" onClick={() => onProviderSecretDelete(activeProvider.id)}>
-                        Delete secret
+                        Remove key
                       </button>
                     </>
                   )}
@@ -5356,7 +5380,7 @@ function SettingsView({
 
         {activeSettingsTab === 'advanced' && (
         <section className="settings-section settings-compact-disclosures">
-          <details className="settings-panel settings-disclosure">
+          <details className="settings-panel settings-disclosure" open>
             <summary>
               <h3>Local</h3>
               <span>{localModelStatus}</span>
@@ -5377,7 +5401,7 @@ function SettingsView({
             </dl>
           </details>
 
-          <details className="settings-panel settings-disclosure" id="settings-secrets">
+          <details className="settings-panel settings-disclosure" id="settings-secrets" open>
             <summary>
               <h3>Secrets</h3>
               <span>{storedSecretCount} stored</span>
@@ -5389,15 +5413,15 @@ function SettingsView({
             </div>
           </details>
 
-          <details className="settings-panel settings-disclosure">
+          <details className="settings-panel settings-disclosure" open>
             <summary>
               <h3>Usage</h3>
               <span>{billingSeparatedCount} API billed</span>
             </summary>
             <div className="settings-chip-grid">
-              <span><Bot size={13} /> API billing</span>
+              <span><Bot size={13} /> Bring your own API key</span>
               <span><Sparkles size={13} /> Local-first fallback</span>
-              <span><Check size={13} /> OAuth only when official</span>
+              <span><Check size={13} /> No subscription passthrough</span>
             </div>
           </details>
         </section>
@@ -6466,7 +6490,7 @@ function GraphCanvas({
   return (
     <section className="graph-shell">
       <div
-        className={`${draggingNode ? 'graph-canvas is-dragging-node' : 'graph-canvas'}${isPanning ? ' is-panning' : ''}${graphMode === 'discover' ? ' is-discovery' : ''}`}
+        className={`${draggingNode ? 'graph-canvas is-dragging-node' : 'graph-canvas'}${isPanning ? ' is-panning' : ''}${graphMode === 'discover' ? ' is-discovery' : ''}${related.linkIds.size > 0 ? ' has-focus' : ''}`}
         data-graph-cap={graphMetrics.cap}
         data-graph-mode={graphMetrics.mode}
         data-total-nodes={graphMetrics.totalNodes}
@@ -8166,17 +8190,27 @@ function Inspector({
             {isProjectColorOpen && (
               <div className="project-color-editor">
                 <div className="color-formula-grid" aria-label="Color formula style">
-                  {projectColorFormulas.map((formula) => (
-                    <button
-                      key={formula.id}
-                      type="button"
-                      className={selected.appearance.colorFormula === formula.id ? 'is-active' : ''}
-                      onClick={() => onProjectAppearanceChange({ colorFormula: formula.id })}
-                    >
-                      <span>{formula.label}</span>
-                      <small>{formula.description}</small>
-                    </button>
-                  ))}
+                  {projectColorFormulas.map((formula) => {
+                    const preview = accentThemeRecipe(selected.appearance.accentColor, formula.id, selected.appearance.colorMode ?? 'dark')
+                    return (
+                      <button
+                        key={formula.id}
+                        type="button"
+                        className={selected.appearance.colorFormula === formula.id ? 'is-active' : ''}
+                        onClick={() => onProjectAppearanceChange({ colorFormula: formula.id })}
+                      >
+                        <div className="formula-swatch-strip" aria-hidden="true">
+                          <i style={{ background: preview.canvas }} />
+                          <i style={{ background: preview.nodeSurface }} />
+                          <i style={{ background: preview.surface2 }} />
+                        </div>
+                        <div className="formula-label-row">
+                          <span>{formula.label}</span>
+                          <small>{formula.description}</small>
+                        </div>
+                      </button>
+                    )
+                  })}
                 </div>
                 <div className="accent-color-recommendations" aria-label="Accent colors">
                   {projectAccentPresets.filter((preset) => preset.id !== 'custom').map((preset) => (
@@ -9103,6 +9137,8 @@ function buildProjectAppearanceStyle(appearance: ProjectAppearance): React.CSSPr
     '--node-border': dark ? 'rgb(255 255 255 / 0.045)' : colorWithAlpha(tokens.textMain, 0.11),
     '--node-shadow': dark ? '0 18px 48px rgb(0 0 0 / 0.35)' : `0 10px 28px ${colorWithAlpha(tokens.textMain, 0.13)}`,
     '--node-shadow-soft': `0 0 0 1px ${colorWithAlpha(tokens.accentStrong, dark ? 0.1 : 0.16)}`,
+    '--node-shadow-rest': dark ? '0 6px 20px rgb(0 0 0 / 0.22)' : `0 4px 14px ${colorWithAlpha(tokens.textMain, 0.1)}`,
+    '--node-shadow-hover': dark ? '0 12px 34px rgb(0 0 0 / 0.3)' : `0 10px 26px ${colorWithAlpha(tokens.textMain, 0.14)}`,
     '--window-border': dark ? 'rgb(255 255 255 / 0.08)' : colorWithAlpha(tokens.textMain, 0.08),
     '--glass-sidebar': dark ? colorWithAlpha(tokens.surface1, 0.32) : colorWithAlpha(tokens.surface1, 0.34),
     '--glass-drawer': dark ? colorWithAlpha(tokens.surfaceDrawer, 0.34) : colorWithAlpha(tokens.surfaceDrawer, 0.38),
@@ -9132,6 +9168,8 @@ function buildProjectAppearanceStyle(appearance: ProjectAppearance): React.CSSPr
     '--edge-shadow': dark
       ? 'drop-shadow(0 6px 14px rgb(0 0 0 / 0.18))'
       : `drop-shadow(0 4px 10px ${colorWithAlpha(tokens.textMain, 0.12)})`,
+    '--edge-stroke': dark ? 'rgb(255 255 255 / 0.3)' : colorWithAlpha(tokens.textMain, 0.34),
+    '--edge-stroke-soft': dark ? 'rgb(255 255 255 / 0.12)' : colorWithAlpha(tokens.textMain, 0.16),
   } as React.CSSProperties
 }
 
