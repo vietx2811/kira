@@ -1146,20 +1146,11 @@ const projectAccentPresets: Array<{ id: ProjectAccentPreset; label: string; colo
   { id: 'custom', label: 'Custom', color: '#84cdbc' },
 ]
 
-const canvasColorRecommendations = [
-  { label: 'Obsidian', color: '#0d0f0e' },
-  { label: 'Graphite', color: '#161817' },
-  { label: 'Ink', color: '#0f1720' },
-  { label: 'Mist', color: '#f0efe7' },
-  { label: 'Paper', color: '#f7f2e8' },
-  { label: 'Porcelain', color: '#edf3f0' },
-]
-
 const projectColorFormulas: Array<{ id: ProjectColorFormula; label: string; description: string }> = [
-  { id: 'material', label: 'Material', description: 'Tonal dynamic color' },
-  { id: 'fluent', label: 'Fluent', description: 'Brand accent + neutral layers' },
-  { id: 'apple-glass', label: 'Apple Glass', description: 'System accent through glass' },
-  { id: 'carbon', label: 'Carbon', description: 'Enterprise token theme' },
+  { id: 'material', label: 'Material', description: 'tonal harmony' },
+  { id: 'fluent', label: 'Fluent', description: 'calm analogous' },
+  { id: 'apple-glass', label: 'Apple Glass', description: 'low-chroma glass' },
+  { id: 'carbon', label: 'Carbon', description: 'cool complement' },
 ]
 
 function defaultProjectMetadata(): ProjectMetadata {
@@ -1173,12 +1164,14 @@ function defaultProjectMetadata(): ProjectMetadata {
 }
 
 function defaultProjectAppearance(): ProjectAppearance {
+  const accentColor = projectAccentPresets[0].color
+  const canvasColor = deriveCanvasFromAccent(accentColor, 'material', 'dark')
   return {
     colorMode: 'dark',
-    canvasColor: '#0d0f0e',
+    canvasColor,
     colorFormula: 'material',
     accentPreset: 'cyan',
-    accentColor: deriveAccentFromCanvas('#0d0f0e', 'material'),
+    accentColor,
   }
 }
 
@@ -1336,7 +1329,7 @@ function App() {
       ],
       state: EffectState.FollowsWindowActiveState,
       radius: 14,
-      color: { red: 11, green: 12, blue: 11, alpha: 190 },
+      color: { red: 26, green: 28, blue: 26, alpha: 82 },
     }).then(() => {
       setGlassStatus('native')
     }).catch(() => {
@@ -1713,27 +1706,21 @@ function App() {
     setProjectAppearance((current) => {
       const nextPreset = patch.accentPreset ?? current.accentPreset
       const presetColor = projectAccentPresets.find((preset) => preset.id === nextPreset)?.color
-      const nextCanvasColor = patch.canvasColor ? normalizeHexInput(patch.canvasColor) : current.canvasColor
       const nextFormula = normalizeProjectColorFormula(patch.colorFormula ?? current.colorFormula)
-      const formulaDrivenPatch = patch.canvasColor || patch.colorFormula
-        ? {
-            colorMode: inferCanvasColorMode(nextCanvasColor),
-            accentPreset: 'custom' as const,
-            accentColor: deriveAccentFromCanvas(nextCanvasColor, nextFormula),
-            colorFormula: nextFormula,
-          }
-        : {}
+      const explicitAccent = patch.accentColor ? normalizeHexInput(patch.accentColor) : undefined
+      const presetAccent = patch.accentPreset && patch.accentPreset !== 'custom' ? presetColor : undefined
+      const nextAccentColor = normalizeHexInput(explicitAccent ?? presetAccent ?? current.accentColor)
+      const nextColorMode = patch.colorMode ?? current.colorMode
+      const generatedCanvas = deriveCanvasFromAccent(nextAccentColor, nextFormula, nextColorMode)
+      const shouldRegenerateCanvas = Boolean(patch.accentColor || patch.accentPreset || patch.colorFormula || patch.colorMode)
       return {
         ...current,
         ...patch,
-        ...formulaDrivenPatch,
-        accentColor: normalizeHexInput(
-          formulaDrivenPatch.accentColor
-          ?? patch.accentColor
-          ?? (patch.accentPreset && patch.accentPreset !== 'custom' ? presetColor : undefined)
-          ?? current.accentColor,
-        ),
-        canvasColor: nextCanvasColor,
+        colorMode: shouldRegenerateCanvas ? inferCanvasColorMode(generatedCanvas) : current.colorMode,
+        canvasColor: shouldRegenerateCanvas ? generatedCanvas : normalizeHexInput(patch.canvasColor ?? current.canvasColor),
+        colorFormula: nextFormula,
+        accentPreset: explicitAccent ? 'custom' : nextPreset,
+        accentColor: nextAccentColor,
       }
     })
   }
@@ -4124,14 +4111,12 @@ function App() {
         style={{ '--library-drawer-width': `${libraryDrawerWidth}px` } as React.CSSProperties}
       >
         <SystemSidebar
-          activeView={activeView}
           canRedo={canRedoCanvas}
           canUndo={canUndoCanvas}
           isLibraryCollapsed={isLibraryCollapsed}
           libraryPanelMode={libraryPanelMode}
           saveLabel={projectHash === lastSavedHash ? 'Saved' : 'Save'}
           onImportProject={importProject}
-          setActiveView={setActiveView}
           onNewProject={newProject}
           onOpenProject={openProject}
           onRedo={redoCanvas}
@@ -4191,6 +4176,7 @@ function App() {
             activeView={activeView}
             isInspectorCollapsed={isInspectorCollapsed}
             setActiveView={setActiveView}
+            onOpenSettings={() => setActiveView('Settings')}
             onToggleInspector={() => setIsInspectorCollapsed((current) => !current)}
           />
           <div className="view-region">
@@ -4302,7 +4288,7 @@ function App() {
             )}
           </div>
         </section>
-        {activeView !== 'Settings' && (
+        {activeView !== 'Settings' && !isInspectorCollapsed && (
           <Inspector
             isCollapsed={isInspectorCollapsed}
             selected={selected}
@@ -4574,28 +4560,57 @@ function OnboardingOverlay({
   onExtensionRefresh: () => void
 }) {
   const [secretDrafts, setSecretDrafts] = useState<Record<string, string>>({})
+  const primaryProviderNotes = providerConnectionNotes.filter((note) => note.providerId === 'openai' || note.providerId === 'anthropic')
+  const localProviderNote = providerConnectionNotes.find((note) => note.providerId === 'apple-foundation')
+  const connectedProviderCount = providers.filter((provider) => provider.status === 'connected' || provider.secretRef).length
+  const installedExtensionCount = extensionInstallTargets.filter((target) => extensionStatusForTarget(extensionInstallStatus, target.id).installed).length
 
   return (
     <div className="onboarding-backdrop" role="dialog" aria-modal="true" aria-label="KIRA onboarding">
       <section className="onboarding-shell">
-        <header className="onboarding-header">
-          <div>
-            <span>KIRA setup</span>
-            <h2>Connect AI and browser capture</h2>
-          </div>
-          <button className="icon-button" type="button" aria-label="Close onboarding" onClick={onClose}>
-            <X size={16} />
-          </button>
-        </header>
+        <button className="icon-button onboarding-close" type="button" aria-label="Close onboarding" onClick={onClose}>
+          <X size={16} />
+        </button>
 
-        <div className="onboarding-grid">
-          <section className="onboarding-panel onboarding-panel--primary">
-            <div className="section-heading">
-              <Bot size={14} />
-              AI providers
+        <div className="onboarding-hero">
+          <div className="onboarding-orbit" aria-hidden="true">
+            <span className="onboarding-orbit-ring" />
+            <span className="onboarding-orbit-dot onboarding-orbit-dot--ai">🧠</span>
+            <span className="onboarding-orbit-dot onboarding-orbit-dot--capture">📎</span>
+            <span className="onboarding-orbit-dot onboarding-orbit-dot--spark">✨</span>
+            <span className="onboarding-brand-core">
+              <img src="/kira-icon.png" alt="" />
+            </span>
+          </div>
+          <div>
+            <span className="onboarding-kicker">KIRA setup</span>
+            <h2>Start calm. Add power when you need it.</h2>
+            <p>One key, one capture helper, one guided board.</p>
+            <div className="onboarding-status-row" aria-label="Setup status">
+              <span><Bot size={13} /> {connectedProviderCount > 0 ? 'AI ready' : 'AI optional'}</span>
+              <span><Sparkles size={13} /> {installedExtensionCount > 0 ? 'Capture ready' : 'Capture optional'}</span>
             </div>
-            <div className="onboarding-provider-list">
-              {providerConnectionNotes.map((note) => {
+          </div>
+        </div>
+
+        <div className="onboarding-steps">
+          <section className="onboarding-step-card onboarding-step-card--primary">
+            <div className="onboarding-step-head">
+              <span className="onboarding-step-icon">🧠</span>
+              <div>
+                <strong>Connect AI</strong>
+                <small>OpenAI or Claude API key</small>
+              </div>
+              <button className="quiet-button" type="button" onClick={() => onProviderFocus('openai')}>
+                Settings
+              </button>
+            </div>
+            <p>Use OpenAI or Claude when you need AI help.</p>
+
+            <details className="onboarding-detail">
+              <summary>API keys</summary>
+              <div className="onboarding-provider-list">
+                {primaryProviderNotes.map((note) => {
                 const provider = providers.find((candidate) => candidate.id === note.providerId)
                 const secretDraft = secretDrafts[note.providerId] ?? ''
                 return (
@@ -4650,43 +4665,74 @@ function OnboardingOverlay({
                     </div>
                   </article>
                 )
-              })}
-            </div>
+                })}
+              </div>
+            </details>
+
+            {localProviderNote && (
+              <details className="onboarding-detail onboarding-detail--quiet">
+                <summary>Local fallback</summary>
+                <div className="onboarding-mini-row">
+                  <span>{localModelAvailable ? 'Available' : 'Not detected'}</span>
+                  <small>{localModelStatus}</small>
+                  <button className="quiet-button" type="button" onClick={onLocalCheck}>
+                    Check
+                  </button>
+                </div>
+              </details>
+            )}
           </section>
 
-          <section className="onboarding-panel">
-            <div className="section-heading">
-              <Sparkles size={14} />
-              Browser capture
+          <section className="onboarding-step-card">
+            <div className="onboarding-step-head">
+              <span className="onboarding-step-icon">📎</span>
+              <div>
+                <strong>Capture from browser</strong>
+                <small>Chrome or Safari helper</small>
+              </div>
               <button className="icon-button" type="button" aria-label="Refresh extension status" onClick={onExtensionRefresh}>
                 <LocateFixed size={13} />
               </button>
             </div>
-            <div className="extension-install-list">
-              {extensionInstallTargets.map((target) => (
-                <article className="extension-install-card" key={target.id}>
-                  <div>
-                    <strong>{target.title}</strong>
-                    <small>{extensionStatusForTarget(extensionInstallStatus, target.id).installed ? 'installed' : target.status}</small>
-                  </div>
-                  <p>{target.instruction}</p>
-                  <code>{extensionStatusForTarget(extensionInstallStatus, target.id).detail}</code>
-                  <div className="extension-card-actions">
-                    <button className="quiet-button" type="button" onClick={() => onExtensionAction(target.installActionId)}>
-                      {target.primary}
-                    </button>
-                    <button className="quiet-button" type="button" onClick={() => onExtensionAction(target.settingsActionId)}>
-                      {target.secondary}
-                    </button>
-                  </div>
-                </article>
-              ))}
+            <p>Save images, links, and text from the web.</p>
+            <details className="onboarding-detail">
+              <summary>Install helpers</summary>
+              <div className="extension-install-list">
+                {extensionInstallTargets.map((target) => (
+                  <article className="extension-install-card" key={target.id}>
+                    <div>
+                      <strong>{target.title}</strong>
+                      <small>{extensionStatusForTarget(extensionInstallStatus, target.id).installed ? 'installed' : target.status}</small>
+                    </div>
+                    <p>{target.instruction}</p>
+                    <code>{extensionStatusForTarget(extensionInstallStatus, target.id).detail}</code>
+                    <div className="extension-card-actions">
+                      <button className="quiet-button" type="button" onClick={() => onExtensionAction(target.installActionId)}>
+                        {target.primary}
+                      </button>
+                      <button className="quiet-button" type="button" onClick={() => onExtensionAction(target.settingsActionId)}>
+                        {target.secondary}
+                      </button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </details>
+          </section>
+
+          <section className="onboarding-step-card onboarding-start-card">
+            <div className="onboarding-step-head">
+              <span className="onboarding-step-icon">🌱</span>
+              <div>
+                <strong>Open the guided board</strong>
+                <small>Learn the canvas by moving through it</small>
+              </div>
             </div>
+            <p>Open a small editable example instead of a blank canvas.</p>
           </section>
         </div>
 
         <footer className="onboarding-footer">
-          <span>Local status: {localModelStatus}</span>
           <button className="quiet-button" type="button" onClick={onWelcomeOpen}>
             Open Welcome.kira
           </button>
@@ -4700,14 +4746,12 @@ function OnboardingOverlay({
 }
 
 function SystemSidebar({
-  activeView,
   canRedo,
   canUndo,
   isLibraryCollapsed,
   libraryPanelMode,
   saveLabel,
   onImportProject,
-  setActiveView,
   onNewProject,
   onOpenProject,
   onOpenVersionHistory,
@@ -4718,14 +4762,12 @@ function SystemSidebar({
   onToggleLibrary,
   onUndo,
 }: {
-  activeView: ActiveView
   canRedo: boolean
   canUndo: boolean
   isLibraryCollapsed: boolean
   libraryPanelMode: LibraryPanelMode
   saveLabel: string
   onImportProject: (file: File) => void
-  setActiveView: (view: ActiveView) => void
   onNewProject: () => void
   onOpenProject: () => void
   onOpenVersionHistory: () => void
@@ -4804,16 +4846,6 @@ function SystemSidebar({
           onSaveVersion={onSaveVersion}
           onUndo={onUndo}
         />
-
-        <button
-          className={activeView === 'Settings' ? 'sidebar-view-button sidebar-settings is-active' : 'sidebar-view-button sidebar-settings'}
-          type="button"
-          aria-label="Settings"
-          title="Settings"
-          onClick={() => setActiveView('Settings')}
-        >
-          <Settings size={18} />
-        </button>
       </div>
     </aside>
   )
@@ -4823,11 +4855,13 @@ function TopBar({
   activeView,
   isInspectorCollapsed,
   setActiveView,
+  onOpenSettings,
   onToggleInspector,
 }: {
   activeView: ActiveView
   isInspectorCollapsed: boolean
   setActiveView: (view: ActiveView) => void
+  onOpenSettings: () => void
   onToggleInspector: () => void
 }) {
   const views: { label: ActiveView; icon: typeof Network }[] = [
@@ -4862,15 +4896,27 @@ function TopBar({
 
       <div className="content-toolbar-actions">
         <button
-          className={isInspectorCollapsed ? 'icon-button top-inspector-button' : 'icon-button top-inspector-button is-active'}
+          className={activeView === 'Settings' ? 'icon-button top-settings-button is-active' : 'icon-button top-settings-button'}
           type="button"
-          aria-label={isInspectorCollapsed ? 'Open Inspector' : 'Close Inspector'}
-          aria-pressed={!isInspectorCollapsed}
-          title="Inspector"
-          onClick={onToggleInspector}
+          aria-label="Open Settings"
+          aria-pressed={activeView === 'Settings'}
+          title="Settings"
+          onClick={onOpenSettings}
         >
-          {isInspectorCollapsed ? <PanelRightOpen size={16} /> : <Inspect size={16} />}
+          <Settings size={16} />
         </button>
+        {activeView !== 'Settings' && (
+          <button
+            className={isInspectorCollapsed ? 'icon-button top-inspector-button' : 'icon-button top-inspector-button is-active'}
+            type="button"
+            aria-label={isInspectorCollapsed ? 'Open Inspector' : 'Close Inspector'}
+            aria-pressed={!isInspectorCollapsed}
+            title="Inspector"
+            onClick={onToggleInspector}
+          >
+            {isInspectorCollapsed ? <PanelRightOpen size={16} /> : <Inspect size={16} />}
+          </button>
+        )}
       </div>
     </header>
   )
@@ -4983,6 +5029,13 @@ function SettingsView({
   const connectedProviderCount = providers.filter((provider) => provider.status === 'connected').length
   const storedSecretCount = providers.filter((provider) => provider.secretRef).length
   const billingSeparatedCount = remoteProviders.filter((provider) => provider.status === 'billing_separate').length
+  const [activeSettingsTab, setActiveSettingsTab] = useState<'overview' | 'ai' | 'capture' | 'advanced'>('overview')
+  const settingsTabs = [
+    { id: 'overview' as const, label: 'Overview' },
+    { id: 'ai' as const, label: 'AI' },
+    { id: 'capture' as const, label: 'Capture' },
+    { id: 'advanced' as const, label: 'Advanced' },
+  ]
 
   return (
     <section className="settings-shell" aria-label="Settings">
@@ -4994,37 +5047,71 @@ function SettingsView({
           <span className="settings-status">{status}</span>
         </div>
 
-        <section className="settings-control-strip" aria-label="AI defaults">
-          <label>
-            <span>Routing</span>
-            <select value={routingMode} onChange={(event) => onRoutingModeChange(event.target.value as AiRoutingMode)}>
-              {Object.keys(aiRoutingLabels).map((mode) => (
-                <option key={mode} value={mode}>
-                  {aiRoutingLabels[mode as AiRoutingMode]}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            <span>Remote</span>
-            <select value={selectedProviderId} onChange={(event) => onSelectedProviderChange(event.target.value)} disabled={remoteProviders.length === 0}>
-              {remoteProviders.map((provider) => (
-                <option key={provider.id} value={provider.id}>
-                  {provider.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <div className="settings-chip">
-            <span>Providers</span>
-            <strong>{connectedProviderCount}/{providers.length}</strong>
-          </div>
-          <div className="settings-chip">
-            <span>Local</span>
-            <strong>{localModelAvailable ? 'available' : 'unavailable'}</strong>
-          </div>
-        </section>
+        <nav className="settings-tabs" aria-label="Settings sections">
+          {settingsTabs.map((tab) => (
+            <button
+              key={tab.id}
+              className={activeSettingsTab === tab.id ? 'is-active' : ''}
+              type="button"
+              aria-pressed={activeSettingsTab === tab.id}
+              onClick={() => setActiveSettingsTab(tab.id)}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </nav>
 
+        {activeSettingsTab === 'overview' && (
+          <>
+            <section className="settings-control-strip" aria-label="AI defaults">
+              <label>
+                <span>Routing</span>
+                <select value={routingMode} onChange={(event) => onRoutingModeChange(event.target.value as AiRoutingMode)}>
+                  {Object.keys(aiRoutingLabels).map((mode) => (
+                    <option key={mode} value={mode}>
+                      {aiRoutingLabels[mode as AiRoutingMode]}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <span>Remote</span>
+                <select value={selectedProviderId} onChange={(event) => onSelectedProviderChange(event.target.value)} disabled={remoteProviders.length === 0}>
+                  {remoteProviders.map((provider) => (
+                    <option key={provider.id} value={provider.id}>
+                      {provider.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className="settings-chip">
+                <span>Providers</span>
+                <strong>{connectedProviderCount}/{providers.length}</strong>
+              </div>
+              <div className="settings-chip">
+                <span>Local</span>
+                <strong>{localModelAvailable ? 'available' : 'unavailable'}</strong>
+              </div>
+            </section>
+
+            <section className="settings-section settings-overview-grid" aria-label="Settings overview">
+              <article className="settings-panel">
+                <h3>AI default</h3>
+                <p>{aiRoutingLabels[routingMode]} · {selectedRemoteProvider?.name ?? 'No remote provider'}</p>
+              </article>
+              <article className="settings-panel">
+                <h3>Capture</h3>
+                <p>{extensionInstallTargets.filter((target) => extensionStatusForTarget(extensionInstallStatus, target.id).installed).length}/{extensionInstallTargets.length} browser helpers installed.</p>
+              </article>
+              <article className="settings-panel">
+                <h3>Secrets</h3>
+                <p>{storedSecretCount}/{remoteProviders.length} remote providers have Keychain secrets.</p>
+              </article>
+            </section>
+          </>
+        )}
+
+        {activeSettingsTab === 'capture' && (
         <section className="settings-section settings-onboarding-grid" aria-label="Onboarding and extensions">
           <article className="settings-panel settings-action-panel">
             <div>
@@ -5068,7 +5155,9 @@ function SettingsView({
             </div>
           </article>
         </section>
+        )}
 
+        {activeSettingsTab === 'ai' && (
         <section className="settings-section" id="settings-providers">
           <div className="provider-workbench-grid">
             <aside className="provider-registry" aria-label="Provider registry">
@@ -5243,24 +5332,30 @@ function SettingsView({
             )}
           </div>
         </section>
+        )}
 
+        {activeSettingsTab === 'ai' && (
+          <section className="settings-section settings-route-preview">
+            <details className="settings-panel settings-disclosure" open>
+              <summary>
+                <h3>Routing preview</h3>
+                <span>{taskRoutes.length} tasks</span>
+              </summary>
+              <div className="task-route-list" aria-label="AI task routing preview">
+                {taskRoutes.map((route) => (
+                  <div className="task-route-row" key={route.task}>
+                    <span>{aiTaskLabels[route.task]}</span>
+                    <strong>{route.providerName}</strong>
+                    <em>{route.reason}</em>
+                  </div>
+                ))}
+              </div>
+            </details>
+          </section>
+        )}
+
+        {activeSettingsTab === 'advanced' && (
         <section className="settings-section settings-compact-disclosures">
-          <details className="settings-panel settings-disclosure">
-            <summary>
-              <h3>Routing preview</h3>
-              <span>{taskRoutes.length} tasks</span>
-            </summary>
-            <div className="task-route-list" aria-label="AI task routing preview">
-              {taskRoutes.map((route) => (
-                <div className="task-route-row" key={route.task}>
-                  <span>{aiTaskLabels[route.task]}</span>
-                  <strong>{route.providerName}</strong>
-                  <em>{route.reason}</em>
-                </div>
-              ))}
-            </div>
-          </details>
-
           <details className="settings-panel settings-disclosure">
             <summary>
               <h3>Local</h3>
@@ -5306,6 +5401,7 @@ function SettingsView({
             </div>
           </details>
         </section>
+        )}
       </div>
     </section>
   )
@@ -7997,9 +8093,6 @@ function Inspector({
           >
             <MoreHorizontal size={15} />
           </button>
-          <button className="icon-button" type="button" aria-label="Collapse inspector" onClick={onToggleCollapsed}>
-            <PanelRight size={16} />
-          </button>
           {isInspectorToolsOpen && (
             <div className="panel-popover inspector-tools-menu">
               {selectedNodeRef && (
@@ -8085,13 +8178,13 @@ function Inspector({
                     </button>
                   ))}
                 </div>
-                <div className="canvas-color-recommendations" aria-label="Recommended canvas colors">
-                  {canvasColorRecommendations.map((preset) => (
+                <div className="accent-color-recommendations" aria-label="Accent colors">
+                  {projectAccentPresets.filter((preset) => preset.id !== 'custom').map((preset) => (
                     <button
-                      key={preset.color}
+                      key={preset.id}
                       type="button"
-                      className={normalizeHexInput(selected.appearance.canvasColor).toLowerCase() === preset.color ? 'is-active' : ''}
-                      onClick={() => onProjectAppearanceChange({ canvasColor: preset.color })}
+                      className={selected.appearance.accentPreset === preset.id ? 'is-active' : ''}
+                      onClick={() => onProjectAppearanceChange({ accentPreset: preset.id })}
                     >
                       <i style={{ background: preset.color }} />
                       <span>{preset.label}</span>
@@ -8099,17 +8192,21 @@ function Inspector({
                   ))}
                 </div>
                 <HexColorPicker
-                  color={selected.appearance.canvasColor}
-                  onChange={(color) => onProjectAppearanceChange({ canvasColor: color })}
+                  color={selected.appearance.accentColor}
+                  onChange={(color) => onProjectAppearanceChange({ accentColor: color })}
                 />
                 <div className="color-inline-row">
                   <input
-                    id="project-canvas-color"
-                    aria-label="Custom canvas color"
+                    id="project-accent-color"
+                    aria-label="Custom accent color"
                     type="color"
-                    value={normalizeHexInput(selected.appearance.canvasColor)}
-                    onChange={(event) => onProjectAppearanceChange({ canvasColor: event.target.value })}
+                    value={normalizeHexInput(selected.appearance.accentColor)}
+                    onChange={(event) => onProjectAppearanceChange({ accentColor: event.target.value })}
                   />
+                  <code>Accent {normalizeHexInput(selected.appearance.accentColor).toUpperCase()}</code>
+                </div>
+                <div className="generated-color-row">
+                  <span>Generated canvas</span>
                   <code>{normalizeHexInput(selected.appearance.canvasColor).toUpperCase()}</code>
                 </div>
               </div>
@@ -8747,7 +8844,7 @@ function ProjectColorSummary({
       className={isOpen ? 'project-color-summary is-active' : 'project-color-summary'}
       type="button"
       aria-expanded={isOpen}
-      aria-label="Choose canvas color scheme"
+      aria-label="Choose accent color scheme"
       onClick={onToggle}
     >
       <span className="project-color-dots" aria-hidden="true">
@@ -8756,8 +8853,8 @@ function ProjectColorSummary({
         ))}
       </span>
       <span>
-        <strong>{tokens.mode === 'dark' ? 'Dark canvas' : 'Light canvas'}</strong>
-        <small>{tokens.canvas.toUpperCase()} · {tokens.mood} · {formatContrast(tokens.accentContrast)}</small>
+        <strong>Accent scheme</strong>
+        <small>{appearance.accentColor.toUpperCase()} · {tokens.mood} · canvas {tokens.canvas.toUpperCase()}</small>
       </span>
       <ChevronRight size={14} />
     </button>
@@ -8991,24 +9088,32 @@ function normalizeHexInput(value: string) {
 function buildProjectAppearanceStyle(appearance: ProjectAppearance): React.CSSProperties {
   const tokens = projectColorTokens(appearance)
   const accent = tokens.accent
-  const canvas = tokens.canvas
   const dark = tokens.mode === 'dark'
   return {
     '--bg-base': tokens.base,
-    '--bg-canvas': canvas,
+    '--bg-canvas': tokens.canvasSurface,
     '--surface-1': tokens.surface1,
     '--surface-2': tokens.surface2,
     '--surface-3': tokens.surface3,
-    '--glass-sidebar': dark ? colorWithAlpha(tokens.surface1, 0.34) : colorWithAlpha(tokens.surface1, 0.5),
-    '--glass-drawer': dark ? colorWithAlpha(tokens.surface1, 0.36) : colorWithAlpha(tokens.surface1, 0.66),
-    '--glass-content': dark ? colorWithAlpha(tokens.base, 0.26) : colorWithAlpha(tokens.base, 0.36),
-    '--glass-inspector': dark ? colorWithAlpha(tokens.surface1, 0.42) : colorWithAlpha(tokens.surface1, 0.68),
+    '--surface-drawer': tokens.surfaceDrawer,
+    '--surface-inspector': tokens.surfaceInspector,
+    '--surface-inset': tokens.surfaceInset,
+    '--node-surface': colorWithAlpha(tokens.nodeSurface, dark ? 0.82 : 0.78),
+    '--node-surface-selected': colorWithAlpha(tokens.nodeSelected, dark ? 0.94 : 0.9),
+    '--node-border': dark ? 'rgb(255 255 255 / 0.045)' : colorWithAlpha(tokens.textMain, 0.11),
+    '--node-shadow': dark ? '0 18px 48px rgb(0 0 0 / 0.35)' : `0 10px 28px ${colorWithAlpha(tokens.textMain, 0.13)}`,
+    '--node-shadow-soft': `0 0 0 1px ${colorWithAlpha(tokens.accentStrong, dark ? 0.1 : 0.16)}`,
+    '--window-border': dark ? 'rgb(255 255 255 / 0.08)' : colorWithAlpha(tokens.textMain, 0.08),
+    '--glass-sidebar': dark ? colorWithAlpha(tokens.surface1, 0.32) : colorWithAlpha(tokens.surface1, 0.34),
+    '--glass-drawer': dark ? colorWithAlpha(tokens.surfaceDrawer, 0.34) : colorWithAlpha(tokens.surfaceDrawer, 0.38),
+    '--glass-content': dark ? colorWithAlpha(tokens.base, 0.22) : colorWithAlpha(tokens.base, 0.28),
+    '--glass-inspector': dark ? colorWithAlpha(tokens.surfaceInspector, 0.38) : colorWithAlpha(tokens.surfaceInspector, 0.42),
     '--glass-hover': dark ? 'rgb(255 255 255 / 0.055)' : 'rgb(34 31 26 / 0.055)',
     '--glass-active': colorWithAlpha(accent, dark ? 0.24 : 0.22),
-    '--separator-hairline': dark ? 'rgb(255 255 255 / 0.052)' : 'rgb(34 31 26 / 0.1)',
+    '--separator-hairline': dark ? 'rgb(255 255 255 / 0.052)' : colorWithAlpha(tokens.textMain, 0.1),
     '--inset-field': dark ? 'rgb(0 0 0 / 0.12)' : 'rgb(255 255 255 / 0.58)',
-    '--border-soft': dark ? 'rgb(255 255 255 / 0.06)' : 'rgb(34 31 26 / 0.1)',
-    '--border-strong': dark ? 'rgb(255 255 255 / 0.13)' : 'rgb(34 31 26 / 0.18)',
+    '--border-soft': dark ? 'rgb(255 255 255 / 0.06)' : colorWithAlpha(tokens.textMain, 0.1),
+    '--border-strong': dark ? 'rgb(255 255 255 / 0.13)' : colorWithAlpha(tokens.textMain, 0.18),
     '--text-main': tokens.textMain,
     '--text-soft': tokens.textSoft,
     '--text-muted': tokens.textMuted,
@@ -9018,30 +9123,48 @@ function buildProjectAppearanceStyle(appearance: ProjectAppearance): React.CSSPr
     '--accent-faint': colorWithAlpha(tokens.accentStrong, dark ? 0.12 : 0.1),
     '--accent-amber': tokens.accentAlt,
     '--accent-sage': colorWithAlpha(accent, 0.76),
+    '--shell-shadow': dark
+      ? 'inset 0 1px 0 rgb(255 255 255 / 0.08)'
+      : `inset 0 1px 0 rgb(255 255 255 / 0.42), 0 0 0 1px ${colorWithAlpha(tokens.textMain, 0.03)}`,
+    '--panel-shadow': dark
+      ? '0 20px 70px rgb(0 0 0 / 0.28)'
+      : `0 12px 32px ${colorWithAlpha(tokens.textMain, 0.1)}`,
+    '--edge-shadow': dark
+      ? 'drop-shadow(0 6px 14px rgb(0 0 0 / 0.18))'
+      : `drop-shadow(0 4px 10px ${colorWithAlpha(tokens.textMain, 0.12)})`,
   } as React.CSSProperties
 }
 
-function projectColorTokens(appearance: Pick<ProjectAppearance, 'canvasColor' | 'accentColor'> & Partial<Pick<ProjectAppearance, 'colorFormula'>>) {
-  const canvas = normalizeHexInput(appearance.canvasColor)
+function projectColorTokens(appearance: Pick<ProjectAppearance, 'canvasColor' | 'accentColor'> & Partial<Pick<ProjectAppearance, 'colorFormula' | 'colorMode'>>) {
   const formula = normalizeProjectColorFormula(appearance.colorFormula)
+  const accentSeed = normalizeHexInput(appearance.accentColor || deriveAccentFromCanvas(appearance.canvasColor, formula))
+  const preferredMode = appearance.colorMode ?? inferCanvasColorMode(appearance.canvasColor)
+  const palette = accentThemeRecipe(accentSeed, formula, preferredMode)
+  const canvas = palette.canvas
   const mode = inferCanvasColorMode(canvas)
   const dark = mode === 'dark'
-  const accentToken = deriveAccentTokenFromCanvas(canvas, formula)
+  const accentToken = deriveAccentTokenFromAccent(accentSeed, canvas, formula)
   const textMain = readableTextColor(canvas, dark)
   return {
     mode,
     formula,
     canvas,
+    canvasSurface: palette.canvasSurface,
     accent: accentToken.color,
     accentStrong: accentToken.strong,
     accentAlt: accentToken.alt,
     accentContrast: accentToken.contrast,
     accentSource: accentToken.source,
     mood: accentToken.mood,
-    base: shiftColorLightness(canvas, dark ? -0.04 : 0.05),
-    surface1: shiftColorLightness(canvas, dark ? 0.09 : -0.035),
-    surface2: shiftColorLightness(canvas, dark ? 0.15 : -0.075),
-    surface3: shiftColorLightness(canvas, dark ? 0.22 : -0.12),
+    base: palette.base,
+    surface1: palette.surface1,
+    surface2: palette.surface2,
+    surface3: palette.surface3,
+    surfaceDrawer: palette.surfaceDrawer,
+    surfaceInspector: palette.surfaceInspector,
+    surfaceInset: palette.surfaceInset,
+    nodeSurface: palette.nodeSurface,
+    nodeSelected: palette.nodeSelected,
     textMain,
     textSoft: mixReadableText(textMain, canvas, dark ? 0.26 : 0.34),
     textMuted: mixReadableText(textMain, canvas, dark ? 0.48 : 0.55),
@@ -9055,6 +9178,153 @@ function inferCanvasColorMode(color: string): ProjectColorMode {
 
 function deriveAccentFromCanvas(color: string, formula: ProjectColorFormula = 'material') {
   return deriveAccentTokenFromCanvas(color, formula).color
+}
+
+function deriveCanvasFromAccent(accent: string, formula: ProjectColorFormula = 'material', preferredMode: ProjectColorMode = 'dark') {
+  return accentThemeRecipe(accent, formula, preferredMode).canvas
+}
+
+function deriveAccentTokenFromAccent(accent: string, canvas: string, formula: ProjectColorFormula = 'material') {
+  const accentOklch = converter('oklch')(normalizeHexInput(accent))
+  if (!accentOklch) {
+    return deriveAccentTokenFromCanvas(canvas, formula)
+  }
+  const recipe = accentThemeFormulaRecipe(formula)
+  const mode = inferCanvasColorMode(canvas)
+  const dark = mode === 'dark'
+  const hue = normalizeHue(accentOklch.h ?? recipe.fallbackHue)
+  const chroma = clamp(accentOklch.c ?? 0.12, recipe.accentMinChroma, recipe.accentMaxChroma)
+  const color = formatHex({
+    mode: 'oklch',
+    l: dark ? recipe.accentDarkLightness : recipe.accentLightLightness,
+    c: chroma,
+    h: hue,
+  })
+  const strong = ensureAccentContrast(canvas, color, recipe.targetContrast)
+  const alt = formatHex({
+    mode: 'oklch',
+    l: dark ? recipe.altDarkLightness : recipe.altLightLightness,
+    c: clamp(chroma * recipe.altChromaScale, 0.055, 0.18),
+    h: normalizeHue(hue + recipe.altHueOffset),
+  })
+  return {
+    color,
+    strong,
+    alt,
+    contrast: contrastRatio(canvas, strong),
+    source: recipe.source,
+    mood: `${recipe.label} ${mode} · accent seed`,
+  }
+}
+
+function accentThemeRecipe(accent: string, formula: ProjectColorFormula, preferredMode: ProjectColorMode) {
+  const accentOklch = converter('oklch')(normalizeHexInput(accent))
+  const recipe = accentThemeFormulaRecipe(formula)
+  const mode = preferredMode
+  const dark = mode === 'dark'
+  const hue = normalizeHue(accentOklch?.h ?? recipe.fallbackHue)
+  const backgroundHue = normalizeHue(hue + recipe.backgroundHueOffset)
+  const secondaryHue = normalizeHue(hue + recipe.secondaryHueOffset)
+  const accentChroma = clamp(accentOklch?.c ?? 0.12, 0.06, recipe.accentMaxChroma)
+  const backgroundChroma = clamp(accentChroma * recipe.backgroundChromaScale, dark ? 0.01 : 0.006, dark ? 0.034 : 0.026)
+  const secondaryChroma = clamp(accentChroma * recipe.secondaryChromaScale, dark ? 0.012 : 0.008, dark ? 0.04 : 0.03)
+  const lightness = dark
+    ? { base: 0.095, canvas: 0.122, canvasSurface: 0.128, surface1: 0.158, surface2: 0.195, surface3: 0.24, inset: 0.18, node: 0.19, nodeSelected: 0.225 }
+    : { base: 0.962, canvas: 0.925, canvasSurface: 0.918, surface1: 0.895, surface2: 0.86, surface3: 0.82, inset: 0.89, node: 0.89, nodeSelected: 0.855 }
+  return {
+    base: oklchHex(lightness.base, backgroundChroma * 0.62, backgroundHue),
+    canvas: oklchHex(lightness.canvas, backgroundChroma, backgroundHue),
+    canvasSurface: oklchHex(lightness.canvasSurface, backgroundChroma, backgroundHue),
+    surface1: oklchHex(lightness.surface1, backgroundChroma * 1.05, backgroundHue),
+    surface2: oklchHex(lightness.surface2, secondaryChroma, secondaryHue),
+    surface3: oklchHex(lightness.surface3, secondaryChroma * 1.08, secondaryHue),
+    surfaceDrawer: oklchHex(dark ? 0.148 : 0.905, backgroundChroma * 1.08, backgroundHue),
+    surfaceInspector: oklchHex(dark ? 0.152 : 0.9, backgroundChroma, backgroundHue),
+    surfaceInset: oklchHex(lightness.inset, secondaryChroma * 0.8, secondaryHue),
+    nodeSurface: oklchHex(lightness.node, secondaryChroma * 0.86, secondaryHue),
+    nodeSelected: oklchHex(lightness.nodeSelected, secondaryChroma, secondaryHue),
+  }
+}
+
+function accentThemeFormulaRecipe(formula: ProjectColorFormula) {
+  if (formula === 'fluent') {
+    return {
+      label: 'Fluent',
+      source: 'analogous UI',
+      backgroundHueOffset: 8,
+      secondaryHueOffset: -14,
+      backgroundChromaScale: 0.14,
+      secondaryChromaScale: 0.18,
+      accentDarkLightness: 0.74,
+      accentLightLightness: 0.42,
+      altDarkLightness: 0.68,
+      altLightLightness: 0.46,
+      altHueOffset: 32,
+      altChromaScale: 0.78,
+      accentMinChroma: 0.07,
+      accentMaxChroma: 0.17,
+      fallbackHue: 196,
+      targetContrast: 4.4,
+    }
+  }
+  if (formula === 'apple-glass') {
+    return {
+      label: 'Apple Glass',
+      source: 'glass harmony',
+      backgroundHueOffset: 18,
+      secondaryHueOffset: 42,
+      backgroundChromaScale: 0.095,
+      secondaryChromaScale: 0.13,
+      accentDarkLightness: 0.78,
+      accentLightLightness: 0.44,
+      altDarkLightness: 0.74,
+      altLightLightness: 0.5,
+      altHueOffset: 48,
+      altChromaScale: 0.64,
+      accentMinChroma: 0.06,
+      accentMaxChroma: 0.14,
+      fallbackHue: 184,
+      targetContrast: 4.1,
+    }
+  }
+  if (formula === 'carbon') {
+    return {
+      label: 'Carbon',
+      source: 'complement UI',
+      backgroundHueOffset: 178,
+      secondaryHueOffset: 205,
+      backgroundChromaScale: 0.16,
+      secondaryChromaScale: 0.2,
+      accentDarkLightness: 0.72,
+      accentLightLightness: 0.38,
+      altDarkLightness: 0.64,
+      altLightLightness: 0.4,
+      altHueOffset: 76,
+      altChromaScale: 0.88,
+      accentMinChroma: 0.08,
+      accentMaxChroma: 0.19,
+      fallbackHue: 220,
+      targetContrast: 4.8,
+    }
+  }
+  return {
+    label: 'Material',
+    source: 'tonal harmony',
+    backgroundHueOffset: -6,
+    secondaryHueOffset: 18,
+    backgroundChromaScale: 0.17,
+    secondaryChromaScale: 0.22,
+    accentDarkLightness: 0.76,
+    accentLightLightness: 0.4,
+    altDarkLightness: 0.7,
+    altLightLightness: 0.44,
+    altHueOffset: -36,
+    altChromaScale: 0.82,
+    accentMinChroma: 0.08,
+    accentMaxChroma: 0.2,
+    fallbackHue: 176,
+    targetContrast: 4.4,
+  }
 }
 
 function deriveAccentTokenFromCanvas(color: string, formula: ProjectColorFormula = 'material') {
@@ -9228,6 +9498,15 @@ function colorFormulaRecipe(
   }
 }
 
+function oklchHex(lightness: number, chroma: number, hue: number) {
+  return formatHex({
+    mode: 'oklch',
+    l: clamp(lightness, 0.04, 0.98),
+    c: clamp(chroma, 0, 0.24),
+    h: normalizeHue(hue),
+  })
+}
+
 function shiftColorLightness(color: string, delta: number) {
   const oklch = converter('oklch')(normalizeHexInput(color))
   if (!oklch) return normalizeHexInput(color)
@@ -9325,6 +9604,10 @@ function mixReadableText(text: string, background: string, backgroundWeight: num
     g: mix(textRgb.g, backgroundRgb.g),
     b: mix(textRgb.b, backgroundRgb.b),
   })
+}
+
+function mixColor(foreground: string, background: string, backgroundWeight: number) {
+  return mixReadableText(foreground, background, backgroundWeight)
 }
 
 function contrastRatio(foreground: string, background: string) {
@@ -12718,14 +13001,19 @@ function normalizeProjectAppearance(value: unknown): ProjectAppearance {
   const candidate = value as Partial<ProjectAppearance>
   const preset = projectAccentPresets.some((item) => item.id === candidate.accentPreset) ? candidate.accentPreset as ProjectAccentPreset : fallback.accentPreset
   const presetColor = projectAccentPresets.find((item) => item.id === preset)?.color ?? fallback.accentColor
-  const canvasColor = typeof candidate.canvasColor === 'string' ? normalizeHexInput(candidate.canvasColor) : fallback.canvasColor
+  const legacyCanvasColor = typeof candidate.canvasColor === 'string' ? normalizeHexInput(candidate.canvasColor) : fallback.canvasColor
   const colorFormula = normalizeProjectColorFormula(candidate.colorFormula)
+  const colorMode = candidate.colorMode === 'light' || candidate.colorMode === 'dark' ? candidate.colorMode : inferCanvasColorMode(legacyCanvasColor)
+  const accentColor = typeof candidate.accentColor === 'string'
+    ? normalizeHexInput(candidate.accentColor)
+    : deriveAccentFromCanvas(legacyCanvasColor, colorFormula) || presetColor
+  const canvasColor = deriveCanvasFromAccent(accentColor, colorFormula, colorMode)
   return {
-    colorMode: candidate.colorMode === 'light' || candidate.colorMode === 'dark' ? candidate.colorMode : fallback.colorMode,
+    colorMode: inferCanvasColorMode(canvasColor),
     canvasColor,
     colorFormula,
     accentPreset: preset,
-    accentColor: typeof candidate.accentColor === 'string' ? normalizeHexInput(candidate.accentColor) : deriveAccentFromCanvas(canvasColor, colorFormula) || presetColor,
+    accentColor,
   }
 }
 
