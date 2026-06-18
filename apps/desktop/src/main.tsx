@@ -19,6 +19,8 @@ import {
   CircleDot,
   Database,
   ExternalLink,
+  Eye,
+  EyeOff,
   FileText,
   FilePlus2,
   FolderOpen,
@@ -269,6 +271,7 @@ type ProjectSnapshot = {
   nodeVersions: NodeVersionRecord[]
   links: EvidenceLink[]
   outlineDrafts: OutlineDraft[]
+  slidesConfig?: SlidesConfig
 }
 
 type ProjectVersionState = {
@@ -548,6 +551,19 @@ type SlideDeckMeta = {
   }
 }
 type SlideLayoutMode = 'auto' | 'focus' | 'grid' | 'stack' | 'palette' | 'diagram'
+type SlideLayoutChoice = SlideLayout['layout']
+type SlideCustomization = {
+  layoutOverride?: SlideLayoutChoice
+  titleOverride?: string
+  summaryOverride?: string
+  accentOverride?: string
+  hidden?: boolean
+}
+type SlidesConfig = {
+  template: SlideDeckTemplate | 'auto'
+  order: string[]
+  customizations: Record<string, SlideCustomization>
+}
 type GlassStatus = 'browser' | 'native' | 'fallback'
 
 type KiraDevApi = {
@@ -1187,6 +1203,38 @@ function defaultProjectAppearance(): ProjectAppearance {
   }
 }
 
+function defaultSlidesConfig(): SlidesConfig {
+  return { template: 'auto', order: [], customizations: {} }
+}
+
+const slideLayoutChoices: SlideLayoutChoice[] = ['cover', 'focus', 'grid', 'stack', 'palette', 'diagram', 'moodboard']
+const slideDeckTemplateChoices: SlideDeckTemplate[] = ['Minimal', 'Editorial', 'Moodboard Grid', 'Timeline']
+
+function normalizeSlidesConfig(value: unknown): SlidesConfig {
+  const fallback = defaultSlidesConfig()
+  if (!value || typeof value !== 'object') return fallback
+  const candidate = value as Partial<SlidesConfig>
+  const template = candidate.template === 'auto' || (typeof candidate.template === 'string' && slideDeckTemplateChoices.includes(candidate.template as SlideDeckTemplate))
+    ? candidate.template as SlidesConfig['template']
+    : 'auto'
+  const order = Array.isArray(candidate.order) ? candidate.order.filter((id): id is string => typeof id === 'string') : []
+  const customizations: Record<string, SlideCustomization> = {}
+  if (candidate.customizations && typeof candidate.customizations === 'object') {
+    for (const [key, raw] of Object.entries(candidate.customizations)) {
+      if (!raw || typeof raw !== 'object') continue
+      const item = raw as SlideCustomization
+      const next: SlideCustomization = {}
+      if (item.layoutOverride && slideLayoutChoices.includes(item.layoutOverride)) next.layoutOverride = item.layoutOverride
+      if (typeof item.titleOverride === 'string') next.titleOverride = item.titleOverride
+      if (typeof item.summaryOverride === 'string') next.summaryOverride = item.summaryOverride
+      if (typeof item.accentOverride === 'string') next.accentOverride = item.accentOverride
+      if (item.hidden === true) next.hidden = true
+      if (Object.keys(next).length > 0) customizations[key] = next
+    }
+  }
+  return { template, order, customizations }
+}
+
 function existingProviderTypeCount(providers: AiProviderProfile[], type: AiProviderType) {
   return providers.filter((provider) => provider.type === type).length
 }
@@ -1205,6 +1253,7 @@ function App() {
   const [versionHistory, setVersionHistory] = useState(initialProject.versionHistory)
   const [nodeVersions, setNodeVersions] = useState(initialProject.nodeVersions)
   const [outlineDrafts, setOutlineDrafts] = useState(initialProject.outlineDrafts)
+  const [slidesConfig, setSlidesConfig] = useState<SlidesConfig>(() => normalizeSlidesConfig(initialProject.slidesConfig))
   const [lastSavedHash, setLastSavedHash] = useState(() => JSON.stringify(initialProject))
   const [projectPackage, setProjectPackage] = useState<ProjectPackageInfo | null>(null)
   const [selection, setSelection] = useState<Selection>({ type: 'project' })
@@ -1270,8 +1319,8 @@ function App() {
       providers: aiProviders,
       routingMode: aiRoutingMode,
       selectedProviderId: selectedAiProviderId,
-    }, versionHistory, versionState, nodeVersions, projectMetadata, projectAppearance),
-    [aiProviders, aiRoutingMode, diagrams, ideas, images, links, nodeVersions, outlineDrafts, palettes, placeholders, projectAppearance, projectMetadata, selectedAiProviderId, versionHistory, versionState],
+    }, versionHistory, versionState, nodeVersions, projectMetadata, projectAppearance, slidesConfig),
+    [aiProviders, aiRoutingMode, diagrams, ideas, images, links, nodeVersions, outlineDrafts, palettes, placeholders, projectAppearance, projectMetadata, selectedAiProviderId, slidesConfig, versionHistory, versionState],
   )
   const projectHash = useMemo(() => JSON.stringify(projectSnapshot), [projectSnapshot])
   const projectContentHash = useMemo(
@@ -1645,6 +1694,7 @@ function App() {
     setPlaceholders(snapshot.placeholders)
     setLinks(snapshot.links)
     setOutlineDrafts(snapshot.outlineDrafts)
+    setSlidesConfig(normalizeSlidesConfig(snapshot.slidesConfig))
     setAiProviders(snapshot.aiSettings.providers)
     setAiRoutingMode(snapshot.aiSettings.routingMode)
     setSelectedAiProviderId(snapshot.aiSettings.selectedProviderId)
@@ -1735,6 +1785,10 @@ function App() {
         accentColor: nextAccentColor,
       }
     })
+  }
+
+  function updateSlidesConfig(patch: Partial<SlidesConfig>) {
+    setSlidesConfig((current) => ({ ...current, ...patch }))
   }
 
   function restoreCanvasHistoryEntry(entry: CanvasHistoryEntry) {
@@ -3791,10 +3845,9 @@ function App() {
   }
 
   async function exportSlideshowHtml(layoutMode: SlideLayoutMode = 'auto') {
-    const slides = applySlideLayoutMode(buildSlideLayouts(ideas, images, links, palettes, diagrams), layoutMode)
-    const deckMeta = buildSlideDeckMeta(slides)
+    const { slides, deckMeta, title } = buildExportSlides(layoutMode)
     const html = slideLayoutsToHtml(slides, {
-      title: slides[0]?.title ?? 'KIRA Slides',
+      title,
       generatedAt: new Date().toISOString(),
       deckMeta,
     })
@@ -3810,6 +3863,69 @@ function App() {
 
     downloadTextFile(html, 'kira-slides.html', 'text/html')
     setSlideshowStatus('Slides downloaded')
+  }
+
+  function buildExportSlides(layoutMode: SlideLayoutMode) {
+    const base = applySlideLayoutMode(buildSlideLayouts(ideas, images, links, palettes, diagrams), layoutMode)
+    const slides = applySlidesConfig(base, slidesConfig)
+    const deckMeta = applyDeckTemplate(buildSlideDeckMeta(slides), slidesConfig.template)
+    const title = projectMetadata.title || slides[0]?.title || 'KIRA Slides'
+    return { slides, deckMeta, title }
+  }
+
+  async function exportSlideshowPptx(layoutMode: SlideLayoutMode = 'auto') {
+    setSlideshowStatus('Building PowerPoint…')
+    try {
+      const { slides, deckMeta, title } = buildExportSlides(layoutMode)
+      const prs = await slidesToPptx(slides, deckMeta, title)
+      const fileStem = safeDownloadName(title) || 'kira-slides'
+      if (isTauriRuntime()) {
+        const base64 = (await prs.write({ outputType: 'base64' })) as string
+        const exportedPath = await exportNativeSlideshowPptx(base64, fileStem, projectPackage?.path)
+        setSlideshowStatus(exportedPath ? 'PowerPoint exported' : 'Export canceled')
+      } else {
+        await prs.writeFile({ fileName: `${fileStem}.pptx` })
+        setSlideshowStatus('PowerPoint downloaded')
+      }
+    } catch (error) {
+      console.error('PPTX export failed', error)
+      setSlideshowStatus('PowerPoint export failed')
+    }
+  }
+
+  async function exportSlideshowPdf(layoutMode: SlideLayoutMode = 'auto') {
+    const { slides, deckMeta, title } = buildExportSlides(layoutMode)
+    const html = slideLayoutsToHtml(slides, { title, generatedAt: new Date().toISOString(), deckMeta })
+    const printWindow = window.open('', '_blank')
+    if (printWindow) {
+      printWindow.document.open()
+      printWindow.document.write(html)
+      printWindow.document.close()
+      printWindow.focus()
+      window.setTimeout(() => {
+        try {
+          printWindow.print()
+        } catch {
+          /* user can print manually */
+        }
+      }, 700)
+      setSlideshowStatus('Print dialog opened — choose “Save as PDF”')
+      return
+    }
+    downloadTextFile(html, `${safeDownloadName(title) || 'kira-slides'}.html`, 'text/html')
+    setSlideshowStatus('Saved HTML — open it and print to PDF')
+  }
+
+  async function exportSlidesToGoogleSlides(layoutMode: SlideLayoutMode = 'auto') {
+    window.open('https://docs.google.com/presentation/u/0/create', '_blank', 'noopener,noreferrer')
+    await exportSlideshowPptx(layoutMode)
+    setSlideshowStatus('PPTX ready — in Google Slides use File ▸ Import slides')
+  }
+
+  async function exportSlidesToCanva(layoutMode: SlideLayoutMode = 'auto') {
+    window.open('https://www.canva.com/design?create&type=Presentation', '_blank', 'noopener,noreferrer')
+    await exportSlideshowPptx(layoutMode)
+    setSlideshowStatus('PPTX ready — in Canva use Upload ▸ your .pptx file')
   }
 
   function toggleReferenceSelection(imageId: string) {
@@ -4234,7 +4350,13 @@ function App() {
                 links={links}
                 selected={selection}
                 status={slideshowStatus}
+                slidesConfig={slidesConfig}
+                onSlidesConfigChange={updateSlidesConfig}
                 onExportHtml={exportSlideshowHtml}
+                onExportPptx={exportSlideshowPptx}
+                onExportPdf={exportSlideshowPdf}
+                onExportGoogleSlides={exportSlidesToGoogleSlides}
+                onExportCanva={exportSlidesToCanva}
                 onSelect={setSelection}
               />
             ) : activeView === 'Settings' ? (
@@ -7466,6 +7588,89 @@ function Graph3DView({
   )
 }
 
+function SlideCustomizer({
+  slides,
+  deckSlides,
+  customizations,
+  onSetCustomization,
+  onMove,
+  onResetOrder,
+  hasManualOrder,
+}: {
+  slides: SlideLayout[]
+  deckSlides: SlideLayout[]
+  customizations: Record<string, SlideCustomization>
+  onSetCustomization: (slideId: string, patch: Partial<SlideCustomization>) => void
+  onMove: (slideId: string, direction: -1 | 1) => void
+  onResetOrder: () => void
+  hasManualOrder: boolean
+}) {
+  const deckOrder = new Map(deckSlides.map((slide, index) => [slide.id, index]))
+  const ordered = [...slides].sort((a, b) => {
+    const ai = deckOrder.has(a.id) ? (deckOrder.get(a.id) as number) : Number.MAX_SAFE_INTEGER
+    const bi = deckOrder.has(b.id) ? (deckOrder.get(b.id) as number) : Number.MAX_SAFE_INTEGER
+    return ai - bi
+  })
+  const visibleCount = ordered.filter((slide) => customizations[slide.id]?.hidden !== true).length
+
+  return (
+    <div className="slide-customizer" aria-label="Customize slides">
+      <div className="slide-customizer-head">
+        <strong>Customize deck</strong>
+        <span>{visibleCount}/{ordered.length} shown</span>
+        {hasManualOrder && (
+          <button type="button" className="slide-customizer-reset" onClick={onResetOrder}>
+            Reset order
+          </button>
+        )}
+      </div>
+      <div className="slide-customizer-list">
+        {ordered.map((slide, index) => {
+          const custom = customizations[slide.id] ?? {}
+          const hidden = custom.hidden === true
+          return (
+            <div key={slide.id} className={hidden ? 'slide-customizer-row is-hidden' : 'slide-customizer-row'}>
+              <span className="slide-customizer-index" style={{ background: slide.accent }} aria-hidden="true" />
+              <strong title={slide.title}>{slide.title}</strong>
+              <select
+                aria-label={`Layout for ${slide.title}`}
+                value={custom.layoutOverride ?? 'auto'}
+                disabled={hidden || slide.kind !== 'concept'}
+                onChange={(event) => {
+                  const value = event.target.value
+                  onSetCustomization(slide.id, { layoutOverride: value === 'auto' ? undefined : (value as SlideLayoutChoice) })
+                }}
+              >
+                <option value="auto">Auto</option>
+                <option value="focus">Focus</option>
+                <option value="grid">Grid</option>
+                <option value="stack">Stack</option>
+                <option value="palette">Palette</option>
+                <option value="diagram">Diagram</option>
+                <option value="moodboard">Moodboard</option>
+              </select>
+              <button type="button" aria-label="Move earlier" disabled={hidden || index === 0} onClick={() => onMove(slide.id, -1)}>
+                <ChevronLeft size={13} />
+              </button>
+              <button type="button" aria-label="Move later" disabled={hidden || index === ordered.length - 1} onClick={() => onMove(slide.id, 1)}>
+                <ChevronRight size={13} />
+              </button>
+              <button
+                type="button"
+                aria-label={hidden ? 'Show slide' : 'Hide slide'}
+                aria-pressed={hidden}
+                onClick={() => onSetCustomization(slide.id, { hidden: hidden ? undefined : true })}
+              >
+                {hidden ? <EyeOff size={14} /> : <Eye size={14} />}
+              </button>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 function SlideshowView({
   ideas,
   images,
@@ -7473,7 +7678,13 @@ function SlideshowView({
   diagrams,
   links,
   selected,
+  slidesConfig,
+  onSlidesConfigChange,
   onExportHtml,
+  onExportPptx,
+  onExportPdf,
+  onExportGoogleSlides,
+  onExportCanva,
   onSelect,
 }: {
   ideas: Idea[]
@@ -7483,18 +7694,63 @@ function SlideshowView({
   links: EvidenceLink[]
   selected: Selection
   status: string
+  slidesConfig: SlidesConfig
+  onSlidesConfigChange: (patch: Partial<SlidesConfig>) => void
   onExportHtml: (layoutMode?: SlideLayoutMode) => void
+  onExportPptx: (layoutMode?: SlideLayoutMode) => void
+  onExportPdf: (layoutMode?: SlideLayoutMode) => void
+  onExportGoogleSlides: (layoutMode?: SlideLayoutMode) => void
+  onExportCanva: (layoutMode?: SlideLayoutMode) => void
   onSelect: (selection: Selection) => void
 }) {
-  const slides = useMemo(() => buildSlideLayouts(ideas, images, links, palettes, diagrams), [diagrams, ideas, images, links, palettes])
-  const deckMeta = useMemo(() => buildSlideDeckMeta(slides), [slides])
-  const selectedSlideIndex = slides.findIndex((slide) => selected.type === 'idea' && slide.idea?.id === selected.id)
   const [activeSlideIndex, setActiveSlideIndex] = useState(0)
   const [isPlaying, setIsPlaying] = useState(false)
   const [isPresenting, setIsPresenting] = useState(false)
   const [layoutMode, setLayoutMode] = useState<SlideLayoutMode>('auto')
-  const activeIndex = Math.min(activeSlideIndex, slides.length - 1)
-  const activeSlide = applySlideLayoutMode(slides, layoutMode)[activeIndex]
+  const [exportMenuOpen, setExportMenuOpen] = useState(false)
+  const [isCustomizing, setIsCustomizing] = useState(false)
+
+  const baseSlides = useMemo(() => buildSlideLayouts(ideas, images, links, palettes, diagrams), [diagrams, ideas, images, links, palettes])
+  // Slides with deck-wide layout mode + per-slide overrides, but NOT filtered/reordered — used by the customization editor.
+  const allSlides = useMemo(() => {
+    const moded = applySlideLayoutMode(baseSlides, layoutMode)
+    return applySlidesConfig(moded, { ...slidesConfig, customizations: stripHidden(slidesConfig.customizations), order: [] })
+  }, [baseSlides, layoutMode, slidesConfig])
+  // Final deck: overrides + hide + reorder applied.
+  const slides = useMemo(
+    () => applySlidesConfig(applySlideLayoutMode(baseSlides, layoutMode), slidesConfig),
+    [baseSlides, layoutMode, slidesConfig],
+  )
+  const deckMeta = useMemo(() => applyDeckTemplate(buildSlideDeckMeta(slides), slidesConfig.template), [slides, slidesConfig.template])
+  const selectedSlideIndex = slides.findIndex((slide) => selected.type === 'idea' && slide.idea?.id === selected.id)
+  const activeIndex = Math.min(activeSlideIndex, Math.max(0, slides.length - 1))
+  const activeSlide = slides[activeIndex]
+
+  function setCustomization(slideId: string, patch: Partial<SlideCustomization>) {
+    const current = slidesConfig.customizations[slideId] ?? {}
+    const merged: SlideCustomization = { ...current, ...patch }
+    // Drop keys set back to undefined to keep config lean.
+    ;(Object.keys(merged) as Array<keyof SlideCustomization>).forEach((key) => {
+      if (merged[key] === undefined) delete merged[key]
+    })
+    const nextCustomizations = { ...slidesConfig.customizations }
+    if (Object.keys(merged).length === 0) {
+      delete nextCustomizations[slideId]
+    } else {
+      nextCustomizations[slideId] = merged
+    }
+    onSlidesConfigChange({ customizations: nextCustomizations })
+  }
+
+  function moveSlide(slideId: string, direction: -1 | 1) {
+    const currentOrder = slidesConfig.order.length > 0 ? [...slidesConfig.order] : slides.map((slide) => slide.id)
+    const from = currentOrder.indexOf(slideId)
+    if (from < 0) return
+    const to = from + direction
+    if (to < 0 || to >= currentOrder.length) return
+    ;[currentOrder[from], currentOrder[to]] = [currentOrder[to], currentOrder[from]]
+    onSlidesConfigChange({ order: currentOrder })
+  }
 
   function goToSlide(index: number) {
     if (slides.length === 0) return
@@ -7610,23 +7866,83 @@ function SlideshowView({
             {isPresenting ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
           </button>
           <span>{activeIndex + 1}/{slides.length}</span>
-          <em>{deckMeta.template}</em>
+          <select
+            aria-label="Deck template"
+            value={slidesConfig.template}
+            onChange={(event) => onSlidesConfigChange({ template: event.target.value as SlidesConfig['template'] })}
+          >
+            <option value="auto">Auto template</option>
+            <option value="Minimal">Minimal</option>
+            <option value="Editorial">Editorial</option>
+            <option value="Moodboard Grid">Moodboard Grid</option>
+            <option value="Timeline">Timeline</option>
+          </select>
           <select
             aria-label="Slide layout mode"
             value={layoutMode}
             onChange={(event) => setLayoutMode(event.target.value as SlideLayoutMode)}
           >
-            <option value="auto">Auto</option>
+            <option value="auto">Auto layout</option>
             <option value="focus">Focus</option>
             <option value="grid">Grid</option>
             <option value="stack">Stack</option>
             <option value="palette">Palette</option>
             <option value="diagram">Diagram</option>
           </select>
-          <button type="button" aria-label="Export slides HTML" onClick={() => onExportHtml(layoutMode)}>
-            <ArrowDownToLine size={14} />
+          <button
+            type="button"
+            aria-label="Customize slides"
+            aria-pressed={isCustomizing}
+            className={isCustomizing ? 'is-active' : ''}
+            onClick={() => setIsCustomizing((current) => !current)}
+          >
+            <Settings size={14} />
           </button>
+          <div className={exportMenuOpen ? 'slide-export-menu is-open' : 'slide-export-menu'}>
+            <button type="button" aria-label="Export slides" aria-haspopup="menu" aria-expanded={exportMenuOpen} onClick={() => setExportMenuOpen((current) => !current)}>
+              <ArrowDownToLine size={14} />
+            </button>
+            {exportMenuOpen && (
+              <>
+                <div className="slide-export-backdrop" onClick={() => setExportMenuOpen(false)} aria-hidden="true" />
+                <div className="slide-export-popover" role="menu">
+                  <button type="button" role="menuitem" onClick={() => { setExportMenuOpen(false); onExportPptx(layoutMode) }}>
+                    <FileText size={14} />
+                    <span><strong>PowerPoint</strong><small>.pptx — opens in PowerPoint, Keynote</small></span>
+                  </button>
+                  <button type="button" role="menuitem" onClick={() => { setExportMenuOpen(false); onExportPdf(layoutMode) }}>
+                    <FileText size={14} />
+                    <span><strong>PDF</strong><small>Print-ready, one page per slide</small></span>
+                  </button>
+                  <button type="button" role="menuitem" onClick={() => { setExportMenuOpen(false); onExportHtml(layoutMode) }}>
+                    <FileText size={14} />
+                    <span><strong>HTML</strong><small>Self-contained interactive deck</small></span>
+                  </button>
+                  <div className="slide-export-divider" role="separator" />
+                  <button type="button" role="menuitem" onClick={() => { setExportMenuOpen(false); onExportGoogleSlides(layoutMode) }}>
+                    <ExternalLink size={14} />
+                    <span><strong>Google Slides</strong><small>Export .pptx then import</small></span>
+                  </button>
+                  <button type="button" role="menuitem" onClick={() => { setExportMenuOpen(false); onExportCanva(layoutMode) }}>
+                    <ExternalLink size={14} />
+                    <span><strong>Canva</strong><small>Export .pptx then upload</small></span>
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
         </div>
+        {isCustomizing && (
+          <SlideCustomizer
+            slides={allSlides}
+            deckSlides={slides}
+            customizations={slidesConfig.customizations}
+            onSetCustomization={setCustomization}
+            onMove={moveSlide}
+            onResetOrder={() => onSlidesConfigChange({ order: [] })}
+            hasManualOrder={slidesConfig.order.length > 0}
+          />
+        )}
         <div className="slide-copy">
           <span style={{ color: activeSlide.accent }}>{activeSlide.kicker}</span>
           <h2>{activeSlide.title}</h2>
@@ -11462,6 +11778,51 @@ function applySlideLayoutMode(slides: SlideLayout[], layoutMode: SlideLayoutMode
   }))
 }
 
+function applySlidesConfig(slides: SlideLayout[], config: SlidesConfig): SlideLayout[] {
+  const customized = slides.map((slide) => {
+    const custom = config.customizations[slide.id]
+    if (!custom) return slide
+    return {
+      ...slide,
+      layout: custom.layoutOverride ?? slide.layout,
+      layoutReason: custom.layoutOverride ? `manual ${custom.layoutOverride}` : slide.layoutReason,
+      title: custom.titleOverride ?? slide.title,
+      summary: custom.summaryOverride ?? slide.summary,
+      accent: custom.accentOverride ?? slide.accent,
+    }
+  })
+  const visible = customized.filter((slide) => !config.customizations[slide.id]?.hidden)
+  if (config.order.length === 0) return visible
+  const byId = new Map(visible.map((slide) => [slide.id, slide]))
+  const ordered: SlideLayout[] = []
+  const used = new Set<string>()
+  for (const id of config.order) {
+    const slide = byId.get(id)
+    if (slide && !used.has(id)) {
+      ordered.push(slide)
+      used.add(id)
+    }
+  }
+  for (const slide of visible) {
+    if (!used.has(slide.id)) ordered.push(slide)
+  }
+  return ordered
+}
+
+function applyDeckTemplate(deckMeta: SlideDeckMeta, template: SlidesConfig['template']): SlideDeckMeta {
+  if (template === 'auto') return deckMeta
+  return { ...deckMeta, template }
+}
+
+function stripHidden(customizations: Record<string, SlideCustomization>): Record<string, SlideCustomization> {
+  const next: Record<string, SlideCustomization> = {}
+  for (const [id, custom] of Object.entries(customizations)) {
+    const { hidden: _hidden, ...rest } = custom
+    next[id] = rest
+  }
+  return next
+}
+
 function buildSlideDeckMeta(slides: SlideLayout[]): SlideDeckMeta {
   const conceptSlides = slides.filter((slide) => slide.kind === 'concept')
   const referenceCount = uniqueReferences(slides.flatMap((slide) => slide.references)).length
@@ -12576,6 +12937,7 @@ function toProjectSnapshot(
   nodeVersions: NodeVersionRecord[] = [],
   project: ProjectMetadata = defaultProjectMetadata(),
   appearance: ProjectAppearance = defaultProjectAppearance(),
+  slidesConfig: SlidesConfig = defaultSlidesConfig(),
 ): ProjectSnapshot {
   return {
     version: 2,
@@ -12592,6 +12954,7 @@ function toProjectSnapshot(
     nodeVersions,
     links,
     outlineDrafts,
+    slidesConfig,
   }
 }
 
@@ -13017,6 +13380,7 @@ function isProjectSnapshot(value: unknown): value is ProjectSnapshot {
   snapshot.versionHistory = normalizeVersionHistory(snapshot.versionHistory ?? [])
   snapshot.versionState = normalizeVersionState(snapshot.versionState, snapshot.versionHistory)
   snapshot.nodeVersions = normalizeNodeVersions(snapshot.nodeVersions ?? [])
+  snapshot.slidesConfig = normalizeSlidesConfig(snapshot.slidesConfig)
   return true
 }
 
@@ -13443,6 +13807,10 @@ async function exportNativeSlideshowHtml(html: string, projectPath?: string) {
   return invoke<string | null>('export_slideshow_html', { html, projectPath })
 }
 
+async function exportNativeSlideshowPptx(base64Data: string, filename: string, projectPath?: string) {
+  return invoke<string | null>('export_slideshow_pptx', { base64Data, filename, projectPath })
+}
+
 function downloadProject(snapshot: ProjectSnapshot) {
   downloadTextFile(JSON.stringify(snapshot, null, 2), 'kira-project.json', 'application/json')
 }
@@ -13642,12 +14010,12 @@ function slideLayoutsToHtml(slides: SlideLayout[], metadata: { title: string; ge
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>${escapeHtml(metadata.title)}</title>
   <style>
-    :root { color-scheme: dark; font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: ${escapeAttribute(metadata.deckMeta.theme.background)}; color: #ece9dd; }
+    :root { color-scheme: dark; font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: ${escapeAttribute(metadata.deckMeta.theme.background)}; color: #ece9dd; --deck-accent: ${escapeAttribute(metadata.deckMeta.theme.accent)}; }
     * { box-sizing: border-box; }
-    body { margin: 0; background: #090a0a; }
+    body { margin: 0; background: #090a0a; scroll-snap-type: y mandatory; scroll-behavior: smooth; }
     .reveal { min-height: 100dvh; }
     .slides { display: grid; gap: 1px; }
-    .slide { display: grid; grid-template-columns: 92px minmax(280px,.82fr) minmax(320px,1fr); min-height: 100dvh; padding: 7vw; background: #0d0f0e; gap: clamp(28px,5vw,72px); page-break-after: always; }
+    .slide { display: grid; grid-template-columns: 92px minmax(280px,.82fr) minmax(320px,1fr); min-height: 100dvh; padding: 7vw; background: #0d0f0e; gap: clamp(28px,5vw,72px); page-break-after: always; break-after: page; scroll-snap-align: start; }
     aside { display: grid; align-content: start; gap: 8px; color: #96988e; font-size: 13px; }
     aside em { color: var(--accent); font-style: normal; }
     .notes { display: none; }
@@ -13666,18 +14034,85 @@ function slideLayoutsToHtml(slides: SlideLayout[], metadata: { title: string; ge
     .palette-strip { display: grid; overflow: hidden; height: 42px; grid-auto-flow: column; grid-auto-columns: 1fr; }
     figcaption { overflow: hidden; padding: 10px 12px; color: #c9c8bd; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
     .missing { align-self: center; color: #b7a4df; }
+    .deck-hint { position: fixed; right: 16px; bottom: 16px; z-index: 9; display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 999px; background: rgba(255,255,255,.08); color: #c9c8bd; font-size: 12px; backdrop-filter: blur(8px); transition: opacity .4s ease; }
+    .deck-progress { position: fixed; top: 0; left: 0; right: 0; z-index: 9; height: 3px; background: var(--deck-accent); transform-origin: left; transform: scaleX(0); transition: transform .25s ease; }
     @media (max-width: 860px) { .slide { grid-template-columns: 1fr; } aside { grid-auto-flow: column; justify-content: space-between; } h2 { max-width: 14ch; } }
-    @media print { .slide { min-height: 100vh; } }
+    @page { size: 1280px 720px; margin: 0; }
+    @media print {
+      body { scroll-snap-type: none; }
+      .slide { min-height: 100vh; width: 100vw; padding: 6vw; }
+      .deck-hint, .deck-progress { display: none !important; }
+    }
   </style>
 </head>
 <body>
+  <div class="deck-progress" aria-hidden="true"></div>
   <main class="reveal" data-title="${escapeAttribute(metadata.title)}" data-generated-at="${escapeAttribute(metadata.generatedAt)}" data-template="${escapeAttribute(metadata.deckMeta.template)}" data-estimated-duration="${escapeAttribute(metadata.deckMeta.estimatedDuration)}" data-theme-accent="${escapeAttribute(metadata.deckMeta.theme.accent)}">
     <div class="slides">${slideMarkup}</div>
   </main>
+  <div class="deck-hint" aria-hidden="true">← → navigate · F fullscreen · P print/PDF</div>
   <script type="application/json" id="kira-slide-manifest">${manifestJson}</script>
+  <script>${slideDeckNavScript()}</script>
 </body>
 </html>
 `
+}
+
+function slideDeckNavScript() {
+  return `
+(function () {
+  var slides = Array.prototype.slice.call(document.querySelectorAll('.slide'));
+  if (!slides.length) return;
+  var current = 0;
+  var progress = document.querySelector('.deck-progress');
+  var hint = document.querySelector('.deck-hint');
+  var hintTimer;
+  function showHint() {
+    if (!hint) return;
+    hint.style.opacity = '1';
+    clearTimeout(hintTimer);
+    hintTimer = setTimeout(function () { hint.style.opacity = '0'; }, 2400);
+  }
+  function go(index) {
+    current = Math.max(0, Math.min(slides.length - 1, index));
+    slides[current].scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (progress) progress.style.transform = 'scaleX(' + ((current + 1) / slides.length) + ')';
+    showHint();
+  }
+  function syncFromScroll() {
+    var nearest = 0;
+    var best = Infinity;
+    for (var i = 0; i < slides.length; i++) {
+      var delta = Math.abs(slides[i].getBoundingClientRect().top);
+      if (delta < best) { best = delta; nearest = i; }
+    }
+    current = nearest;
+    if (progress) progress.style.transform = 'scaleX(' + ((current + 1) / slides.length) + ')';
+  }
+  document.addEventListener('keydown', function (event) {
+    if (event.key === 'ArrowRight' || event.key === 'ArrowDown' || event.key === ' ' || event.key === 'PageDown') {
+      event.preventDefault(); go(current + 1);
+    } else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp' || event.key === 'PageUp') {
+      event.preventDefault(); go(current - 1);
+    } else if (event.key === 'Home') {
+      event.preventDefault(); go(0);
+    } else if (event.key === 'End') {
+      event.preventDefault(); go(slides.length - 1);
+    } else if (event.key === 'f' || event.key === 'F') {
+      if (document.fullscreenElement) { document.exitFullscreen(); } else { document.documentElement.requestFullscreen().catch(function () {}); }
+    } else if (event.key === 'p' || event.key === 'P') {
+      event.preventDefault(); window.print();
+    }
+  });
+  var ticking = false;
+  window.addEventListener('scroll', function () {
+    if (ticking) return;
+    ticking = true;
+    requestAnimationFrame(function () { syncFromScroll(); ticking = false; });
+  }, { passive: true });
+  go(0);
+})();
+`.trim()
 }
 
 function safeJsonScript(json: string) {
@@ -13687,6 +14122,177 @@ function safeJsonScript(json: string) {
     .replace(/&/g, '\\u0026')
     .replace(/\u2028/g, '\\u2028')
     .replace(/\u2029/g, '\\u2029')
+}
+
+function hexForPptx(value: string | undefined, fallback = '84CDBC'): string {
+  if (!value) return fallback
+  const hex = converter('rgb')(value)
+    ? formatHex(value)?.replace('#', '').toUpperCase()
+    : value.replace('#', '').toUpperCase()
+  if (hex && /^[0-9A-F]{6}$/.test(hex)) return hex
+  if (hex && /^[0-9A-F]{3}$/.test(hex)) {
+    return hex.split('').map((char) => char + char).join('')
+  }
+  return fallback
+}
+
+// 16:9 widescreen deck in inches (matches PowerPoint LAYOUT_WIDE).
+const PPTX_W = 13.333
+const PPTX_H = 7.5
+
+function pptxImageSlots(layout: SlideLayout['layout'], count: number): Array<{ x: number; y: number; w: number; h: number }> {
+  const railX = 6.7
+  const railW = PPTX_W - railX - 0.5
+  if (layout === 'cover' || layout === 'focus') {
+    return [{ x: railX, y: 0.5, w: railW, h: PPTX_H - 1 }]
+  }
+  if (layout === 'grid') {
+    const gap = 0.2
+    const cellW = (railW - gap) / 2
+    const cellH = (PPTX_H - 1 - gap) / 2
+    return Array.from({ length: 4 }, (_, index) => ({
+      x: railX + (index % 2) * (cellW + gap),
+      y: 0.5 + Math.floor(index / 2) * (cellH + gap),
+      w: cellW,
+      h: cellH,
+    }))
+  }
+  if (layout === 'moodboard') {
+    const cols = 3
+    const rows = Math.max(1, Math.ceil(Math.min(count, 12) / cols))
+    const gap = 0.16
+    const fullX = 0.5
+    const fullW = PPTX_W - 1
+    const cellW = (fullW - gap * (cols - 1)) / cols
+    const cellH = (PPTX_H - 2.6 - gap * (rows - 1)) / rows
+    return Array.from({ length: cols * rows }, (_, index) => ({
+      x: fullX + (index % cols) * (cellW + gap),
+      y: 2.4 + Math.floor(index / cols) * (cellH + gap),
+      w: cellW,
+      h: cellH,
+    }))
+  }
+  // stack and fallbacks: vertical column
+  const gap = 0.18
+  const slots = Math.min(Math.max(count, 1), 3)
+  const cellH = (PPTX_H - 1 - gap * (slots - 1)) / slots
+  return Array.from({ length: slots }, (_, index) => ({
+    x: railX,
+    y: 0.5 + index * (cellH + gap),
+    w: railW,
+    h: cellH,
+  }))
+}
+
+async function slidesToPptx(slides: SlideLayout[], deckMeta: SlideDeckMeta, title: string) {
+  const { default: PptxGenJs } = await import('pptxgenjs')
+  const prs = new PptxGenJs()
+  prs.defineLayout({ name: 'KIRA_WIDE', width: PPTX_W, height: PPTX_H })
+  prs.layout = 'KIRA_WIDE'
+  prs.author = 'KIRA'
+  prs.company = 'KIRA'
+  prs.subject = deckMeta.template
+  prs.title = title
+
+  const bg = hexForPptx(deckMeta.theme.background, '0D0F0E')
+  const textMain = 'F1EEE7'
+  const textSoft = 'C9C8BD'
+  const textMuted = '96988E'
+
+  if (slides.length === 0) {
+    const slide = prs.addSlide()
+    slide.background = { color: bg }
+    slide.addText('No slides yet', { x: 0.5, y: 3.1, w: PPTX_W - 1, h: 1, fontSize: 40, bold: true, color: textMain, align: 'center' })
+    slide.addText('Create ideas and link references to generate a slideshow.', { x: 0.5, y: 4.1, w: PPTX_W - 1, h: 0.6, fontSize: 16, color: textSoft, align: 'center' })
+    return prs
+  }
+
+  slides.forEach((slide, index) => {
+    const s = prs.addSlide()
+    s.background = { color: bg }
+    const accent = hexForPptx(slide.accent)
+    const isMoodboard = slide.layout === 'moodboard'
+    const isCover = slide.layout === 'cover'
+    const hasVisuals = slide.references.length > 0 || slide.palettes.length > 0 || slide.diagrams.length > 0
+    const copyW = isMoodboard ? PPTX_W - 1 : hasVisuals ? 5.8 : PPTX_W - 1
+
+    s.addText(String(index + 1).padStart(2, '0'), { x: 0.5, y: 0.42, w: 1.2, h: 0.3, fontSize: 11, color: textMuted })
+    s.addText((slide.kicker || '').toUpperCase(), { x: 0.5, y: 0.74, w: copyW, h: 0.4, fontSize: 11, color: accent, charSpacing: 1 })
+    s.addText(slide.title, {
+      x: 0.5,
+      y: 1.18,
+      w: copyW,
+      h: isCover ? 2 : 1.7,
+      fontSize: isCover ? 46 : 34,
+      bold: true,
+      color: textMain,
+      valign: 'top',
+    })
+    s.addText(slide.summary, {
+      x: 0.5,
+      y: isMoodboard ? 1.9 : isCover ? 3.3 : 2.9,
+      w: copyW,
+      h: isMoodboard ? 0.6 : 3.4,
+      fontSize: 16,
+      color: textSoft,
+      lineSpacingMultiple: 1.35,
+      valign: 'top',
+    })
+
+    if (slide.layout === 'palette' && slide.palettes.length > 0) {
+      const palette = slide.palettes[0]
+      const swatchW = (PPTX_W - 7.2) / Math.max(palette.colors.length, 1)
+      palette.colors.forEach((color, swatchIndex) => {
+        s.addShape(PptxGenJs.ShapeType.rect, {
+          x: 6.7 + swatchIndex * swatchW,
+          y: 2.4,
+          w: swatchW,
+          h: 2.6,
+          fill: { color: hexForPptx(color) },
+          line: { type: 'none' },
+        })
+      })
+      s.addText(palette.title, { x: 6.7, y: 5.1, w: PPTX_W - 7.2, h: 0.5, fontSize: 13, color: textSoft })
+    } else if (slide.layout === 'diagram' && slide.diagrams.length > 0) {
+      slide.diagrams.slice(0, 2).forEach((diagram, diagramIndex) => {
+        const y = 0.6 + diagramIndex * 3.3
+        s.addShape(PptxGenJs.ShapeType.roundRect, {
+          x: 6.7,
+          y,
+          w: PPTX_W - 7.2,
+          h: 3,
+          fill: { color: bg },
+          line: { color: accent, width: 1 },
+          rectRadius: 0.08,
+        })
+        s.addText(diagram.title, { x: 6.9, y: y + 0.3, w: PPTX_W - 7.6, h: 0.6, fontSize: 18, bold: true, color: textMain })
+        s.addText(`${diagram.nodeIds.length} nodes \u00b7 ${diagram.format}`, { x: 6.9, y: y + 1, w: PPTX_W - 7.6, h: 0.5, fontSize: 13, color: textMuted })
+      })
+    } else if (slide.references.length > 0) {
+      const slots = pptxImageSlots(slide.layout, slide.references.length)
+      slide.references.slice(0, slots.length).forEach((reference, refIndex) => {
+        const slot = slots[refIndex]
+        if (!slot) return
+        if (reference.thumb) {
+          s.addImage({ data: reference.thumb, x: slot.x, y: slot.y, w: slot.w, h: slot.h, sizing: { type: 'cover', w: slot.w, h: slot.h } })
+        } else {
+          s.addShape(PptxGenJs.ShapeType.roundRect, {
+            x: slot.x,
+            y: slot.y,
+            w: slot.w,
+            h: slot.h,
+            fill: { color: '1B1E1C' },
+            line: { type: 'none' },
+            rectRadius: 0.06,
+          })
+        }
+      })
+    }
+
+    if (slide.speakerNote) s.addNotes(slide.speakerNote)
+  })
+
+  return prs
 }
 
 function contactSheetToHtml(

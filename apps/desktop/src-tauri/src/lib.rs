@@ -533,6 +533,21 @@ fn export_slideshow_html(
 }
 
 #[tauri::command]
+fn export_slideshow_pptx(
+    app: AppHandle,
+    base64_data: String,
+    filename: Option<String>,
+    project_path: Option<String>,
+) -> Result<Option<String>, String> {
+    let project_dir = resolve_project_dir(&app, project_path)?;
+    let bytes = BASE64
+        .decode(base64_data.trim())
+        .map_err(|error| format!("Invalid PPTX payload: {error}"))?;
+    let name = sanitize_export_filename(filename.as_deref(), "slides", "pptx");
+    export_bytes_to_exports(&project_dir, &name, &bytes).map(Some)
+}
+
+#[tauri::command]
 fn update_capture_context(
     state: State<'_, CaptureContextState>,
     context_json: String,
@@ -605,6 +620,39 @@ fn export_text_to_exports(
     let export_path = project_dir.join("exports").join(filename);
     fs::write(&export_path, contents).map_err(|error| error.to_string())?;
     Ok(export_path.to_string_lossy().to_string())
+}
+
+fn export_bytes_to_exports(
+    project_dir: &PathBuf,
+    filename: &str,
+    contents: &[u8],
+) -> Result<String, String> {
+    ensure_project_dirs(project_dir)?;
+    let export_path = project_dir.join("exports").join(filename);
+    fs::write(&export_path, contents).map_err(|error| error.to_string())?;
+    Ok(export_path.to_string_lossy().to_string())
+}
+
+fn sanitize_export_filename(raw: Option<&str>, fallback: &str, extension: &str) -> String {
+    let stem = raw
+        .map(|value| {
+            value
+                .trim()
+                .trim_end_matches(&format!(".{extension}"))
+                .chars()
+                .map(|character| {
+                    if character.is_ascii_alphanumeric() || character == '-' || character == '_' {
+                        character
+                    } else {
+                        '-'
+                    }
+                })
+                .collect::<String>()
+        })
+        .map(|value| value.trim_matches('-').to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| fallback.to_string());
+    format!("{stem}.{extension}")
 }
 
 fn resolve_project_dir(app: &AppHandle, project_path: Option<String>) -> Result<PathBuf, String> {
@@ -3491,6 +3539,7 @@ pub fn run() {
             export_outline_html,
             export_contact_sheet_html,
             export_slideshow_html,
+            export_slideshow_pptx,
             update_capture_context
         ])
         .run(tauri::generate_context!())

@@ -4436,6 +4436,193 @@ p {
   color: var(--accent-sage);
 }
 
+.slide-export-menu {
+  position: relative;
+  display: inline-flex;
+}
+
+.slide-export-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+}
+
+.slide-export-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 41;
+  display: grid;
+  width: 252px;
+  padding: 6px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-3);
+  background: var(--surface-2);
+  box-shadow: var(--panel-shadow);
+  gap: 2px;
+}
+
+.slide-export-popover button {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: center;
+  width: 100%;
+  height: auto;
+  min-height: 40px;
+  padding: 7px 9px;
+  border-radius: var(--radius-2);
+  background: transparent;
+  color: var(--text-soft);
+  cursor: pointer;
+  gap: 9px;
+  text-align: left;
+}
+
+.slide-export-popover button:hover {
+  background: var(--glass-active);
+  color: var(--text-main);
+}
+
+.slide-export-popover span {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+}
+
+.slide-export-popover strong {
+  font-size: 0.8rem;
+  font-weight: 620;
+}
+
+.slide-export-popover small {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 0.67rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.slide-export-divider {
+  height: 1px;
+  margin: 4px 8px;
+  background: var(--separator-hairline);
+}
+
+.slide-customizer {
+  position: absolute;
+  top: 58px;
+  right: var(--space-4);
+  z-index: 30;
+  display: grid;
+  width: min(440px, 82%);
+  max-height: calc(100% - 86px);
+  padding: var(--space-3);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-3);
+  background: var(--surface-2);
+  box-shadow: var(--panel-shadow);
+  gap: var(--space-2);
+}
+
+.slide-customizer-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.slide-customizer-head strong {
+  font-size: 0.82rem;
+}
+
+.slide-customizer-head span {
+  color: var(--text-muted);
+  font-size: 0.7rem;
+}
+
+.slide-customizer-reset {
+  margin-left: auto;
+  padding: 4px 9px;
+  border-radius: var(--radius-1);
+  background: var(--accent-faint);
+  color: var(--accent-strong);
+  cursor: pointer;
+  font-size: 0.68rem;
+}
+
+.slide-customizer-list {
+  display: grid;
+  overflow-y: auto;
+  gap: 2px;
+}
+
+.slide-customizer-row {
+  display: grid;
+  grid-template-columns: 12px minmax(0, 1fr) auto auto auto auto;
+  align-items: center;
+  padding: 4px 5px;
+  border-radius: var(--radius-2);
+  gap: 7px;
+}
+
+.slide-customizer-row:hover {
+  background: var(--glass-hover);
+}
+
+.slide-customizer-row.is-hidden {
+  opacity: 0.45;
+}
+
+.slide-customizer-index {
+  width: 12px;
+  height: 12px;
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+}
+
+.slide-customizer-row strong {
+  overflow: hidden;
+  font-size: 0.76rem;
+  font-weight: 560;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.slide-customizer-row select {
+  height: 26px;
+  padding: 0 6px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-1);
+  background: var(--inset-field);
+  color: var(--text-soft);
+  font-size: 0.7rem;
+  outline: none;
+}
+
+.slide-customizer-row select:disabled {
+  opacity: 0.4;
+}
+
+.slide-customizer-row > button {
+  display: inline-grid;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  border-radius: var(--radius-1);
+  background: transparent;
+  color: var(--text-soft);
+  cursor: pointer;
+}
+
+.slide-customizer-row > button:hover:not(:disabled) {
+  background: var(--glass-active);
+  color: var(--text-main);
+}
+
+.slide-customizer-row > button:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
 .slide-copy {
   display: grid;
   align-content: center;
