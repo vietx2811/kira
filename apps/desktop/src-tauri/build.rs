@@ -28,7 +28,7 @@ fn build_node_helper() {
             .status();
         match status {
             Ok(s) if s.success() => {}
-            _ => println!("cargo:warning=codex-helper Bun build skipped (Bun unavailable or build failed); using committed binaries"),
+            _ => println!("cargo:warning=codex-helper Bun build skipped (Bun unavailable or build failed). The codex sidecar/binary will be missing and `tauri build` bundling will fail until Bun is installed and `apps/codex-helper` builds. Run `bun run scripts/build.ts` in apps/codex-helper."),
         }
     }
 }
