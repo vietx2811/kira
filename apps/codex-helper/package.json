@@ -1,0 +1,15 @@
+{
+  "name": "@kira/codex-helper",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "bin": { "kira-codex-helper": "src/index.ts" },
+  "scripts": {
+    "test": "bun test",
+    "build": "bun run scripts/build.ts"
+  },
+  "dependencies": {
+    "@openai/codex-sdk": "0.142.0",
+    "@openai/codex": "0.142.0"
+  }
+}
