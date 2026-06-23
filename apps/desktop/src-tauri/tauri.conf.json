@@ -35,7 +35,9 @@
     "externalBin": [
       "binaries/kira-vision-ocr-helper",
       "binaries/kira-foundation-models-helper",
-      "binaries/kira-natural-language-helper"
+      "binaries/kira-natural-language-helper",
+      "binaries/kira-codex-helper",
+      "binaries/codex"
     ],
     "resources": [
       "../../extension/dist",

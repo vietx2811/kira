@@ -1,4 +1,5 @@
 fn main() {
+    build_node_helper();
     build_apple_helper(
         "apple_helpers/kira_vision_ocr.swift",
         "kira-vision-ocr-helper",
@@ -12,6 +13,24 @@ fn main() {
         "kira-natural-language-helper",
     );
     tauri_build::build()
+}
+
+fn build_node_helper() {
+    #[cfg(target_os = "macos")]
+    {
+        use std::{env, path::PathBuf, process::Command};
+        let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("manifest dir"));
+        let helper_dir = manifest_dir.join("../../codex-helper");
+        println!("cargo:rerun-if-changed={}", helper_dir.join("src").display());
+        let status = Command::new("bun")
+            .current_dir(&helper_dir)
+            .args(["run", "scripts/build.ts"])
+            .status();
+        match status {
+            Ok(s) if s.success() => {}
+            _ => println!("cargo:warning=codex-helper Bun build skipped (Bun unavailable or build failed); using committed binaries"),
+        }
+    }
 }
 
 fn build_apple_helper(source_relative_path: &str, binary_name: &str) {
