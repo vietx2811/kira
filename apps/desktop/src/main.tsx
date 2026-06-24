@@ -5508,6 +5508,12 @@ function SettingsView({
                         {codexLoginBusy && <button type="button" onClick={() => { void cancelCodexLogin() }}>Cancel</button>}
                       </div>
                     )}
+                    {codexLoginEvent?.type === 'oauth_url' && (
+                      <p className="codex-login__device">
+                        Continue sign-in in your browser:{' '}
+                        <a href={codexLoginEvent.url} target="_blank" rel="noreferrer">{codexLoginEvent.url}</a>
+                      </p>
+                    )}
                     {codexLoginEvent?.type === 'device_code' && (
                       <p className="codex-login__device">
                         Open <a href={codexLoginEvent.verificationUrl} target="_blank" rel="noreferrer">{codexLoginEvent.verificationUrl}</a>{' '}

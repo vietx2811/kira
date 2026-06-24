@@ -70,6 +70,14 @@ export async function loginEvents(
       }
     }
   }
+  const tail = buffer.trim()
+  if (tail.length > 0) {
+    const event = parseLine(tail)
+    if (event) {
+      if (event.type === "success") sawSuccess = true
+      emit(event)
+    }
+  }
   const code = await proc.exited
   if (code === 0 && !sawSuccess) emit({ type: "success" })
   if (code !== 0) emit({ type: "error", message: (await new Response(proc.stderr).text()).trim() || `codex exited ${code}` })
