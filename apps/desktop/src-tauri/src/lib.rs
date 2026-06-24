@@ -38,6 +38,11 @@ const AI_PROVIDER_KEYCHAIN_SERVICE: &str = "studio.kira.desktop.ai-provider";
 #[derive(Clone, Default)]
 struct CaptureContextState(Arc<Mutex<String>>);
 
+#[derive(Default)]
+struct CodexLoginState {
+    child: Mutex<Option<std::process::Child>>,
+}
+
 #[derive(Deserialize, Serialize)]
 struct ProjectSnapshot {
     version: i64,
@@ -1989,6 +1994,89 @@ fn codex_status_native() -> Result<CodexStatus, String> {
         .map_err(|e| format!("Invalid Codex status output: {e}"))
 }
 
+#[tauri::command]
+fn codex_login(
+    app: AppHandle,
+    state: tauri::State<'_, CodexLoginState>,
+    method: String,
+    api_key: Option<String>,
+) -> Result<(), String> {
+    use std::io::{BufRead, BufReader};
+
+    if !matches!(method.as_str(), "chatgpt" | "device" | "api-key") {
+        return Err(format!("Unknown login method: {method}"));
+    }
+
+    let helper = bundled_sidecar_path("kira-codex-helper")
+        .ok_or_else(|| "Codex helper binary not found".to_string())?;
+    let mut command = Command::new(&helper);
+    command.arg("login").arg(&method);
+
+    // api-key: write the key to a temp payload file (never argv) and pass its path.
+    let mut payload_path: Option<PathBuf> = None;
+    if method == "api-key" {
+        let key = api_key.unwrap_or_default();
+        if key.trim().is_empty() {
+            return Err("API key is empty".to_string());
+        }
+        let path = std::env::temp_dir().join(format!("kira-codex-login-{}.json", timestamp_millis()));
+        fs::write(&path, serde_json::json!({ "apiKey": key }).to_string())
+            .map_err(|e| format!("Unable to write login payload: {e}"))?;
+        command.arg(&path);
+        payload_path = Some(path);
+    }
+
+    if let Some(bin) = codex_bin_path() {
+        command.env("KIRA_CODEX_BIN", bin);
+    }
+    command.stdout(std::process::Stdio::piped());
+    command.stderr(std::process::Stdio::piped());
+
+    let mut child = command.spawn().map_err(|e| format!("Unable to start login: {e}"))?;
+    let stdout = child.stdout.take().ok_or_else(|| "no stdout".to_string())?;
+    *state.child.lock().unwrap() = Some(child);
+
+    // Forward each NDJSON line to the webview.
+    let reader = BufReader::new(stdout);
+    let mut last_error: Option<String> = None;
+    for line in reader.lines() {
+        let line = match line { Ok(l) => l, Err(_) => break };
+        if line.trim().is_empty() { continue }
+        if let Ok(value) = serde_json::from_str::<serde_json::Value>(&line) {
+            if value.get("type").and_then(|t| t.as_str()) == Some("error") {
+                last_error = value.get("message").and_then(|m| m.as_str()).map(ToString::to_string);
+            }
+            let _ = app.emit("codex://login", value);
+        }
+    }
+
+    let status = {
+        let mut guard = state.child.lock().unwrap();
+        match guard.take() {
+            Some(mut c) => c.wait().map_err(|e| format!("login wait failed: {e}"))?,
+            None => return Err("Login was cancelled".to_string()),
+        }
+    };
+    if let Some(path) = payload_path { let _ = fs::remove_file(path); }
+
+    if status.success() { Ok(()) } else { Err(last_error.unwrap_or_else(|| "Login failed".to_string())) }
+}
+
+#[tauri::command]
+fn codex_cancel_login(state: tauri::State<'_, CodexLoginState>) -> Result<(), String> {
+    if let Some(mut child) = state.child.lock().unwrap().take() {
+        let _ = child.kill();
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn codex_logout() -> Result<(), String> {
+    let output = run_codex_helper(&[std::ffi::OsStr::new("logout")], None)?;
+    if output.status.success() { Ok(()) }
+    else { Err(String::from_utf8_lossy(&output.stderr).trim().to_string()) }
+}
+
 fn natural_language_suggestions_from_text(text: &str) -> Option<Vec<String>> {
     let text = text.trim();
     if text.is_empty() {
@@ -3613,6 +3701,7 @@ fn configure_native_macos_window(window: &tauri::WebviewWindow) -> Result<(), St
 pub fn run() {
     tauri::Builder::default()
         .manage(CaptureContextState::default())
+        .manage(CodexLoginState::default())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             if let Some(window) = app.get_webview_window("main") {
@@ -3646,7 +3735,10 @@ pub fn run() {
             export_contact_sheet_html,
             export_slideshow_html,
             export_slideshow_pptx,
-            update_capture_context
+            update_capture_context,
+            codex_login,
+            codex_cancel_login,
+            codex_logout
         ])
         .run(tauri::generate_context!())
         .expect("error while running KIRA desktop shell");
