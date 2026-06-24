@@ -2050,6 +2050,13 @@ fn codex_login(
         }
     }
 
+    // The child consumed the payload at startup; once stdout hits EOF it is no
+    // longer needed. Remove it here so every post-spawn return path (including
+    // the cancel/wait handoff below) cleans up the plaintext-secret temp file.
+    if let Some(path) = payload_path.take() {
+        let _ = fs::remove_file(path);
+    }
+
     let status = {
         let mut guard = state.child.lock().unwrap();
         match guard.take() {
@@ -2057,7 +2064,6 @@ fn codex_login(
             None => return Err("Login was cancelled".to_string()),
         }
     };
-    if let Some(path) = payload_path { let _ = fs::remove_file(path); }
 
     if status.success() { Ok(()) } else { Err(last_error.unwrap_or_else(|| "Login failed".to_string())) }
 }
