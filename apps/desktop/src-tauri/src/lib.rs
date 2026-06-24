@@ -2386,6 +2386,11 @@ fn list_ai_models_native(
 }
 
 fn generate_codex_text(provider: &AiProviderTestRequest, prompt: &str) -> Result<String, String> {
+    match codex_status_native() {
+        Ok(status) if status.logged_in => {}
+        Ok(_) => return Err("Not signed in. Use Sign in with ChatGPT.".to_string()),
+        Err(error) => return Err(error),
+    }
     let model = generation_model(provider, "gpt-5.5");
     let payload = serde_json::json!({ "prompt": prompt, "model": model }).to_string();
     let id = timestamp_millis();
