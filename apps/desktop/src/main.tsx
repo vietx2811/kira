@@ -3321,7 +3321,17 @@ function App() {
         generatedBody = result.content.trim()
         generationStatus = `${provider.name}: ${result.status}`
       } catch (error) {
-        generationStatus = error instanceof Error ? error.message : 'AI generation failed'
+        const message = error instanceof Error ? error.message : 'AI generation failed'
+        if (provider.type === 'codex' && isCodexLoggedOutError(message)) {
+          // Codex requires a ChatGPT sign-in. Surface an actionable prompt and
+          // jump the user to the Codex provider in Settings to sign in, rather
+          // than burying the raw "Not signed in" error in the node body.
+          generationStatus = `${provider.name}: sign in to Codex in Settings to continue`
+          focusProviderSetup(provider.id)
+          setAiSettingsStatus('Sign in to Codex (ChatGPT) to run this AI task, then try again.')
+        } else {
+          generationStatus = message
+        }
       }
     }
     const body = [
@@ -13806,6 +13816,13 @@ async function generateNativeAiText(provider: AiProviderProfile, prompt: string)
     throw new Error('AI generation runs in the desktop app because secrets and local endpoints are native-only.')
   }
   return invoke<AiGenerationResult>('generate_ai_text', { provider: providerRequestPayload(provider), prompt })
+}
+
+// Detects the native error surfaced when a Codex (ChatGPT OAuth) provider runs a
+// generation while the user is signed out. Used to turn a raw error into an
+// actionable "sign in" prompt instead of dumping the message into the node body.
+function isCodexLoggedOutError(message: string): boolean {
+  return /not signed in|sign in with chatgpt|not logged in/i.test(message)
 }
 
 type CodexLoginEvent =
