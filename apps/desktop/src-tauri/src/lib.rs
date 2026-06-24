@@ -327,6 +327,17 @@ struct AiGenerationResult {
     content: String,
 }
 
+#[derive(Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct CodexStatus {
+    logged_in: bool,
+    auth_mode: Option<String>,
+    account: Option<String>,
+    active_model: Option<String>,
+    #[serde(default)]
+    models: Vec<String>,
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ExtensionTargetStatus {
@@ -1939,6 +1950,43 @@ fn run_apple_vision_ocr_process_with_helper(
 
     let script_path = std::env::temp_dir().join(format!("kira-ocr-{}.swift", timestamp_millis()));
     run_swift_script(&script_path, APPLE_VISION_OCR_SWIFT, &[image_path])
+}
+
+fn codex_bin_path() -> Option<PathBuf> {
+    bundled_sidecar_path("codex")
+}
+
+fn run_codex_helper(args: &[&std::ffi::OsStr], stdin_data: Option<&str>) -> Result<Output, String> {
+    let helper = bundled_sidecar_path("kira-codex-helper")
+        .ok_or_else(|| "Codex helper binary not found".to_string())?;
+    let mut command = Command::new(&helper);
+    command.args(args);
+    if let Some(bin) = codex_bin_path() {
+        command.env("KIRA_CODEX_BIN", bin);
+    }
+    if stdin_data.is_some() {
+        command.stdin(std::process::Stdio::piped());
+    }
+    command.stdout(std::process::Stdio::piped());
+    command.stderr(std::process::Stdio::piped());
+
+    let mut child = command.spawn().map_err(|e| format!("Unable to run Codex helper: {e}"))?;
+    if let Some(data) = stdin_data {
+        use std::io::Write;
+        if let Some(mut stdin) = child.stdin.take() {
+            stdin.write_all(data.as_bytes()).map_err(|e| format!("Codex helper stdin error: {e}"))?;
+        }
+    }
+    child.wait_with_output().map_err(|e| format!("Codex helper failed: {e}"))
+}
+
+fn codex_status_native() -> Result<CodexStatus, String> {
+    let output = run_codex_helper(&[std::ffi::OsStr::new("status")], None)?;
+    if !output.status.success() {
+        return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
+    }
+    serde_json::from_slice(&output.stdout)
+        .map_err(|e| format!("Invalid Codex status output: {e}"))
 }
 
 fn natural_language_suggestions_from_text(text: &str) -> Option<Vec<String>> {
@@ -4039,6 +4087,16 @@ mod tests {
 
         let _ = fs::remove_file(helper_path);
         let _ = fs::remove_file(image_path);
+    }
+
+    #[test]
+    fn codex_status_parses_helper_json() {
+        let json = br#"{"loggedIn":true,"authMode":"chatgpt","account":null,"activeModel":"gpt-5.5","models":["gpt-5.5"]}"#;
+        let status: CodexStatus = serde_json::from_slice(json).expect("parse");
+        assert!(status.logged_in);
+        assert_eq!(status.auth_mode.as_deref(), Some("chatgpt"));
+        assert_eq!(status.active_model.as_deref(), Some("gpt-5.5"));
+        assert_eq!(status.models, vec!["gpt-5.5".to_string()]);
     }
 
     #[test]
