@@ -2163,6 +2163,30 @@ fn test_ai_provider_native(
         });
     }
 
+    if provider.provider_type == "codex" {
+        return match codex_status_native() {
+            Ok(status) if status.logged_in => Ok(AiProviderTestResult {
+                connected: true,
+                status: "connected".to_string(),
+                message: format!(
+                    "Logged in ({}) · {}",
+                    status.auth_mode.as_deref().unwrap_or("unknown"),
+                    status.active_model.as_deref().unwrap_or("default model")
+                ),
+            }),
+            Ok(_) => Ok(AiProviderTestResult {
+                connected: false,
+                status: "unavailable".to_string(),
+                message: "Not signed in. Use Sign in with ChatGPT.".to_string(),
+            }),
+            Err(error) => Ok(AiProviderTestResult {
+                connected: false,
+                status: "unavailable".to_string(),
+                message: error,
+            }),
+        };
+    }
+
     if provider.provider_type == "ollama" || provider.provider_type == "lm_studio" {
         let base_url = provider.base_url.as_deref().unwrap_or_default();
         let models = list_local_or_openai_compatible_models(provider, None).unwrap_or_default();
@@ -2214,6 +2238,14 @@ fn list_ai_models_native(
         });
     }
 
+    if provider.provider_type == "codex" {
+        let status = codex_status_native()?;
+        return Ok(AiModelListResult {
+            status: "codex".to_string(),
+            models: status.models,
+        });
+    }
+
     if provider.provider_type == "ollama" {
         return match list_local_or_openai_compatible_models(provider, None) {
             Ok(models) => Ok(AiModelListResult {
@@ -2259,6 +2291,31 @@ fn list_ai_models_native(
     }
 }
 
+fn generate_codex_text(provider: &AiProviderTestRequest, prompt: &str) -> Result<String, String> {
+    let model = generation_model(provider, "gpt-5.5");
+    let payload = serde_json::json!({ "prompt": prompt, "model": model }).to_string();
+    let id = timestamp_millis();
+    let payload_path = std::env::temp_dir().join(format!("kira-codex-gen-{id}.json"));
+    fs::write(&payload_path, &payload).map_err(|e| format!("Unable to write Codex payload: {e}"))?;
+
+    let output = run_codex_helper(
+        &[std::ffi::OsStr::new("generate"), payload_path.as_os_str()],
+        None,
+    );
+    let _ = fs::remove_file(&payload_path);
+    let output = output?;
+    if !output.status.success() {
+        return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
+    }
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout)
+        .map_err(|e| format!("Invalid Codex output: {e}"))?;
+    value
+        .get("content")
+        .and_then(|c| c.as_str())
+        .map(ToString::to_string)
+        .ok_or_else(|| "Codex returned no content".to_string())
+}
+
 fn generate_ai_text_native(
     provider_id: &str,
     provider: &AiProviderTestRequest,
@@ -2282,6 +2339,7 @@ fn generate_ai_text_native(
             let secret = read_secret_from_keychain(provider_id)?;
             generate_gemini_text(provider, &secret, clean_prompt)?
         }
+        "codex" => generate_codex_text(provider, clean_prompt)?,
         "openai" | "openrouter" | "lm_studio" | "custom_openai_compatible" => {
             let secret = if provider.provider_type == "lm_studio" {
                 read_secret_from_keychain(provider_id).ok()
@@ -4097,6 +4155,13 @@ mod tests {
         assert_eq!(status.auth_mode.as_deref(), Some("chatgpt"));
         assert_eq!(status.active_model.as_deref(), Some("gpt-5.5"));
         assert_eq!(status.models, vec!["gpt-5.5".to_string()]);
+    }
+
+    #[test]
+    fn generate_codex_text_extracts_content_field() {
+        let stdout = br#"{"content":"hello from codex","usage":null}"#;
+        let value: serde_json::Value = serde_json::from_slice(stdout).unwrap();
+        assert_eq!(value.get("content").and_then(|c| c.as_str()), Some("hello from codex"));
     }
 
     #[test]
