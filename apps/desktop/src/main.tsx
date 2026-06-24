@@ -5463,7 +5463,7 @@ function SettingsView({
                   </label>
                 </div>
 
-                {activeProvider.authMode === 'oauth' && (
+                {activeProvider.authMode === 'oauth' && activeProvider.type !== 'codex' && (
                   <div className="oauth-ready-note">
                     <strong>OAuth is for enterprise gateways only</strong>
                     <span>
