@@ -6048,3 +6048,8 @@ textarea {
     grid-template-columns: 1fr;
   }
 }
+
+.codex-login__actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.codex-login__device { display: flex; gap: 8px; align-items: center; font-size: 13px; }
+.codex-login__error { color: var(--danger, #d98779); font-size: 13px; }
+.codex-login__apikey { display: flex; gap: 8px; margin-top: 8px; }

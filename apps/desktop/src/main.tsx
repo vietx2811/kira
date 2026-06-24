@@ -5132,6 +5132,23 @@ function SecondaryRail({
   )
 }
 
+function CodexApiKeyField({ busy, onSubmit }: { busy: boolean; onSubmit: (key: string) => void }) {
+  const [value, setValue] = useState('')
+  return (
+    <div className="codex-login__apikey">
+      <input
+        type="password"
+        value={value}
+        placeholder="sk-..."
+        onChange={(e) => setValue(e.target.value)}
+      />
+      <button type="button" disabled={busy || value.trim().length === 0} onClick={() => onSubmit(value.trim())}>
+        Save key
+      </button>
+    </div>
+  )
+}
+
 function SettingsView({
   providers,
   taskRoutes,
@@ -5187,6 +5204,36 @@ function SettingsView({
   const selectedRemoteProvider = remoteProviders.find((provider) => provider.id === selectedProviderId) ?? remoteProviders[0]
   const activeProvider = providers.find((provider) => provider.id === activeProviderId) ?? providers[0]
   const [secretDrafts, setSecretDrafts] = useState<Record<string, string>>({})
+  const [codexLoginBusy, setCodexLoginBusy] = useState(false)
+  const [codexLoginEvent, setCodexLoginEvent] = useState<CodexLoginEvent | null>(null)
+
+  const activeProviderType = activeProvider?.type
+  const activeProviderId_ = activeProvider?.id
+
+  useEffect(() => {
+    if (activeProviderType !== 'codex') return
+    let unlisten: (() => void) | undefined
+    void onCodexLoginProgress((event) => setCodexLoginEvent(event)).then((u) => { unlisten = u })
+    return () => unlisten?.()
+  }, [activeProviderType])
+
+  // Reuse the existing Test-button handler (onProviderTest -> testAiProvider) to refresh provider status.
+  function refreshCodexStatus() {
+    if (activeProviderId_) onProviderTest(activeProviderId_)
+  }
+
+  async function startCodexLogin(method: 'chatgpt' | 'device' | 'api-key', apiKey?: string) {
+    setCodexLoginBusy(true)
+    setCodexLoginEvent(null)
+    try {
+      await requestCodexLogin(method, apiKey)
+      refreshCodexStatus()
+    } catch (error) {
+      setCodexLoginEvent({ type: 'error', message: error instanceof Error ? error.message : String(error) })
+    } finally {
+      setCodexLoginBusy(false)
+    }
+  }
   const [providerTypeDraft, setProviderTypeDraft] = useState<Exclude<AiProviderType, 'apple_foundation'>>('custom_openai_compatible')
   const taskKeys = Object.keys(aiTaskLabels) as AiTaskKind[]
   const connectedProviderCount = providers.filter((provider) => provider.status === 'connected').length
@@ -5427,7 +5474,40 @@ function SettingsView({
                   </div>
                 )}
 
-                {activeProvider.authMode !== 'local' && (
+                {activeProvider.type === 'codex' ? (
+                  <div className="codex-login">
+                    {activeProvider.status === 'connected' ? (
+                      <div className="codex-login__signed-in">
+                        <span>Signed in · {activeProvider.lastMessage ?? 'Codex ready'}</span>
+                        <button type="button" onClick={() => { void codexLogout().then(() => refreshCodexStatus()) }}>
+                          Sign out
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="codex-login__actions">
+                        <button type="button" disabled={codexLoginBusy} onClick={() => startCodexLogin('chatgpt')}>
+                          {codexLoginBusy ? 'Waiting for browser…' : 'Sign in with ChatGPT'}
+                        </button>
+                        <button type="button" disabled={codexLoginBusy} onClick={() => startCodexLogin('device')}>
+                          Use a sign-in code
+                        </button>
+                        <details>
+                          <summary>Use an API key</summary>
+                          <CodexApiKeyField busy={codexLoginBusy} onSubmit={(key) => startCodexLogin('api-key', key)} />
+                        </details>
+                        {codexLoginBusy && <button type="button" onClick={() => { void cancelCodexLogin() }}>Cancel</button>}
+                      </div>
+                    )}
+                    {codexLoginEvent?.type === 'device_code' && (
+                      <p className="codex-login__device">
+                        Open <a href={codexLoginEvent.verificationUrl} target="_blank" rel="noreferrer">{codexLoginEvent.verificationUrl}</a>{' '}
+                        and enter code <code>{codexLoginEvent.userCode}</code>
+                        <button type="button" onClick={() => navigator.clipboard.writeText(codexLoginEvent.userCode)}>Copy</button>
+                      </p>
+                    )}
+                    {codexLoginEvent?.type === 'error' && <p className="codex-login__error">{codexLoginEvent.message}</p>}
+                  </div>
+                ) : activeProvider.authMode !== 'local' ? (
                   <label>
                     <span>API key</span>
                     <input
@@ -5447,7 +5527,7 @@ function SettingsView({
                       ) : null
                     })()}
                   </label>
-                )}
+                ) : null}
 
                 <div className="provider-actions-row">
                   {activeProvider.authMode !== 'local' && (
