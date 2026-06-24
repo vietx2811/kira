@@ -421,6 +421,7 @@ type AiProviderType =
   | 'ollama'
   | 'lm_studio'
   | 'custom_openai_compatible'
+  | 'codex'
 type AiAuthMode = 'local' | 'api_key' | 'oauth' | 'openai_compatible'
 type AiProviderStatus = 'connected' | 'unavailable' | 'billing_separate' | 'key_missing'
 type AiRoutingMode = 'local_only' | 'prefer_local' | 'selected_remote'
@@ -891,6 +892,7 @@ const aiProviderTypeLabels: Record<AiProviderType, string> = {
   ollama: 'Ollama',
   lm_studio: 'LM Studio',
   custom_openai_compatible: 'OpenAI-compatible',
+  codex: 'Codex',
 }
 
 const aiProviderStatusLabels: Record<AiProviderStatus, string> = {
@@ -938,6 +940,14 @@ const providerConnectionNotes = [
     action: 'Check local runtime',
     href: '',
   },
+  {
+    id: 'codex',
+    title: 'Codex (ChatGPT login)',
+    providerId: 'codex',
+    truth: 'KIRA can sign you in with ChatGPT (or reuse an existing Codex login). Auth is owned by the Codex CLI; billing follows your ChatGPT/Codex plan.',
+    action: 'Sign in with ChatGPT',
+    href: '',
+  },
 ]
 
 // Where to mint a personal API key for the "bring your own key" flow, per provider type.
@@ -947,6 +957,8 @@ function aiProviderKeyHelp(type: AiProviderType): { href: string; label: string 
       return { href: 'https://platform.openai.com/api-keys', label: 'Get an OpenAI API key' }
     case 'anthropic':
       return { href: 'https://console.anthropic.com/settings/keys', label: 'Get an Anthropic API key' }
+    case 'codex':
+      return null
     default:
       return null
   }
@@ -1089,6 +1101,15 @@ const defaultAiProviderProfiles: AiProviderProfile[] = [
     status: 'unavailable',
     defaultFor: ['tag_reference', 'generate_node'],
   },
+  {
+    id: 'codex',
+    type: 'codex',
+    name: 'Codex CLI (ChatGPT login)',
+    authMode: 'oauth',
+    model: 'gpt-5.5',
+    status: 'unavailable',
+    defaultFor: ['generate_outline', 'generate_node', 'summarize_diagram'],
+  },
 ]
 
 const aiProviderTemplates: Record<Exclude<AiProviderType, 'apple_foundation'>, Omit<AiProviderProfile, 'id' | 'userManaged'>> = {
@@ -1154,6 +1175,14 @@ const aiProviderTemplates: Record<Exclude<AiProviderType, 'apple_foundation'>, O
     model: 'model-id',
     status: 'key_missing',
     defaultFor: ['generate_node'],
+  },
+  codex: {
+    type: 'codex',
+    name: 'Codex CLI (ChatGPT login)',
+    authMode: 'oauth',
+    model: 'gpt-5.5',
+    status: 'unavailable',
+    defaultFor: ['generate_outline', 'generate_node', 'summarize_diagram'],
   },
 }
 
