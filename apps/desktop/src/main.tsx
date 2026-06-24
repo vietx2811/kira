@@ -13728,6 +13728,28 @@ async function generateNativeAiText(provider: AiProviderProfile, prompt: string)
   return invoke<AiGenerationResult>('generate_ai_text', { provider: providerRequestPayload(provider), prompt })
 }
 
+type CodexLoginEvent =
+  | { type: 'oauth_url'; url: string }
+  | { type: 'device_code'; verificationUrl: string; userCode: string }
+  | { type: 'success' }
+  | { type: 'error'; message: string }
+
+function requestCodexLogin(method: 'chatgpt' | 'device' | 'api-key', apiKey?: string) {
+  return invoke<void>('codex_login', { method, apiKey })
+}
+
+function cancelCodexLogin() {
+  return invoke<void>('codex_cancel_login')
+}
+
+function codexLogout() {
+  return invoke<void>('codex_logout')
+}
+
+function onCodexLoginProgress(callback: (event: CodexLoginEvent) => void) {
+  return listen<CodexLoginEvent>('codex://login', (event) => callback(event.payload))
+}
+
 async function getNativeExtensionInstallStatus() {
   if (!isTauriRuntime()) return defaultExtensionInstallStatus()
   return invoke<ExtensionInstallStatus>('get_extension_install_status')
