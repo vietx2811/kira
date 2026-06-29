@@ -5149,10 +5149,10 @@ function CodexApiKeyField({ busy, onSubmit }: { busy: boolean; onSubmit: (key: s
       <input
         type="password"
         value={value}
-        placeholder="sk-..."
+        placeholder="sk-…"
         onChange={(e) => setValue(e.target.value)}
       />
-      <button type="button" disabled={busy || value.trim().length === 0} onClick={() => onSubmit(value.trim())}>
+      <button className="quiet-button" type="button" disabled={busy || value.trim().length === 0} onClick={() => onSubmit(value.trim())}>
         Save key
       </button>
     </div>
@@ -5485,41 +5485,53 @@ function SettingsView({
                 )}
 
                 {activeProvider.type === 'codex' ? (
-                  <div className="codex-login">
+                  <div className="codex-login" data-status={activeProvider.status === 'connected' ? 'connected' : 'signed-out'}>
                     {activeProvider.status === 'connected' ? (
                       <div className="codex-login__signed-in">
-                        <span>Signed in · {activeProvider.lastMessage ?? 'Codex ready'}</span>
-                        <button type="button" onClick={() => { void codexLogout().then(() => refreshCodexStatus()) }}>
+                        <span className="codex-login__status-dot" aria-hidden="true" />
+                        <span className="codex-login__status-text">{activeProvider.lastMessage ?? 'Signed in to Codex'}</span>
+                        <button className="quiet-button" type="button" onClick={() => { void codexLogout().then(() => refreshCodexStatus()) }}>
                           Sign out
                         </button>
                       </div>
                     ) : (
                       <div className="codex-login__actions">
-                        <button type="button" disabled={codexLoginBusy} onClick={() => startCodexLogin('chatgpt')}>
-                          {codexLoginBusy ? 'Waiting for browser…' : 'Sign in with ChatGPT'}
+                        <button className="primary-button is-wide" type="button" disabled={codexLoginBusy} onClick={() => startCodexLogin('chatgpt')}>
+                          {codexLoginBusy ? (
+                            <>
+                              <span className="codex-login__spinner" aria-hidden="true" />
+                              Waiting for browser…
+                            </>
+                          ) : (
+                            'Sign in with ChatGPT'
+                          )}
                         </button>
-                        <button type="button" disabled={codexLoginBusy} onClick={() => startCodexLogin('device')}>
-                          Use a sign-in code
-                        </button>
-                        <details>
-                          <summary>Use an API key</summary>
+                        <div className="codex-login__alt">
+                          <button className="quiet-button" type="button" disabled={codexLoginBusy} onClick={() => startCodexLogin('device')}>
+                            Use a sign-in code
+                          </button>
+                          {codexLoginBusy && (
+                            <button className="quiet-button" type="button" onClick={() => { void cancelCodexLogin() }}>Cancel</button>
+                          )}
+                        </div>
+                        <details className="codex-login__details">
+                          <summary>Use an API key instead</summary>
                           <CodexApiKeyField busy={codexLoginBusy} onSubmit={(key) => startCodexLogin('api-key', key)} />
                         </details>
-                        {codexLoginBusy && <button type="button" onClick={() => { void cancelCodexLogin() }}>Cancel</button>}
                       </div>
                     )}
                     {codexLoginEvent?.type === 'oauth_url' && (
-                      <p className="codex-login__device">
-                        Continue sign-in in your browser:{' '}
-                        <a href={codexLoginEvent.url} target="_blank" rel="noreferrer">{codexLoginEvent.url}</a>
+                      <p className="codex-login__hint">
+                        Browser didn’t open?{' '}
+                        <a href={codexLoginEvent.url} target="_blank" rel="noreferrer">Continue sign-in here</a>
                       </p>
                     )}
                     {codexLoginEvent?.type === 'device_code' && (
-                      <p className="codex-login__device">
-                        Open <a href={codexLoginEvent.verificationUrl} target="_blank" rel="noreferrer">{codexLoginEvent.verificationUrl}</a>{' '}
-                        and enter code <code>{codexLoginEvent.userCode}</code>
-                        <button type="button" onClick={() => navigator.clipboard.writeText(codexLoginEvent.userCode)}>Copy</button>
-                      </p>
+                      <div className="codex-login__device">
+                        <span>Open <a href={codexLoginEvent.verificationUrl} target="_blank" rel="noreferrer">{codexLoginEvent.verificationUrl}</a> and enter</span>
+                        <code>{codexLoginEvent.userCode}</code>
+                        <button className="quiet-button" type="button" onClick={() => { void navigator.clipboard.writeText(codexLoginEvent.userCode) }}>Copy</button>
+                      </div>
                     )}
                     {codexLoginEvent?.type === 'error' && <p className="codex-login__error">{codexLoginEvent.message}</p>}
                   </div>
