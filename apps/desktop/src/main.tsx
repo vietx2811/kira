@@ -1534,12 +1534,54 @@ function App() {
 
   useEffect(() => {
     if (!isTauriRuntime()) return
+    let cancelled = false
 
-    void openNativeProjectPackage().then((snapshot) => {
-      if (!snapshot) return
-      applyProjectSnapshot(snapshot)
-    })
+    function readLastProjectPath(): string | null {
+      try {
+        return window.localStorage.getItem('kira:lastProjectPath')
+      } catch {
+        return null
+      }
+    }
+
+    void (async () => {
+      const lastPath = readLastProjectPath()
+      if (lastPath) {
+        try {
+          const snapshot = await openNativeProjectPackage(lastPath)
+          if (cancelled) return
+          if (snapshot) {
+            applyProjectSnapshot(snapshot)
+            setProjectPackage({
+              path: lastPath,
+              manifestPath: `${lastPath}/manifest.json`,
+              sqlitePath: `${lastPath}/project.sqlite`,
+            })
+            return
+          }
+        } catch {
+          // last project is gone or unreadable; fall back to the default project
+        }
+      }
+      const snapshot = await openNativeProjectPackage()
+      if (!cancelled && snapshot) applyProjectSnapshot(snapshot)
+    })()
+
+    return () => {
+      cancelled = true
+    }
   }, [])
+
+  // Remember the most recently opened/saved project so the next launch reopens it.
+  useEffect(() => {
+    const path = projectPackage?.path
+    if (!path) return
+    try {
+      window.localStorage.setItem('kira:lastProjectPath', path)
+    } catch {
+      // ignore persistence failures (private mode, quota, etc.)
+    }
+  }, [projectPackage?.path])
 
   useEffect(() => {
     if (!isTauriRuntime()) return
@@ -11783,16 +11825,41 @@ function createGraph3DNodeObject(THREE: any, node: any, isSelected: boolean) {
   const height = width * (displayHeight / displayWidth)
   sprite.scale.set(width, height, 1)
 
-  if (node.kind === 'image' && typeof node.thumb === 'string' && node.thumb.startsWith('data:image/')) {
-    const image = new Image()
-    image.onload = () => {
-      drawGraph3DNodeCanvas(context, { width: displayWidth, height: displayHeight }, node, isSelected, image)
-      texture.needsUpdate = true
-    }
-    image.src = node.thumb
+  if (node.kind === 'image' && typeof node.thumb === 'string' && node.thumb.length > 0) {
+    void resolveThumbDataUrl(node.thumb).then((dataUrl) => {
+      if (!dataUrl) return
+      const image = new Image()
+      image.onload = () => {
+        drawGraph3DNodeCanvas(context, { width: displayWidth, height: displayHeight }, node, isSelected, image)
+        texture.needsUpdate = true
+      }
+      image.onerror = () => undefined
+      image.src = dataUrl
+    })
   }
 
   return sprite
+}
+
+/**
+ * Resolve any thumbnail URL (data:, blob:, asset://, http(s)) to a data URL so it can be drawn
+ * onto a canvas texture without tainting the WebGL context. Returns null if it can't be loaded.
+ */
+async function resolveThumbDataUrl(src: string): Promise<string | null> {
+  if (src.startsWith('data:')) return src
+  try {
+    const response = await fetch(src)
+    if (!response.ok) return null
+    const blob = await response.blob()
+    return await new Promise<string | null>((resolve) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : null)
+      reader.onerror = () => resolve(null)
+      reader.readAsDataURL(blob)
+    })
+  } catch {
+    return null
+  }
 }
 
 function drawGraph3DNodeCanvas(
