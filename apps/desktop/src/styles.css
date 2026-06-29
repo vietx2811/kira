@@ -6165,3 +6165,42 @@ textarea {
     transform: rotate(360deg);
   }
 }
+
+.settings-language {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.settings-language__hint {
+  margin: 0;
+  font-size: 0.74rem;
+  color: var(--text-muted);
+}
+.settings-language__toggle {
+  display: inline-flex;
+  padding: 3px;
+  gap: 3px;
+  border-radius: var(--radius-2);
+  background: var(--surface-inset);
+  width: fit-content;
+}
+.settings-language__toggle button {
+  height: 28px;
+  padding: 0 var(--space-3);
+  border: 0;
+  border-radius: var(--radius-1);
+  background: transparent;
+  color: var(--text-soft);
+  font-size: 0.76rem;
+  cursor: pointer;
+  transition:
+    background 160ms ease,
+    color 160ms ease;
+}
+.settings-language__toggle button:hover {
+  color: var(--text-main);
+}
+.settings-language__toggle button.is-active {
+  background: var(--glass-active);
+  color: var(--accent-strong);
+}

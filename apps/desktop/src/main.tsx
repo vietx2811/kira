@@ -501,6 +501,48 @@ const useCanvasHistoryStore = create<CanvasHistoryStore>()(
   ),
 )
 
+// ── Lightweight bilingual i18n (en / vi) ─────────────────────────────────────
+type Lang = 'en' | 'vi'
+
+const UI_STRINGS: Record<string, { en: string; vi: string }> = {
+  'lang.label': { en: 'Language', vi: 'Ngôn ngữ' },
+  'lang.hint': { en: 'Interface language for labels and panels.', vi: 'Ngôn ngữ hiển thị cho nhãn và bảng điều khiển.' },
+  'inspector.title': { en: 'Inspector', vi: 'Chi tiết' },
+  'inspector.name': { en: 'Name', vi: 'Tên' },
+  'inspector.description': { en: 'Description', vi: 'Mô tả' },
+  'inspector.author': { en: 'Author', vi: 'Tác giả' },
+  'inspector.kind': { en: 'Kind', vi: 'Loại' },
+  'inspector.styleNote': { en: 'Style note', vi: 'Ghi chú phong cách' },
+  'library.title': { en: 'Library', vi: 'Thư viện' },
+}
+
+function readStoredLang(): Lang {
+  try {
+    const stored = localStorage.getItem('kira:lang')
+    return stored === 'vi' || stored === 'en' ? stored : 'en'
+  } catch {
+    return 'en'
+  }
+}
+
+const useLangStore = create<{ lang: Lang; setLang: (lang: Lang) => void }>()((set) => ({
+  lang: readStoredLang(),
+  setLang: (lang) => {
+    try {
+      localStorage.setItem('kira:lang', lang)
+    } catch {
+      // ignore persistence failures (private mode, etc.)
+    }
+    set({ lang })
+  },
+}))
+
+/** Inline translated label. Subscribes to the language store so it re-renders on toggle. */
+function T({ k }: { k: string }): React.ReactElement {
+  const lang = useLangStore((state) => state.lang)
+  return <>{UI_STRINGS[k]?.[lang] ?? k}</>
+}
+
 const storageKey = 'kira.project.v2'
 const onboardingStorageKey = 'kira.onboarding.v1.completed'
 const inspectorLinkedListLimit = 8
@@ -5250,6 +5292,8 @@ function SettingsView({
   const storedSecretCount = providers.filter((provider) => provider.secretRef).length
   const billingSeparatedCount = remoteProviders.filter((provider) => provider.status === 'billing_separate').length
   const [activeSettingsTab, setActiveSettingsTab] = useState<'overview' | 'ai' | 'capture' | 'advanced'>('overview')
+  const lang = useLangStore((state) => state.lang)
+  const setLang = useLangStore((state) => state.setLang)
   const settingsTabs = [
     { id: 'overview' as const, label: 'Overview' },
     { id: 'ai' as const, label: 'AI' },
@@ -5641,6 +5685,34 @@ function SettingsView({
         <section className="settings-section settings-compact-disclosures">
           <details className="settings-panel settings-disclosure" open>
             <summary>
+              <h3><T k="lang.label" /></h3>
+              <span>{lang === 'vi' ? 'Tiếng Việt' : 'English'}</span>
+            </summary>
+            <div className="settings-language">
+              <p className="settings-language__hint"><T k="lang.hint" /></p>
+              <div className="settings-language__toggle" role="group" aria-label="Language">
+                <button
+                  type="button"
+                  className={lang === 'en' ? 'is-active' : ''}
+                  aria-pressed={lang === 'en'}
+                  onClick={() => setLang('en')}
+                >
+                  English
+                </button>
+                <button
+                  type="button"
+                  className={lang === 'vi' ? 'is-active' : ''}
+                  aria-pressed={lang === 'vi'}
+                  onClick={() => setLang('vi')}
+                >
+                  Tiếng Việt
+                </button>
+              </div>
+            </div>
+          </details>
+
+          <details className="settings-panel settings-disclosure" open>
+            <summary>
               <h3>Local</h3>
               <span>{localModelStatus}</span>
             </summary>
@@ -5903,7 +5975,7 @@ function EvidenceInbox({
     >
       <div className="panel-header">
         <div>
-          <p className="panel-kicker">Library</p>
+          <p className="panel-kicker"><T k="library.title" /></p>
           <h2>{panelMode === 'images' ? 'Images' : panelMode === 'ideas' ? 'Ideas' : 'Links'}</h2>
           <span className="panel-meta">
             {panelCounts[panelMode]} items · {unassigned.length} suggestions
@@ -8551,7 +8623,7 @@ function Inspector({
     <aside className="inspector panel">
       <div className="panel-header">
         <div>
-          <p className="panel-kicker">Inspector</p>
+          <p className="panel-kicker"><T k="inspector.title" /></p>
           <h2>{selected.heading}</h2>
         </div>
         <div className="panel-actions">
@@ -8590,28 +8662,28 @@ function Inspector({
       {selected.kind === 'project' && (
         <>
           <section className="inspector-card project-file-card">
-            <label className="field-label" htmlFor="project-title">Tên</label>
+            <label className="field-label" htmlFor="project-title"><T k="inspector.name" /></label>
             <input
               id="project-title"
               className="title-input"
               value={selected.project.title}
               onChange={(event) => onProjectMetadataChange({ title: event.target.value })}
             />
-            <label className="field-label" htmlFor="project-description">Des</label>
+            <label className="field-label" htmlFor="project-description"><T k="inspector.description" /></label>
             <textarea
               id="project-description"
               className="note-input"
               value={selected.project.description}
               onChange={(event) => onProjectMetadataChange({ description: event.target.value })}
             />
-            <label className="field-label" htmlFor="project-author">Tác giả</label>
+            <label className="field-label" htmlFor="project-author"><T k="inspector.author" /></label>
             <input
               id="project-author"
               className="title-input"
               value={selected.project.author}
               onChange={(event) => onProjectMetadataChange({ author: event.target.value })}
             />
-            <label className="field-label" htmlFor="project-kind">Kind</label>
+            <label className="field-label" htmlFor="project-kind"><T k="inspector.kind" /></label>
             <select
               id="project-kind"
               className="title-input"
@@ -8621,7 +8693,7 @@ function Inspector({
               <option value="moodboard">Moodboard</option>
               <option value="ideaboard">Ideaboard</option>
             </select>
-            <label className="field-label" htmlFor="project-style-note">Style Note</label>
+            <label className="field-label" htmlFor="project-style-note"><T k="inspector.styleNote" /></label>
             <textarea
               id="project-style-note"
               className="note-input"
