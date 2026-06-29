@@ -3990,23 +3990,23 @@ function App() {
           /* user can print manually */
         }
       }, 700)
-      setSlideshowStatus('Print dialog opened — choose “Save as PDF”')
+      setSlideshowStatus('Print dialog opened. Choose “Save as PDF”.')
       return
     }
     downloadTextFile(html, `${safeDownloadName(title) || 'kira-slides'}.html`, 'text/html')
-    setSlideshowStatus('Saved HTML — open it and print to PDF')
+    setSlideshowStatus('Saved HTML. Open it and print to PDF.')
   }
 
   async function exportSlidesToGoogleSlides(layoutMode: SlideLayoutMode = 'auto') {
     window.open('https://docs.google.com/presentation/u/0/create', '_blank', 'noopener,noreferrer')
     await exportSlideshowPptx(layoutMode)
-    setSlideshowStatus('PPTX ready — in Google Slides use File ▸ Import slides')
+    setSlideshowStatus('PPTX ready. In Google Slides use File ▸ Import slides.')
   }
 
   async function exportSlidesToCanva(layoutMode: SlideLayoutMode = 'auto') {
     window.open('https://www.canva.com/design?create&type=Presentation', '_blank', 'noopener,noreferrer')
     await exportSlideshowPptx(layoutMode)
-    setSlideshowStatus('PPTX ready — in Canva use Upload ▸ your .pptx file')
+    setSlideshowStatus('PPTX ready. In Canva use Upload ▸ your .pptx file.')
   }
 
   function toggleReferenceSelection(imageId: string) {
@@ -5521,7 +5521,7 @@ function SettingsView({
                   <div className="oauth-ready-note">
                     <strong>OAuth is for enterprise gateways only</strong>
                     <span>
-                      Claude Pro/Max and ChatGPT Plus subscriptions cannot be connected by OAuth — since
+                      Claude Pro/Max and ChatGPT Plus subscriptions cannot be connected by OAuth. Since
                       February 2026 Anthropic and OpenAI restrict subscription tokens to their own apps.
                       For Claude or OpenAI, switch this profile to <strong>API key</strong> and bring your own key.
                     </span>
@@ -6210,8 +6210,9 @@ function EvidenceInbox({
           </div>
         ) : (
           <div className="empty-state">
-            <strong>No references</strong>
-            <button type="button" onClick={() => importInput.current?.click()}>
+            <strong>No references yet</strong>
+            <span>Drag in images, paste a URL, or import a folder to start your moodboard.</span>
+            <button className="primary-button" type="button" onClick={() => importInput.current?.click()}>
               Import images
             </button>
           </div>
@@ -7920,7 +7921,7 @@ function SlideshowView({
   const [isCustomizing, setIsCustomizing] = useState(false)
 
   const baseSlides = useMemo(() => buildSlideLayouts(ideas, images, links, palettes, diagrams), [diagrams, ideas, images, links, palettes])
-  // Slides with deck-wide layout mode + per-slide overrides, but NOT filtered/reordered — used by the customization editor.
+  // Slides with deck-wide layout mode + per-slide overrides, but NOT filtered/reordered; used by the customization editor.
   const allSlides = useMemo(() => {
     const moded = applySlideLayoutMode(baseSlides, layoutMode)
     return applySlidesConfig(moded, { ...slidesConfig, customizations: stripHidden(slidesConfig.customizations), order: [] })
@@ -8117,7 +8118,7 @@ function SlideshowView({
                 <div className="slide-export-popover" role="menu">
                   <button type="button" role="menuitem" onClick={() => { setExportMenuOpen(false); onExportPptx(layoutMode) }}>
                     <FileText size={14} />
-                    <span><strong>PowerPoint</strong><small>.pptx — opens in PowerPoint, Keynote</small></span>
+                    <span><strong>PowerPoint</strong><small>.pptx, opens in PowerPoint, Keynote</small></span>
                   </button>
                   <button type="button" role="menuitem" onClick={() => { setExportMenuOpen(false); onExportPdf(layoutMode) }}>
                     <FileText size={14} />
