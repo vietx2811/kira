@@ -1236,6 +1236,14 @@ function defaultAiSettingsSnapshot(): AiSettingsSnapshot {
   }
 }
 
+// Projects saved before a provider existed (e.g. Codex) won't list it. Append any built-in
+// provider missing from the loaded settings so new providers always surface in AI settings.
+function withDefaultAiProviders(providers: AiProviderProfile[]): AiProviderProfile[] {
+  const existingIds = new Set(providers.map((provider) => provider.id))
+  const missing = defaultAiProviderProfiles.filter((provider) => !existingIds.has(provider.id))
+  return missing.length > 0 ? [...providers, ...missing] : providers
+}
+
 const projectAccentPresets: Array<{ id: ProjectAccentPreset; label: string; color: string }> = [
   { id: 'cyan', label: 'Cyan', color: '#84cdbc' },
   { id: 'amber', label: 'Amber', color: '#dfae67' },
@@ -1347,7 +1355,7 @@ function App() {
   const [ocrStatusByImageId, setOcrStatusByImageId] = useState<Record<string, string>>({})
   const [localModelAvailable, setLocalModelAvailable] = useState(false)
   const [localModelStatus, setLocalModelStatus] = useState('Not checked')
-  const [aiProviders, setAiProviders] = useState<AiProviderProfile[]>(initialProject.aiSettings.providers)
+  const [aiProviders, setAiProviders] = useState<AiProviderProfile[]>(withDefaultAiProviders(initialProject.aiSettings.providers))
   const [aiRoutingMode, setAiRoutingMode] = useState<AiRoutingMode>(initialProject.aiSettings.routingMode)
   const [selectedAiProviderId, setSelectedAiProviderId] = useState(initialProject.aiSettings.selectedProviderId)
   const [activeAiProviderId, setActiveAiProviderId] = useState(initialProject.aiSettings.selectedProviderId)
@@ -1808,7 +1816,7 @@ function App() {
     setLinks(snapshot.links)
     setOutlineDrafts(snapshot.outlineDrafts)
     setSlidesConfig(normalizeSlidesConfig(snapshot.slidesConfig))
-    setAiProviders(snapshot.aiSettings.providers)
+    setAiProviders(withDefaultAiProviders(snapshot.aiSettings.providers))
     setAiRoutingMode(snapshot.aiSettings.routingMode)
     setSelectedAiProviderId(snapshot.aiSettings.selectedProviderId)
     setActiveAiProviderId(snapshot.aiSettings.selectedProviderId)
