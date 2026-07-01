@@ -14,8 +14,33 @@ function argsFor(method: LoginMethod): string[] {
   switch (method) {
     case "chatgpt": return ["login"]
     case "device": return ["login", "--device-auth"]
-    case "api-key": return ["login", "--api-key"]
+    case "api-key": return ["login", "--with-api-key"]
   }
+}
+
+/** Drain a stream line-by-line, invoking onLine per line, and return the full accumulated text. */
+async function pumpStream(
+  stream: ReadableStream<Uint8Array>,
+  onLine: (line: string) => void,
+): Promise<string> {
+  const reader = stream.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ""
+  let full = ""
+  for (;;) {
+    const { value, done } = await reader.read()
+    if (done) break
+    const chunk = decoder.decode(value, { stream: true })
+    full += chunk
+    buffer += chunk
+    let nl: number
+    while ((nl = buffer.indexOf("\n")) >= 0) {
+      onLine(buffer.slice(0, nl))
+      buffer = buffer.slice(nl + 1)
+    }
+  }
+  if (buffer.trim().length > 0) onLine(buffer)
+  return full
 }
 
 function parseLine(line: string): LoginEvent | null {
@@ -52,35 +77,31 @@ export async function loginEvents(
   }
 
   let sawSuccess = false
-  const reader = proc.stdout.getReader()
-  const decoder = new TextDecoder()
-  let buffer = ""
-  for (;;) {
-    const { value, done } = await reader.read()
-    if (done) break
-    buffer += decoder.decode(value, { stream: true })
-    let nl: number
-    while ((nl = buffer.indexOf("\n")) >= 0) {
-      const line = buffer.slice(0, nl)
-      buffer = buffer.slice(nl + 1)
-      const event = parseLine(line)
-      if (event) {
-        if (event.type === "success") sawSuccess = true
-        emit(event)
-      }
-    }
-  }
-  const tail = buffer.trim()
-  if (tail.length > 0) {
-    const event = parseLine(tail)
+  const handleLine = (line: string) => {
+    const event = parseLine(line)
     if (event) {
       if (event.type === "success") sawSuccess = true
       emit(event)
     }
   }
+
+  // The Codex CLI prints its login prompt, OAuth URL, device code, and status to STDERR
+  // (stdout stays empty), so both streams must be parsed for progress events.
+  const [, stderrText] = await Promise.all([
+    pumpStream(proc.stdout, handleLine),
+    pumpStream(proc.stderr, handleLine),
+  ])
+
   const code = await proc.exited
   if (code === 0 && !sawSuccess) emit({ type: "success" })
-  if (code !== 0) emit({ type: "error", message: (await new Response(proc.stderr).text()).trim() || `codex exited ${code}` })
+  if (code !== 0) {
+    const lastLine = stderrText
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0)
+      .pop()
+    emit({ type: "error", message: lastLine || `codex exited ${code}` })
+  }
   return code
 }
 
