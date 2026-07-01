@@ -5609,12 +5609,32 @@ function SettingsView({
                     {codexLoginEvent?.type === 'oauth_url' && (
                       <p className="codex-login__hint">
                         Browser didn’t open?{' '}
-                        <a href={codexLoginEvent.url} target="_blank" rel="noreferrer">Continue sign-in here</a>
+                        <a
+                          href={codexLoginEvent.url}
+                          onClick={(event) => {
+                            event.preventDefault()
+                            window.open(codexLoginEvent.url, '_blank', 'noopener,noreferrer')
+                          }}
+                        >
+                          Continue sign-in here
+                        </a>
                       </p>
                     )}
                     {codexLoginEvent?.type === 'device_code' && (
                       <div className="codex-login__device">
-                        <span>Open <a href={codexLoginEvent.verificationUrl} target="_blank" rel="noreferrer">{codexLoginEvent.verificationUrl}</a> and enter</span>
+                        <span>
+                          Open{' '}
+                          <a
+                            href={codexLoginEvent.verificationUrl}
+                            onClick={(event) => {
+                              event.preventDefault()
+                              window.open(codexLoginEvent.verificationUrl, '_blank', 'noopener,noreferrer')
+                            }}
+                          >
+                            {codexLoginEvent.verificationUrl}
+                          </a>{' '}
+                          and enter
+                        </span>
                         <code>{codexLoginEvent.userCode}</code>
                         <button className="quiet-button" type="button" onClick={() => { void navigator.clipboard.writeText(codexLoginEvent.userCode) }}>Copy</button>
                       </div>
