@@ -2298,6 +2298,50 @@ p {
   transform: translate(-50%, -50%);
 }
 
+.canvas-zero-restore {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 13px 16px;
+  border: 1px solid color-mix(in srgb, var(--accent-cyan), transparent 62%);
+  border-radius: var(--radius-3);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--accent-cyan), transparent 88%), transparent),
+    var(--glass-active);
+  color: var(--text-main);
+  cursor: pointer;
+  text-align: left;
+  transition:
+    border-color 160ms ease,
+    transform 160ms ease;
+}
+.canvas-zero-restore:hover {
+  border-color: color-mix(in srgb, var(--accent-cyan), transparent 44%);
+  transform: translateY(-1px);
+}
+.canvas-zero-restore svg {
+  color: var(--accent-strong);
+  flex: none;
+}
+.canvas-zero-restore-text {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.canvas-zero-restore-text strong {
+  color: var(--text-main);
+  font-size: 0.88rem;
+}
+.canvas-zero-restore-text small {
+  overflow: hidden;
+  color: var(--text-soft);
+  font-size: 0.74rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .canvas-zero-heading {
   display: grid;
   gap: 8px;

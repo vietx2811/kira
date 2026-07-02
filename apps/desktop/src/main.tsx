@@ -25,6 +25,7 @@ import {
   FilePlus2,
   FolderOpen,
   GitBranch,
+  History,
   Image as ImageIcon,
   ImagePlus,
   Inspect,
@@ -1335,6 +1336,7 @@ function App() {
   const [slidesConfig, setSlidesConfig] = useState<SlidesConfig>(() => normalizeSlidesConfig(initialProject.slidesConfig))
   const [lastSavedHash, setLastSavedHash] = useState(() => JSON.stringify(initialProject))
   const [projectPackage, setProjectPackage] = useState<ProjectPackageInfo | null>(null)
+  const [restorableSession, setRestorableSession] = useState<{ path: string | null; label: string; snapshot: ProjectSnapshot } | null>(null)
   const [selection, setSelection] = useState<Selection>({ type: 'project' })
   const [activeView, setActiveView] = useState<ActiveView>('Canvas')
   const [searchQuery, setSearchQuery] = useState('')
@@ -1541,6 +1543,11 @@ function App() {
     }
   }
 
+  // The app always starts at zero-state (see readProjectSnapshot). This effect only PREFETCHES
+  // any restorable session in the background — an explicit last-opened project path, or (for
+  // users from before that path was tracked) the legacy default project directory — and offers
+  // it as a "Continue last session" action on the zero-state canvas. Nothing is applied to live
+  // state until the user clicks restore.
   useEffect(() => {
     if (!isTauriRuntime()) return
     let cancelled = false
@@ -1553,33 +1560,50 @@ function App() {
       }
     }
 
+    function hasRestorableContent(snapshot: ProjectSnapshot): boolean {
+      return (
+        snapshot.ideas.length > 0 ||
+        snapshot.images.length > 0 ||
+        snapshot.palettes.length > 0 ||
+        snapshot.diagrams.length > 0 ||
+        snapshot.placeholders.length > 0
+      )
+    }
+
     void (async () => {
       const lastPath = readLastProjectPath()
-      if (lastPath) {
-        try {
-          const snapshot = await openNativeProjectPackage(lastPath)
-          if (cancelled) return
-          if (snapshot) {
-            applyProjectSnapshot(snapshot)
-            setProjectPackage({
-              path: lastPath,
-              manifestPath: `${lastPath}/manifest.json`,
-              sqlitePath: `${lastPath}/project.sqlite`,
-            })
-            return
-          }
-        } catch {
-          // last project is gone or unreadable; fall back to the default project
-        }
+      try {
+        const snapshot = await openNativeProjectPackage(lastPath ?? undefined)
+        if (cancelled || !snapshot || !hasRestorableContent(snapshot)) return
+        setRestorableSession({
+          path: lastPath,
+          label: snapshot.project.title.trim() || 'your last session',
+          snapshot,
+        })
+      } catch {
+        // last project is gone or unreadable; stay at zero-state with no restore offer
       }
-      const snapshot = await openNativeProjectPackage()
-      if (!cancelled && snapshot) applyProjectSnapshot(snapshot)
     })()
 
     return () => {
       cancelled = true
     }
   }, [])
+
+  function restoreLastSession() {
+    if (!restorableSession) return
+    applyProjectSnapshot(restorableSession.snapshot)
+    setProjectPackage(
+      restorableSession.path
+        ? {
+            path: restorableSession.path,
+            manifestPath: `${restorableSession.path}/manifest.json`,
+            sqlitePath: `${restorableSession.path}/project.sqlite`,
+          }
+        : null,
+    )
+    setRestorableSession(null)
+  }
 
   // Remember the most recently opened/saved project so the next launch reopens it.
   useEffect(() => {
@@ -4552,6 +4576,8 @@ function App() {
                 onNodesImportanceChange={changeSelectedNodesImportance}
                 onDeleteNodes={deleteSelectedGraphNodes}
                 onOrganize={organizeCanvas}
+                restorableSessionLabel={restorableSession?.label ?? null}
+                onRestoreSession={restoreLastSession}
               />
             )}
           </div>
@@ -6288,6 +6314,8 @@ function GraphCanvas({
   onNodesImportanceChange,
   onDeleteNodes,
   onOrganize,
+  restorableSessionLabel,
+  onRestoreSession,
 }: {
   ideas: Idea[]
   images: EvidenceImage[]
@@ -6319,6 +6347,8 @@ function GraphCanvas({
   onNodesImportanceChange: (nodes: CanvasNodeSelection[], delta: number) => void
   onDeleteNodes: (nodes: CanvasNodeSelection[]) => void
   onOrganize: (mode: GraphOrganizeMode) => void
+  restorableSessionLabel: string | null
+  onRestoreSession: () => void
 }) {
   const canvasRef = useRef<HTMLDivElement>(null)
   const draggingNodeRef = useRef<{
@@ -6859,6 +6889,16 @@ function GraphCanvas({
         </div>
         {graphMetrics.totalNodes === 0 && (
           <section className="canvas-zero-state" aria-label="Start a KIRA project">
+            {restorableSessionLabel && (
+              <button type="button" className="canvas-zero-restore" onClick={onRestoreSession}>
+                <History size={15} aria-hidden="true" />
+                <span className="canvas-zero-restore-text">
+                  <strong>Continue where you left off</strong>
+                  <small>{restorableSessionLabel}</small>
+                </span>
+                <ChevronRight size={15} aria-hidden="true" />
+              </button>
+            )}
             <div className="canvas-zero-heading">
               <span><Sparkles size={14} /> Start board</span>
               <h2>Choose a template or generate starter nodes</h2>
@@ -13538,6 +13578,11 @@ function benchmarkThumb(index: number) {
 
 function readProjectSnapshot(): ProjectSnapshot {
   if (typeof window === 'undefined') return toProjectSnapshot(ideasSeed, imagesSeed, linksSeed)
+
+  // The desktop app always starts from zero-state; any previous session (native project file
+  // or leftover browser-mode cache) is offered as an explicit "Continue last session" action
+  // instead of being auto-loaded. See the startup effect in App() and canvas-zero-state.
+  if (isTauriRuntime()) return toProjectSnapshot([], [], [])
 
   try {
     const stored = window.localStorage.getItem(storageKey)
