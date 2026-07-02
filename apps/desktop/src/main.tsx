@@ -1360,6 +1360,7 @@ function App() {
   const [selectedAiProviderId, setSelectedAiProviderId] = useState(initialProject.aiSettings.selectedProviderId)
   const [activeAiProviderId, setActiveAiProviderId] = useState(initialProject.aiSettings.selectedProviderId)
   const [aiSettingsStatus, setAiSettingsStatus] = useState('Local-first routing is active')
+  const [settingsFocusNonce, setSettingsFocusNonce] = useState(0)
   const [isOnboardingOpen, setIsOnboardingOpen] = useState(() => !readOnboardingCompleted())
   const [extensionInstallStatus, setExtensionInstallStatus] = useState<ExtensionInstallStatus>(() => defaultExtensionInstallStatus())
   const [modelRunningImageId, setModelRunningImageId] = useState<string | null>(null)
@@ -2964,6 +2965,7 @@ function App() {
     setActiveView('Settings')
     setActiveAiProviderId(providerId)
     if (providerId !== 'apple-foundation') setSelectedAiProviderId(providerId)
+    setSettingsFocusNonce((nonce) => nonce + 1)
   }
 
   async function handleExtensionInstallAction(targetId: string) {
@@ -4497,6 +4499,7 @@ function App() {
                 routingMode={aiRoutingMode}
                 selectedProviderId={selectedAiProviderId}
                 activeProviderId={activeAiProviderId}
+                focusNonce={settingsFocusNonce}
                 localModelAvailable={localModelAvailable}
                 localModelStatus={localModelStatus}
                 extensionInstallStatus={extensionInstallStatus}
@@ -4859,142 +4862,34 @@ function OnboardingOverlay({
         </div>
 
         <div className="onboarding-steps">
-          <section className="onboarding-step-card onboarding-step-card--primary">
-            <div className="onboarding-step-head">
-              <span className="onboarding-step-icon">🧠</span>
-              <div>
+          <button type="button" className="onboarding-primary-cta" onClick={() => { onWelcomeOpen(); onClose() }}>
+            <span className="onboarding-step-icon">🌱</span>
+            <span className="onboarding-cta-body">
+              <strong>Open the guided board</strong>
+              <small>Learn the canvas by moving through a small editable example</small>
+            </span>
+            <ChevronRight size={18} aria-hidden="true" />
+          </button>
+
+          <div className="onboarding-secondary">
+            <span className="onboarding-secondary-label">Optional, set up anytime</span>
+            <button type="button" className="onboarding-link-row" onClick={() => { onProviderFocus('codex'); onClose() }}>
+              <Bot size={15} aria-hidden="true" />
+              <span className="onboarding-link-text">
                 <strong>Connect AI</strong>
-                <small>Bring your own OpenAI or Claude API key</small>
-              </div>
-              <button className="quiet-button" type="button" onClick={() => onProviderFocus('openai')}>
-                Settings
-              </button>
-            </div>
-            <p>Use OpenAI or Claude when you need AI help.</p>
-
-            <details className="onboarding-detail">
-              <summary>API keys</summary>
-              <div className="onboarding-provider-list">
-                {primaryProviderNotes.map((note) => {
-                const provider = providers.find((candidate) => candidate.id === note.providerId)
-                const secretDraft = secretDrafts[note.providerId] ?? ''
-                return (
-                  <article className="onboarding-provider-card" key={note.id}>
-                    <div>
-                      <strong>{note.title}</strong>
-                      <small>{provider ? aiProviderStatusLabels[provider.status] : localModelAvailable ? 'available' : 'unavailable'}</small>
-                    </div>
-                    <p>{note.truth}</p>
-                    {provider && provider.authMode !== 'local' && (
-                      <label>
-                        <span>{note.action}</span>
-                        <input
-                          type="password"
-                          value={secretDraft}
-                          placeholder={provider.secretRef ? 'Stored in Keychain' : 'API key'}
-                          onChange={(event) => setSecretDrafts((current) => ({ ...current, [note.providerId]: event.target.value }))}
-                        />
-                      </label>
-                    )}
-                    <div className="onboarding-action-row">
-                      {provider && provider.authMode !== 'local' && (
-                        <>
-                          <button
-                            className="primary-button"
-                            type="button"
-                            onClick={() => {
-                              onProviderSecretSave(note.providerId, secretDraft)
-                              setSecretDrafts((current) => ({ ...current, [note.providerId]: '' }))
-                            }}
-                          >
-                            Save key
-                          </button>
-                          <button className="quiet-button" type="button" onClick={() => onProviderTest(note.providerId)}>
-                            Test
-                          </button>
-                        </>
-                      )}
-                      {provider?.authMode === 'local' && (
-                        <button className="primary-button" type="button" onClick={onLocalCheck}>
-                          Check local
-                        </button>
-                      )}
-                      <button className="quiet-button" type="button" onClick={() => onProviderFocus(note.providerId)}>
-                        Settings
-                      </button>
-                      {note.href && (
-                        <button className="icon-button" type="button" aria-label={`Open ${note.title} key page`} onClick={() => window.open(note.href, '_blank', 'noopener,noreferrer')}>
-                          <ExternalLink size={14} />
-                        </button>
-                      )}
-                    </div>
-                  </article>
-                )
-                })}
-              </div>
-            </details>
-
-            {localProviderNote && (
-              <details className="onboarding-detail onboarding-detail--quiet">
-                <summary>Local fallback</summary>
-                <div className="onboarding-mini-row">
-                  <span>{localModelAvailable ? 'Available' : 'Not detected'}</span>
-                  <small>{localModelStatus}</small>
-                  <button className="quiet-button" type="button" onClick={onLocalCheck}>
-                    Check
-                  </button>
-                </div>
-              </details>
-            )}
-          </section>
-
-          <section className="onboarding-step-card">
-            <div className="onboarding-step-head">
-              <span className="onboarding-step-icon">📎</span>
-              <div>
+                <small>Sign in with ChatGPT, or add an OpenAI / Claude key</small>
+              </span>
+              <ChevronRight size={15} aria-hidden="true" />
+            </button>
+            <button type="button" className="onboarding-link-row" onClick={() => { onExtensionRefresh(); onClose() }}>
+              <Sparkles size={15} aria-hidden="true" />
+              <span className="onboarding-link-text">
                 <strong>Capture from browser</strong>
-                <small>Chrome or Safari helper</small>
-              </div>
-              <button className="icon-button" type="button" aria-label="Refresh extension status" onClick={onExtensionRefresh}>
-                <LocateFixed size={13} />
-              </button>
-            </div>
-            <p>Save images, links, and text from the web.</p>
-            <details className="onboarding-detail">
-              <summary>Install helpers</summary>
-              <div className="extension-install-list">
-                {extensionInstallTargets.map((target) => (
-                  <article className="extension-install-card" key={target.id}>
-                    <div>
-                      <strong>{target.title}</strong>
-                      <small>{extensionStatusForTarget(extensionInstallStatus, target.id).installed ? 'installed' : target.status}</small>
-                    </div>
-                    <p>{target.instruction}</p>
-                    <code>{extensionStatusForTarget(extensionInstallStatus, target.id).detail}</code>
-                    <div className="extension-card-actions">
-                      <button className="quiet-button" type="button" onClick={() => onExtensionAction(target.installActionId)}>
-                        {target.primary}
-                      </button>
-                      <button className="quiet-button" type="button" onClick={() => onExtensionAction(target.settingsActionId)}>
-                        {target.secondary}
-                      </button>
-                    </div>
-                  </article>
-                ))}
-              </div>
-            </details>
-          </section>
-
-          <section className="onboarding-step-card onboarding-start-card">
-            <div className="onboarding-step-head">
-              <span className="onboarding-step-icon">🌱</span>
-              <div>
-                <strong>Open the guided board</strong>
-                <small>Learn the canvas by moving through it</small>
-              </div>
-            </div>
-            <p>Open a small editable example instead of a blank canvas.</p>
-          </section>
+                <small>Save images, links, and text from the web</small>
+              </span>
+              <ChevronRight size={15} aria-hidden="true" />
+            </button>
+          </div>
         </div>
 
         <footer className="onboarding-footer">
@@ -5257,6 +5152,7 @@ function SettingsView({
   routingMode,
   selectedProviderId,
   activeProviderId,
+  focusNonce,
   localModelAvailable,
   localModelStatus,
   extensionInstallStatus,
@@ -5282,6 +5178,7 @@ function SettingsView({
   routingMode: AiRoutingMode
   selectedProviderId: string
   activeProviderId: string
+  focusNonce: number
   localModelAvailable: boolean
   localModelStatus: string
   extensionInstallStatus: ExtensionInstallStatus
@@ -5342,6 +5239,10 @@ function SettingsView({
   const storedSecretCount = providers.filter((provider) => provider.secretRef).length
   const billingSeparatedCount = remoteProviders.filter((provider) => provider.status === 'billing_separate').length
   const [activeSettingsTab, setActiveSettingsTab] = useState<'overview' | 'ai' | 'capture' | 'advanced'>('overview')
+  // When a provider is focused from elsewhere (onboarding, logged-out prompt), jump to the AI tab.
+  useEffect(() => {
+    if (focusNonce > 0) setActiveSettingsTab('ai')
+  }, [focusNonce])
   const lang = useLangStore((state) => state.lang)
   const setLang = useLangStore((state) => state.setLang)
   const settingsTabs = [
@@ -5527,28 +5428,32 @@ function SettingsView({
                       disabled={activeProvider.authMode === 'local'}
                     />
                   </label>
-                  <label>
-                    <span>Auth mode</span>
-                    <select
-                      value={activeProvider.authMode}
-                      onChange={(event) => onProviderChange(activeProvider.id, { authMode: event.target.value as AiAuthMode })}
-                      disabled={activeProvider.authMode === 'local'}
-                    >
-                      <option value="local">local</option>
-                      <option value="api_key">api_key</option>
-                      <option value="oauth">oauth</option>
-                      <option value="openai_compatible">openai_compatible</option>
-                    </select>
-                  </label>
-                  <label>
-                    <span>Base URL</span>
-                    <input
-                      value={activeProvider.baseUrl ?? ''}
-                      placeholder={activeProvider.authMode === 'local' ? 'local runtime' : 'https://api.example.com/v1'}
-                      onChange={(event) => onProviderChange(activeProvider.id, { baseUrl: event.target.value })}
-                      disabled={activeProvider.authMode === 'local'}
-                    />
-                  </label>
+                  {activeProvider.type !== 'codex' && (
+                    <>
+                      <label>
+                        <span>Auth mode</span>
+                        <select
+                          value={activeProvider.authMode}
+                          onChange={(event) => onProviderChange(activeProvider.id, { authMode: event.target.value as AiAuthMode })}
+                          disabled={activeProvider.authMode === 'local'}
+                        >
+                          <option value="local">local</option>
+                          <option value="api_key">api_key</option>
+                          <option value="oauth">oauth</option>
+                          <option value="openai_compatible">openai_compatible</option>
+                        </select>
+                      </label>
+                      <label>
+                        <span>Base URL</span>
+                        <input
+                          value={activeProvider.baseUrl ?? ''}
+                          placeholder={activeProvider.authMode === 'local' ? 'local runtime' : 'https://api.example.com/v1'}
+                          onChange={(event) => onProviderChange(activeProvider.id, { baseUrl: event.target.value })}
+                          disabled={activeProvider.authMode === 'local'}
+                        />
+                      </label>
+                    </>
+                  )}
                   <label>
                     <span>Model</span>
                     {activeProvider.discoveredModels && activeProvider.discoveredModels.length > 0 ? (
@@ -5672,7 +5577,7 @@ function SettingsView({
                 ) : null}
 
                 <div className="provider-actions-row">
-                  {activeProvider.authMode !== 'local' && (
+                  {activeProvider.authMode !== 'local' && activeProvider.type !== 'codex' && (
                     <>
                       <button
                         className="quiet-button provider-test-button"
@@ -5695,11 +5600,6 @@ function SettingsView({
                   <button className="quiet-button provider-test-button" type="button" onClick={() => onProviderModelsList(activeProvider.id)}>
                     Models
                   </button>
-                  {activeProvider.authMode === 'oauth' && (
-                    <button className="quiet-button provider-test-button" type="button" disabled>
-                      Connect OAuth
-                    </button>
-                  )}
                   {activeProvider.authMode !== 'local' && (
                     <button className="danger-inline-button" type="button" onClick={() => onProviderDelete(activeProvider.id)}>
                       Delete profile
