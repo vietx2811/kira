@@ -2034,7 +2034,20 @@ fn codex_login(
 
     let mut child = command.spawn().map_err(|e| format!("Unable to start login: {e}"))?;
     let stdout = child.stdout.take().ok_or_else(|| "no stdout".to_string())?;
+    let stderr = child.stderr.take().ok_or_else(|| "no stderr".to_string())?;
     *state.child.lock().unwrap() = Some(child);
+
+    // Drain stderr on a background thread WHILE we stream stdout below. A piped stderr that
+    // nobody reads fills its OS pipe buffer once the child writes enough to it; the child then
+    // blocks on write() forever and the login appears to hang indefinitely. (run_codex_helper
+    // avoids this by using wait_with_output(), which drains both streams internally, but this
+    // command can't use that helper since it needs to stream stdout live as NDJSON events.)
+    let stderr_handle = std::thread::spawn(move || {
+        use std::io::Read;
+        let mut text = String::new();
+        let _ = BufReader::new(stderr).read_to_string(&mut text);
+        text
+    });
 
     // Forward each NDJSON line to the webview.
     let reader = BufReader::new(stdout);
@@ -2049,6 +2062,8 @@ fn codex_login(
             let _ = app.emit("codex://login", value);
         }
     }
+
+    let stderr_text = stderr_handle.join().unwrap_or_default();
 
     // The child consumed the payload at startup; once stdout hits EOF it is no
     // longer needed. Remove it here so every post-spawn return path (including
@@ -2065,7 +2080,19 @@ fn codex_login(
         }
     };
 
-    if status.success() { Ok(()) } else { Err(last_error.unwrap_or_else(|| "Login failed".to_string())) }
+    if status.success() {
+        Ok(())
+    } else {
+        Err(last_error.unwrap_or_else(|| {
+            stderr_text
+                .lines()
+                .rev()
+                .map(str::trim)
+                .find(|line| !line.is_empty())
+                .map(ToString::to_string)
+                .unwrap_or_else(|| "Login failed".to_string())
+        }))
+    }
 }
 
 #[tauri::command]

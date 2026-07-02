@@ -5231,6 +5231,8 @@ function SettingsView({
   const [secretDrafts, setSecretDrafts] = useState<Record<string, string>>({})
   const [codexLoginBusy, setCodexLoginBusy] = useState(false)
   const [codexLoginEvent, setCodexLoginEvent] = useState<CodexLoginEvent | null>(null)
+  const [codexLoginSlow, setCodexLoginSlow] = useState(false)
+  const codexAutoOpenedUrlRef = useRef<string | null>(null)
 
   const activeProviderType = activeProvider?.type
   const activeProviderId_ = activeProvider?.id
@@ -5238,9 +5240,30 @@ function SettingsView({
   useEffect(() => {
     if (activeProviderType !== 'codex') return
     let unlisten: (() => void) | undefined
-    void onCodexLoginProgress((event) => setCodexLoginEvent(event)).then((u) => { unlisten = u })
+    void onCodexLoginProgress((event) => {
+      setCodexLoginEvent(event)
+      // The bundled codex binary is spawned headlessly (no TTY), so its own browser-open
+      // attempt isn't reliable. Open the sign-in URL ourselves the moment it arrives, instead
+      // of leaving the user staring at a spinner with only a small fallback link to notice.
+      const urlToOpen = event.type === 'oauth_url' ? event.url : event.type === 'device_code' ? event.verificationUrl : null
+      if (urlToOpen && codexAutoOpenedUrlRef.current !== urlToOpen) {
+        codexAutoOpenedUrlRef.current = urlToOpen
+        window.open(urlToOpen, '_blank', 'noopener,noreferrer')
+      }
+    }).then((u) => { unlisten = u })
     return () => unlisten?.()
   }, [activeProviderType])
+
+  // If the login flow stays busy with no resolution for a while, surface a reassurance/escape
+  // hatch instead of leaving the user guessing whether the app is stuck.
+  useEffect(() => {
+    if (!codexLoginBusy) {
+      setCodexLoginSlow(false)
+      return
+    }
+    const timer = window.setTimeout(() => setCodexLoginSlow(true), 15000)
+    return () => window.clearTimeout(timer)
+  }, [codexLoginBusy])
 
   // Reuse the existing Test-button handler (onProviderTest -> testAiProvider) to refresh provider status.
   function refreshCodexStatus() {
@@ -5250,6 +5273,7 @@ function SettingsView({
   async function startCodexLogin(method: 'chatgpt' | 'device' | 'api-key', apiKey?: string) {
     setCodexLoginBusy(true)
     setCodexLoginEvent(null)
+    codexAutoOpenedUrlRef.current = null
     try {
       await requestCodexLogin(method, apiKey)
       refreshCodexStatus()
@@ -5547,7 +5571,7 @@ function SettingsView({
                     )}
                     {codexLoginEvent?.type === 'oauth_url' && (
                       <p className="codex-login__hint">
-                        Browser didn’t open?{' '}
+                        Opened a sign-in tab. Didn’t see it?{' '}
                         <a
                           href={codexLoginEvent.url}
                           onClick={(event) => {
@@ -5555,8 +5579,23 @@ function SettingsView({
                             window.open(codexLoginEvent.url, '_blank', 'noopener,noreferrer')
                           }}
                         >
-                          Continue sign-in here
+                          Open it again
                         </a>
+                      </p>
+                    )}
+                    {codexLoginBusy && codexLoginSlow && (
+                      <p className="codex-login__hint">
+                        Still waiting on the browser sign-in. Finish it in the opened tab, or{' '}
+                        <a
+                          href="#"
+                          onClick={(event) => {
+                            event.preventDefault()
+                            void cancelCodexLogin()
+                          }}
+                        >
+                          cancel
+                        </a>{' '}
+                        and try a sign-in code instead.
                       </p>
                     )}
                     {codexLoginEvent?.type === 'device_code' && (
