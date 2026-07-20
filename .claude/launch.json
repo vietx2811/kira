@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "kira-desktop",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "@kira/desktop", "dev"],
+      "port": 5173
+    }
+  ]
+}
