@@ -37,8 +37,16 @@ type KiraCaptureContext = {
   updatedAt: string
 }
 
-const captureEndpoint = 'http://127.0.0.1:47653/capture'
-const contextEndpoint = 'http://127.0.0.1:47653/context'
+// Mirrors the shared shapes in types.ts; this file is bundled standalone.
+type KiraBridgeMessage =
+  | { type: 'kira-post-capture'; capture: KiraCapturePayload }
+  | { type: 'kira-get-context' }
+  | { type: 'kira-open-drag-window'; capture: PendingCapture }
+
+type KiraBridgeResponse =
+  | { ok: true; context?: KiraCaptureContext | null }
+  | { ok: false; context?: undefined }
+
 const pendingCaptureKey = 'pendingCapture'
 const dropPadId = 'kira-capture-drop-pad'
 const toastId = 'kira-capture-toast'
@@ -757,9 +765,9 @@ async function refreshCaptureContext(options: { force?: boolean } = {}) {
   contextRefreshPromise = (async () => {
     lastContextRefreshAt = now
     try {
-      const response = await fetch(contextEndpoint, { method: 'GET' })
-      if (!response.ok) return
-      currentContext = (await response.json()) as KiraCaptureContext
+      const response = await sendBridgeMessage({ type: 'kira-get-context' })
+      if (!response?.ok || !response.context) throw new Error('KIRA unavailable')
+      currentContext = response.context
       renderCaptureContext()
     } catch {
       currentContext = null
@@ -985,15 +993,17 @@ async function enlargePinterestUrl(value: string) {
 }
 
 async function postCapture(capture: KiraCapturePayload) {
+  const response = await sendBridgeMessage({ type: 'kira-post-capture', capture })
+  return response?.ok === true
+}
+
+// A content script's fetch carries the page's origin, so the desktop app is
+// reached through the service worker rather than directly from the page.
+async function sendBridgeMessage(message: KiraBridgeMessage): Promise<KiraBridgeResponse | null> {
   try {
-    const response = await fetch(captureEndpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(capture),
-    })
-    return response.ok
+    return (await chrome.runtime.sendMessage(message)) as KiraBridgeResponse
   } catch {
-    return false
+    return null
   }
 }
 

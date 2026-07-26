@@ -1,6 +1,4 @@
 "use strict";
-const captureEndpoint = 'http://127.0.0.1:47653/capture';
-const contextEndpoint = 'http://127.0.0.1:47653/context';
 const pendingCaptureKey = 'pendingCapture';
 const dropPadId = 'kira-capture-drop-pad';
 const toastId = 'kira-capture-toast';
@@ -699,10 +697,10 @@ async function refreshCaptureContext(options = {}) {
     contextRefreshPromise = (async () => {
         lastContextRefreshAt = now;
         try {
-            const response = await fetch(contextEndpoint, { method: 'GET' });
-            if (!response.ok)
-                return;
-            currentContext = (await response.json());
+            const response = await sendBridgeMessage({ type: 'kira-get-context' });
+            if (!response?.ok || !response.context)
+                throw new Error('KIRA unavailable');
+            currentContext = response.context;
             renderCaptureContext();
         }
         catch {
@@ -925,16 +923,17 @@ async function enlargePinterestUrl(value) {
     return value;
 }
 async function postCapture(capture) {
+    const response = await sendBridgeMessage({ type: 'kira-post-capture', capture });
+    return response?.ok === true;
+}
+// A content script's fetch carries the page's origin, so the desktop app is
+// reached through the service worker rather than directly from the page.
+async function sendBridgeMessage(message) {
     try {
-        const response = await fetch(captureEndpoint, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(capture),
-        });
-        return response.ok;
+        return (await chrome.runtime.sendMessage(message));
     }
     catch {
-        return false;
+        return null;
     }
 }
 function showToast(message) {

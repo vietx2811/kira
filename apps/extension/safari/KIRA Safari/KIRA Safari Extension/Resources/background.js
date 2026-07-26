@@ -1,5 +1,6 @@
 const pendingCaptureKey = 'pendingCapture';
 const captureEndpoint = 'http://127.0.0.1:47653/capture';
+const contextEndpoint = 'http://127.0.0.1:47653/context';
 const dragWindowPath = 'drag-window.html';
 let dragWindowId = null;
 let dragWindowOpening = false;
@@ -39,14 +40,35 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
         };
     void sendOrStageCapture(capture);
 });
+// Sole owner of traffic to the desktop app: content scripts and extension pages
+// ask through here so every request carries the extension's host permissions.
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-    if (!isOpenDragWindowMessage(message))
+    if (!isBridgeMessage(message))
         return;
+    if (message.type === 'kira-post-capture') {
+        void postCapture(message.capture).then((ok) => sendResponse({ ok }));
+        return true;
+    }
+    if (message.type === 'kira-get-context') {
+        void fetchCaptureContext().then((context) => sendResponse({ ok: context !== null, context }));
+        return true;
+    }
     void openDragWindow(message.capture)
         .then(() => sendResponse({ ok: true }))
         .catch(() => sendResponse({ ok: false }));
     return true;
 });
+async function fetchCaptureContext() {
+    try {
+        const response = await fetch(contextEndpoint);
+        if (!response.ok)
+            return null;
+        return (await response.json());
+    }
+    catch {
+        return null;
+    }
+}
 chrome.windows.onRemoved.addListener((windowId) => {
     if (windowId === dragWindowId)
         dragWindowId = null;
@@ -90,12 +112,15 @@ async function openDragWindow(capture) {
         dragWindowOpening = false;
     }
 }
-function isOpenDragWindowMessage(message) {
+function isBridgeMessage(message) {
     if (!message || typeof message !== 'object')
         return false;
     const candidate = message;
-    return candidate.type === 'kira-open-drag-window'
-        && candidate.capture?.kiraCapture === 1
+    if (candidate.type === 'kira-get-context')
+        return true;
+    if (candidate.type !== 'kira-post-capture' && candidate.type !== 'kira-open-drag-window')
+        return false;
+    return candidate.capture?.kiraCapture === 1
         && (candidate.capture.kind === 'image' || candidate.capture.kind === 'page')
         && typeof candidate.capture.url === 'string';
 }

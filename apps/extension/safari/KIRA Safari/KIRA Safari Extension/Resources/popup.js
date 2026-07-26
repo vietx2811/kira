@@ -1,5 +1,4 @@
 const pendingCaptureKey = 'pendingCapture';
-const captureEndpoint = 'http://127.0.0.1:47653/capture';
 const kindNode = document.getElementById('capture-kind');
 const titleNode = document.getElementById('capture-title');
 const sourceNode = document.getElementById('capture-source');
@@ -166,16 +165,16 @@ async function sendCapturesToKira(captures) {
     return sent;
 }
 async function sendCaptureToKira(capture) {
+    const response = await sendBridgeMessage({ type: 'kira-post-capture', capture });
+    return response?.ok === true;
+}
+// The service worker is the only place that talks to the desktop app.
+async function sendBridgeMessage(message) {
     try {
-        const response = await fetch(captureEndpoint, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(capture),
-        });
-        return response.ok;
+        return (await chrome.runtime.sendMessage(message));
     }
     catch {
-        return false;
+        return null;
     }
 }
 async function discoverPageImages() {
