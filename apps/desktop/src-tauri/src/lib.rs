@@ -362,6 +362,15 @@ struct CodexStatus {
     models: Vec<String>,
 }
 
+// Unlike Codex, KIRA never bundles the `claude` binary or initiates its login — it only detects
+// an install/session the user already set up themselves (see byok-not-oauth memory).
+#[derive(Default)]
+struct ClaudeCodeStatus {
+    installed: bool,
+    logged_in: bool,
+    account: Option<String>,
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ExtensionTargetStatus {
@@ -2163,6 +2172,84 @@ fn codex_logout() -> Result<(), String> {
     else { Err(String::from_utf8_lossy(&output.stderr).trim().to_string()) }
 }
 
+// Resolves the user's own installed `claude` binary via PATH — deliberately not a
+// `bundled_sidecar_path` lookup, since KIRA doesn't vendor a copy of the Claude Code CLI.
+fn claude_code_bin_path() -> Option<PathBuf> {
+    let mut search_dirs: Vec<PathBuf> = Vec::new();
+    if let Ok(path_var) = std::env::var("PATH") {
+        search_dirs.extend(std::env::split_paths(&path_var));
+    }
+    // GUI apps launched from Finder/Dock inherit a minimal PATH that often skips the
+    // Node/npm install locations a user's own shell PATH would include.
+    if let Some(home) = std::env::var_os("HOME").map(PathBuf::from) {
+        search_dirs.push(home.join(".npm-global/bin"));
+        search_dirs.push(home.join(".volta/bin"));
+        search_dirs.push(home.join(".local/bin"));
+    }
+    search_dirs.push(PathBuf::from("/opt/homebrew/bin"));
+    search_dirs.push(PathBuf::from("/usr/local/bin"));
+
+    find_claude_bin_in_dirs(&search_dirs)
+}
+
+fn find_claude_bin_in_dirs(dirs: &[PathBuf]) -> Option<PathBuf> {
+    dirs.iter()
+        .map(|dir| dir.join("claude"))
+        .find(|candidate| candidate.is_file())
+}
+
+// `claude auth status` (verified against the real binary): exits 0 when logged in, prints a
+// `{"loggedIn": bool, "email": "...", ...}` JSON object to stdout regardless of login state.
+fn claude_code_status_native() -> Result<ClaudeCodeStatus, String> {
+    let Some(bin) = claude_code_bin_path() else {
+        return Ok(ClaudeCodeStatus { installed: false, logged_in: false, account: None });
+    };
+    let output = Command::new(&bin)
+        .args(["auth", "status"])
+        .output()
+        .map_err(|e| format!("Unable to run Claude Code CLI: {e}"))?;
+    let parsed: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap_or_default();
+    let logged_in = parsed
+        .get("loggedIn")
+        .and_then(|v| v.as_bool())
+        .unwrap_or_else(|| output.status.success());
+    let account = parsed.get("email").and_then(|v| v.as_str()).map(ToString::to_string);
+    Ok(ClaudeCodeStatus { installed: true, logged_in, account })
+}
+
+// Runs the CLI directly as a one-shot harness (headless print mode) rather than through any
+// SDK/login layer — KIRA never initiates or stores a Claude Code session, it only reuses
+// whatever the user already signed into via `claude auth login`.
+fn generate_claude_code_text(provider: &AiProviderTestRequest, prompt: &str) -> Result<String, String> {
+    let bin = claude_code_bin_path()
+        .ok_or_else(|| "Claude Code CLI not found. Install it, then run `claude auth login`.".to_string())?;
+    let model = generation_model(provider, "claude-sonnet-4-6");
+    let output = Command::new(&bin)
+        .args(["-p", prompt, "--model", &model, "--output-format", "json"])
+        .output()
+        .map_err(|e| format!("Unable to run Claude Code CLI: {e}"))?;
+
+    // `claude -p --output-format json` writes a JSON result object to stdout even on failure
+    // (verified against the real binary) — the error text lives in `result` alongside
+    // `is_error: true`, not on stderr, so stdout is parsed first regardless of exit status.
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).map_err(|_| {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        if stderr.is_empty() { "Claude Code CLI returned no output".to_string() } else { stderr }
+    })?;
+    let is_error = value
+        .get("is_error")
+        .and_then(|v| v.as_bool())
+        .unwrap_or_else(|| !output.status.success());
+    let result_text = value.get("result").and_then(|r| r.as_str()).unwrap_or_default().to_string();
+    if is_error {
+        return Err(if result_text.is_empty() { "Claude Code CLI reported an error".to_string() } else { result_text });
+    }
+    if result_text.is_empty() {
+        return Err("Claude Code returned no content".to_string());
+    }
+    Ok(result_text)
+}
+
 fn natural_language_suggestions_from_text(text: &str) -> Option<Vec<String>> {
     let text = text.trim();
     if text.is_empty() {
@@ -2361,6 +2448,34 @@ fn test_ai_provider_native(
         };
     }
 
+    if provider.provider_type == "claude_code" {
+        return match claude_code_status_native() {
+            Ok(status) if !status.installed => Ok(AiProviderTestResult {
+                connected: false,
+                status: "unavailable".to_string(),
+                message: "Claude Code CLI not found. Install it, then run `claude auth login`.".to_string(),
+            }),
+            Ok(status) if status.logged_in => Ok(AiProviderTestResult {
+                connected: true,
+                status: "connected".to_string(),
+                message: match status.account {
+                    Some(account) => format!("Signed in as {account}"),
+                    None => "Signed in to Claude Code".to_string(),
+                },
+            }),
+            Ok(_) => Ok(AiProviderTestResult {
+                connected: false,
+                status: "unavailable".to_string(),
+                message: "Claude Code CLI found but not signed in. Run `claude auth login` in your terminal.".to_string(),
+            }),
+            Err(error) => Ok(AiProviderTestResult {
+                connected: false,
+                status: "unavailable".to_string(),
+                message: error,
+            }),
+        };
+    }
+
     if provider.provider_type == "ollama" || provider.provider_type == "lm_studio" {
         let base_url = provider.base_url.as_deref().unwrap_or_default();
         let models = list_local_or_openai_compatible_models(provider, None).unwrap_or_default();
@@ -2417,6 +2532,16 @@ fn list_ai_models_native(
         return Ok(AiModelListResult {
             status: "codex".to_string(),
             models: status.models,
+        });
+    }
+
+    if provider.provider_type == "claude_code" {
+        let status = claude_code_status_native()?;
+        // The CLI has no "list models" subcommand to query, so this reports status only
+        // (leaving the frontend's Model field a plain text input) rather than guessing at ids.
+        return Ok(AiModelListResult {
+            status: if status.logged_in { "claude-code".to_string() } else { "not signed in".to_string() },
+            models: vec![],
         });
     }
 
@@ -2519,6 +2644,7 @@ fn generate_ai_text_native(
             generate_gemini_text(provider, &secret, clean_prompt)?
         }
         "codex" => generate_codex_text(provider, clean_prompt)?,
+        "claude_code" => generate_claude_code_text(provider, clean_prompt)?,
         "openai" | "openrouter" | "lm_studio" | "custom_openai_compatible" => {
             let secret = if provider.provider_type == "lm_studio" {
                 read_secret_from_keychain(provider_id).ok()
@@ -4372,6 +4498,62 @@ mod tests {
         let stdout = br#"{"content":"hello from codex","usage":null}"#;
         let value: serde_json::Value = serde_json::from_slice(stdout).unwrap();
         assert_eq!(value.get("content").and_then(|c| c.as_str()), Some("hello from codex"));
+    }
+
+    #[test]
+    fn claude_code_bin_discovery_finds_executable_in_search_dirs() {
+        let id = timestamp_millis();
+        let dir = std::env::temp_dir().join(format!("kira-claude-bin-test-{id}"));
+        fs::create_dir_all(&dir).expect("create dir");
+        let bin = dir.join("claude");
+        fs::write(&bin, b"stub").expect("write stub");
+
+        let unrelated_dir = std::env::temp_dir().join(format!("kira-claude-bin-test-miss-{id}"));
+        let discovered = find_claude_bin_in_dirs(&[unrelated_dir, dir.clone()]);
+
+        assert_eq!(discovered, Some(bin));
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn claude_code_bin_discovery_returns_none_when_not_found() {
+        let id = timestamp_millis();
+        let dir = std::env::temp_dir().join(format!("kira-claude-bin-test-empty-{id}"));
+        assert_eq!(find_claude_bin_in_dirs(&[dir]), None);
+    }
+
+    // `claude auth status` output shape, verified against the real installed binary:
+    // `{"loggedIn": bool, "authMethod": "...", "email": "...", ...}` on stdout, exit 0 either way.
+    #[test]
+    fn claude_code_status_parses_real_cli_json_shape() {
+        let json = br#"{"loggedIn":true,"authMethod":"claude.ai","apiProvider":"firstParty","email":"user@example.com","orgId":"org_1","orgName":"Example Org","subscriptionType":"pro"}"#;
+        let value: serde_json::Value = serde_json::from_slice(json).expect("parse");
+        let logged_in = value.get("loggedIn").and_then(|v| v.as_bool()).unwrap_or(false);
+        let account = value.get("email").and_then(|v| v.as_str()).map(ToString::to_string);
+        assert!(logged_in);
+        assert_eq!(account.as_deref(), Some("user@example.com"));
+    }
+
+    #[test]
+    fn generate_claude_code_text_extracts_result_field_on_success() {
+        let stdout = br#"{"type":"result","subtype":"success","is_error":false,"result":"hello from claude code"}"#;
+        let value: serde_json::Value = serde_json::from_slice(stdout).unwrap();
+        let is_error = value.get("is_error").and_then(|v| v.as_bool()).unwrap_or(false);
+        let result_text = value.get("result").and_then(|r| r.as_str()).unwrap_or_default();
+        assert!(!is_error);
+        assert_eq!(result_text, "hello from claude code");
+    }
+
+    // Verified against the real binary: even on failure the CLI writes a well-formed JSON
+    // result object to stdout (not stderr) with `is_error: true` and the message in `result`.
+    #[test]
+    fn generate_claude_code_text_surfaces_is_error_message() {
+        let stdout = br#"{"type":"result","subtype":"success","is_error":true,"api_error_status":401,"result":"Failed to authenticate. API Error: 401 OAuth access token has been revoked."}"#;
+        let value: serde_json::Value = serde_json::from_slice(stdout).unwrap();
+        let is_error = value.get("is_error").and_then(|v| v.as_bool()).unwrap_or(false);
+        let result_text = value.get("result").and_then(|r| r.as_str()).unwrap_or_default();
+        assert!(is_error);
+        assert_eq!(result_text, "Failed to authenticate. API Error: 401 OAuth access token has been revoked.");
     }
 
     #[test]
