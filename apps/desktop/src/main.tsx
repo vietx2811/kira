@@ -6,17 +6,20 @@ import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { Effect, EffectState, getCurrentWindow } from '@tauri-apps/api/window'
 import { open, save } from '@tauri-apps/plugin-dialog'
-import { Rnd } from 'react-rnd'
 import {
   ArrowDownToLine,
+  ArrowUpFromLine,
   Bot,
+  Box,
   Brain,
   Camera,
   Check,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ChevronUp,
   Clipboard,
-  CircleDot,
+  Copy,
   Database,
   ExternalLink,
   Eye,
@@ -28,28 +31,30 @@ import {
   History,
   Image as ImageIcon,
   ImagePlus,
-  Inspect,
   Link2,
   Lightbulb,
+  ListTree,
   LocateFixed,
   Maximize2,
   Minimize2,
-  MousePointer2,
   MoreHorizontal,
   Network,
-  PanelLeft,
-  PanelRight,
+  Palette,
+  PanelLeftClose,
+  PanelLeftOpen,
+  PanelRightClose,
   PanelRightOpen,
   Pause,
   Play,
   Plus,
+  RotateCcw,
   Save,
   Search,
   Settings,
+  ShieldCheck,
   Sparkles,
   Tag,
-  Redo2,
-  Undo2,
+  Trash2,
   Workflow,
   ZoomIn,
   ZoomOut,
@@ -392,7 +397,7 @@ type RelationFilter = 'all' | Relation
 type DiscoveryFilter = 'all' | 'candidates' | 'open'
 type GraphCap = 75 | 150 | 300
 type OutlineFilter = 'all' | 'strong' | 'weak'
-type ActiveView = 'Canvas' | '3D' | 'Slides' | 'Outline' | 'Settings'
+type ActiveView = 'Canvas' | '3D' | 'Slides' | 'Outline'
 type GraphOrganizeMode = 'manual' | 'cluster' | 'flow' | 'timeline' | 'palette' | 'importance' | 'grid'
 type CanvasTool = 'select' | 'link'
 type DroppedReferencePayload =
@@ -423,6 +428,7 @@ type AiProviderType =
   | 'lm_studio'
   | 'custom_openai_compatible'
   | 'codex'
+  | 'claude_code'
 type AiAuthMode = 'local' | 'api_key' | 'oauth' | 'openai_compatible'
 type AiProviderStatus = 'connected' | 'unavailable' | 'billing_separate' | 'key_missing'
 type AiRoutingMode = 'local_only' | 'prefer_local' | 'selected_remote'
@@ -936,6 +942,7 @@ const aiProviderTypeLabels: Record<AiProviderType, string> = {
   lm_studio: 'LM Studio',
   custom_openai_compatible: 'OpenAI-compatible',
   codex: 'Codex',
+  claude_code: 'Claude Code',
 }
 
 const aiProviderStatusLabels: Record<AiProviderStatus, string> = {
@@ -1001,6 +1008,7 @@ function aiProviderKeyHelp(type: AiProviderType): { href: string; label: string 
     case 'anthropic':
       return { href: 'https://console.anthropic.com/settings/keys', label: 'Get an Anthropic API key' }
     case 'codex':
+    case 'claude_code':
       return null
     default:
       return null
@@ -1153,6 +1161,15 @@ const defaultAiProviderProfiles: AiProviderProfile[] = [
     status: 'unavailable',
     defaultFor: ['generate_outline', 'generate_node', 'summarize_diagram'],
   },
+  {
+    id: 'claude_code',
+    type: 'claude_code',
+    name: 'Claude Code (CLI)',
+    authMode: 'oauth',
+    model: 'claude-sonnet-4-6',
+    status: 'unavailable',
+    defaultFor: [],
+  },
 ]
 
 const aiProviderTemplates: Record<Exclude<AiProviderType, 'apple_foundation'>, Omit<AiProviderProfile, 'id' | 'userManaged'>> = {
@@ -1227,7 +1244,26 @@ const aiProviderTemplates: Record<Exclude<AiProviderType, 'apple_foundation'>, O
     status: 'unavailable',
     defaultFor: ['generate_outline', 'generate_node', 'summarize_diagram'],
   },
+  claude_code: {
+    type: 'claude_code',
+    name: 'Claude Code (CLI)',
+    authMode: 'oauth',
+    model: 'claude-sonnet-4-6',
+    status: 'unavailable',
+    defaultFor: [],
+  },
 }
+
+// Types addable a second time from "Add other provider" — CLI singletons (codex, claude_code) and the
+// local runtime (apple_foundation) are fixed default entries, not user-instantiable duplicates.
+const addableProviderTypes = (Object.keys(aiProviderTemplates) as Exclude<AiProviderType, 'apple_foundation'>[]).filter(
+  (type) => type !== 'codex' && type !== 'claude_code',
+)
+
+// The handful of providers shown up front in Settings > AI Providers; everything else (extra
+// OpenAI-compatible endpoints, Ollama, LM Studio, OpenRouter, Gemini, duplicate profiles) lives
+// behind the "More providers" disclosure so the default view stays a short, obvious list.
+const primaryProviderTypeOrder: AiProviderType[] = ['apple_foundation', 'claude_code', 'codex', 'openai', 'anthropic']
 
 function defaultAiSettingsSnapshot(): AiSettingsSnapshot {
   return {
@@ -1364,6 +1400,7 @@ function App() {
   const [aiSettingsStatus, setAiSettingsStatus] = useState('Local-first routing is active')
   const [settingsFocusNonce, setSettingsFocusNonce] = useState(0)
   const [isOnboardingOpen, setIsOnboardingOpen] = useState(() => !readOnboardingCompleted())
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [extensionInstallStatus, setExtensionInstallStatus] = useState<ExtensionInstallStatus>(() => defaultExtensionInstallStatus())
   const [modelRunningImageId, setModelRunningImageId] = useState<string | null>(null)
   const [modelStatusByImageId, setModelStatusByImageId] = useState<Record<string, string>>({})
@@ -1372,8 +1409,6 @@ function App() {
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null)
   const [isLibraryCollapsed, setIsLibraryCollapsed] = useState(false)
   const [isInspectorCollapsed, setIsInspectorCollapsed] = useState(false)
-  const [isLibraryFloating, setIsLibraryFloating] = useState(false)
-  const [isInspectorFloating, setIsInspectorFloating] = useState(false)
   const [isVersionHistoryOpen, setIsVersionHistoryOpen] = useState(false)
   const [glassStatus, setGlassStatus] = useState<GlassStatus>(() => (isTauriRuntime() ? 'fallback' : 'browser'))
   const pendingCanvasHistoryCommitRef = useRef(false)
@@ -1656,7 +1691,7 @@ function App() {
     function handleGlobalKeydown(event: KeyboardEvent) {
       if (isSettingsShortcut(event)) {
         event.preventDefault()
-        setActiveView('Settings')
+        setIsSettingsOpen(true)
         return
       }
 
@@ -2980,13 +3015,13 @@ function App() {
 
   function resetOnboarding() {
     writeOnboardingCompleted(false)
-    setActiveView('Settings')
+    setIsSettingsOpen(true)
     setIsOnboardingOpen(true)
     setAiSettingsStatus('Onboarding reset')
   }
 
   function focusProviderSetup(providerId: string) {
-    setActiveView('Settings')
+    setIsSettingsOpen(true)
     setActiveAiProviderId(providerId)
     if (providerId !== 'apple-foundation') setSelectedAiProviderId(providerId)
     setSettingsFocusNonce((nonce) => nonce + 1)
@@ -3230,7 +3265,7 @@ function App() {
       id: `placeholder-${Date.now()}`,
       title: 'Image placeholder',
       targetKind: 'image',
-      x: 72,
+      x: 62,
       y: 38,
       importance: 1,
       createdAt: timestamp,
@@ -3252,7 +3287,7 @@ function App() {
       colors: sourceImage?.palette?.length ? sourceImage.palette.slice(0, 7) : generatePaletteHarmony(base, 'analogous').slice(0, 7),
       algorithm: sourceImage ? 'image_extract' : 'analogous',
       sourceImageId: sourceImage?.id,
-      x: sourceImage ? clamp(sourceImage.x + 10, 8, 92) : 70,
+      x: sourceImage ? clamp(sourceImage.x + 10, 8, 92) : 60,
       y: sourceImage ? clamp(sourceImage.y + 10, 8, 92) : 58,
       importance: sourceImage?.importance ?? 1,
       createdAt: timestamp,
@@ -4381,20 +4416,30 @@ function App() {
   }
 
   const shellThemeStyle = buildProjectAppearanceStyle(projectAppearance)
+  // Keep the canvas's own floating toolbars (canvas-tool-rail, canvas-secondary-rail) clear of
+  // whichever overlay panels are currently open, since the canvas container itself is now always
+  // full-window and no longer shrinks to make room for them.
+  const canvasLeftInset = 80 + (isLibraryCollapsed ? 56 : libraryDrawerWidth)
+  const canvasRightInset = isInspectorCollapsed ? 56 : 336
 
   return (
     <main className="app-shell" data-glass-state={glassStatus} data-color-mode={inferCanvasColorMode(projectAppearance.canvasColor)} style={shellThemeStyle} onPaste={capturePastedReference}>
       <section
-        className={[
-          'workspace',
-          isLibraryCollapsed ? 'is-library-collapsed' : '',
-          isInspectorCollapsed ? 'is-inspector-collapsed' : '',
-          isLibraryFloating ? 'is-library-floating' : '',
-          isInspectorFloating ? 'is-inspector-floating' : '',
-          activeView === 'Settings' ? 'is-settings-workspace' : '',
-        ].filter(Boolean).join(' ')}
-        style={{ '--library-drawer-width': `${libraryDrawerWidth}px` } as React.CSSProperties}
+        className="workspace"
+        style={{
+          '--library-drawer-width': `${libraryDrawerWidth}px`,
+          '--canvas-left-inset': `${canvasLeftInset}px`,
+          '--canvas-right-inset': `${canvasRightInset}px`,
+        } as React.CSSProperties}
       >
+        <TopBar
+          activeView={activeView}
+          isInspectorCollapsed={isInspectorCollapsed}
+          isSettingsOpen={isSettingsOpen}
+          setActiveView={setActiveView}
+          onOpenSettings={() => setIsSettingsOpen(true)}
+          onToggleInspector={() => setIsInspectorCollapsed((current) => !current)}
+        />
         <SystemSidebar
           canRedo={canRedoCanvas}
           canUndo={canUndoCanvas}
@@ -4412,58 +4457,46 @@ function App() {
           onToggleLibrary={() => setIsLibraryCollapsed((current) => !current)}
           onUndo={undoCanvas}
         />
-        {activeView !== 'Settings' && (
-          <>
-            <EvidenceInbox
-              allTags={libraryTags}
-              browseMode={libraryBrowseMode}
-              density={density}
-              ideas={ideas}
-              isCollapsed={isLibraryCollapsed}
-              images={visibleImages}
-              links={links}
-              panelMode={libraryPanelMode}
-              selectedTag={selectedTag}
-              sortMode={sortMode}
-              totalCount={images.length}
-              batchTag={batchTag}
-              searchQuery={searchQuery}
-              status={libraryStatus}
-              selectedReferenceIds={selectedReferenceIds}
-              selected={selection}
-              onBrowseModeChange={setLibraryBrowseMode}
-              onPanelModeChange={setLibraryPanelMode}
-              onCaptureClipboard={pasteReferenceFromClipboard}
-              onCaptureScreen={captureScreenReference}
-              onBatchTagChange={setBatchTag}
-              onApplyBatchTag={applyBatchTag}
-              onClearSelection={clearReferenceSelection}
-              onDensityChange={setDensity}
-              onExportContactSheet={exportContactSheetHtml}
-              onImportEagleWebItems={importEagleWebItems}
-              onImportFolder={importReferenceFolder}
-              onImportReferences={importReferences}
-              onSearchChange={setSearchQuery}
-              onSelectedTagChange={(tag) => setSelectedTag((current) => (current === tag ? null : tag))}
-              onSortModeChange={setSortMode}
-              onToggleReference={toggleReferenceSelection}
-              onSelect={(id) => setSelection({ type: 'image', id })}
-              onSelectIdea={(id) => setSelection({ type: 'idea', id })}
-              onSelectLink={(id) => setSelection({ type: 'link', id })}
-              onToggleCollapsed={() => setIsLibraryCollapsed((current) => !current)}
-              onToggleFloating={() => setIsLibraryFloating((current) => !current)}
-            />
-            {!isLibraryCollapsed && <div className="library-resize-handle" aria-hidden="true" onPointerDown={startLibraryDrawerResize} />}
-          </>
-        )}
+        <EvidenceInbox
+          allTags={libraryTags}
+          browseMode={libraryBrowseMode}
+          density={density}
+          ideas={ideas}
+          isCollapsed={isLibraryCollapsed}
+          images={visibleImages}
+          links={links}
+          panelMode={libraryPanelMode}
+          selectedTag={selectedTag}
+          sortMode={sortMode}
+          totalCount={images.length}
+          batchTag={batchTag}
+          searchQuery={searchQuery}
+          status={libraryStatus}
+          selectedReferenceIds={selectedReferenceIds}
+          selected={selection}
+          onBrowseModeChange={setLibraryBrowseMode}
+          onPanelModeChange={setLibraryPanelMode}
+          onCaptureClipboard={pasteReferenceFromClipboard}
+          onCaptureScreen={captureScreenReference}
+          onBatchTagChange={setBatchTag}
+          onApplyBatchTag={applyBatchTag}
+          onClearSelection={clearReferenceSelection}
+          onDensityChange={setDensity}
+          onExportContactSheet={exportContactSheetHtml}
+          onImportEagleWebItems={importEagleWebItems}
+          onImportFolder={importReferenceFolder}
+          onImportReferences={importReferences}
+          onSearchChange={setSearchQuery}
+          onSelectedTagChange={(tag) => setSelectedTag((current) => (current === tag ? null : tag))}
+          onSortModeChange={setSortMode}
+          onToggleReference={toggleReferenceSelection}
+          onSelect={(id) => setSelection({ type: 'image', id })}
+          onSelectIdea={(id) => setSelection({ type: 'idea', id })}
+          onSelectLink={(id) => setSelection({ type: 'link', id })}
+          onToggleCollapsed={() => setIsLibraryCollapsed((current) => !current)}
+        />
+        {!isLibraryCollapsed && <div className="library-resize-handle" aria-hidden="true" onPointerDown={startLibraryDrawerResize} />}
         <section className="content-region">
-          <TopBar
-            activeView={activeView}
-            isInspectorCollapsed={isInspectorCollapsed}
-            setActiveView={setActiveView}
-            onOpenSettings={() => setActiveView('Settings')}
-            onToggleInspector={() => setIsInspectorCollapsed((current) => !current)}
-          />
           <div className="view-region">
             {activeView === 'Outline' ? (
               <OutlineView
@@ -4516,34 +4549,6 @@ function App() {
                 onExportCanva={exportSlidesToCanva}
                 onSelect={setSelection}
               />
-            ) : activeView === 'Settings' ? (
-              <SettingsView
-                providers={aiProviders}
-                taskRoutes={aiTaskRoutes}
-                routingMode={aiRoutingMode}
-                selectedProviderId={selectedAiProviderId}
-                activeProviderId={activeAiProviderId}
-                focusNonce={settingsFocusNonce}
-                localModelAvailable={localModelAvailable}
-                localModelStatus={localModelStatus}
-                extensionInstallStatus={extensionInstallStatus}
-                status={aiSettingsStatus}
-                onActiveProviderChange={setActiveAiProviderId}
-                onProviderAdd={addAiProvider}
-                onProviderChange={updateAiProvider}
-                onProviderDelete={deleteAiProvider}
-                onProviderSecretSave={saveAiProviderSecret}
-                onProviderSecretDelete={deleteAiProviderSecret}
-                onProviderTest={testAiProvider}
-                onProviderModelsList={listAiModels}
-                onProviderTaskToggle={toggleAiProviderTask}
-                onRoutingModeChange={setAiRoutingMode}
-                onSelectedProviderChange={setSelectedProviderWithActive}
-                onOnboardingReset={resetOnboarding}
-                onWelcomeOpen={() => openWelcomeProject(false)}
-                onExtensionAction={handleExtensionInstallAction}
-                onExtensionRefresh={refreshExtensionInstallStatus}
-              />
             ) : (
               <GraphCanvas
                 ideas={ideas}
@@ -4582,8 +4587,7 @@ function App() {
             )}
           </div>
         </section>
-        {activeView !== 'Settings' && !isInspectorCollapsed && (
-          <Inspector
+        <Inspector
             isCollapsed={isInspectorCollapsed}
             selected={selected}
             images={images}
@@ -4643,119 +4647,8 @@ function App() {
             onIdeaTitleFocused={() => setIdeaTitleFocusId(null)}
             selectedReferenceCount={selectedReferenceIds.size}
             onToggleCollapsed={() => setIsInspectorCollapsed((current) => !current)}
-            onToggleFloating={() => setIsInspectorFloating((current) => !current)}
           />
-        )}
       </section>
-      {isLibraryFloating && (
-        <FloatingPanel title="Library" defaultPosition={{ x: 72, y: 92 }} defaultSize={{ width: 330, height: 620 }}>
-          <EvidenceInbox
-            allTags={libraryTags}
-            browseMode={libraryBrowseMode}
-            density={density}
-            ideas={ideas}
-            isCollapsed={false}
-            images={visibleImages}
-            links={links}
-            panelMode={libraryPanelMode}
-            selectedTag={selectedTag}
-            sortMode={sortMode}
-            totalCount={images.length}
-            batchTag={batchTag}
-            searchQuery={searchQuery}
-            status={libraryStatus}
-            selectedReferenceIds={selectedReferenceIds}
-            selected={selection}
-            onBrowseModeChange={setLibraryBrowseMode}
-            onPanelModeChange={setLibraryPanelMode}
-            onCaptureClipboard={pasteReferenceFromClipboard}
-            onCaptureScreen={captureScreenReference}
-            onBatchTagChange={setBatchTag}
-            onApplyBatchTag={applyBatchTag}
-            onClearSelection={clearReferenceSelection}
-            onDensityChange={setDensity}
-            onExportContactSheet={exportContactSheetHtml}
-            onImportEagleWebItems={importEagleWebItems}
-            onImportFolder={importReferenceFolder}
-            onImportReferences={importReferences}
-            onSearchChange={setSearchQuery}
-            onSelectedTagChange={(tag) => setSelectedTag((current) => (current === tag ? null : tag))}
-            onSortModeChange={setSortMode}
-            onToggleReference={toggleReferenceSelection}
-            onSelect={(id) => setSelection({ type: 'image', id })}
-            onSelectIdea={(id) => setSelection({ type: 'idea', id })}
-            onSelectLink={(id) => setSelection({ type: 'link', id })}
-            onToggleCollapsed={() => setIsLibraryCollapsed((current) => !current)}
-            onToggleFloating={() => setIsLibraryFloating(false)}
-          />
-        </FloatingPanel>
-      )}
-      {isInspectorFloating && (
-        <FloatingPanel title="Inspector" defaultPosition={{ x: 820, y: 92 }} defaultSize={{ width: 370, height: 620 }}>
-          <Inspector
-            isCollapsed={false}
-            selected={selected}
-            images={images}
-            ideas={ideas}
-            palettes={palettes}
-            diagrams={diagrams}
-            placeholders={placeholders}
-            links={links}
-            nodeVersions={nodeVersions}
-            onSelect={setSelection}
-            onAcceptSuggestion={acceptSuggestion}
-            onRejectSuggestion={rejectSuggestion}
-            onRelationChange={updateRelation}
-            onIdeaChange={updateIdea}
-            onImageChange={updateImage}
-            onLinkChange={updateLink}
-            onLinkSwap={swapLinkDirection}
-            onPaletteChange={updatePalette}
-            onDiagramChange={updateDiagram}
-            onPlaceholderChange={updatePlaceholder}
-            onProjectMetadataChange={updateProjectMetadata}
-            onProjectAppearanceChange={updateProjectAppearance}
-            onPaletteColorChange={updatePaletteColor}
-            onPaletteColorAdd={addPaletteColor}
-            onPaletteColorRemove={removePaletteColor}
-            onPaletteRegenerate={regeneratePalette}
-            onReferenceTagAdd={addReferenceTag}
-            onReferenceTagRemove={removeReferenceTag}
-            onIdeaDelete={requestIdeaDelete}
-            onReferenceFindSimilar={findSimilarReferences}
-            onReferenceConvertToPalette={(imageId) => createPaletteNode(images.find((image) => image.id === imageId))}
-            onImageDelete={requestImageDelete}
-            onPaletteDelete={requestPaletteDelete}
-            onDiagramDelete={requestDiagramDelete}
-            onPlaceholderDelete={requestPlaceholderDelete}
-            onLinkSelectedReferences={linkSelectedReferencesToIdea}
-            onLinkDelete={requestLinkDelete}
-            onNodeVersionRestore={restoreNodeVersion}
-            onBeginLinkFromNode={beginCreateLinkFromNode}
-            onDuplicateSelection={duplicateCurrentSelection}
-            onOpenOutline={() => setActiveView('Outline')}
-            onRebuildOutline={rebuildOutlineDraft}
-            onReferenceOcr={runReferenceOcr}
-            onReferenceTagRefine={refineReferenceTags}
-            onReferenceReplace={replaceReferenceFromFiles}
-            onReferenceReplaceFromImage={replaceReferenceFromExistingImage}
-            onDroppedReference={handleDroppedReference}
-            onPlaceholderAttach={attachPlaceholderImageFromFiles}
-            linkCreationRelation={linkCreationRelation}
-            onLinkCreationRelationChange={setLinkCreationRelation}
-            localModelAvailable={localModelAvailable}
-            modelRunningImageId={modelRunningImageId}
-            modelStatusByImageId={modelStatusByImageId}
-            ocrRunningImageId={ocrRunningImageId}
-            ocrStatusByImageId={ocrStatusByImageId}
-            ideaTitleFocusId={ideaTitleFocusId}
-            onIdeaTitleFocused={() => setIdeaTitleFocusId(null)}
-            selectedReferenceCount={selectedReferenceIds.size}
-            onToggleCollapsed={() => setIsInspectorCollapsed((current) => !current)}
-            onToggleFloating={() => setIsInspectorFloating(false)}
-          />
-        </FloatingPanel>
-      )}
       <ConfirmDeleteDialog
         pendingDelete={pendingDelete}
         onCancel={() => setPendingDelete(null)}
@@ -4771,6 +4664,38 @@ function App() {
         onRestore={restoreProjectVersion}
         onSaveVersion={() => saveAsNewVersion()}
       />
+      {isSettingsOpen && (
+        <div className="dialog-overlay settings-dialog-overlay">
+          <SettingsView
+            providers={aiProviders}
+            taskRoutes={aiTaskRoutes}
+            routingMode={aiRoutingMode}
+            selectedProviderId={selectedAiProviderId}
+            activeProviderId={activeAiProviderId}
+            focusNonce={settingsFocusNonce}
+            localModelAvailable={localModelAvailable}
+            localModelStatus={localModelStatus}
+            extensionInstallStatus={extensionInstallStatus}
+            status={aiSettingsStatus}
+            onActiveProviderChange={setActiveAiProviderId}
+            onProviderAdd={addAiProvider}
+            onProviderChange={updateAiProvider}
+            onProviderDelete={deleteAiProvider}
+            onProviderSecretSave={saveAiProviderSecret}
+            onProviderSecretDelete={deleteAiProviderSecret}
+            onProviderTest={testAiProvider}
+            onProviderModelsList={listAiModels}
+            onProviderTaskToggle={toggleAiProviderTask}
+            onRoutingModeChange={setAiRoutingMode}
+            onSelectedProviderChange={setSelectedProviderWithActive}
+            onOnboardingReset={resetOnboarding}
+            onWelcomeOpen={() => { openWelcomeProject(false); setIsSettingsOpen(false) }}
+            onExtensionAction={handleExtensionInstallAction}
+            onExtensionRefresh={refreshExtensionInstallStatus}
+            onClose={() => setIsSettingsOpen(false)}
+          />
+        </div>
+      )}
       {isOnboardingOpen && (
         <OnboardingOverlay
           providers={aiProviders}
@@ -4788,41 +4713,6 @@ function App() {
         />
       )}
     </main>
-  )
-}
-
-function FloatingPanel({
-  title,
-  defaultPosition,
-  defaultSize,
-  children,
-}: {
-  title: string
-  defaultPosition: { x: number; y: number }
-  defaultSize: { width: number; height: number }
-  children: React.ReactNode
-}) {
-  return (
-    <Rnd
-      className="floating-panel"
-      default={{
-        x: defaultPosition.x,
-        y: defaultPosition.y,
-        width: defaultSize.width,
-        height: defaultSize.height,
-      }}
-      minWidth={280}
-      minHeight={360}
-      bounds="window"
-      dragHandleClassName="floating-panel-handle"
-    >
-      <div className="floating-panel-handle" aria-label={`${title} panel`}>
-        <span>{title}</span>
-      </div>
-      <div className="floating-panel-body">
-        {children}
-      </div>
-    </Rnd>
   )
 }
 
@@ -4903,7 +4793,7 @@ function OnboardingOverlay({
               <Bot size={15} aria-hidden="true" />
               <span className="onboarding-link-text">
                 <strong>Connect AI</strong>
-                <small>Sign in with ChatGPT, or add an OpenAI / Claude key</small>
+                <small>Reuse Claude Code or Codex, or add an API key</small>
               </span>
               <ChevronRight size={15} aria-hidden="true" />
             </button>
@@ -5040,21 +4930,23 @@ function SystemSidebar({
 function TopBar({
   activeView,
   isInspectorCollapsed,
+  isSettingsOpen,
   setActiveView,
   onOpenSettings,
   onToggleInspector,
 }: {
   activeView: ActiveView
   isInspectorCollapsed: boolean
+  isSettingsOpen: boolean
   setActiveView: (view: ActiveView) => void
   onOpenSettings: () => void
   onToggleInspector: () => void
 }) {
   const views: { label: ActiveView; icon: typeof Network }[] = [
     { label: 'Canvas', icon: Network },
-    { label: '3D', icon: CircleDot },
+    { label: '3D', icon: Box },
     { label: 'Slides', icon: FileText },
-    { label: 'Outline', icon: FileText },
+    { label: 'Outline', icon: ListTree },
   ]
 
   return (
@@ -5082,27 +4974,25 @@ function TopBar({
 
       <div className="content-toolbar-actions">
         <button
-          className={activeView === 'Settings' ? 'icon-button top-settings-button is-active' : 'icon-button top-settings-button'}
+          className={isSettingsOpen ? 'icon-button top-settings-button is-active' : 'icon-button top-settings-button'}
           type="button"
           aria-label="Open Settings"
-          aria-pressed={activeView === 'Settings'}
+          aria-pressed={isSettingsOpen}
           title="Settings"
           onClick={onOpenSettings}
         >
           <Settings size={16} />
         </button>
-        {activeView !== 'Settings' && (
-          <button
-            className={isInspectorCollapsed ? 'icon-button top-inspector-button' : 'icon-button top-inspector-button is-active'}
-            type="button"
-            aria-label={isInspectorCollapsed ? 'Open Inspector' : 'Close Inspector'}
-            aria-pressed={!isInspectorCollapsed}
-            title="Inspector"
-            onClick={onToggleInspector}
-          >
-            {isInspectorCollapsed ? <PanelRightOpen size={16} /> : <Inspect size={16} />}
-          </button>
-        )}
+        <button
+          className={isInspectorCollapsed ? 'icon-button top-inspector-button' : 'icon-button top-inspector-button is-active'}
+          type="button"
+          aria-label={isInspectorCollapsed ? 'Open Inspector' : 'Close Inspector'}
+          aria-pressed={!isInspectorCollapsed}
+          title="Inspector"
+          onClick={onToggleInspector}
+        >
+          {isInspectorCollapsed ? <PanelRightOpen size={16} /> : <PanelRightClose size={16} />}
+        </button>
       </div>
     </header>
   )
@@ -5172,6 +5062,23 @@ function CodexApiKeyField({ busy, onSubmit }: { busy: boolean; onSubmit: (key: s
   )
 }
 
+function ClaudeCodeStatus({ provider }: { provider: AiProviderProfile }) {
+  const connected = provider.status === 'connected'
+  return (
+    <div className="cli-status" data-status={connected ? 'connected' : 'not-connected'}>
+      <div className="cli-status__row">
+        <span className="cli-status__dot" aria-hidden="true" />
+        <span>{provider.lastMessage ?? (connected ? 'Claude Code CLI detected and signed in' : 'Claude Code CLI not detected on this machine')}</span>
+      </div>
+      <p className="cli-status__hint">
+        KIRA reuses your existing Claude Code session — sign in with <code>claude auth login</code> in your own
+        terminal. KIRA never opens or stores your Claude.ai login; it only checks status and runs tasks through
+        the CLI you already have.
+      </p>
+    </div>
+  )
+}
+
 function SettingsView({
   providers,
   taskRoutes,
@@ -5198,6 +5105,7 @@ function SettingsView({
   onWelcomeOpen,
   onExtensionAction,
   onExtensionRefresh,
+  onClose,
 }: {
   providers: AiProviderProfile[]
   taskRoutes: AiTaskRoute[]
@@ -5224,10 +5132,16 @@ function SettingsView({
   onWelcomeOpen: () => void
   onExtensionAction: (targetId: string) => void
   onExtensionRefresh: () => void
+  onClose: () => void
 }) {
   const remoteProviders = providers.filter((provider) => provider.authMode !== 'local')
   const selectedRemoteProvider = remoteProviders.find((provider) => provider.id === selectedProviderId) ?? remoteProviders[0]
   const activeProvider = providers.find((provider) => provider.id === activeProviderId) ?? providers[0]
+  const primaryProviders = primaryProviderTypeOrder
+    .map((type) => providers.find((provider) => provider.type === type))
+    .filter((provider): provider is AiProviderProfile => Boolean(provider))
+  const primaryProviderIds = new Set(primaryProviders.map((provider) => provider.id))
+  const moreProviders = providers.filter((provider) => !primaryProviderIds.has(provider.id))
   const [secretDrafts, setSecretDrafts] = useState<Record<string, string>>({})
   const [codexLoginBusy, setCodexLoginBusy] = useState(false)
   const [codexLoginEvent, setCodexLoginEvent] = useState<CodexLoginEvent | null>(null)
@@ -5283,50 +5197,81 @@ function SettingsView({
       setCodexLoginBusy(false)
     }
   }
-  const [providerTypeDraft, setProviderTypeDraft] = useState<Exclude<AiProviderType, 'apple_foundation'>>('custom_openai_compatible')
+  const [providerTypeDraft, setProviderTypeDraft] = useState<Exclude<AiProviderType, 'apple_foundation'>>(addableProviderTypes[0])
   const taskKeys = Object.keys(aiTaskLabels) as AiTaskKind[]
   const connectedProviderCount = providers.filter((provider) => provider.status === 'connected').length
   const storedSecretCount = providers.filter((provider) => provider.secretRef).length
   const billingSeparatedCount = remoteProviders.filter((provider) => provider.status === 'billing_separate').length
-  const [activeSettingsTab, setActiveSettingsTab] = useState<'overview' | 'ai' | 'capture' | 'advanced'>('overview')
+  const [activeSettingsTab, setActiveSettingsTab] = useState<'general' | 'ai' | 'capture' | 'advanced'>('general')
   // When a provider is focused from elsewhere (onboarding, logged-out prompt), jump to the AI tab.
   useEffect(() => {
     if (focusNonce > 0) setActiveSettingsTab('ai')
   }, [focusNonce])
   const lang = useLangStore((state) => state.lang)
   const setLang = useLangStore((state) => state.setLang)
-  const settingsTabs = [
-    { id: 'overview' as const, label: 'Overview' },
-    { id: 'ai' as const, label: 'AI' },
+
+  useEffect(() => {
+    function handleKeydown(event: KeyboardEvent) {
+      if (event.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', handleKeydown)
+    return () => window.removeEventListener('keydown', handleKeydown)
+  }, [onClose])
+
+  const settingsSections = [
+    { id: 'general' as const, label: 'General' },
+    { id: 'ai' as const, label: 'AI Providers' },
     { id: 'capture' as const, label: 'Capture' },
     { id: 'advanced' as const, label: 'Advanced' },
   ]
 
+  function renderProviderRow(provider: AiProviderProfile) {
+    return (
+      <button
+        className="provider-list-row"
+        type="button"
+        key={provider.id}
+        aria-pressed={provider.id === activeProvider.id}
+        data-status={provider.status}
+        onClick={() => onActiveProviderChange(provider.id)}
+      >
+        <span>
+          <strong>{provider.name}</strong>
+          <em>{aiProviderTypeLabels[provider.type]}</em>
+        </span>
+        <small>{aiProviderStatusLabels[provider.status]}</small>
+      </button>
+    )
+  }
+
   return (
-    <section className="settings-shell" aria-label="Settings">
+    <section className="settings-shell" aria-label="Settings" aria-modal="true" role="dialog">
+      <nav className="settings-nav" aria-label="Settings sections">
+        {settingsSections.map((section) => (
+          <button
+            key={section.id}
+            type="button"
+            className={activeSettingsTab === section.id ? 'settings-nav-item is-active' : 'settings-nav-item'}
+            aria-pressed={activeSettingsTab === section.id}
+            onClick={() => setActiveSettingsTab(section.id)}
+          >
+            {section.label}
+          </button>
+        ))}
+      </nav>
+
       <div className="settings-scroll">
         <div className="settings-header">
-          <div>
-            <h2>Settings</h2>
+          <h2>{settingsSections.find((section) => section.id === activeSettingsTab)?.label}</h2>
+          <div className="settings-header-actions">
+            <span className="settings-status">{status}</span>
+            <button className="icon-button" type="button" aria-label="Close settings" onClick={onClose}>
+              <X size={15} />
+            </button>
           </div>
-          <span className="settings-status">{status}</span>
         </div>
 
-        <nav className="settings-tabs" aria-label="Settings sections">
-          {settingsTabs.map((tab) => (
-            <button
-              key={tab.id}
-              className={activeSettingsTab === tab.id ? 'is-active' : ''}
-              type="button"
-              aria-pressed={activeSettingsTab === tab.id}
-              onClick={() => setActiveSettingsTab(tab.id)}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </nav>
-
-        {activeSettingsTab === 'overview' && (
+        {activeSettingsTab === 'general' && (
           <>
             <section className="settings-control-strip" aria-label="AI defaults">
               <label>
@@ -5359,40 +5304,41 @@ function SettingsView({
               </div>
             </section>
 
-            <section className="settings-section settings-overview-grid" aria-label="Settings overview">
-              <article className="settings-panel">
-                <h3>AI default</h3>
-                <p>{aiRoutingLabels[routingMode]} · {selectedRemoteProvider?.name ?? 'No remote provider'}</p>
-              </article>
-              <article className="settings-panel">
-                <h3>Capture</h3>
-                <p>{extensionInstallTargets.filter((target) => extensionStatusForTarget(extensionInstallStatus, target.id).installed).length}/{extensionInstallTargets.length} browser helpers installed.</p>
-              </article>
-              <article className="settings-panel">
-                <h3>Secrets</h3>
-                <p>{storedSecretCount}/{remoteProviders.length} remote providers have Keychain secrets.</p>
-              </article>
+            <section className="settings-panel" aria-label="Language">
+              <h3><T k="lang.label" /></h3>
+              <p className="settings-language__hint"><T k="lang.hint" /></p>
+              <div className="settings-language__toggle" role="group" aria-label="Language">
+                <button type="button" className={lang === 'en' ? 'is-active' : ''} aria-pressed={lang === 'en'} onClick={() => setLang('en')}>
+                  English
+                </button>
+                <button type="button" className={lang === 'vi' ? 'is-active' : ''} aria-pressed={lang === 'vi'} onClick={() => setLang('vi')}>
+                  Tiếng Việt
+                </button>
+              </div>
+            </section>
+
+            <section className="settings-panel" aria-label="Local model">
+              <h3>Local</h3>
+              <dl className="settings-definition-list">
+                <div>
+                  <dt>Apple Foundation Models</dt>
+                  <dd>{localModelAvailable ? 'available' : 'unavailable'}</dd>
+                </div>
+                <div>
+                  <dt>Status</dt>
+                  <dd>{localModelStatus}</dd>
+                </div>
+                <div>
+                  <dt>Default use</dt>
+                  <dd>Tagging, classification, outline, diagram summary</dd>
+                </div>
+              </dl>
             </section>
           </>
         )}
 
         {activeSettingsTab === 'capture' && (
-        <section className="settings-section settings-onboarding-grid" aria-label="Onboarding and extensions">
-          <article className="settings-panel settings-action-panel">
-            <div>
-              <h3>Onboarding</h3>
-              <p>Replay first-run setup for API keys, local fallback, and browser capture.</p>
-            </div>
-            <div className="settings-action-row">
-              <button className="quiet-button" type="button" onClick={onWelcomeOpen}>
-                Open Welcome.kira
-              </button>
-              <button className="quiet-button" type="button" onClick={onOnboardingReset}>
-                Reset onboarding
-              </button>
-            </div>
-          </article>
-
+        <section className="settings-section" aria-label="Extensions">
           <article className="settings-panel settings-action-panel">
             <div>
               <h3>Extensions</h3>
@@ -5423,40 +5369,35 @@ function SettingsView({
         )}
 
         {activeSettingsTab === 'ai' && (
+        <>
         <section className="settings-section" id="settings-providers">
           <div className="provider-workbench-grid">
             <aside className="provider-registry" aria-label="Provider registry">
-              <div className="provider-add-row">
-                <select value={providerTypeDraft} onChange={(event) => setProviderTypeDraft(event.target.value as Exclude<AiProviderType, 'apple_foundation'>)}>
-                  {(Object.keys(aiProviderTemplates) as Exclude<AiProviderType, 'apple_foundation'>[]).map((type) => (
-                    <option key={type} value={type}>
-                      {aiProviderTypeLabels[type]}
-                    </option>
-                  ))}
-                </select>
-                <button className="quiet-button" type="button" onClick={() => onProviderAdd(providerTypeDraft)}>
-                  Add
-                </button>
+              <div className="provider-list">
+                {primaryProviders.map(renderProviderRow)}
               </div>
 
-              <div className="provider-list">
-                {providers.map((provider) => (
-                  <button
-                    className="provider-list-row"
-                    type="button"
-                    key={provider.id}
-                    aria-pressed={provider.id === activeProvider.id}
-                    data-status={provider.status}
-                    onClick={() => onActiveProviderChange(provider.id)}
-                  >
-                    <span>
-                      <strong>{provider.name}</strong>
-                      <em>{aiProviderTypeLabels[provider.type]}</em>
-                    </span>
-                    <small>{aiProviderStatusLabels[provider.status]}</small>
+              <details className="settings-disclosure provider-more">
+                <summary>
+                  <h3>More providers</h3>
+                  <span>{moreProviders.length}</span>
+                </summary>
+                <div className="provider-list">
+                  {moreProviders.map(renderProviderRow)}
+                </div>
+                <div className="provider-add-row">
+                  <select value={providerTypeDraft} onChange={(event) => setProviderTypeDraft(event.target.value as Exclude<AiProviderType, 'apple_foundation'>)}>
+                    {addableProviderTypes.map((type) => (
+                      <option key={type} value={type}>
+                        {aiProviderTypeLabels[type]}
+                      </option>
+                    ))}
+                  </select>
+                  <button className="quiet-button" type="button" onClick={() => onProviderAdd(providerTypeDraft)}>
+                    Add
                   </button>
-                ))}
-              </div>
+                </div>
+              </details>
             </aside>
 
             {activeProvider && (
@@ -5478,8 +5419,31 @@ function SettingsView({
                       disabled={activeProvider.authMode === 'local'}
                     />
                   </label>
-                  {activeProvider.type !== 'codex' && (
-                    <>
+                  <label>
+                    <span>Model</span>
+                    {activeProvider.discoveredModels && activeProvider.discoveredModels.length > 0 ? (
+                      <select value={activeProvider.model} onChange={(event) => onProviderChange(activeProvider.id, { model: event.target.value })}>
+                        {activeProvider.discoveredModels.map((model) => (
+                          <option key={model} value={model}>{model}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input
+                        value={activeProvider.model}
+                        onChange={(event) => onProviderChange(activeProvider.id, { model: event.target.value })}
+                        disabled={activeProvider.authMode === 'local'}
+                      />
+                    )}
+                  </label>
+                </div>
+
+                {activeProvider.type !== 'codex' && activeProvider.type !== 'claude_code' && (
+                  <details className="settings-disclosure provider-advanced-fields">
+                    <summary>
+                      <h3>Advanced</h3>
+                      <span>Auth mode · Base URL</span>
+                    </summary>
+                    <div className="provider-detail-grid">
                       <label>
                         <span>Auth mode</span>
                         <select
@@ -5502,35 +5466,19 @@ function SettingsView({
                           disabled={activeProvider.authMode === 'local'}
                         />
                       </label>
-                    </>
-                  )}
-                  <label>
-                    <span>Model</span>
-                    {activeProvider.discoveredModels && activeProvider.discoveredModels.length > 0 ? (
-                      <select value={activeProvider.model} onChange={(event) => onProviderChange(activeProvider.id, { model: event.target.value })}>
-                        {activeProvider.discoveredModels.map((model) => (
-                          <option key={model} value={model}>{model}</option>
-                        ))}
-                      </select>
-                    ) : (
-                      <input
-                        value={activeProvider.model}
-                        onChange={(event) => onProviderChange(activeProvider.id, { model: event.target.value })}
-                        disabled={activeProvider.authMode === 'local'}
-                      />
-                    )}
-                  </label>
-                </div>
+                    </div>
 
-                {activeProvider.authMode === 'oauth' && activeProvider.type !== 'codex' && (
-                  <div className="oauth-ready-note">
-                    <strong>OAuth is for enterprise gateways only</strong>
-                    <span>
-                      Claude Pro/Max and ChatGPT Plus subscriptions cannot be connected by OAuth. Since
-                      February 2026 Anthropic and OpenAI restrict subscription tokens to their own apps.
-                      For Claude or OpenAI, switch this profile to <strong>API key</strong> and bring your own key.
-                    </span>
-                  </div>
+                    {activeProvider.authMode === 'oauth' && (
+                      <div className="oauth-ready-note">
+                        <strong>OAuth is for enterprise gateways only</strong>
+                        <span>
+                          Claude Pro/Max and ChatGPT Plus subscriptions cannot be connected by OAuth. Since
+                          February 2026 Anthropic and OpenAI restrict subscription tokens to their own apps.
+                          For Claude or OpenAI, switch this profile to <strong>API key</strong> and bring your own key.
+                        </span>
+                      </div>
+                    )}
+                  </details>
                 )}
 
                 {activeProvider.type === 'codex' ? (
@@ -5619,6 +5567,8 @@ function SettingsView({
                     )}
                     {codexLoginEvent?.type === 'error' && <p className="codex-login__error">{codexLoginEvent.message}</p>}
                   </div>
+                ) : activeProvider.type === 'claude_code' ? (
+                  <ClaudeCodeStatus provider={activeProvider} />
                 ) : activeProvider.authMode !== 'local' ? (
                   <label>
                     <span>API key</span>
@@ -5642,7 +5592,7 @@ function SettingsView({
                 ) : null}
 
                 <div className="provider-actions-row">
-                  {activeProvider.authMode !== 'local' && activeProvider.type !== 'codex' && (
+                  {activeProvider.authMode !== 'local' && activeProvider.type !== 'codex' && activeProvider.type !== 'claude_code' && (
                     <>
                       <button
                         className="quiet-button provider-test-button"
@@ -5694,92 +5644,42 @@ function SettingsView({
             )}
           </div>
         </section>
-        )}
 
-        {activeSettingsTab === 'ai' && (
-          <section className="settings-section settings-route-preview">
-            <details className="settings-panel settings-disclosure" open>
-              <summary>
-                <h3>Routing preview</h3>
-                <span>{taskRoutes.length} tasks</span>
-              </summary>
-              <div className="task-route-list" aria-label="AI task routing preview">
-                {taskRoutes.map((route) => (
-                  <div className="task-route-row" key={route.task}>
-                    <span>{aiTaskLabels[route.task]}</span>
-                    <strong>{route.providerName}</strong>
-                    <em>{route.reason}</em>
-                  </div>
-                ))}
-              </div>
-            </details>
-          </section>
+        <section className="settings-section settings-route-preview">
+          <details className="settings-panel settings-disclosure">
+            <summary>
+              <h3>Routing preview</h3>
+              <span>{taskRoutes.length} tasks</span>
+            </summary>
+            <div className="task-route-list" aria-label="AI task routing preview">
+              {taskRoutes.map((route) => (
+                <div className="task-route-row" key={route.task}>
+                  <span>{aiTaskLabels[route.task]}</span>
+                  <strong>{route.providerName}</strong>
+                  <em>{route.reason}</em>
+                </div>
+              ))}
+            </div>
+          </details>
+        </section>
+        </>
         )}
 
         {activeSettingsTab === 'advanced' && (
         <section className="settings-section settings-compact-disclosures">
-          <details className="settings-panel settings-disclosure" open>
-            <summary>
-              <h3><T k="lang.label" /></h3>
-              <span>{lang === 'vi' ? 'Tiếng Việt' : 'English'}</span>
-            </summary>
-            <div className="settings-language">
-              <p className="settings-language__hint"><T k="lang.hint" /></p>
-              <div className="settings-language__toggle" role="group" aria-label="Language">
-                <button
-                  type="button"
-                  className={lang === 'en' ? 'is-active' : ''}
-                  aria-pressed={lang === 'en'}
-                  onClick={() => setLang('en')}
-                >
-                  English
-                </button>
-                <button
-                  type="button"
-                  className={lang === 'vi' ? 'is-active' : ''}
-                  aria-pressed={lang === 'vi'}
-                  onClick={() => setLang('vi')}
-                >
-                  Tiếng Việt
-                </button>
-              </div>
-            </div>
-          </details>
-
-          <details className="settings-panel settings-disclosure" open>
-            <summary>
-              <h3>Local</h3>
-              <span>{localModelStatus}</span>
-            </summary>
-            <dl className="settings-definition-list">
-              <div>
-                <dt>Apple Foundation Models</dt>
-                <dd>{localModelAvailable ? 'available' : 'unavailable'}</dd>
-              </div>
-              <div>
-                <dt>Status</dt>
-                <dd>{localModelStatus}</dd>
-              </div>
-              <div>
-                <dt>Default use</dt>
-                <dd>Tagging, classification, outline, diagram summary</dd>
-              </div>
-            </dl>
-          </details>
-
-          <details className="settings-panel settings-disclosure" id="settings-secrets" open>
+          <details className="settings-panel settings-disclosure" id="settings-secrets">
             <summary>
               <h3>Secrets</h3>
               <span>{storedSecretCount} stored</span>
             </summary>
             <div className="settings-chip-grid">
               <span><Check size={13} /> macOS Keychain</span>
-              <span><X size={13} /> No browser tokens</span>
+              <span><ShieldCheck size={13} /> No browser tokens</span>
               <span><Database size={13} /> {storedSecretCount}/{remoteProviders.length} remote</span>
             </div>
           </details>
 
-          <details className="settings-panel settings-disclosure" open>
+          <details className="settings-panel settings-disclosure">
             <summary>
               <h3>Usage</h3>
               <span>{billingSeparatedCount} API billed</span>
@@ -5788,6 +5688,22 @@ function SettingsView({
               <span><Bot size={13} /> Bring your own API key</span>
               <span><Sparkles size={13} /> Local-first fallback</span>
               <span><Check size={13} /> No subscription passthrough</span>
+            </div>
+          </details>
+
+          <details className="settings-panel settings-disclosure">
+            <summary>
+              <h3>Onboarding</h3>
+              <span>Replay / reset</span>
+            </summary>
+            <p>Replay first-run setup for AI providers, local fallback, and browser capture.</p>
+            <div className="settings-action-row">
+              <button className="quiet-button" type="button" onClick={onWelcomeOpen}>
+                Open Welcome.kira
+              </button>
+              <button className="quiet-button" type="button" onClick={onOnboardingReset}>
+                Reset onboarding
+              </button>
             </div>
           </details>
         </section>
@@ -5878,7 +5794,6 @@ function EvidenceInbox({
   onSelectIdea,
   onSelectLink,
   onToggleCollapsed,
-  onToggleFloating,
 }: {
   allTags: string[]
   browseMode: LibraryBrowseMode
@@ -5916,7 +5831,6 @@ function EvidenceInbox({
   onSelectIdea: (id: string) => void
   onSelectLink: (id: string) => void
   onToggleCollapsed: () => void
-  onToggleFloating: () => void
 }) {
   const importInput = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
@@ -5982,7 +5896,7 @@ function EvidenceInbox({
     return (
       <aside className="inbox panel inbox--collapsed library-drawer-panel">
         <button className="icon-button" type="button" aria-label="Expand library" onClick={onToggleCollapsed}>
-          <PanelRight size={16} />
+          <PanelLeftOpen size={16} />
         </button>
       </aside>
     )
@@ -6017,11 +5931,8 @@ function EvidenceInbox({
           </span>
         </div>
         <div className="panel-actions">
-          <button className="icon-button" type="button" aria-label="Undock library" onClick={onToggleFloating}>
-            <Maximize2 size={15} />
-          </button>
           <button className="icon-button" type="button" aria-label="Collapse library" onClick={onToggleCollapsed}>
-            <PanelLeft size={16} />
+            <PanelLeftClose size={16} />
           </button>
           <button className="icon-button" type="button" aria-label="Import image" onClick={() => importInput.current?.click()}>
             <ImagePlus size={16} />
@@ -6093,7 +6004,7 @@ function EvidenceInbox({
               Paste URL
             </button>
             <button type="button" onClick={onExportContactSheet}>
-              <ArrowDownToLine size={14} />
+              <ArrowUpFromLine size={14} />
               Export
             </button>
             {isTauriRuntime() && (
@@ -6887,7 +6798,7 @@ function GraphCanvas({
                 setArcMenu(null)
               }}
             >
-              <MousePointer2 size={15} />
+              <img className="tool-icon" src="/tool-icons/select.png" alt="" />
             </button>
             <button
               type="button"
@@ -6899,18 +6810,18 @@ function GraphCanvas({
                 setArcMenu(null)
               }}
             >
-              <span className="tool-link-glyph" aria-hidden="true"><i /><b /><i /></span>
+              <img className="tool-icon" src="/tool-icons/link.png" alt="" />
             </button>
           </div>
           <div className="canvas-tool-group" aria-label="Create nodes">
             <button type="button" aria-label="Add image placeholder" onClick={onCreatePlaceholder}>
-              <ImagePlus size={15} />
+              <img className="tool-icon" src="/tool-icons/image-placeholder.png" alt="" />
             </button>
             <button type="button" aria-label="Add palette" onClick={onCreatePalette}>
-              <CircleDot size={15} />
+              <img className="tool-icon" src="/tool-icons/palette.png" alt="" />
             </button>
             <button type="button" aria-label="Add idea" onClick={onCreateIdea}>
-              <Lightbulb size={15} />
+              <img className="tool-icon" src="/tool-icons/idea.png" alt="" />
             </button>
           </div>
           <div className="canvas-tool-group" aria-label="Import tools">
@@ -6922,7 +6833,7 @@ function GraphCanvas({
                 if (source?.trim()) void onImportMermaid(source)
               }}
             >
-              <FileText size={15} />
+              <img className="tool-icon" src="/tool-icons/mermaid-diagram.png" alt="" />
             </button>
           </div>
         </div>
@@ -7376,7 +7287,7 @@ function GraphCanvas({
                 <ImagePlus size={13} />
               </button>
               <button type="button" role="menuitem" aria-label="Create linked palette" title="Palette" onClick={() => createLinkedNodeFromArc('palette')}>
-                <CircleDot size={13} />
+                <Palette size={13} />
               </button>
               <button type="button" role="menuitem" aria-label="Create linked diagram" title="Diagram" onClick={() => createLinkedNodeFromArc('diagram')}>
                 <FileText size={13} />
@@ -7453,11 +7364,11 @@ function GraphCanvas({
               <span>{nodeContextMenu.nodes.map((node) => graphNodeKindLabel(node.kind)).join(', ')}</span>
             </div>
             <button type="button" role="menuitem" onClick={() => applyContextImportance(0.25)}>
-              <ZoomIn size={13} />
+              <ChevronUp size={13} />
               Increase importance
             </button>
             <button type="button" role="menuitem" onClick={() => applyContextImportance(-0.25)}>
-              <ZoomOut size={13} />
+              <ChevronDown size={13} />
               Decrease importance
             </button>
             <button
@@ -7474,7 +7385,7 @@ function GraphCanvas({
               Clear selection
             </button>
             <button type="button" role="menuitem" className="is-danger" onClick={deleteContextNodes}>
-              <X size={13} />
+              <Trash2 size={13} />
               Delete selected
             </button>
           </div>
@@ -7495,7 +7406,6 @@ function GraphCanvas({
           </div>
 
           <div className="graph-status">
-            <CircleDot size={13} />
             <span>
               {activeCanvasTool === 'link'
                 ? pendingLinkSource ? 'Select link target' : 'Select link source'
@@ -8159,7 +8069,7 @@ function SlideshowView({
           </button>
           <div className={exportMenuOpen ? 'slide-export-menu is-open' : 'slide-export-menu'}>
             <button type="button" aria-label="Export slides" aria-haspopup="menu" aria-expanded={exportMenuOpen} onClick={() => setExportMenuOpen((current) => !current)}>
-              <ArrowDownToLine size={14} />
+              <ArrowUpFromLine size={14} />
             </button>
             {exportMenuOpen && (
               <>
@@ -8362,11 +8272,11 @@ function OutlineView({
             Rebuild
           </button>
           <button className="quiet-button" type="button" onClick={onExportMarkdown}>
-            <ArrowDownToLine size={14} />
+            <ArrowUpFromLine size={14} />
             Markdown
           </button>
           <button className="quiet-button" type="button" onClick={onExportHtml}>
-            <ArrowDownToLine size={14} />
+            <ArrowUpFromLine size={14} />
             HTML
           </button>
         </div>
@@ -8530,7 +8440,6 @@ function Inspector({
   onDuplicateSelection,
   onOpenOutline,
   onRebuildOutline,
-  onToggleFloating,
   ocrRunningImageId,
   ocrStatusByImageId,
 }: {
@@ -8593,7 +8502,6 @@ function Inspector({
   onDuplicateSelection: () => void
   onOpenOutline: () => void
   onRebuildOutline: () => void
-  onToggleFloating: () => void
 }) {
   const titleInputRef = useRef<HTMLInputElement>(null)
   const [isInspectorToolsOpen, setIsInspectorToolsOpen] = useState(false)
@@ -8663,7 +8571,7 @@ function Inspector({
     return (
       <aside className="inspector panel inspector--collapsed">
         <button className="icon-button" type="button" aria-label="Expand inspector" onClick={onToggleCollapsed}>
-          <PanelLeft size={16} />
+          <PanelRightOpen size={16} />
         </button>
       </aside>
     )
@@ -8677,6 +8585,9 @@ function Inspector({
           <h2>{selected.heading}</h2>
         </div>
         <div className="panel-actions">
+          <button className="icon-button" type="button" aria-label="Collapse inspector" onClick={onToggleCollapsed}>
+            <PanelRightClose size={16} />
+          </button>
           {selectedNodeRef && (
             <button className="icon-button" type="button" aria-label="Create link from node" onClick={() => onBeginLinkFromNode(selectedNodeRef)}>
               <Link2 size={15} />
@@ -8696,14 +8607,10 @@ function Inspector({
             <div className="panel-popover inspector-tools-menu">
               {selectedNodeRef && (
                 <button type="button" onClick={onDuplicateSelection}>
-                  <Clipboard size={14} />
+                  <Copy size={14} />
                   Duplicate
                 </button>
               )}
-              <button type="button" onClick={onToggleFloating}>
-                <Maximize2 size={14} />
-                Undock
-              </button>
             </div>
           )}
         </div>
@@ -8754,7 +8661,7 @@ function Inspector({
 
           <section className="inspector-card project-file-card">
             <div className="section-heading">
-              <CircleDot size={14} />
+              <Palette size={14} />
               Color Scheme
             </div>
             <ProjectColorSummary
@@ -8944,7 +8851,7 @@ function Inspector({
                 Similar
               </button>
               <button className="image-edge-action" type="button" onClick={() => onReferenceConvertToPalette(selected.image.id)}>
-                <CircleDot size={13} />
+                <Palette size={13} />
                 Palette
               </button>
             </div>
@@ -9190,7 +9097,7 @@ function Inspector({
         <>
           <section className="inspector-card">
             <div className="section-heading">
-              <CircleDot size={14} />
+              <Palette size={14} />
               Palette
               <span>{palettes.length}</span>
             </div>
@@ -9564,7 +9471,7 @@ function NodeVersionTimeline({
                 <small>{formatNodeVersionMeta(version)}</small>
               </div>
               <button type="button" aria-label={`Restore node version ${version.versionNumber}`} onClick={() => onRestore(version.id)}>
-                <Undo2 size={13} />
+                <RotateCcw size={13} />
               </button>
             </article>
           ))}
