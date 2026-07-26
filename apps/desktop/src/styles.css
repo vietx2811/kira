@@ -94,6 +94,9 @@ button {
 .app-shell {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
+  /* Row 1 is the file tab strip (auto height); row 2 is the library/canvas/
+     inspector workspace, filling whatever the tab strip leaves behind. */
+  grid-template-rows: auto minmax(0, 1fr);
   height: 100dvh;
   padding: 0;
   border: 1px solid var(--window-border);
@@ -125,6 +128,135 @@ button {
 
 .app-shell[data-color-mode="dark"] {
   color-scheme: dark;
+}
+
+/* A tab is a file (board), never a view — Canvas/3D/Slides/Outline are just
+   ways of looking at whichever file is active, and live in .topbar instead. */
+.file-tab-bar {
+  position: relative;
+  z-index: 90;
+  display: flex;
+  align-items: flex-end;
+  min-height: 40px;
+  padding: 8px var(--space-3) 0;
+  border-bottom: 1px solid var(--separator-hairline);
+  gap: 4px;
+  background: linear-gradient(180deg, rgb(255 255 255 / 0.03), rgb(255 255 255 / 0));
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+}
+
+.file-tab-bar .window-controls {
+  flex: 0 0 auto;
+  align-self: center;
+  margin: 0 var(--space-3) 6px 6px;
+}
+
+.file-tab-list {
+  display: flex;
+  overflow-x: auto;
+  align-items: flex-end;
+  min-width: 0;
+  gap: 2px;
+  scrollbar-width: none;
+}
+
+.file-tab-list::-webkit-scrollbar {
+  display: none;
+}
+
+.file-tab {
+  position: relative;
+  display: inline-flex;
+  flex: 0 1 auto;
+  align-items: center;
+  min-width: 96px;
+  max-width: 200px;
+  height: 32px;
+  padding: 0 8px 0 10px;
+  border: 1px solid transparent;
+  border-bottom: 0;
+  border-radius: var(--radius-2) var(--radius-2) 0 0;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  gap: 6px;
+  font-size: 0.76rem;
+}
+
+.file-tab:hover {
+  color: var(--text-main);
+  background: rgb(255 255 255 / 0.035);
+}
+
+.file-tab.is-active {
+  border-color: var(--border-soft);
+  background: var(--glass-content);
+  color: var(--text-main);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text-main), transparent 92%);
+}
+
+/* Dragging a node up from the canvas hovers this instead of clicking it —
+   the highlight is the only feedback until release actually commits the move. */
+.file-tab.is-drop-target {
+  border-color: var(--accent-cyan);
+  background: var(--accent-faint);
+  color: var(--text-main);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-cyan), transparent 40%);
+}
+
+.file-tab-dirty {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: var(--accent-amber);
+}
+
+.file-tab-title {
+  overflow: hidden;
+  min-width: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-tab-close {
+  display: grid;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 999px;
+  color: var(--text-soft);
+  opacity: 0;
+  transition: opacity 120ms ease, background 120ms ease, color 120ms ease;
+}
+
+.file-tab:hover .file-tab-close,
+.file-tab.is-active .file-tab-close {
+  opacity: 1;
+}
+
+.file-tab-close:hover {
+  background: rgb(255 255 255 / 0.1);
+  color: var(--text-main);
+}
+
+.file-tab-add {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  flex: 0 0 auto;
+  place-items: center;
+  margin: 0 0 4px 2px;
+  border-radius: var(--radius-1);
+  color: var(--text-soft);
+  cursor: pointer;
+}
+
+.file-tab-add:hover {
+  background: rgb(255 255 255 / 0.06);
+  color: var(--text-main);
 }
 
 .topbar {
@@ -411,14 +543,6 @@ button {
   justify-items: center;
   width: 100%;
   gap: 15px;
-}
-
-.system-sidebar .window-controls {
-  display: grid;
-  grid-template-columns: repeat(3, 12px);
-  justify-content: center;
-  padding: 0;
-  gap: 6px;
 }
 
 .sidebar-brand {
@@ -1681,6 +1805,7 @@ p {
 }
 
 .reference-thumb {
+  position: relative;
   display: inline-grid;
   place-items: center;
   overflow: hidden;
@@ -1716,6 +1841,7 @@ p {
 .image-grid-window {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(128px, 1fr));
+  align-items: start;
   gap: var(--space-3);
   padding-bottom: var(--space-4);
 }
@@ -1761,10 +1887,16 @@ p {
   gap: var(--space-2);
 }
 
+/* Browsing references means judging composition, so the card takes the image's
+   ratio rather than cropping every thumbnail to the same rectangle. */
 .image-grid-card .reference-thumb {
   width: 100%;
-  aspect-ratio: 1.16;
+  aspect-ratio: var(--thumb-aspect, 1.16);
   border-radius: var(--radius-2);
+}
+
+.image-grid-card .reference-thumb img {
+  object-fit: contain;
 }
 
 .image-grid-card .image-row-copy {
@@ -2221,6 +2353,92 @@ p {
   transform-origin: 50% 50%;
 }
 
+/* A frame is a named region, not a node — it sits behind everything (z-index
+   0, versus 2 for idea/image/etc.) and, past its label and resize handle, has
+   no hit-testing of its own: pointer-events:none on the body lets clicks and
+   drags on the nodes inside it reach them exactly as if the frame weren't
+   there. Only the label chip and the corner handle opt back in. */
+.canvas-frame {
+  position: absolute;
+  z-index: 0;
+  border: 1.5px dashed var(--border-soft);
+  border-radius: var(--radius-3);
+  background: color-mix(in srgb, var(--text-main), transparent 97%);
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  transition: border-color 160ms ease, background 160ms ease;
+}
+
+.canvas-frame.is-selected {
+  border-color: color-mix(in srgb, var(--accent-cyan), transparent 30%);
+  background: color-mix(in srgb, var(--accent-cyan), transparent 95%);
+}
+
+.canvas-frame-label {
+  position: absolute;
+  top: -13px;
+  left: 10px;
+  display: inline-flex;
+  overflow: hidden;
+  max-width: calc(100% - 20px);
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+  background: var(--node-surface-selected);
+  color: var(--text-soft);
+  cursor: grab;
+  pointer-events: auto;
+  align-items: center;
+  font-size: 0.72rem;
+  font-weight: 650;
+}
+
+.canvas-frame.is-selected .canvas-frame-label {
+  border-color: color-mix(in srgb, var(--accent-cyan), transparent 40%);
+  color: var(--text-main);
+}
+
+.canvas-frame-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.canvas-frame-title-input {
+  width: 140px;
+  border: 0;
+  background: transparent;
+  color: var(--text-main);
+  font: inherit;
+  outline: none;
+}
+
+.canvas-frame-resize-handle {
+  position: absolute;
+  right: -7px;
+  bottom: -7px;
+  width: 14px;
+  height: 14px;
+  border: 1px solid color-mix(in srgb, var(--accent-cyan), transparent 40%);
+  border-radius: 4px;
+  background: var(--node-surface-selected);
+  cursor: nwse-resize;
+  pointer-events: auto;
+  touch-action: none;
+  opacity: 0;
+  transition: opacity 120ms ease, background 120ms ease;
+}
+
+.canvas-frame:hover .canvas-frame-resize-handle,
+.canvas-frame.is-selected .canvas-frame-resize-handle {
+  opacity: 1;
+}
+
+.canvas-frame-resize-handle:hover {
+  background: var(--glass-active);
+}
+
 .canvas-zero-state {
   position: absolute;
   top: 50%;
@@ -2524,7 +2742,13 @@ p {
   transform: translate(-50%, -50%) scale(calc(var(--node-scale, 1) + 0.015));
 }
 
+/* Selecting must not resize or relayout the card, or every click shoves the
+   board around. Only editing earns the extra room. */
 .idea-node.is-selected {
+  background: var(--node-surface-selected);
+}
+
+.idea-node.is-editing {
   display: block;
   width: 248px;
   padding-left: calc(var(--space-3) + 15px);
@@ -2543,7 +2767,7 @@ p {
   font-size: 0.7rem;
 }
 
-.idea-node.is-selected small {
+.idea-node.is-editing small {
   grid-column: auto;
 }
 
@@ -2626,7 +2850,7 @@ p {
   border-radius: 999px;
 }
 
-.idea-node.is-selected .idea-status {
+.idea-node.is-editing .idea-status {
   position: absolute;
   top: var(--space-3);
   left: var(--space-3);
@@ -2645,13 +2869,43 @@ p {
   background: var(--accent-violet);
 }
 
+/* Width is the only fixed dimension; height follows the reference's real ratio
+   so a poster stays a poster instead of being cropped to a uniform box. */
 .image-node {
   display: grid;
-  width: 96px;
-  height: 86px;
-  padding: 5px;
+  width: 104px;
+  height: auto;
+  padding: 4px;
   border-radius: var(--radius-2);
   background: transparent;
+}
+
+.image-node .reference-thumb img {
+  object-fit: contain;
+}
+
+.node-caption {
+  position: absolute;
+  top: calc(100% + 5px);
+  left: 0;
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 0.66rem;
+  line-height: 1.2;
+  opacity: 0;
+  pointer-events: none;
+  text-overflow: ellipsis;
+  transform: scale(calc(1 / var(--node-scale, 1)));
+  transform-origin: top left;
+  transition: opacity 120ms ease;
+  white-space: nowrap;
+}
+
+.image-node:hover .node-caption,
+.image-node.is-selected .node-caption,
+.image-node.is-multi-selected .node-caption {
+  opacity: 1;
 }
 
 .palette-node,
@@ -2714,7 +2968,8 @@ p {
 
 .image-node .reference-thumb {
   width: 100%;
-  height: 100%;
+  height: auto;
+  aspect-ratio: var(--thumb-aspect, 1.333);
   border-radius: 4px;
   pointer-events: none;
 }
@@ -2748,26 +3003,110 @@ p {
   background: var(--node-surface-selected);
   color: var(--text-main);
   opacity: 0;
-  transform: scale(0.82);
+  /* Node chrome keeps a constant on-screen size; only the content scales. */
+  transform: scale(calc(0.82 / var(--node-scale, 1)));
+  transform-origin: top right;
   transition: opacity 120ms ease, transform 120ms ease, background 120ms ease;
 }
 
-.idea-node:hover .node-add-control,
-.image-node:hover .node-add-control,
-.palette-node:hover .node-add-control,
-.diagram-node:hover .node-add-control,
-.placeholder-node:hover .node-add-control,
+/* Selection-gated, not hover-gated: sweeping across a dense board should not
+   flash a control on every node the cursor crosses. */
 .idea-node.is-selected .node-add-control,
 .image-node.is-selected .node-add-control,
 .palette-node.is-selected .node-add-control,
 .diagram-node.is-selected .node-add-control,
 .placeholder-node.is-selected .node-add-control {
   opacity: 1;
-  transform: scale(1);
+  transform: scale(calc(1 / var(--node-scale, 1)));
 }
 
 .node-add-control:hover {
   background: var(--glass-active);
+}
+
+/* Free resize: drag from the corner. Only shown on the selected node so the
+   board stays quiet, and counter-scaled so it stays a constant grab target. */
+.node-resize-handle {
+  position: absolute;
+  right: -7px;
+  bottom: -7px;
+  z-index: 3;
+  width: 14px;
+  height: 14px;
+  border: 1px solid color-mix(in srgb, var(--accent-cyan), transparent 40%);
+  border-radius: 4px;
+  background: var(--node-surface-selected);
+  cursor: nwse-resize;
+  touch-action: none;
+  transform: scale(calc(1 / var(--node-scale, 1)));
+  transform-origin: bottom right;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.node-resize-handle:hover,
+.graph-canvas.is-resizing-node .node-resize-handle {
+  border-color: var(--accent-cyan);
+  background: var(--glass-active);
+}
+
+.graph-canvas.is-resizing-node {
+  cursor: nwse-resize;
+}
+
+/* No transition while a resize gesture is live, or the node lags the cursor. */
+.graph-canvas.is-resizing-node .idea-node,
+.graph-canvas.is-resizing-node .image-node,
+.graph-canvas.is-resizing-node .palette-node,
+.graph-canvas.is-resizing-node .diagram-node,
+.graph-canvas.is-resizing-node .placeholder-node {
+  transition: none;
+}
+
+/* Semantic zoom: nodes always render at their real size (no more shrinking
+   the whole board to fit more on screen — see nodeScale()); zooming out
+   simplifies what each node shows instead, the way a map hides street names
+   before it shrinks the streets themselves. "out" drops secondary text,
+   "far" drops titles too, leaving just image/color/icon content. */
+.graph-canvas[data-zoom-tier="out"] .node-meta-line,
+.graph-canvas[data-zoom-tier="out"] .idea-node small,
+.graph-canvas[data-zoom-tier="out"] .palette-node small,
+.graph-canvas[data-zoom-tier="out"] .diagram-node small,
+.graph-canvas[data-zoom-tier="out"] .node-caption,
+.graph-canvas[data-zoom-tier="out"] .node-palette,
+.graph-canvas[data-zoom-tier="far"] .node-meta-line,
+.graph-canvas[data-zoom-tier="far"] .idea-node small,
+.graph-canvas[data-zoom-tier="far"] .palette-node small,
+.graph-canvas[data-zoom-tier="far"] .diagram-node small,
+.graph-canvas[data-zoom-tier="far"] .node-caption,
+.graph-canvas[data-zoom-tier="far"] .node-palette {
+  display: none;
+}
+
+/* The status dot is the one identifier left once title text drops — worth
+   keeping legible, so it grows slightly rather than shrinking with the rest. */
+.graph-canvas[data-zoom-tier="far"] .idea-node strong,
+.graph-canvas[data-zoom-tier="far"] .palette-node strong,
+.graph-canvas[data-zoom-tier="far"] .diagram-node strong,
+.graph-canvas[data-zoom-tier="far"] .placeholder-node span {
+  display: none;
+}
+
+.graph-canvas[data-zoom-tier="far"] .idea-status {
+  width: 12px;
+  height: 12px;
+  margin: 0;
+}
+
+/* Idea/palette/diagram/placeholder read as plain color chips once their text
+   is gone — dropping the padding keeps a lone status dot or icon from
+   floating in a mostly-empty box. */
+.graph-canvas[data-zoom-tier="far"] .idea-node,
+.graph-canvas[data-zoom-tier="far"] .palette-node,
+.graph-canvas[data-zoom-tier="far"] .diagram-node,
+.graph-canvas[data-zoom-tier="far"] .placeholder-node {
+  display: grid;
+  padding: 4px;
+  place-items: center;
 }
 
 .node-arc-menu {
@@ -2823,10 +3162,11 @@ p {
   transform: translate(-62px, -104px);
 }
 
+/* Moved out of the bottom-right corner now that zoom lives there. */
 .ai-node-panel {
   position: absolute;
-  right: 22px;
-  bottom: 88px;
+  top: 14px;
+  right: 14px;
   z-index: 9;
   display: grid;
   width: 330px;
@@ -2988,15 +3328,10 @@ p {
 }
 
 .canvas-tool-rail {
-  position: absolute;
-  bottom: var(--space-4);
-  left: calc(50% + (var(--canvas-left-inset, 80px) - var(--canvas-right-inset, 0px)) / 2);
-  z-index: 5;
   display: inline-flex;
+  flex: 0 0 auto;
   align-items: center;
   justify-content: center;
-  width: 304px;
-  min-width: 304px;
   height: 54px;
   padding: 6px 10px;
   border: 1px solid var(--border-soft);
@@ -3008,7 +3343,6 @@ p {
   -webkit-backdrop-filter: blur(24px) saturate(1.35);
   backdrop-filter: blur(24px) saturate(1.35);
   gap: 8px;
-  transform: translateX(-50%);
 }
 
 .canvas-tool-group {
@@ -3057,30 +3391,41 @@ p {
   filter: drop-shadow(0 0 6px color-mix(in srgb, var(--accent-strong), transparent 55%));
 }
 
-.canvas-secondary-rail {
+/* Bottom-left: how the board is shown. Bottom-right: where the view is.
+   The top-right corner belongs to the app chrome only. */
+.canvas-bottom-bar {
   position: absolute;
-  top: 70px;
-  right: calc(var(--canvas-right-inset, 0px) + 14px);
+  right: var(--space-4);
+  bottom: var(--space-4);
+  left: var(--space-4);
   z-index: 5;
-  display: inline-flex;
+  display: flex;
   align-items: center;
   justify-content: center;
-  width: auto;
-  min-width: 0;
-  height: auto;
-  max-width: none;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
-  gap: 8px;
-  transform: none;
+  /* Narrow canvases (both side panels open) wrap the side rails onto their own
+     row instead of squeezing the create tools into an unusable stub. */
+  flex-wrap: wrap-reverse;
+  gap: 8px var(--space-3);
+  pointer-events: none;
 }
 
-.graph-status {
+.canvas-bottom-bar > * {
+  pointer-events: auto;
+}
+
+.canvas-view-rail {
+  margin-right: auto;
+}
+
+.canvas-zoom-rail {
+  margin-left: auto;
+}
+
+.canvas-view-rail,
+.canvas-zoom-rail {
   display: inline-flex;
+  flex: 0 0 auto;
   align-items: center;
-  min-width: 0;
   min-height: 38px;
   padding: 4px;
   border: 1px solid var(--border-soft);
@@ -3088,24 +3433,49 @@ p {
   background: var(--glass-inspector);
   box-shadow: var(--panel-shadow);
   color: var(--text-muted);
-  gap: var(--space-2);
-  font-size: 0.74rem;
-  flex-wrap: nowrap;
-  justify-content: center;
+  gap: 4px;
+  font-size: 0.72rem;
   white-space: nowrap;
   -webkit-backdrop-filter: blur(20px) saturate(1.22);
   backdrop-filter: blur(20px) saturate(1.22);
 }
 
-.graph-status > svg,
-.graph-status > span {
-  display: none;
+.canvas-zoom-rail {
+  padding-right: 7px;
+}
+
+.canvas-view-rail-trigger {
+  display: inline-flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-soft);
+  cursor: pointer;
+  gap: 5px;
+  font-size: 0.72rem;
+}
+
+.canvas-view-rail-trigger:hover,
+.canvas-view-rail-trigger.is-active {
+  background: var(--glass-active);
+  color: var(--text-main);
+}
+
+.canvas-zoom-status {
+  padding: 0 8px 0 4px;
+  border-left: 1px solid var(--border-soft);
+  margin-left: 2px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
 }
 
 .graph-tools-drawer {
   position: absolute;
-  top: 116px;
-  right: calc(var(--canvas-right-inset, 0px) + 14px);
+  bottom: 60px;
+  left: var(--space-4);
   z-index: 6;
   display: grid;
   grid-template-columns: repeat(2, minmax(118px, 1fr));
@@ -3128,8 +3498,7 @@ p {
   font-size: 0.68rem;
 }
 
-.graph-tools-drawer select,
-.graph-status select {
+.graph-tools-drawer select {
   width: 86px;
   height: 26px;
   padding: 0 var(--space-2);
@@ -3190,23 +3559,7 @@ p {
   color: var(--text-main);
 }
 
-.graph-zoom {
-  display: inline-flex;
-  align-items: center;
-  min-height: 38px;
-  padding: 4px 7px;
-  border: 1px solid var(--border-soft);
-  border-radius: 999px;
-  background: var(--glass-inspector);
-  box-shadow: 0 12px 34px color-mix(in srgb, var(--bg-base), transparent 60%);
-  color: var(--text-muted);
-  gap: 2px;
-  font-size: 0.72rem;
-  -webkit-backdrop-filter: blur(20px) saturate(1.22);
-  backdrop-filter: blur(20px) saturate(1.22);
-}
-
-.graph-zoom button {
+.canvas-zoom-rail button {
   display: inline-grid;
   width: 24px;
   height: 24px;
@@ -3218,12 +3571,12 @@ p {
   cursor: pointer;
 }
 
-.graph-zoom button:hover {
+.canvas-zoom-rail button:hover {
   background: rgb(255 255 255 / 0.075);
   color: var(--text-main);
 }
 
-.graph-zoom span {
+.canvas-zoom-value {
   min-width: 38px;
   text-align: center;
   font-variant-numeric: tabular-nums;
@@ -5920,6 +6273,54 @@ textarea {
   display: flex;
   justify-content: end;
   gap: var(--space-2);
+}
+
+.crop-dialog {
+  display: grid;
+  width: min(560px, 100%);
+  padding: var(--space-4);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-3);
+  background: #151716;
+  box-shadow: var(--shadow-soft);
+  gap: var(--space-3);
+}
+
+.crop-dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--text-main);
+  font-size: 0.86rem;
+  font-weight: 650;
+}
+
+.crop-dialog-header span {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* react-easy-crop fills its containing block, so the stage needs an explicit
+   height rather than shrink-wrapping its (absolutely positioned) content. */
+.crop-dialog-stage {
+  position: relative;
+  height: min(60vh, 420px);
+  overflow: hidden;
+  border-radius: var(--radius-2);
+  background: #0a0b0a;
+}
+
+.crop-dialog-hint {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+}
+
+.crop-dialog-actions {
+  justify-content: space-between;
 }
 
 .version-dialog {

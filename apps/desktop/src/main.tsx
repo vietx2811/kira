@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { create, useStore } from 'zustand'
 import { temporal } from 'zundo'
@@ -19,7 +19,9 @@ import {
   ChevronRight,
   ChevronUp,
   Clipboard,
+  CircleDot,
   Copy,
+  Crop as CropIcon,
   Database,
   ExternalLink,
   Eye,
@@ -27,6 +29,7 @@ import {
   FileText,
   FilePlus2,
   FolderOpen,
+  Frame,
   GitBranch,
   History,
   Image as ImageIcon,
@@ -52,6 +55,7 @@ import {
   Search,
   Settings,
   ShieldCheck,
+  SlidersHorizontal,
   Sparkles,
   Tag,
   Trash2,
@@ -61,6 +65,7 @@ import {
   X,
 } from 'lucide-react'
 import { HexColorPicker } from 'react-colorful'
+import Cropper, { type Area as CropArea } from 'react-easy-crop'
 import { converter, formatHex } from 'culori'
 import './styles.css'
 
@@ -73,8 +78,19 @@ type Selection =
   | { type: 'diagram'; id: string }
   | { type: 'placeholder'; id: string }
   | { type: 'link'; id: string }
+  | { type: 'frame'; id: string }
 
 type CanvasNodeSelection = Pick<GraphNodeRef, 'kind' | 'id'>
+
+// A node in transit between two open tabs — carried by the outer App shell
+// from the moment the source file drops it until the target file mounts
+// active and absorbs it.
+type NodeTransferPayload =
+  | { kind: 'idea'; record: Idea }
+  | { kind: 'image'; record: EvidenceImage }
+  | { kind: 'palette'; record: PaletteNode }
+  | { kind: 'diagram'; record: DiagramNode }
+  | { kind: 'placeholder'; record: PlaceholderNode }
 
 type ProjectTemplateId =
   | 'welcome'
@@ -102,6 +118,7 @@ type PendingDelete =
   | { type: 'diagram'; id: string; title: string }
   | { type: 'placeholder'; id: string; title: string }
   | { type: 'link'; id: string; title: string }
+  | { type: 'frame'; id: string; title: string }
 
 type Idea = {
   id: string
@@ -111,6 +128,7 @@ type Idea = {
   x: number
   y: number
   importance?: number
+  scale?: number
   createdAt?: string
   addedAt?: string
   updatedAt?: string
@@ -132,6 +150,7 @@ type EvidenceImage = {
   y: number
   thumb: string
   importance?: number
+  scale?: number
   createdAt?: string
   addedAt?: string
   updatedAt?: string
@@ -143,6 +162,10 @@ type EvidenceImage = {
   mimeType?: string
   fingerprint?: string
   perceptualHash?: string
+  // Normalized 0..1 fractions of the ORIGINAL image — cropping never touches
+  // the source file. Canvas/library/slides all render the crop via CSS
+  // (see ReferenceThumb); only export bakes real pixels.
+  cropRect?: { x: number; y: number; width: number; height: number }
 }
 
 type TagSuggestionRecord = {
@@ -188,6 +211,7 @@ type PaletteNode = {
   x: number
   y: number
   importance?: number
+  scale?: number
   createdAt?: string
   addedAt?: string
   updatedAt?: string
@@ -204,6 +228,7 @@ type DiagramNode = {
   x: number
   y: number
   importance?: number
+  scale?: number
   createdAt?: string
   addedAt?: string
   updatedAt?: string
@@ -218,11 +243,27 @@ type PlaceholderNode = {
   x: number
   y: number
   importance?: number
+  scale?: number
   createdAt?: string
   addedAt?: string
   updatedAt?: string
   sourceUrl?: string
   notes?: string
+}
+
+// A named region, not a node — it doesn't join the link graph, importance
+// scoring, or the resize/scale system other node kinds share. Its only job is
+// grouping: naming an area and reporting a merged palette for what's in it.
+type FrameNode = {
+  id: string
+  title: string
+  x: number
+  y: number
+  width: number
+  height: number
+  createdAt?: string
+  addedAt?: string
+  updatedAt?: string
 }
 
 type OutlineDraftSection = {
@@ -271,6 +312,7 @@ type ProjectSnapshot = {
   palettes: PaletteNode[]
   diagrams: DiagramNode[]
   placeholders: PlaceholderNode[]
+  frames?: FrameNode[]
   aiSettings: AiSettingsSnapshot
   versionState: ProjectVersionState
   versionHistory: ProjectVersionRecord[]
@@ -483,6 +525,7 @@ type AiTaskRoute = {
   reason: string
 }
 type CanvasHistoryEntry = Pick<ProjectSnapshot, 'ideas' | 'images' | 'palettes' | 'diagrams' | 'placeholders' | 'links'> & {
+  frames: FrameNode[]
   selection: Selection
 }
 type CanvasHistoryStore = {
@@ -495,18 +538,24 @@ type DiscoverySuggestion = {
   score: number
 }
 
-const useCanvasHistoryStore = create<CanvasHistoryStore>()(
-  temporal(
-    (set) => ({
-      entry: null,
-      setEntry: (entry) => set({ entry }),
-    }),
-    {
-      limit: 50,
-      partialize: (state) => ({ entry: state.entry }),
-    },
-  ),
-)
+// One store per open file. A shared store would let undo in one tab rewrite
+// another tab's board, which no amount of UI can make safe.
+function createCanvasHistoryStore() {
+  return create<CanvasHistoryStore>()(
+    temporal(
+      (set) => ({
+        entry: null,
+        setEntry: (entry) => set({ entry }),
+      }),
+      {
+        limit: 50,
+        partialize: (state) => ({ entry: state.entry }),
+      },
+    ),
+  )
+}
+
+type CanvasHistoryStoreApi = ReturnType<typeof createCanvasHistoryStore>
 
 // ── Lightweight bilingual i18n (en / vi) ─────────────────────────────────────
 type Lang = 'en' | 'vi'
@@ -550,7 +599,24 @@ function T({ k }: { k: string }): React.ReactElement {
   return <>{UI_STRINGS[k]?.[lang] ?? k}</>
 }
 
-const storageKey = 'kira.project.v2'
+const baseStorageKey = 'kira.project.v2'
+// The default tab keeps the legacy unscoped key so existing browser-mode users'
+// saved content still loads after this upgrade. Tabs opened via New/Open always
+// carry an explicit initial snapshot, so only the default tab ever reads it.
+const DEFAULT_FILE_ID = 'primary'
+// Matches .file-tab-bar's rendered height with a little slack, so dragging a
+// node just past the top edge of the canvas reliably counts as "over tabs".
+const FILE_TAB_DROP_ZONE_HEIGHT = 48
+let sessionUidCounter = 0
+// A monotonic counter beats plain Date.now() for ids minted in the same tick
+// (e.g. rapid double-clicks), where two calls could otherwise collide.
+function makeSessionUid(prefix: string) {
+  sessionUidCounter += 1
+  return `${prefix}-${Date.now()}-${sessionUidCounter}`
+}
+function makeFileId() {
+  return makeSessionUid('file')
+}
 const onboardingStorageKey = 'kira.onboarding.v1.completed'
 const inspectorLinkedListLimit = 8
 const outlineReferenceLimit = 6
@@ -1355,8 +1421,42 @@ function existingProviderTypeCount(providers: AiProviderProfile[], type: AiProvi
   return providers.filter((provider) => provider.type === type).length
 }
 
-function App() {
-  const initialProject = useMemo(() => readProjectSnapshot(), [])
+/**
+ * One open file. Every instance owns its own board state, undo stack, selection
+ * and camera, so switching tabs is free and undo can never cross files.
+ * Inactive instances stay mounted (state survives) but render nothing and skip
+ * every effect that touches a global: keyboard, capture bridge, session memory.
+ */
+function FileWorkspace({
+  fileId,
+  isActive,
+  initialSnapshot,
+  initialPackage,
+  tabBar,
+  onFileMetaChange,
+  onRequestNewFile,
+  onRequestOpenFile,
+  onTransferNodeToFile,
+  incomingTransfers,
+  onTransfersConsumed,
+}: {
+  fileId: string
+  isActive: boolean
+  initialSnapshot: ProjectSnapshot | null
+  initialPackage: ProjectPackageInfo | null
+  tabBar: React.ReactNode
+  onFileMetaChange: (fileId: string, meta: { title: string; isDirty: boolean; path: string | null }) => void
+  onRequestNewFile: () => void | Promise<void>
+  onRequestOpenFile: () => void | Promise<void>
+  onTransferNodeToFile: (targetFileId: string, payload: NodeTransferPayload) => void
+  incomingTransfers: NodeTransferPayload[]
+  onTransfersConsumed: () => void
+}) {
+  const initialProject = useMemo(() => initialSnapshot ?? readProjectSnapshot(), [initialSnapshot])
+  const [canvasHistoryStore] = useState(createCanvasHistoryStore)
+  // Browser-mode (non-Tauri) fallback storage is namespaced per tab so a second
+  // open file can't overwrite the first's autosave under the same key.
+  const storageKey = fileId === DEFAULT_FILE_ID ? baseStorageKey : `${baseStorageKey}:${fileId}`
   const [projectMetadata, setProjectMetadata] = useState(initialProject.project)
   const [projectAppearance, setProjectAppearance] = useState(initialProject.appearance)
   const [ideas, setIdeas] = useState(initialProject.ideas)
@@ -1364,6 +1464,7 @@ function App() {
   const [palettes, setPalettes] = useState(initialProject.palettes)
   const [diagrams, setDiagrams] = useState(initialProject.diagrams)
   const [placeholders, setPlaceholders] = useState(initialProject.placeholders)
+  const [frames, setFrames] = useState<FrameNode[]>(initialProject.frames ?? [])
   const [links, setLinks] = useState(initialProject.links)
   const [versionState, setVersionState] = useState(initialProject.versionState)
   const [versionHistory, setVersionHistory] = useState(initialProject.versionHistory)
@@ -1371,7 +1472,7 @@ function App() {
   const [outlineDrafts, setOutlineDrafts] = useState(initialProject.outlineDrafts)
   const [slidesConfig, setSlidesConfig] = useState<SlidesConfig>(() => normalizeSlidesConfig(initialProject.slidesConfig))
   const [lastSavedHash, setLastSavedHash] = useState(() => JSON.stringify(initialProject))
-  const [projectPackage, setProjectPackage] = useState<ProjectPackageInfo | null>(null)
+  const [projectPackage, setProjectPackage] = useState<ProjectPackageInfo | null>(initialPackage)
   const [restorableSession, setRestorableSession] = useState<{ path: string | null; label: string; snapshot: ProjectSnapshot } | null>(null)
   const [selection, setSelection] = useState<Selection>({ type: 'project' })
   const [activeView, setActiveView] = useState<ActiveView>('Canvas')
@@ -1410,6 +1511,9 @@ function App() {
   const [isLibraryCollapsed, setIsLibraryCollapsed] = useState(false)
   const [isInspectorCollapsed, setIsInspectorCollapsed] = useState(false)
   const [isVersionHistoryOpen, setIsVersionHistoryOpen] = useState(false)
+  // Rendered at this top level (not inside Inspector) so the overlay escapes
+  // FloatingPanel's own positioning context when Inspector is undocked.
+  const [cropTargetImageId, setCropTargetImageId] = useState<string | null>(null)
   const [glassStatus, setGlassStatus] = useState<GlassStatus>(() => (isTauriRuntime() ? 'fallback' : 'browser'))
   const pendingCanvasHistoryCommitRef = useRef(false)
   const suppressCanvasHistoryCommitRef = useRef(false)
@@ -1422,8 +1526,8 @@ function App() {
     placeholders,
   })
   const recentCaptureKeysRef = useRef(new Map<string, number>())
-  const canUndoCanvas = useStore(useCanvasHistoryStore.temporal, (state) => state.pastStates.length > 0)
-  const canRedoCanvas = useStore(useCanvasHistoryStore.temporal, (state) => state.futureStates.length > 0)
+  const canUndoCanvas = useStore(canvasHistoryStore.temporal, (state) => state.pastStates.length > 0)
+  const canRedoCanvas = useStore(canvasHistoryStore.temporal, (state) => state.futureStates.length > 0)
   projectStateRef.current = {
     ideas,
     images,
@@ -1436,10 +1540,19 @@ function App() {
       providers: aiProviders,
       routingMode: aiRoutingMode,
       selectedProviderId: selectedAiProviderId,
-    }, versionHistory, versionState, nodeVersions, projectMetadata, projectAppearance, slidesConfig),
-    [aiProviders, aiRoutingMode, diagrams, ideas, images, links, nodeVersions, outlineDrafts, palettes, placeholders, projectAppearance, projectMetadata, selectedAiProviderId, slidesConfig, versionHistory, versionState],
+    }, versionHistory, versionState, nodeVersions, projectMetadata, projectAppearance, slidesConfig, frames),
+    [aiProviders, aiRoutingMode, diagrams, frames, ideas, images, links, nodeVersions, outlineDrafts, palettes, placeholders, projectAppearance, projectMetadata, selectedAiProviderId, slidesConfig, versionHistory, versionState],
   )
   const projectHash = useMemo(() => JSON.stringify(projectSnapshot), [projectSnapshot])
+  // Reported regardless of isActive — a background tab's dirty dot and title
+  // must stay live so the tab bar reflects work happening off-screen.
+  useEffect(() => {
+    onFileMetaChange(fileId, {
+      title: projectMetadata.title.trim() || 'Untitled',
+      isDirty: projectHash !== lastSavedHash,
+      path: projectPackage?.path ?? null,
+    })
+  }, [fileId, onFileMetaChange, projectMetadata.title, projectHash, lastSavedHash, projectPackage?.path])
   const projectContentHash = useMemo(
     () => JSON.stringify({
       ideas,
@@ -1461,8 +1574,8 @@ function App() {
     [aiProviders, aiRoutingMode, diagrams, ideas, images, links, outlineDrafts, palettes, placeholders, projectAppearance, projectMetadata, selectedAiProviderId, versionState.currentBranchId],
   )
   const selected = useMemo(
-    () => resolveSelection(selection, projectMetadata, projectAppearance, ideas, images, links, palettes, diagrams, placeholders),
-    [selection, projectMetadata, projectAppearance, ideas, images, links, palettes, diagrams, placeholders],
+    () => resolveSelection(selection, projectMetadata, projectAppearance, ideas, images, links, palettes, diagrams, placeholders, frames),
+    [selection, projectMetadata, projectAppearance, ideas, images, links, palettes, diagrams, placeholders, frames],
   )
   const captureContext = useMemo(
     () => createKiraCaptureContext(projectPackage, ideas, images, palettes, diagrams, placeholders),
@@ -1494,6 +1607,9 @@ function App() {
   const latestOutlineDraft = outlineDrafts[0]
 
   useEffect(() => {
+    // Window chrome belongs to the OS window, not to any one tab — only the
+    // active file should be driving it.
+    if (!isActive) return
     if (!isTauriRuntime()) {
       setGlassStatus('browser')
       return
@@ -1514,7 +1630,7 @@ function App() {
       setGlassStatus('fallback')
       // Window effects are platform-dependent; transparent CSS remains the fallback.
     })
-  }, [])
+  }, [isActive])
 
   const outlineSections = useMemo(
     () => latestOutlineDraft
@@ -1582,8 +1698,10 @@ function App() {
   // any restorable session in the background — an explicit last-opened project path, or (for
   // users from before that path was tracked) the legacy default project directory — and offers
   // it as a "Continue last session" action on the zero-state canvas. Nothing is applied to live
-  // state until the user clicks restore.
+  // state until the user clicks restore. Only the default tab offers this — a tab opened via
+  // New/Open already has real content and should never suggest replacing it.
   useEffect(() => {
+    if (fileId !== DEFAULT_FILE_ID) return
     if (!isTauriRuntime()) return
     let cancelled = false
 
@@ -1641,7 +1759,10 @@ function App() {
   }
 
   // Remember the most recently opened/saved project so the next launch reopens it.
+  // Only the active tab writes this — a background tab regaining focus later
+  // shouldn't silently overwrite what the user was just looking at.
   useEffect(() => {
+    if (!isActive) return
     const path = projectPackage?.path
     if (!path) return
     try {
@@ -1649,22 +1770,33 @@ function App() {
     } catch {
       // ignore persistence failures (private mode, quota, etc.)
     }
-  }, [projectPackage?.path])
+  }, [isActive, projectPackage?.path])
 
+  // The extension bridge only describes one file at a time, so it follows
+  // whichever tab is active.
   useEffect(() => {
+    if (!isActive) return
     if (!isTauriRuntime()) return
     void updateNativeCaptureContext(captureContext).catch(() => undefined)
-  }, [captureContext])
+  }, [isActive, captureContext])
 
+  // App-wide provider/extension status checks — running them once from the
+  // active tab is enough; every background tab redoing the same check on
+  // mount would just be wasted native calls.
   useEffect(() => {
+    if (!isActive) return
     void refreshFoundationModelAvailability()
-  }, [])
+  }, [isActive])
 
   useEffect(() => {
+    if (!isActive) return
     void refreshExtensionInstallStatus()
-  }, [])
+  }, [isActive])
 
+  // Push captures from the extension/OS land in whichever tab is active, not
+  // every open tab at once.
   useEffect(() => {
+    if (!isActive) return
     if (!isTauriRuntime()) return
 
     let unlisten: (() => void) | undefined
@@ -1685,9 +1817,13 @@ function App() {
       disposed = true
       unlisten?.()
     }
-  }, [])
+  }, [isActive])
 
+  // Global shortcuts must belong to exactly one tab, or Cmd+Z / Delete / Cmd+S
+  // would fire against the selection in every open file at once.
   useEffect(() => {
+    if (!isActive) return
+
     function handleGlobalKeydown(event: KeyboardEvent) {
       if (isSettingsShortcut(event)) {
         event.preventDefault()
@@ -1741,9 +1877,12 @@ function App() {
 
     window.addEventListener('keydown', handleGlobalKeydown)
     return () => window.removeEventListener('keydown', handleGlobalKeydown)
-  }, [deleteCurrentSelection, duplicateCurrentSelection, ideas.length, redoCanvas, saveProject, undoCanvas])
+  }, [isActive, deleteCurrentSelection, duplicateCurrentSelection, ideas.length, redoCanvas, saveProject, undoCanvas])
 
+  // Same reasoning as above: only the active tab's data/state should answer
+  // through window.__kiraDev.
   useEffect(() => {
+    if (!isActive) return
     if (!isDevRuntime()) return
 
     const devWindow = window as KiraWindow
@@ -1848,7 +1987,7 @@ function App() {
     return () => {
       delete devWindow.__kiraDev
     }
-  }, [diagrams, ideas, images, links, nodeVersions, outlineDrafts, palettes, placeholders, selection, versionHistory, versionState])
+  }, [isActive, diagrams, ideas, images, links, nodeVersions, outlineDrafts, palettes, placeholders, selection, versionHistory, versionState])
 
   useEffect(() => {
     resetCanvasHistory(currentCanvasHistoryEntry())
@@ -1861,8 +2000,8 @@ function App() {
     }
     if (!pendingCanvasHistoryCommitRef.current) return
     pendingCanvasHistoryCommitRef.current = false
-    useCanvasHistoryStore.getState().setEntry(currentCanvasHistoryEntry())
-  }, [diagrams, ideas, images, links, palettes, placeholders, selection])
+    canvasHistoryStore.getState().setEntry(currentCanvasHistoryEntry())
+  }, [diagrams, frames, ideas, images, links, palettes, placeholders, selection])
 
   function applyProjectSnapshot(snapshot: ProjectSnapshot) {
     const hash = JSON.stringify(snapshot)
@@ -1873,6 +2012,7 @@ function App() {
     setPalettes(snapshot.palettes)
     setDiagrams(snapshot.diagrams)
     setPlaceholders(snapshot.placeholders)
+    setFrames(snapshot.frames ?? [])
     setLinks(snapshot.links)
     setOutlineDrafts(snapshot.outlineDrafts)
     setSlidesConfig(normalizeSlidesConfig(snapshot.slidesConfig))
@@ -1893,6 +2033,7 @@ function App() {
       palettes: snapshot.palettes,
       diagrams: snapshot.diagrams,
       placeholders: snapshot.placeholders,
+      frames: snapshot.frames ?? [],
       links: snapshot.links,
       selection: { type: 'project' },
     })
@@ -1936,6 +2077,7 @@ function App() {
       palettes,
       diagrams,
       placeholders,
+      frames,
       links,
       selection,
     }
@@ -1979,14 +2121,15 @@ function App() {
     setPalettes(entry.palettes)
     setDiagrams(entry.diagrams)
     setPlaceholders(entry.placeholders)
+    setFrames(entry.frames)
     setLinks(entry.links)
     setSelection(entry.selection)
   }
 
   function resetCanvasHistory(entry: CanvasHistoryEntry) {
-    const temporalHistory = useCanvasHistoryStore.temporal.getState()
+    const temporalHistory = canvasHistoryStore.temporal.getState()
     temporalHistory.pause()
-    useCanvasHistoryStore.getState().setEntry(entry)
+    canvasHistoryStore.getState().setEntry(entry)
     temporalHistory.clear()
     temporalHistory.resume()
     pendingCanvasHistoryCommitRef.current = false
@@ -1998,18 +2141,18 @@ function App() {
   }
 
   function undoCanvas() {
-    const temporalHistory = useCanvasHistoryStore.temporal.getState()
+    const temporalHistory = canvasHistoryStore.temporal.getState()
     if (temporalHistory.pastStates.length === 0) return
     temporalHistory.undo()
-    const entry = useCanvasHistoryStore.getState().entry
+    const entry = canvasHistoryStore.getState().entry
     if (entry) restoreCanvasHistoryEntry(entry)
   }
 
   function redoCanvas() {
-    const temporalHistory = useCanvasHistoryStore.temporal.getState()
+    const temporalHistory = canvasHistoryStore.temporal.getState()
     if (temporalHistory.futureStates.length === 0) return
     temporalHistory.redo()
-    const entry = useCanvasHistoryStore.getState().entry
+    const entry = canvasHistoryStore.getState().entry
     if (entry) restoreCanvasHistoryEntry(entry)
   }
 
@@ -2711,6 +2854,13 @@ function App() {
     setImages((current) => current.map((image) => (image.id === imageId ? { ...image, ...patch, updatedAt: nowIso() } : image)))
   }
 
+  // Non-destructive: only ever touches this rectangle, never the file backing
+  // `thumb`/`sourcePath` — "Reset crop" is always a full, lossless undo of it.
+  function updateImageCropRect(imageId: string, cropRect: EvidenceImage['cropRect']) {
+    pushCanvasHistory()
+    setImages((current) => current.map((image) => (image.id === imageId ? { ...image, cropRect, updatedAt: nowIso() } : image)))
+  }
+
   function updateLink(linkId: string, patch: Partial<Pick<EvidenceLink, 'relation' | 'note' | 'confidence'>>) {
     setLinks((current) => current.map((link) => (link.id === linkId ? { ...link, ...patch, updatedAt: nowIso() } : link)))
   }
@@ -2784,6 +2934,46 @@ function App() {
     }
 
     setPlaceholders((current) => current.map((placeholder) => (placeholder.id === id ? { ...placeholder, ...position, updatedAt: timestamp } : placeholder)))
+  }
+
+  // Visual size only. `importance` is deliberately untouched so resizing a node
+  // for composition never rewrites its weight in the outline.
+  function setNodeScale(kind: GraphNodeKind, id: string, scale: number, begin = false) {
+    // One history entry per gesture, taken before the first frame of the drag.
+    if (begin) pushCanvasHistory()
+    const timestamp = nowIso()
+    const patch = { scale: normalizeNodeScale(scale), updatedAt: timestamp }
+    const apply = <T extends { id: string }>(nodes: T[]) => nodes.map((node) => (node.id === id ? { ...node, ...patch } : node))
+    if (kind === 'idea') return setIdeas(apply)
+    if (kind === 'image') return setImages(apply)
+    if (kind === 'palette') return setPalettes(apply)
+    if (kind === 'diagram') return setDiagrams(apply)
+    setPlaceholders(apply)
+  }
+
+  function resetNodeScale(nodes: CanvasNodeSelection[]) {
+    if (nodes.length === 0) return
+    pushCanvasHistory()
+    const timestamp = nowIso()
+    const byKind = new Map<GraphNodeKind, Set<string>>()
+    nodes.forEach((node) => {
+      const ids = byKind.get(node.kind) ?? new Set<string>()
+      ids.add(node.id)
+      byKind.set(node.kind, ids)
+    })
+    // Clearing `scale` hands sizing back to `importance`, which is the documented
+    // default rather than a magic number.
+    const clear = <T extends { id: string; scale?: number }>(kind: GraphNodeKind) => (current: T[]) =>
+      current.map((node) => (
+        byKind.get(kind)?.has(node.id) && node.scale !== undefined
+          ? { ...node, scale: undefined, updatedAt: timestamp }
+          : node
+      ))
+    setIdeas(clear<Idea>('idea'))
+    setImages(clear<EvidenceImage>('image'))
+    setPalettes(clear<PaletteNode>('palette'))
+    setDiagrams(clear<DiagramNode>('diagram'))
+    setPlaceholders(clear<PlaceholderNode>('placeholder'))
   }
 
   function changeNodeImportance(kind: GraphNodeKind, id: string, delta: number) {
@@ -2943,6 +3133,61 @@ function App() {
     const fallback = ideas.find((idea) => !idsByKind.get('idea')?.has(idea.id))
     if (fallback) setSelection({ type: 'idea', id: fallback.id })
   }
+
+  // Dragging a node onto another open tab's label hands it to that file: this
+  // tab loses it (like delete), the target tab gains it via onTransferNodeToFile
+  // once it mounts active. Links to it don't carry over — they'd point at a
+  // node that no longer exists in this file's graph.
+  function moveNodeToOtherFile(node: CanvasNodeSelection, targetFileId: string) {
+    let payload: NodeTransferPayload | null = null
+    if (node.kind === 'idea') {
+      const record = ideas.find((idea) => idea.id === node.id)
+      if (record) payload = { kind: 'idea', record }
+    } else if (node.kind === 'image') {
+      const record = images.find((image) => image.id === node.id)
+      if (record) payload = { kind: 'image', record }
+    } else if (node.kind === 'palette') {
+      const record = palettes.find((palette) => palette.id === node.id)
+      if (record) payload = { kind: 'palette', record }
+    } else if (node.kind === 'diagram') {
+      const record = diagrams.find((diagram) => diagram.id === node.id)
+      if (record) payload = { kind: 'diagram', record }
+    } else {
+      const record = placeholders.find((placeholder) => placeholder.id === node.id)
+      if (record) payload = { kind: 'placeholder', record }
+    }
+    if (!payload) return
+
+    deleteSelectedGraphNodes([node])
+    onTransferNodeToFile(targetFileId, payload)
+  }
+
+  // Not gated by isActive: App() already focuses this tab the moment a
+  // transfer is sent, but a transfer landing here should be absorbed even if
+  // that ordering ever changes, so a background tab's board stays correct.
+  useEffect(() => {
+    if (incomingTransfers.length === 0) return
+    pushCanvasHistory()
+    const timestamp = nowIso()
+    incomingTransfers.forEach((payload, index) => {
+      // Fresh id avoids collisions with anything already in this file (or with
+      // a second copy of the same source node dragged in twice); the small
+      // cascade keeps simultaneous drops from landing in an exact stack.
+      const position = { x: clamp(50 + index * 3, 8, 92), y: clamp(50 + index * 3, 8, 92) }
+      if (payload.kind === 'idea') {
+        setIdeas((current) => [...current, { ...payload.record, id: makeSessionUid('idea'), ...position, updatedAt: timestamp }])
+      } else if (payload.kind === 'image') {
+        setImages((current) => [...current, { ...payload.record, id: makeSessionUid('image'), ...position, updatedAt: timestamp }])
+      } else if (payload.kind === 'palette') {
+        setPalettes((current) => [...current, { ...payload.record, id: makeSessionUid('palette'), ...position, updatedAt: timestamp }])
+      } else if (payload.kind === 'diagram') {
+        setDiagrams((current) => [...current, { ...payload.record, id: makeSessionUid('diagram'), ...position, updatedAt: timestamp }])
+      } else {
+        setPlaceholders((current) => [...current, { ...payload.record, id: makeSessionUid('placeholder'), ...position, updatedAt: timestamp }])
+      }
+    })
+    onTransfersConsumed()
+  }, [incomingTransfers])
 
   async function organizeCanvas(mode: GraphOrganizeMode) {
     if (mode === 'manual') return
@@ -3275,6 +3520,50 @@ function App() {
     recordNodeVersion('placeholder', undefined, placeholder, 'created')
     setPlaceholders((current) => [...current, placeholder])
     setSelection({ type: 'placeholder', id: placeholder.id })
+  }
+
+  // Frames don't go through recordNodeVersion/GraphNodeKind — they're a plain
+  // named rectangle, not a node with links, importance, or version history.
+  function createFrame() {
+    pushCanvasHistory()
+    const timestamp = nowIso()
+    const frame: FrameNode = {
+      id: `frame-${Date.now()}`,
+      title: 'New frame',
+      x: 50,
+      y: 50,
+      width: 34,
+      height: 26,
+      createdAt: timestamp,
+      addedAt: timestamp,
+      updatedAt: timestamp,
+    }
+    setFrames((current) => [...current, frame])
+    setSelection({ type: 'frame', id: frame.id })
+  }
+
+  function updateFrame(frameId: string, patch: Partial<Pick<FrameNode, 'title'>>) {
+    setFrames((current) => current.map((frame) => (frame.id === frameId ? { ...frame, ...patch, updatedAt: nowIso() } : frame)))
+  }
+
+  function moveFrame(frameId: string, position: Pick<FrameNode, 'x' | 'y'>) {
+    setFrames((current) => current.map((frame) => (frame.id === frameId ? { ...frame, ...position, updatedAt: nowIso() } : frame)))
+  }
+
+  function resizeFrame(frameId: string, size: Pick<FrameNode, 'width' | 'height'>) {
+    setFrames((current) => current.map((frame) => (frame.id === frameId ? { ...frame, ...size, updatedAt: nowIso() } : frame)))
+  }
+
+  function requestFrameDelete(frameId: string) {
+    const frame = frames.find((candidate) => candidate.id === frameId)
+    if (!frame) return
+    setPendingDelete({ type: 'frame', id: frame.id, title: frame.title })
+  }
+
+  function deleteFrame(frameId: string) {
+    pushCanvasHistory()
+    setFrames((current) => current.filter((frame) => frame.id !== frameId))
+    setSelection({ type: 'project' })
   }
 
   function createPaletteNode(sourceImage?: EvidenceImage) {
@@ -3848,6 +4137,7 @@ function App() {
     else if (selection.type === 'diagram') requestDiagramDelete(selection.id)
     else if (selection.type === 'placeholder') requestPlaceholderDelete(selection.id)
     else if (selection.type === 'link') requestLinkDelete(selection.id)
+    else if (selection.type === 'frame') requestFrameDelete(selection.id)
   }
 
   function beginCreateLinkFromNode(source: Pick<GraphNodeRef, 'kind' | 'id'>) {
@@ -3971,6 +4261,10 @@ function App() {
     }
     if (deleteTarget.type === 'placeholder') {
       deletePlaceholder(deleteTarget.id)
+      return
+    }
+    if (deleteTarget.type === 'frame') {
+      deleteFrame(deleteTarget.id)
       return
     }
     deleteLink(deleteTarget.id)
@@ -4360,45 +4654,15 @@ function App() {
     await Promise.resolve()
   }
 
+  // New/Open create or bring in another *tab* rather than replacing this one's
+  // content — the dialogs and the resulting tab are owned by the outer shell,
+  // which is the only place that knows about every open file.
   async function newProject() {
-    const snapshot = createBlankProjectSnapshot()
-
-    if (!isTauriRuntime()) {
-      applyProjectSnapshot(snapshot)
-      downloadProject(snapshot)
-      return
-    }
-
-    const selectedPath = await save({
-      defaultPath: 'Untitled.kira',
-      filters: [{ name: 'KIRA Project', extensions: ['kira'] }],
-    })
-    if (!selectedPath) return
-
-    const snapshotJson = JSON.stringify(snapshot)
-    const savedPackage = await saveNativeProjectPackage(snapshotJson, selectedPath)
-    applyProjectSnapshot(snapshot)
-    setProjectPackage(savedPackage)
+    await onRequestNewFile()
   }
 
   async function openProject() {
-    if (!isTauriRuntime()) return
-
-    const selectedPath = await open({
-      directory: true,
-      multiple: false,
-      title: 'Open KIRA Project',
-    })
-    if (!selectedPath || Array.isArray(selectedPath)) return
-
-    const snapshot = await openNativeProjectPackage(selectedPath)
-    if (!snapshot) return
-    applyProjectSnapshot(snapshot)
-    setProjectPackage({
-      path: selectedPath,
-      manifestPath: `${selectedPath}/manifest.json`,
-      sqlitePath: `${selectedPath}/project.sqlite`,
-    })
+    await onRequestOpenFile()
   }
 
   function importProject(file: File) {
@@ -4422,8 +4686,15 @@ function App() {
   const canvasLeftInset = 80 + (isLibraryCollapsed ? 56 : libraryDrawerWidth)
   const canvasRightInset = isInspectorCollapsed ? 56 : 336
 
+  // Every hook above has already run, so bailing out here costs nothing but
+  // still unmounts the heavy tree below (GraphCanvas, the WebGL 3D view,
+  // Mermaid/pptx-driven Slides) for every tab that isn't on screen. This is
+  // what actually keeps N open tabs from costing N live canvases.
+  if (!isActive) return null
+
   return (
     <main className="app-shell" data-glass-state={glassStatus} data-color-mode={inferCanvasColorMode(projectAppearance.canvasColor)} style={shellThemeStyle} onPaste={capturePastedReference}>
+      {tabBar}
       <section
         className="workspace"
         style={{
@@ -4556,6 +4827,7 @@ function App() {
                 palettes={palettes}
                 diagrams={diagrams}
                 placeholders={placeholders}
+                frames={frames}
                 links={links}
                 linkCreationRelation={linkCreationRelation}
                 activeCanvasTool={activeCanvasTool}
@@ -4572,6 +4844,11 @@ function App() {
                 onCreateIdea={() => createIdea({ focusTitle: true })}
                 onCreatePalette={() => createPaletteNode(selection.type === 'image' ? images.find((image) => image.id === selection.id) : undefined)}
                 onCreatePlaceholder={createPlaceholder}
+                onCreateFrame={createFrame}
+                onFrameMove={moveFrame}
+                onFrameResize={resizeFrame}
+                onFrameRename={(id, title) => updateFrame(id, { title })}
+                onFrameDelete={requestFrameDelete}
                 onImportMermaid={importMermaidDiagram}
                 onLinkCreationRelationChange={setLinkCreationRelation}
                 onIdeaInlineChange={updateIdea}
@@ -4579,8 +4856,11 @@ function App() {
                 onNodeMove={moveGraphNode}
                 onNodeImportanceChange={changeNodeImportance}
                 onNodesImportanceChange={changeSelectedNodesImportance}
+                onNodeScaleChange={setNodeScale}
+                onNodeScaleReset={resetNodeScale}
                 onDeleteNodes={deleteSelectedGraphNodes}
                 onOrganize={organizeCanvas}
+                onMoveNodeToOtherFile={moveNodeToOtherFile}
                 restorableSessionLabel={restorableSession?.label ?? null}
                 onRestoreSession={restoreLastSession}
               />
@@ -4618,6 +4898,7 @@ function App() {
             onReferenceTagRemove={removeReferenceTag}
             onIdeaDelete={requestIdeaDelete}
             onReferenceFindSimilar={findSimilarReferences}
+            onReferenceCrop={setCropTargetImageId}
             onReferenceConvertToPalette={(imageId) => createPaletteNode(images.find((image) => image.id === imageId))}
             onImageDelete={requestImageDelete}
             onPaletteDelete={requestPaletteDelete}
@@ -4625,6 +4906,8 @@ function App() {
             onPlaceholderDelete={requestPlaceholderDelete}
             onLinkSelectedReferences={linkSelectedReferencesToIdea}
             onLinkDelete={requestLinkDelete}
+            onFrameRename={(id, title) => updateFrame(id, { title })}
+            onFrameDelete={requestFrameDelete}
             onNodeVersionRestore={restoreNodeVersion}
             onBeginLinkFromNode={beginCreateLinkFromNode}
             onDuplicateSelection={duplicateCurrentSelection}
@@ -4654,6 +4937,24 @@ function App() {
         onCancel={() => setPendingDelete(null)}
         onConfirm={confirmPendingDelete}
       />
+      {cropTargetImageId && (() => {
+        const image = images.find((candidate) => candidate.id === cropTargetImageId)
+        if (!image) return null
+        return (
+          <ReferenceCropDialog
+            image={image}
+            onSave={(cropRect) => {
+              updateImageCropRect(image.id, cropRect)
+              setCropTargetImageId(null)
+            }}
+            onReset={() => {
+              updateImageCropRect(image.id, undefined)
+              setCropTargetImageId(null)
+            }}
+            onClose={() => setCropTargetImageId(null)}
+          />
+        )
+      })()}
       <VersionHistoryDialog
         isOpen={isVersionHistoryOpen}
         versionState={versionState}
@@ -4713,6 +5014,245 @@ function App() {
         />
       )}
     </main>
+  )
+}
+
+type OpenFile = {
+  id: string
+  title: string
+  isDirty: boolean
+  path: string | null
+  // Consumed once at mount by the matching FileWorkspace instance; the
+  // instance's own state is the source of truth after that.
+  initialSnapshot: ProjectSnapshot | null
+  initialPackage: ProjectPackageInfo | null
+}
+
+// Stable reference for "nothing pending" so FileWorkspace's consume-effect
+// only re-fires on an actual change, not on every unrelated App render.
+const EMPTY_NODE_TRANSFERS: NodeTransferPayload[] = []
+
+function createUntitledFile(id: string): OpenFile {
+  return { id, title: 'Untitled', isDirty: false, path: null, initialSnapshot: null, initialPackage: null }
+}
+
+/**
+ * Owns the set of open files and which one is on screen. Everything about a
+ * single board — its graph, its undo stack, its camera — lives inside
+ * FileWorkspace; this component only ever touches the thin OpenFile record.
+ */
+function App() {
+  const [files, setFiles] = useState<OpenFile[]>(() => [createUntitledFile(DEFAULT_FILE_ID)])
+  const [activeFileId, setActiveFileId] = useState<string>(DEFAULT_FILE_ID)
+  const [pendingCloseFileId, setPendingCloseFileId] = useState<string | null>(null)
+
+  const handleFileMetaChange = useCallback((id: string, meta: { title: string; isDirty: boolean; path: string | null }) => {
+    setFiles((current) => {
+      let changed = false
+      const next = current.map((file) => {
+        if (file.id !== id) return file
+        if (file.title === meta.title && file.isDirty === meta.isDirty && file.path === meta.path) return file
+        changed = true
+        return { ...file, ...meta }
+      })
+      return changed ? next : current
+    })
+  }, [])
+
+  // In transit between two tabs, keyed by the target file's id. The source
+  // FileWorkspace instance hands a node off here; the target instance drains
+  // its own queue via onTransfersConsumed once mounted active.
+  const [pendingTransfersByFile, setPendingTransfersByFile] = useState<Record<string, NodeTransferPayload[]>>({})
+
+  const handleTransferNodeToFile = useCallback((targetFileId: string, payload: NodeTransferPayload) => {
+    setPendingTransfersByFile((current) => ({
+      ...current,
+      [targetFileId]: [...(current[targetFileId] ?? []), payload],
+    }))
+    setActiveFileId(targetFileId)
+  }, [])
+
+  const handleTransfersConsumed = useCallback((fileId: string) => {
+    setPendingTransfersByFile((current) => {
+      if (!current[fileId]) return current
+      const { [fileId]: _consumed, ...rest } = current
+      return rest
+    })
+  }, [])
+
+  async function requestNewFile() {
+    const snapshot = createBlankProjectSnapshot()
+    const id = makeFileId()
+
+    if (!isTauriRuntime()) {
+      setFiles((current) => [...current, { ...createUntitledFile(id), initialSnapshot: snapshot }])
+      setActiveFileId(id)
+      downloadProject(snapshot)
+      return
+    }
+
+    const selectedPath = await save({
+      defaultPath: 'Untitled.kira',
+      filters: [{ name: 'KIRA Project', extensions: ['kira'] }],
+    })
+    if (!selectedPath) return
+
+    const savedPackage = await saveNativeProjectPackage(JSON.stringify(snapshot), selectedPath)
+    setFiles((current) => [
+      ...current,
+      { id, title: snapshot.project.title.trim() || 'Untitled', isDirty: false, path: selectedPath, initialSnapshot: snapshot, initialPackage: savedPackage },
+    ])
+    setActiveFileId(id)
+  }
+
+  async function requestOpenFile() {
+    if (!isTauriRuntime()) return
+
+    const selectedPath = await open({
+      directory: true,
+      multiple: false,
+      title: 'Open KIRA Project',
+    })
+    if (!selectedPath || Array.isArray(selectedPath)) return
+
+    // Reopening an already-open file focuses its tab instead of duplicating it.
+    const existing = files.find((file) => file.path === selectedPath)
+    if (existing) {
+      setActiveFileId(existing.id)
+      return
+    }
+
+    const snapshot = await openNativeProjectPackage(selectedPath)
+    if (!snapshot) return
+
+    const id = makeFileId()
+    const initialPackage: ProjectPackageInfo = {
+      path: selectedPath,
+      manifestPath: `${selectedPath}/manifest.json`,
+      sqlitePath: `${selectedPath}/project.sqlite`,
+    }
+    setFiles((current) => [
+      ...current,
+      { id, title: snapshot.project.title.trim() || 'Untitled', isDirty: false, path: selectedPath, initialSnapshot: snapshot, initialPackage },
+    ])
+    setActiveFileId(id)
+  }
+
+  function requestCloseFile(id: string) {
+    const file = files.find((candidate) => candidate.id === id)
+    if (file?.isDirty) {
+      setPendingCloseFileId(id)
+      return
+    }
+    closeFile(id)
+  }
+
+  function closeFile(id: string) {
+    setFiles((current) => {
+      if (current.length <= 1) return current
+      const index = current.findIndex((file) => file.id === id)
+      if (index === -1) return current
+      const next = current.filter((file) => file.id !== id)
+      if (activeFileId === id) {
+        setActiveFileId(next[Math.max(0, index - 1)].id)
+      }
+      return next
+    })
+    setPendingCloseFileId((current) => (current === id ? null : current))
+  }
+
+  const pendingCloseFile = pendingCloseFileId ? files.find((file) => file.id === pendingCloseFileId) ?? null : null
+
+  const tabBar = (
+    <nav
+      className="file-tab-bar"
+      aria-label="Open files"
+      data-tauri-drag-region
+      onDoubleClick={toggleWindowMaximizeFromChrome}
+      onPointerDown={startWindowDrag}
+    >
+      <WindowControls />
+      <div className="file-tab-list">
+        {files.map((file) => (
+          <button
+            key={file.id}
+            type="button"
+            data-file-tab-id={file.id}
+            className={file.id === activeFileId ? 'file-tab is-active' : 'file-tab'}
+            aria-pressed={file.id === activeFileId}
+            onClick={() => setActiveFileId(file.id)}
+            onAuxClick={(event) => {
+              if (event.button === 1) requestCloseFile(file.id)
+            }}
+          >
+            {file.isDirty && <span className="file-tab-dirty" aria-hidden="true" />}
+            <span className="file-tab-title">{file.title}</span>
+            {files.length > 1 && (
+              <span
+                role="button"
+                tabIndex={0}
+                className="file-tab-close"
+                aria-label={`Close ${file.title}`}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  requestCloseFile(file.id)
+                }}
+                onKeyDown={(event) => {
+                  if (event.key !== 'Enter' && event.key !== ' ') return
+                  event.stopPropagation()
+                  event.preventDefault()
+                  requestCloseFile(file.id)
+                }}
+              >
+                <X size={11} />
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+      <button type="button" className="file-tab-add" aria-label="New file" title="New file" onClick={() => void requestNewFile()}>
+        <Plus size={13} />
+      </button>
+    </nav>
+  )
+
+  return (
+    <>
+      {files.map((file) => (
+        <FileWorkspace
+          key={file.id}
+          fileId={file.id}
+          isActive={file.id === activeFileId}
+          initialSnapshot={file.initialSnapshot}
+          initialPackage={file.initialPackage}
+          tabBar={tabBar}
+          onFileMetaChange={handleFileMetaChange}
+          onRequestNewFile={requestNewFile}
+          onRequestOpenFile={requestOpenFile}
+          onTransferNodeToFile={handleTransferNodeToFile}
+          incomingTransfers={pendingTransfersByFile[file.id] ?? EMPTY_NODE_TRANSFERS}
+          onTransfersConsumed={() => handleTransfersConsumed(file.id)}
+        />
+      ))}
+      {pendingCloseFile && (
+        <div className="dialog-overlay">
+          <section aria-modal="true" className="confirm-dialog" role="alertdialog" aria-labelledby="close-file-dialog-title">
+            <div>
+              <h2 id="close-file-dialog-title">Close {pendingCloseFile.title}?</h2>
+              <p>This file has unsaved changes. Closing the tab discards them.</p>
+            </div>
+            <div className="dialog-actions">
+              <button className="quiet-button" type="button" onClick={() => setPendingCloseFileId(null)}>
+                Cancel
+              </button>
+              <button className="danger-button" type="button" onClick={() => closeFile(pendingCloseFile.id)}>
+                Close without saving
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+    </>
   )
 }
 
@@ -4864,8 +5404,9 @@ function SystemSidebar({
       onDoubleClick={toggleWindowMaximizeFromChrome}
       onPointerDown={startWindowDrag}
     >
+      {/* Window controls now live in the file tab bar at the true top of the
+          window — the sidebar starts below it, so they no longer belong here. */}
       <div className="system-sidebar-top" data-tauri-drag-region>
-        <WindowControls />
         <div className="brand-mark sidebar-brand" data-tauri-drag-region>
           <img src="/kira-icon.png" alt="" />
         </div>
@@ -6239,6 +6780,7 @@ function GraphCanvas({
   palettes,
   diagrams,
   placeholders,
+  frames,
   links,
   linkCreationRelation,
   activeCanvasTool,
@@ -6255,6 +6797,11 @@ function GraphCanvas({
   onCreateIdea,
   onCreatePalette,
   onCreatePlaceholder,
+  onCreateFrame,
+  onFrameMove,
+  onFrameResize,
+  onFrameRename,
+  onFrameDelete,
   onImportMermaid,
   onLinkCreationRelationChange,
   onIdeaInlineChange,
@@ -6262,8 +6809,11 @@ function GraphCanvas({
   onNodeMove,
   onNodeImportanceChange,
   onNodesImportanceChange,
+  onNodeScaleChange,
+  onNodeScaleReset,
   onDeleteNodes,
   onOrganize,
+  onMoveNodeToOtherFile,
   restorableSessionLabel,
   onRestoreSession,
 }: {
@@ -6272,6 +6822,7 @@ function GraphCanvas({
   palettes: PaletteNode[]
   diagrams: DiagramNode[]
   placeholders: PlaceholderNode[]
+  frames: FrameNode[]
   links: EvidenceLink[]
   linkCreationRelation: Relation
   activeCanvasTool: CanvasTool
@@ -6288,6 +6839,11 @@ function GraphCanvas({
   onCreateIdea: () => void
   onCreatePalette: () => void
   onCreatePlaceholder: () => void
+  onCreateFrame: () => void
+  onFrameMove: (frameId: string, position: Pick<FrameNode, 'x' | 'y'>) => void
+  onFrameResize: (frameId: string, size: Pick<FrameNode, 'width' | 'height'>) => void
+  onFrameRename: (frameId: string, title: string) => void
+  onFrameDelete: (frameId: string) => void
   onImportMermaid: (source: string) => void | Promise<void>
   onLinkCreationRelationChange: (relation: Relation) => void
   onIdeaInlineChange: (ideaId: string, patch: Partial<Pick<Idea, 'title' | 'body' | 'notes'>>) => void
@@ -6295,8 +6851,13 @@ function GraphCanvas({
   onNodeMove: (kind: GraphNodeKind, id: string, position: Pick<Idea, 'x' | 'y'>) => void
   onNodeImportanceChange: (kind: GraphNodeKind, id: string, delta: number) => void
   onNodesImportanceChange: (nodes: CanvasNodeSelection[], delta: number) => void
+  onNodeScaleChange: (kind: GraphNodeKind, id: string, scale: number, begin?: boolean) => void
+  onNodeScaleReset: (nodes: CanvasNodeSelection[]) => void
   onDeleteNodes: (nodes: CanvasNodeSelection[]) => void
   onOrganize: (mode: GraphOrganizeMode) => void
+  // Dragging a node onto another open tab hands it off to that file instead of
+  // moving it on this canvas — see moveNode()'s tab-bar hit-test below.
+  onMoveNodeToOtherFile: (node: CanvasNodeSelection, targetFileId: string) => void
   restorableSessionLabel: string | null
   onRestoreSession: () => void
 }) {
@@ -6307,12 +6868,47 @@ function GraphCanvas({
     offsetX: number
     offsetY: number
   } | null>(null)
+  // The file tab strip lives outside this component (rendered once by the
+  // outer App shell), so hit-testing it during a drag is a direct DOM query
+  // rather than a prop — cheap and avoids re-rendering on every pointermove.
+  const dragTabHoverRef = useRef<string | null>(null)
+
+  function updateFileTabDropHover(clientX: number, clientY: number): string | null {
+    if (clientY > FILE_TAB_DROP_ZONE_HEIGHT) {
+      if (dragTabHoverRef.current) {
+        document.querySelector(`[data-file-tab-id="${dragTabHoverRef.current}"]`)?.classList.remove('is-drop-target')
+        dragTabHoverRef.current = null
+      }
+      return null
+    }
+    const hitElement = document.elementFromPoint(clientX, clientY)
+    const tabElement = hitElement instanceof Element ? hitElement.closest<HTMLElement>('[data-file-tab-id]') : null
+    // Dropping on the tab you're already dragging from is a no-op, not a transfer.
+    const targetId = tabElement && !tabElement.classList.contains('is-active') ? tabElement.dataset.fileTabId ?? null : null
+    if (targetId === dragTabHoverRef.current) return targetId
+    if (dragTabHoverRef.current) {
+      document.querySelector(`[data-file-tab-id="${dragTabHoverRef.current}"]`)?.classList.remove('is-drop-target')
+    }
+    if (targetId) tabElement?.classList.add('is-drop-target')
+    dragTabHoverRef.current = targetId
+    return targetId
+  }
   const [draggingNode, setDraggingNode] = useState<{
     kind: GraphNodeKind
     id: string
     offsetX: number
     offsetY: number
   } | null>(null)
+  const resizeNodeRef = useRef<{
+    kind: GraphNodeKind
+    id: string
+    startScale: number
+    startDistance: number
+    centerX: number
+    centerY: number
+    begun: boolean
+  } | null>(null)
+  const [resizingNode, setResizingNode] = useState<CanvasNodeSelection | null>(null)
   const panRef = useRef<{ startX: number; startY: number; originX: number; originY: number } | null>(null)
   const [graphTransform, setGraphTransform] = useState({ x: 0, y: 0, scale: 1 })
   const [isPanning, setIsPanning] = useState(false)
@@ -6327,6 +6923,9 @@ function GraphCanvas({
   const [multiSelectedNodes, setMultiSelectedNodes] = useState<CanvasNodeSelection[]>([])
   const [nodeContextMenu, setNodeContextMenu] = useState<{ x: number; y: number; nodes: CanvasNodeSelection[] } | null>(null)
   const [editingIdeaField, setEditingIdeaField] = useState<{ id: string; field: 'title' | 'body' } | null>(null)
+  const [editingFrameId, setEditingFrameId] = useState<string | null>(null)
+  const draggingFrameRef = useRef<{ id: string; offsetX: number; offsetY: number } | null>(null)
+  const resizingFrameRef = useRef<{ id: string; startWidth: number; startHeight: number; startX: number; startY: number } | null>(null)
   const [starterPrompt, setStarterPrompt] = useState('')
   const [aiNodeDraft, setAiNodeDraft] = useState<{
     source: Pick<GraphNodeRef, 'kind' | 'id'>
@@ -6362,7 +6961,11 @@ function GraphCanvas({
   const displaySuggestions = hasDiscoverySuggestions(displayView) ? displayView.suggestions : []
   const related = useMemo(() => getSelectionNeighborhood(selected, displayView.links), [displayView.links, selected])
   const visibleNodeCount = displayView.ideas.length + displayView.images.length + palettes.length + diagrams.length + placeholders.length
-  const nodeDensityScale = layoutDensityScale(visibleNodeCount)
+  // Semantic zoom replaces the old approach of shrinking every node's own
+  // scale as node count grows (which crushed a 300-node board down to ~24% —
+  // past legible at any zoom). Nodes now always render at their real size;
+  // zooming the camera out simplifies what's shown instead of the size.
+  const zoomTier = graphTransform.scale < 0.28 ? 'far' : graphTransform.scale < 0.55 ? 'out' : 'in'
   const graphMetrics = useMemo<GraphMetrics>(() => ({
     mode: graphMode,
     cap: graphCap,
@@ -6557,6 +7160,13 @@ function GraphCanvas({
     setNodeContextMenu(null)
   }
 
+  function resetContextNodeScale() {
+    const nodes = nodeContextMenu?.nodes ?? selectedCanvasNodes()
+    if (nodes.length === 0) return
+    onNodeScaleReset(nodes)
+    setNodeContextMenu(null)
+  }
+
   function deleteContextNodes() {
     const nodes = nodeContextMenu?.nodes ?? selectedCanvasNodes()
     onDeleteNodes(nodes)
@@ -6686,6 +7296,16 @@ function GraphCanvas({
   function moveNode(kind: GraphNodeKind, id: string, event: React.PointerEvent<HTMLElement>) {
     const activeDrag = draggingNodeRef.current
     if (activeDrag?.kind !== kind || activeDrag.id !== id) return
+
+    // Dragging up into the tab strip previews the drop target instead of
+    // moving the node on this canvas — the actual hand-off only commits on
+    // release, since switching the active tab mid-gesture would unmount this
+    // very canvas and drop the pointer capture driving the drag.
+    if (updateFileTabDropHover(event.clientX, event.clientY)) {
+      event.preventDefault()
+      return
+    }
+
     const pointer = pointerPercent(event)
     if (!pointer) return
 
@@ -6696,9 +7316,155 @@ function GraphCanvas({
     })
   }
 
-  function stopNodeDrag() {
+  function stopNodeDrag(event: React.PointerEvent<HTMLElement>) {
+    const activeDrag = draggingNodeRef.current
+    const targetFileId = updateFileTabDropHover(event.clientX, event.clientY)
     draggingNodeRef.current = null
     setDraggingNode(null)
+    if (activeDrag && targetFileId) {
+      onMoveNodeToOtherFile({ kind: activeDrag.kind, id: activeDrag.id }, targetFileId)
+    }
+  }
+
+  function beginFrameRename(frameId: string) {
+    onSelect({ type: 'frame', id: frameId })
+    setEditingFrameId(frameId)
+  }
+
+  function startFrameDrag(frame: FrameNode, event: React.PointerEvent<HTMLElement>) {
+    if (event.button === 2) return
+    const pointer = pointerPercent(event)
+    if (!pointer) return
+    event.stopPropagation()
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId)
+    } catch {
+      // Synthetic pointer events used in browser QA do not always own capture.
+    }
+    draggingFrameRef.current = { id: frame.id, offsetX: pointer.x - frame.x, offsetY: pointer.y - frame.y }
+    onSelect({ type: 'frame', id: frame.id })
+  }
+
+  function moveFrameDrag(event: React.PointerEvent<HTMLElement>) {
+    const active = draggingFrameRef.current
+    if (!active) return
+    const pointer = pointerPercent(event)
+    if (!pointer) return
+    event.preventDefault()
+    onFrameMove(active.id, {
+      x: clamp(pointer.x - active.offsetX, 5, 95),
+      y: clamp(pointer.y - active.offsetY, 6, 94),
+    })
+  }
+
+  function stopFrameDrag() {
+    draggingFrameRef.current = null
+  }
+
+  // Symmetric, center-anchored resize — same convention as the node resize
+  // handle (§ startNodeResize) rather than pinning the opposite corner, so
+  // dragging a frame's corner behaves the same way dragging a node's does.
+  function startFrameResize(frame: FrameNode, event: React.PointerEvent<HTMLElement>) {
+    if (event.button === 2) return
+    event.preventDefault()
+    event.stopPropagation()
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId)
+    } catch {
+      // Synthetic pointer events used in browser QA do not always own capture.
+    }
+    resizingFrameRef.current = { id: frame.id, startWidth: frame.width, startHeight: frame.height, startX: event.clientX, startY: event.clientY }
+    onSelect({ type: 'frame', id: frame.id })
+  }
+
+  function moveFrameResize(event: React.PointerEvent<HTMLElement>) {
+    const active = resizingFrameRef.current
+    if (!active) return
+    event.preventDefault()
+    const rect = canvasRef.current?.getBoundingClientRect()
+    if (!rect) return
+    const deltaWidthPercent = ((event.clientX - active.startX) / graphTransform.scale / rect.width) * 100 * 2
+    const deltaHeightPercent = ((event.clientY - active.startY) / graphTransform.scale / rect.height) * 100 * 2
+    onFrameResize(active.id, {
+      width: clamp(active.startWidth + deltaWidthPercent, 10, 90),
+      height: clamp(active.startHeight + deltaHeightPercent, 8, 88),
+    })
+  }
+
+  function stopFrameResize() {
+    resizingFrameRef.current = null
+  }
+
+  // Free resize: the new scale is the ratio of pointer distance from the node
+  // centre, so the corner stays under the cursor at any zoom or density.
+  function startNodeResize(
+    kind: GraphNodeKind,
+    node: { id: string; importance?: number; scale?: number },
+    event: React.PointerEvent<HTMLElement>,
+  ) {
+    if (event.button === 2) return
+    event.preventDefault()
+    event.stopPropagation()
+    const nodeElement = event.currentTarget.closest<HTMLElement>('[data-node-kind][data-node-id]')
+    if (!nodeElement) return
+    const rect = nodeElement.getBoundingClientRect()
+    const centerX = rect.left + rect.width / 2
+    const centerY = rect.top + rect.height / 2
+    const distance = Math.hypot(event.clientX - centerX, event.clientY - centerY)
+    if (distance < 6) return
+
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId)
+    } catch {
+      // Synthetic pointer events used in browser QA do not always own capture.
+    }
+    const startScale = effectiveNodeScale(node)
+    resizeNodeRef.current = { kind, id: node.id, startScale, startDistance: distance, centerX, centerY, begun: false }
+    setResizingNode({ kind, id: node.id })
+    onSelect({ type: kind, id: node.id } as Selection)
+    setArcMenu(null)
+    setNodeContextMenu(null)
+  }
+
+  function moveNodeResize(event: React.PointerEvent<HTMLElement>) {
+    const active = resizeNodeRef.current
+    if (!active) return
+    event.preventDefault()
+    event.stopPropagation()
+    const distance = Math.hypot(event.clientX - active.centerX, event.clientY - active.centerY)
+    onNodeScaleChange(active.kind, active.id, normalizeNodeScale(active.startScale * (distance / active.startDistance)), !active.begun)
+    active.begun = true
+  }
+
+  function stopNodeResize() {
+    resizeNodeRef.current = null
+    setResizingNode(null)
+  }
+
+  function renderResizeHandle(kind: GraphNodeKind, node: { id: string; importance?: number; scale?: number }) {
+    if (graphMode !== 'edit') return null
+    if (!isCanvasNodeSelected(kind, node.id)) return null
+
+    return (
+      <span
+        className="node-resize-handle"
+        role="slider"
+        tabIndex={-1}
+        aria-label="Resize node"
+        aria-valuemin={Math.round(NODE_SCALE_MIN * 100)}
+        aria-valuemax={Math.round(NODE_SCALE_MAX * 100)}
+        aria-valuenow={Math.round(effectiveNodeScale(node) * 100)}
+        onPointerDown={(event) => startNodeResize(kind, node, event)}
+        onPointerMove={moveNodeResize}
+        onPointerUp={stopNodeResize}
+        onPointerCancel={stopNodeResize}
+        onClick={(event) => event.stopPropagation()}
+        onDoubleClick={(event) => {
+          event.stopPropagation()
+          onNodeScaleReset([{ kind, id: node.id }])
+        }}
+      />
+    )
   }
 
   function stopInlineEditEvent(event: React.SyntheticEvent<HTMLElement>) {
@@ -6711,18 +7477,36 @@ function GraphCanvas({
     setEditingIdeaField({ id: ideaId, field })
   }
 
+  function handleIdeaFieldBlur(event: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>) {
+    // Tabbing between title and note must not drop out of edit mode.
+    const next = event.relatedTarget
+    if (next instanceof Node && event.currentTarget.parentElement?.contains(next)) return
+    setEditingIdeaField(null)
+  }
+
   function handleIdeaFieldKeyDown(event: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>, field: 'title' | 'body') {
     event.stopPropagation()
-    if (event.key === 'Escape' || (field === 'title' && event.key === 'Enter')) {
+    if (event.key === 'Escape' || ((event.metaKey || event.ctrlKey) && event.key === 'Enter')) {
       event.preventDefault()
       setEditingIdeaField(null)
+      return
+    }
+    if (field === 'title' && event.key === 'Enter') {
+      event.preventDefault()
+      setEditingIdeaField((current) => current ? { ...current, field: 'body' } : current)
+      const note = event.currentTarget.parentElement?.querySelector<HTMLTextAreaElement>('.node-note-input')
+      note?.focus()
     }
   }
 
   function updateZoom(delta: number) {
     setGraphTransform((current) => ({
       ...current,
-      scale: clamp(Number((current.scale + delta).toFixed(2)), 0.65, 1.8),
+      // Zooming out used to bottom out at 0.65 — nowhere near far enough to
+      // see a large board at once. It goes to 0.12 now that semantic zoom
+      // (see zoomTier below) hides text at low scale instead of leaving it to
+      // shrink into illegible pixels the way plain CSS scale would.
+      scale: clamp(Number((current.scale + delta).toFixed(2)), 0.12, 1.8),
     }))
   }
 
@@ -6732,7 +7516,7 @@ function GraphCanvas({
 
   function startPan(event: React.PointerEvent<HTMLDivElement>) {
     const target = event.target instanceof Element ? event.target : null
-    if (target?.closest('[data-node-kind][data-node-id], button, input, textarea, select, .canvas-tool-rail, .canvas-secondary-rail, .graph-tools-drawer, .node-context-menu, .node-arc-menu, .canvas-zero-state, .ai-node-panel')) return
+    if (target?.closest('[data-node-kind][data-node-id], button, input, textarea, select, .canvas-tool-rail, .canvas-view-rail, .canvas-zoom-rail, .graph-tools-drawer, .node-context-menu, .node-arc-menu, .canvas-zero-state, .ai-node-panel')) return
     onSelect({ type: 'project' })
     setNodeContextMenu(null)
     setArcMenu(null)
@@ -6772,11 +7556,12 @@ function GraphCanvas({
   return (
     <section className="graph-shell">
       <div
-        className={`${draggingNode ? 'graph-canvas is-dragging-node' : 'graph-canvas'}${isPanning ? ' is-panning' : ''}${graphMode === 'discover' ? ' is-discovery' : ''}${related.linkIds.size > 0 ? ' has-focus' : ''}`}
+        className={`${draggingNode ? 'graph-canvas is-dragging-node' : 'graph-canvas'}${resizingNode ? ' is-resizing-node' : ''}${isPanning ? ' is-panning' : ''}${graphMode === 'discover' ? ' is-discovery' : ''}${related.linkIds.size > 0 ? ' has-focus' : ''}`}
         data-graph-cap={graphMetrics.cap}
         data-graph-mode={graphMetrics.mode}
         data-total-nodes={graphMetrics.totalNodes}
         data-visible-nodes={graphMetrics.visibleNodes}
+        data-zoom-tier={zoomTier}
         ref={canvasRef}
         onPointerDown={startPan}
         onPointerMove={(event) => {
@@ -6786,6 +7571,36 @@ function GraphCanvas({
         onPointerUp={stopPan}
         onPointerCancel={stopPan}
       >
+        {/* One row, three zones: view options left, create tools centre, viewport
+            right. Flex keeps them from ever overlapping at any canvas width. */}
+        <div className="canvas-bottom-bar">
+        <div className="canvas-view-rail" aria-label="Canvas view tools">
+          <div className="graph-mode-toggle" aria-label="Canvas mode">
+            {Object.keys(graphModeLabels).map((mode) => (
+              <button
+                key={mode}
+                aria-pressed={graphMode === mode}
+                className={graphMode === mode ? 'is-active' : ''}
+                type="button"
+                title={mode === 'discover' ? 'Suggest weak links without saving them' : 'Move, edit, and link nodes'}
+                onClick={() => setGraphMode(mode as GraphMode)}
+              >
+                {graphModeLabels[mode as GraphMode]}
+              </button>
+            ))}
+          </div>
+          <button
+            aria-expanded={isGraphToolsOpen}
+            className={isGraphToolsOpen ? 'canvas-view-rail-trigger is-active' : 'canvas-view-rail-trigger'}
+            data-menu-trigger="graph-tools"
+            type="button"
+            onClick={() => setIsGraphToolsOpen((current) => !current)}
+          >
+            <SlidersHorizontal size={13} />
+            Arrange
+          </button>
+        </div>
+
         <div className="canvas-tool-rail" aria-label="Canvas tools">
           <div className="canvas-tool-group" aria-label="Select tools">
             <button
@@ -6823,6 +7638,9 @@ function GraphCanvas({
             <button type="button" aria-label="Add idea" onClick={onCreateIdea}>
               <img className="tool-icon" src="/tool-icons/idea.png" alt="" />
             </button>
+            <button type="button" aria-label="Add frame" title="Group and name a region of the board" onClick={onCreateFrame}>
+              <Frame size={15} />
+            </button>
           </div>
           <div className="canvas-tool-group" aria-label="Import tools">
             <button
@@ -6836,6 +7654,25 @@ function GraphCanvas({
               <img className="tool-icon" src="/tool-icons/mermaid-diagram.png" alt="" />
             </button>
           </div>
+        </div>
+
+        <div className="canvas-zoom-rail" aria-label="Canvas zoom">
+          <button type="button" aria-label="Zoom out" onClick={() => updateZoom(-0.15)}>
+            <ZoomOut size={13} />
+          </button>
+          <span className="canvas-zoom-value">{Math.round(graphTransform.scale * 100)}%</span>
+          <button type="button" aria-label="Zoom in" onClick={() => updateZoom(0.15)}>
+            <ZoomIn size={13} />
+          </button>
+          <button type="button" aria-label="Reset canvas view" onClick={resetGraphView}>
+            <LocateFixed size={13} />
+          </button>
+          <span className="canvas-zoom-status">
+            {activeCanvasTool === 'link'
+              ? pendingLinkSource ? 'Pick target' : 'Pick source'
+              : `${graphMetrics.visibleNodes}/${graphMetrics.totalNodes}`}
+          </span>
+        </div>
         </div>
         {graphMetrics.totalNodes === 0 && (
           <section className="canvas-zero-state" aria-label="Start a KIRA project">
@@ -6889,6 +7726,65 @@ function GraphCanvas({
             handleReferenceDrop(event, { kind: 'canvas', position })
           }}
         >
+          {frames.map((frame) => (
+            <div
+              key={frame.id}
+              className={selected.type === 'frame' && selected.id === frame.id ? 'canvas-frame is-selected' : 'canvas-frame'}
+              data-frame-id={frame.id}
+              style={{
+                left: `${frame.x}%`,
+                top: `${frame.y}%`,
+                width: `${frame.width}%`,
+                height: `${frame.height}%`,
+              }}
+            >
+              <button
+                type="button"
+                className="canvas-frame-label"
+                onPointerDown={(event) => startFrameDrag(frame, event)}
+                onPointerMove={moveFrameDrag}
+                onPointerUp={stopFrameDrag}
+                onPointerCancel={stopFrameDrag}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  onSelect({ type: 'frame', id: frame.id })
+                }}
+                onDoubleClick={(event) => {
+                  event.stopPropagation()
+                  beginFrameRename(frame.id)
+                }}
+              >
+                {editingFrameId === frame.id ? (
+                  <input
+                    autoFocus
+                    className="canvas-frame-title-input"
+                    aria-label="Frame title"
+                    value={frame.title}
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onClick={(event) => event.stopPropagation()}
+                    onBlur={() => setEditingFrameId(null)}
+                    onKeyDown={(event) => {
+                      event.stopPropagation()
+                      if (event.key === 'Enter' || event.key === 'Escape') setEditingFrameId(null)
+                    }}
+                    onChange={(event) => onFrameRename(frame.id, event.target.value)}
+                  />
+                ) : (
+                  <span className="canvas-frame-title">{frame.title}</span>
+                )}
+              </button>
+              <span
+                className="canvas-frame-resize-handle"
+                role="slider"
+                tabIndex={-1}
+                aria-label="Resize frame"
+                onPointerDown={(event) => startFrameResize(frame, event)}
+                onPointerMove={moveFrameResize}
+                onPointerUp={stopFrameResize}
+                onPointerCancel={stopFrameResize}
+              />
+            </div>
+          ))}
           <svg className="edge-layer" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true" data-edge-render="smooth">
             <defs>
               <linearGradient id="edgeGradient" x1="0" x2="1">
@@ -6983,6 +7879,7 @@ function GraphCanvas({
 
           {displayView.ideas.map((idea) => {
             const isSelectedIdea = selected.type === 'idea' && selected.id === idea.id
+            const isEditingIdea = editingIdeaField?.id === idea.id
             const evidenceCount = displayView.links.filter((link) => link.ideaId === idea.id).length
             return (
               <div
@@ -6990,6 +7887,7 @@ function GraphCanvas({
                 className={[
                   'idea-node',
                   isSelectedIdea ? 'is-selected' : '',
+                  isEditingIdea ? 'is-editing' : '',
                   isCanvasNodeSelected('idea', idea.id) && multiSelectedNodes.length > 0 ? 'is-multi-selected' : '',
                   related.ideaIds.has(idea.id) ? 'is-related' : '',
                 ].filter(Boolean).join(' ')}
@@ -7000,13 +7898,21 @@ function GraphCanvas({
                 style={{
                   left: `${idea.x}%`,
                   top: `${idea.y}%`,
-                  '--node-scale': nodeScale(idea.importance, nodeDensityScale),
+                  '--node-scale': nodeScale(idea),
                 } as React.CSSProperties}
                 onClick={(event) => selectGraphNode('idea', idea.id, event)}
+                onDoubleClick={(event) => beginIdeaFieldEdit(idea.id, 'title', event)}
                 onContextMenu={(event) => openNodeContextMenu('idea', idea.id, event)}
                 onKeyDown={(event) => {
                   if (isEditableEventTarget(event.target)) return
-                  if (event.key === 'Enter' || event.key === ' ') {
+                  // Click selects; Enter is the deliberate step into editing.
+                  if (event.key === 'Enter') {
+                    event.preventDefault()
+                    if (isSelectedIdea) beginIdeaFieldEdit(idea.id, 'title', event)
+                    else selectGraphNode('idea', idea.id)
+                    return
+                  }
+                  if (event.key === ' ') {
                     event.preventDefault()
                     selectGraphNode('idea', idea.id)
                   }
@@ -7034,55 +7940,29 @@ function GraphCanvas({
                   <Plus size={11} />
                 </span>
                 <span className={`idea-status idea-status--${idea.status}`} />
-                {isSelectedIdea ? (
-                  <span className="idea-node-fields">
-                    {editingIdeaField?.id === idea.id && editingIdeaField.field === 'title' ? (
-                      <input
-                        autoFocus
-                        className="node-title-input"
-                        aria-label="Idea title"
-                        value={idea.title}
-                        onPointerDown={stopInlineEditEvent}
-                        onClick={stopInlineEditEvent}
-                        onBlur={() => setEditingIdeaField(null)}
-                        onKeyDown={(event) => handleIdeaFieldKeyDown(event, 'title')}
-                        onChange={(event) => onIdeaInlineChange(idea.id, { title: event.target.value })}
-                      />
-                    ) : (
-                      <button
-                        className="node-title-display"
-                        type="button"
-                        aria-label="Edit idea title"
-                        onPointerDown={stopInlineEditEvent}
-                        onClick={(event) => beginIdeaFieldEdit(idea.id, 'title', event)}
-                      >
-                        {idea.title}
-                      </button>
-                    )}
-                    {editingIdeaField?.id === idea.id && editingIdeaField.field === 'body' ? (
-                      <textarea
-                        autoFocus
-                        className="node-note-input"
-                        aria-label="Idea note"
-                        placeholder="Note..."
-                        value={idea.body}
-                        onPointerDown={stopInlineEditEvent}
-                        onClick={stopInlineEditEvent}
-                        onBlur={() => setEditingIdeaField(null)}
-                        onKeyDown={(event) => handleIdeaFieldKeyDown(event, 'body')}
-                        onChange={(event) => onIdeaInlineChange(idea.id, { body: event.target.value })}
-                      />
-                    ) : (
-                      <button
-                        className="node-note-display"
-                        type="button"
-                        aria-label="Edit idea note"
-                        onPointerDown={stopInlineEditEvent}
-                        onClick={(event) => beginIdeaFieldEdit(idea.id, 'body', event)}
-                      >
-                        {idea.body || 'Note...'}
-                      </button>
-                    )}
+                {isEditingIdea ? (
+                  // The edit area only exists while editing, so a stray click can
+                  // never land in a text field and the resting card never shifts.
+                  <span className="idea-node-fields" onPointerDown={stopInlineEditEvent} onClick={stopInlineEditEvent}>
+                    <input
+                      autoFocus={editingIdeaField?.field === 'title'}
+                      className="node-title-input"
+                      aria-label="Idea title"
+                      value={idea.title}
+                      onBlur={handleIdeaFieldBlur}
+                      onKeyDown={(event) => handleIdeaFieldKeyDown(event, 'title')}
+                      onChange={(event) => onIdeaInlineChange(idea.id, { title: event.target.value })}
+                    />
+                    <textarea
+                      autoFocus={editingIdeaField?.field === 'body'}
+                      className="node-note-input"
+                      aria-label="Idea note"
+                      placeholder="Note..."
+                      value={idea.body}
+                      onBlur={handleIdeaFieldBlur}
+                      onKeyDown={(event) => handleIdeaFieldKeyDown(event, 'body')}
+                      onChange={(event) => onIdeaInlineChange(idea.id, { body: event.target.value })}
+                    />
                     <small className="node-meta-line">{idea.status === 'thin' ? 'needs evidence' : `${evidenceCount} evidence`}</small>
                   </span>
                 ) : (
@@ -7091,6 +7971,7 @@ function GraphCanvas({
                     <small>{idea.status === 'thin' ? 'needs evidence' : `${evidenceCount} evidence`}</small>
                   </>
                 )}
+                {renderResizeHandle('idea', idea)}
               </div>
             )
           })}
@@ -7110,7 +7991,7 @@ function GraphCanvas({
               style={{
                 left: `${image.x}%`,
                 top: `${image.y}%`,
-                '--node-scale': nodeScale(image.importance, nodeDensityScale),
+                '--node-scale': nodeScale(image),
               } as React.CSSProperties}
               onClick={(event) => selectGraphNode('image', image.id, event)}
               onContextMenu={(event) => openNodeContextMenu('image', image.id, event)}
@@ -7139,6 +8020,9 @@ function GraphCanvas({
                   <i key={`${image.id}-${index}-${color}`} style={{ background: color }} />
                 ))}
               </span>
+              {/* Caption stays out of the way at rest; the board is for looking, not reading. */}
+              <span className="node-caption">{image.title}</span>
+              {renderResizeHandle('image', image)}
             </button>
           ))}
 
@@ -7156,7 +8040,7 @@ function GraphCanvas({
               style={{
                 left: `${palette.x}%`,
                 top: `${palette.y}%`,
-                '--node-scale': nodeScale(palette.importance, nodeDensityScale),
+                '--node-scale': nodeScale(palette),
               } as React.CSSProperties}
               onClick={(event) => selectGraphNode('palette', palette.id, event)}
               onContextMenu={(event) => openNodeContextMenu('palette', palette.id, event)}
@@ -7182,6 +8066,7 @@ function GraphCanvas({
               </span>
               <strong>{palette.title}</strong>
               <small>{palette.algorithm}</small>
+              {renderResizeHandle('palette', palette)}
             </button>
           ))}
 
@@ -7199,7 +8084,7 @@ function GraphCanvas({
               style={{
                 left: `${diagram.x}%`,
                 top: `${diagram.y}%`,
-                '--node-scale': nodeScale(diagram.importance, nodeDensityScale),
+                '--node-scale': nodeScale(diagram),
               } as React.CSSProperties}
               onClick={(event) => selectGraphNode('diagram', diagram.id, event)}
               onContextMenu={(event) => openNodeContextMenu('diagram', diagram.id, event)}
@@ -7221,6 +8106,7 @@ function GraphCanvas({
               <FileText size={15} />
               <strong>{diagram.title}</strong>
               <small>{diagram.nodeIds.length} nodes</small>
+              {renderResizeHandle('diagram', diagram)}
             </button>
           ))}
 
@@ -7238,7 +8124,7 @@ function GraphCanvas({
               style={{
                 left: `${placeholder.x}%`,
                 top: `${placeholder.y}%`,
-                '--node-scale': nodeScale(placeholder.importance, nodeDensityScale),
+                '--node-scale': nodeScale(placeholder),
               } as React.CSSProperties}
               onClick={(event) => selectGraphNode('placeholder', placeholder.id, event)}
               onContextMenu={(event) => openNodeContextMenu('placeholder', placeholder.id, event)}
@@ -7264,6 +8150,7 @@ function GraphCanvas({
               </span>
               <ImagePlus size={16} />
               <span>{placeholder.title}</span>
+              {renderResizeHandle('placeholder', placeholder)}
             </button>
           ))}
 
@@ -7371,6 +8258,10 @@ function GraphCanvas({
               <ChevronDown size={13} />
               Decrease importance
             </button>
+            <button type="button" role="menuitem" onClick={resetContextNodeScale}>
+              <LocateFixed size={13} />
+              Reset size
+            </button>
             <button
               type="button"
               role="menuitem"
@@ -7390,52 +8281,6 @@ function GraphCanvas({
             </button>
           </div>
         )}
-
-        <div className="canvas-secondary-rail" aria-label="Canvas view tools">
-          <div className="graph-zoom" aria-label="Canvas zoom">
-            <button type="button" aria-label="Zoom out" onClick={() => updateZoom(-0.15)}>
-              <ZoomOut size={13} />
-            </button>
-            <span>{Math.round(graphTransform.scale * 100)}%</span>
-            <button type="button" aria-label="Zoom in" onClick={() => updateZoom(0.15)}>
-              <ZoomIn size={13} />
-            </button>
-            <button type="button" aria-label="Reset canvas view" onClick={resetGraphView}>
-              <LocateFixed size={13} />
-            </button>
-          </div>
-
-          <div className="graph-status">
-            <span>
-              {activeCanvasTool === 'link'
-                ? pendingLinkSource ? 'Select link target' : 'Select link source'
-                : `${graphMetrics.visibleNodes}/${graphMetrics.totalNodes}`}
-            </span>
-            <div className="graph-mode-toggle" aria-label="Canvas mode">
-              {Object.keys(graphModeLabels).map((mode) => (
-                <button
-                  key={mode}
-                  aria-pressed={graphMode === mode}
-                  className={graphMode === mode ? 'is-active' : ''}
-                  type="button"
-                  onClick={() => setGraphMode(mode as GraphMode)}
-                >
-                  {graphModeLabels[mode as GraphMode]}
-                </button>
-              ))}
-            </div>
-            <button
-              aria-expanded={isGraphToolsOpen}
-              aria-label="Canvas tools"
-              className={isGraphToolsOpen ? 'icon-button is-active' : 'icon-button'}
-              data-menu-trigger="graph-tools"
-              type="button"
-              onClick={() => setIsGraphToolsOpen((current) => !current)}
-            >
-              <MoreHorizontal size={16} />
-            </button>
-          </div>
-        </div>
 
         {isGraphToolsOpen && (
           <div className="graph-tools-drawer">
@@ -8367,16 +9212,60 @@ function ProjectDiagnostics({
   )
 }
 
-function ReferenceThumb({ image, className = '' }: { image: Pick<EvidenceImage, 'thumb' | 'title'>; className?: string }) {
+function ReferenceThumb({
+  image,
+  className = '',
+}: {
+  image: Pick<EvidenceImage, 'thumb' | 'title' | 'width' | 'height' | 'cropRect'>
+  className?: string
+}) {
   const [isMissing, setIsMissing] = useState(false)
+  const hostRef = useRef<HTMLSpanElement>(null)
   const classes = ['reference-thumb', className, isMissing ? 'is-missing' : ''].filter(Boolean).join(' ')
+  const storedAspect = image.width && image.height ? referenceAspect(image) : null
+  const crop = image.cropRect
+
+  // The non-destructive crop trick: blow the <img> up past its container by
+  // exactly 1/cropWidth and shift it so the crop rect's corner lands at the
+  // container's corner, then let overflow:hidden do the clipping. The file on
+  // disk never changes — only what fraction of it this element shows.
+  const cropStyle: React.CSSProperties | undefined =
+    crop && crop.width > 0 && crop.height > 0
+      ? {
+          position: 'absolute',
+          width: `${100 / crop.width}%`,
+          height: `${100 / crop.height}%`,
+          maxWidth: 'none',
+          left: `${(-crop.x / crop.width) * 100}%`,
+          top: `${(-crop.y / crop.height) * 100}%`,
+        }
+      : undefined
 
   return (
-    <span className={classes} aria-label={isMissing ? `${image.title} missing` : undefined}>
+    <span
+      ref={hostRef}
+      className={classes}
+      aria-label={isMissing ? `${image.title} missing` : undefined}
+      style={storedAspect ? { '--thumb-aspect': storedAspect } as React.CSSProperties : undefined}
+    >
       {isMissing ? (
         <ImagePlus size={16} aria-hidden="true" />
       ) : (
-        <img src={image.thumb} alt="" draggable={false} onError={() => setIsMissing(true)} />
+        <img
+          src={image.thumb}
+          alt=""
+          draggable={false}
+          style={cropStyle}
+          onError={() => setIsMissing(true)}
+          // Captures from the web usually arrive without stored dimensions, so
+          // the true ratio is read off the decoded image rather than guessed.
+          onLoad={(event) => {
+            if (storedAspect) return
+            const { naturalWidth, naturalHeight } = event.currentTarget
+            if (!naturalWidth || !naturalHeight) return
+            hostRef.current?.style.setProperty('--thumb-aspect', String(referenceAspect({ width: naturalWidth, height: naturalHeight })))
+          }}
+        />
       )}
     </span>
   )
@@ -8426,6 +9315,7 @@ function Inspector({
   onDroppedReference,
   onPlaceholderAttach,
   onReferenceFindSimilar,
+  onReferenceCrop,
   onReferenceConvertToPalette,
   onIdeaTitleFocused,
   onIdeaDelete,
@@ -8435,6 +9325,8 @@ function Inspector({
   onPlaceholderDelete,
   onLinkSelectedReferences,
   onLinkDelete,
+  onFrameRename,
+  onFrameDelete,
   onNodeVersionRestore,
   onBeginLinkFromNode,
   onDuplicateSelection,
@@ -8488,6 +9380,7 @@ function Inspector({
   onDroppedReference: (payload: DroppedReferencePayload, target: DroppedReferenceTarget) => void | Promise<void>
   onPlaceholderAttach: (placeholderId: string, files: FileList | File[]) => void
   onReferenceFindSimilar: (imageId: string) => void
+  onReferenceCrop: (imageId: string) => void
   onReferenceConvertToPalette: (imageId: string) => void
   onIdeaTitleFocused: () => void
   onIdeaDelete: (ideaId: string) => void
@@ -8497,6 +9390,8 @@ function Inspector({
   onPlaceholderDelete: (placeholderId: string) => void
   onLinkSelectedReferences: (ideaId: string) => void
   onLinkDelete: (linkId: string) => void
+  onFrameRename: (frameId: string, title: string) => void
+  onFrameDelete: (frameId: string) => void
   onNodeVersionRestore: (versionId: string) => void
   onBeginLinkFromNode: (source: Pick<GraphNodeRef, 'kind' | 'id'>) => void
   onDuplicateSelection: () => void
@@ -8853,6 +9748,10 @@ function Inspector({
               <button className="image-edge-action" type="button" onClick={() => onReferenceConvertToPalette(selected.image.id)}>
                 <Palette size={13} />
                 Palette
+              </button>
+              <button className="image-edge-action" type="button" onClick={() => onReferenceCrop(selected.image.id)}>
+                <CropIcon size={13} />
+                Crop
               </button>
             </div>
           </div>
@@ -9281,7 +10180,150 @@ function Inspector({
           </button>
         </>
       )}
+
+      {selected.kind === 'frame' && (
+        <>
+          <section className="inspector-card">
+            <div className="section-heading">
+              <Frame size={14} />
+              Frame
+            </div>
+            <input
+              className="title-input"
+              value={selected.frame.title}
+              onChange={(event) => onFrameRename(selected.frame.id, event.target.value)}
+            />
+            <p className="inspector-lede">
+              {selected.containedImages.length === 0
+                ? 'Empty — drag references inside this region to group them.'
+                : `${selected.containedImages.length} reference${selected.containedImages.length === 1 ? '' : 's'} inside.`}
+            </p>
+          </section>
+          <section className="reference-palette-card">
+            {selected.palette.length > 0 ? (
+              <>
+                <div className="reference-palette-strip" aria-label="Merged colors of references in this frame">
+                  {selected.palette.map((color, index) => (
+                    <button
+                      key={`${selected.frame.id}-palette-${index}-${color}`}
+                      type="button"
+                      className="reference-palette-segment"
+                      title={color}
+                      style={{ background: color }}
+                      onClick={() => void navigator.clipboard?.writeText(color)}
+                    >
+                      <code>{color.toUpperCase()}</code>
+                    </button>
+                  ))}
+                </div>
+                <div className="reference-palette-actions">
+                  <button type="button" onClick={() => void copyColorSet(selected.palette)}>
+                    Copy set
+                  </button>
+                  <button type="button" onClick={() => void copyColorBlockSvg(selected.palette, selected.frame.title)}>
+                    Copy SVG
+                  </button>
+                </div>
+              </>
+            ) : (
+              <p className="empty-copy">No references inside yet — their colors merge here once they are.</p>
+            )}
+          </section>
+          <button className="danger-action" type="button" onClick={() => onFrameDelete(selected.frame.id)}>
+            Delete frame
+          </button>
+        </>
+      )}
     </aside>
+  )
+}
+
+function ReferenceCropDialog({
+  image,
+  onSave,
+  onReset,
+  onClose,
+}: {
+  image: EvidenceImage
+  onSave: (cropRect: NonNullable<EvidenceImage['cropRect']>) => void
+  onReset: () => void
+  onClose: () => void
+}) {
+  const [crop, setCrop] = useState({ x: 0, y: 0 })
+  const [zoom, setZoom] = useState(1)
+  const pendingAreaRef = useRef<CropArea | null>(null)
+  // The crop box keeps the reference's own shape — this is a reframe/zoom
+  // tool (recenter on a detail, tighten the edges), not an aspect-ratio
+  // changer. Anything more free-form would fight react-easy-crop's model,
+  // where the box is a fixed shape and the image pans/zooms under it.
+  const aspect = image.width && image.height ? image.width / image.height : 1
+
+  useEffect(() => {
+    function handleKeydown(event: KeyboardEvent) {
+      if (event.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', handleKeydown)
+    return () => window.removeEventListener('keydown', handleKeydown)
+  }, [onClose])
+
+  const initialCroppedAreaPercentages = image.cropRect
+    ? {
+        x: image.cropRect.x * 100,
+        y: image.cropRect.y * 100,
+        width: image.cropRect.width * 100,
+        height: image.cropRect.height * 100,
+      }
+    : undefined
+
+  function handleSave() {
+    const area = pendingAreaRef.current
+    if (!area) {
+      onClose()
+      return
+    }
+    onSave({ x: area.x / 100, y: area.y / 100, width: area.width / 100, height: area.height / 100 })
+  }
+
+  return (
+    <div className="dialog-overlay">
+      <section className="crop-dialog" role="dialog" aria-modal="true" aria-label={`Crop ${image.title}`}>
+        <header className="crop-dialog-header">
+          <span>
+            <CropIcon size={14} />
+            Crop “{image.title}”
+          </span>
+          <button type="button" className="icon-button" aria-label="Close crop dialog" onClick={onClose}>
+            <X size={14} />
+          </button>
+        </header>
+        <div className="crop-dialog-stage">
+          <Cropper
+            image={image.thumb}
+            crop={crop}
+            zoom={zoom}
+            aspect={aspect}
+            initialCroppedAreaPercentages={initialCroppedAreaPercentages}
+            onCropChange={setCrop}
+            onZoomChange={setZoom}
+            onCropComplete={(area) => {
+              pendingAreaRef.current = area
+            }}
+          />
+        </div>
+        <p className="crop-dialog-hint">Drag to reframe, scroll or pinch to zoom. The original file never changes — reset anytime.</p>
+        <div className="dialog-actions crop-dialog-actions">
+          <button type="button" className="quiet-button" onClick={onReset}>
+            Reset crop
+          </button>
+          <button type="button" className="quiet-button" onClick={onClose}>
+            Cancel
+          </button>
+          <button type="button" className="primary-button" onClick={handleSave}>
+            Save crop
+          </button>
+        </div>
+      </section>
+    </div>
   )
 }
 
@@ -10450,6 +11492,7 @@ function resolveSelection(
   palettes: PaletteNode[],
   diagrams: DiagramNode[],
   placeholders: PlaceholderNode[],
+  frames: FrameNode[],
 ) {
   if (selection.type === 'project') {
     return { kind: 'project' as const, heading: 'File', project, appearance }
@@ -10480,12 +11523,45 @@ function resolveSelection(
     return { kind: 'placeholder' as const, heading: 'Placeholder', placeholder }
   }
 
+  if (selection.type === 'frame') {
+    const frame = frames.find((candidate) => candidate.id === selection.id) ?? frames[0]
+    const containedImages = imagesInFrame(frame, images)
+    return { kind: 'frame' as const, heading: 'Frame', frame, containedImages, palette: mergeFramePalette(containedImages) }
+  }
+
   const link = links.find((candidate) => candidate.id === selection.id) ?? links[0]
   const source = resolveGraphNodeRef(link.sourceNodeId ?? link.imageId, ideas, images, palettes, diagrams, placeholders)
   const target = resolveGraphNodeRef(link.targetNodeId ?? link.ideaId, ideas, images, palettes, diagrams, placeholders)
   const image = images.find((candidate) => candidate.id === link.imageId)
   const idea = ideas.find((candidate) => candidate.id === link.ideaId)
   return { kind: 'link' as const, heading: 'Link', link, source, target, image, idea }
+}
+
+// A frame doesn't own the nodes inside it — membership is computed from
+// position every time it's needed, not stored, so moving a node in or out of
+// a frame's bounds just works without any explicit "add to frame" step.
+function imagesInFrame(frame: FrameNode | undefined, images: EvidenceImage[]) {
+  if (!frame) return []
+  const left = frame.x - frame.width / 2
+  const right = frame.x + frame.width / 2
+  const top = frame.y - frame.height / 2
+  const bottom = frame.y + frame.height / 2
+  return images.filter((image) => image.x >= left && image.x <= right && image.y >= top && image.y <= bottom)
+}
+
+function mergeFramePalette(images: EvidenceImage[], limit = 8) {
+  const seen = new Set<string>()
+  const merged: string[] = []
+  for (const image of images) {
+    for (const color of image.palette) {
+      const key = color.toLowerCase()
+      if (seen.has(key)) continue
+      seen.add(key)
+      merged.push(color)
+      if (merged.length >= limit) return merged
+    }
+  }
+  return merged
 }
 
 function resolveGraphNodeRef(
@@ -12415,8 +13491,46 @@ function adjustImportance(value: number | undefined, delta: number) {
   return Number(clamp(nodeImportance(value) + delta, 0.25, 5).toFixed(2))
 }
 
-function nodeScale(value: number | undefined, densityScale = 1) {
-  return Number(((0.78 + nodeImportance(value) * 0.15) * densityScale).toFixed(2))
+// `importance` stays semantic (outline ranking, layout ordering). `scale` is the
+// free visual size the user drags, and only falls back to importance when unset,
+// so boards saved before the split keep the exact size they had.
+const NODE_SCALE_MIN = 0.2
+const NODE_SCALE_MAX = 6
+
+function importanceScale(value: number | undefined) {
+  return 0.78 + nodeImportance(value) * 0.15
+}
+
+const DEFAULT_NODE_SCALE = importanceScale(undefined)
+
+function effectiveNodeScale(node: { importance?: number; scale?: number }) {
+  if (typeof node.scale === 'number' && Number.isFinite(node.scale)) {
+    return clamp(node.scale, NODE_SCALE_MIN, NODE_SCALE_MAX)
+  }
+  return importanceScale(node.importance)
+}
+
+function normalizeNodeScale(value: number) {
+  return Number(clamp(value, NODE_SCALE_MIN, NODE_SCALE_MAX).toFixed(3))
+}
+
+function nodeScale(node: { importance?: number; scale?: number }, densityScale = 1) {
+  return Number((effectiveNodeScale(node) * densityScale).toFixed(3))
+}
+
+// Reference nodes render at their real aspect ratio instead of a fixed crop box.
+function referenceAspect(image: Pick<EvidenceImage, 'width' | 'height'> & Partial<Pick<EvidenceImage, 'cropRect'>>) {
+  if (!image.width || !image.height) return 4 / 3
+  // Everything that lays out or sizes a reference (canvas nodes, shelf-pack,
+  // cluster-force collision radius, library thumbnails) already funnels
+  // through this one function, so a crop just needs to change what it
+  // reports here — nothing downstream needs to know cropping exists.
+  if (image.cropRect && image.cropRect.width > 0 && image.cropRect.height > 0) {
+    const croppedWidthPx = image.width * image.cropRect.width
+    const croppedHeightPx = image.height * image.cropRect.height
+    return clamp(croppedWidthPx / croppedHeightPx, 0.3, 3.5)
+  }
+  return clamp(image.width / image.height, 0.3, 3.5)
 }
 
 function layoutDensityScale(nodeCount: number) {
@@ -12435,6 +13549,8 @@ type LayoutNodeEntry = {
   id: string
   title: string
   importance?: number
+  sizeScale: number
+  aspect?: number
   createdAt?: string
   updatedAt?: string
 }
@@ -12487,13 +13603,57 @@ async function organizeGraphLayout(
   const nextDiagrams = diagrams.map((diagram) => ({ ...diagram }))
   const nextPlaceholders = placeholders.map((placeholder) => ({ ...placeholder }))
   const layoutNodes: LayoutNodeEntry[] = [
-    ...nextIdeas.map((node) => ({ key: layoutKey('idea', node.id), kind: 'idea' as const, id: node.id, title: node.title, importance: node.importance, createdAt: node.createdAt, updatedAt: node.updatedAt })),
-    ...nextImages.map((node) => ({ key: layoutKey('image', node.id), kind: 'image' as const, id: node.id, title: node.title, importance: node.importance, createdAt: node.createdAt, updatedAt: node.updatedAt })),
-    ...nextPalettes.map((node) => ({ key: layoutKey('palette', node.id), kind: 'palette' as const, id: node.id, title: node.title, importance: node.importance, createdAt: node.createdAt, updatedAt: node.updatedAt })),
-    ...nextDiagrams.map((node) => ({ key: layoutKey('diagram', node.id), kind: 'diagram' as const, id: node.id, title: node.title, importance: node.importance, createdAt: node.createdAt, updatedAt: node.updatedAt })),
-    ...nextPlaceholders.map((node) => ({ key: layoutKey('placeholder', node.id), kind: 'placeholder' as const, id: node.id, title: node.title, importance: node.importance, createdAt: node.createdAt, updatedAt: node.updatedAt })),
+    ...nextIdeas.map((node) => ({ key: layoutKey('idea', node.id), kind: 'idea' as const, id: node.id, title: node.title, importance: node.importance, sizeScale: effectiveNodeScale(node), createdAt: node.createdAt, updatedAt: node.updatedAt })),
+    ...nextImages.map((node) => ({ key: layoutKey('image', node.id), kind: 'image' as const, id: node.id, title: node.title, importance: node.importance, sizeScale: effectiveNodeScale(node), aspect: referenceAspect(node), createdAt: node.createdAt, updatedAt: node.updatedAt })),
+    ...nextPalettes.map((node) => ({ key: layoutKey('palette', node.id), kind: 'palette' as const, id: node.id, title: node.title, importance: node.importance, sizeScale: effectiveNodeScale(node), createdAt: node.createdAt, updatedAt: node.updatedAt })),
+    ...nextDiagrams.map((node) => ({ key: layoutKey('diagram', node.id), kind: 'diagram' as const, id: node.id, title: node.title, importance: node.importance, sizeScale: effectiveNodeScale(node), createdAt: node.createdAt, updatedAt: node.updatedAt })),
+    ...nextPlaceholders.map((node) => ({ key: layoutKey('placeholder', node.id), kind: 'placeholder' as const, id: node.id, title: node.title, importance: node.importance, sizeScale: effectiveNodeScale(node), createdAt: node.createdAt, updatedAt: node.updatedAt })),
   ]
   const densityScale = layoutDensityScale(layoutNodes.length)
+
+  // ELK's 'layered' algorithm is built for directed flow, not a contact sheet
+  // — it has no notion of packing rows by width. 'grid' shelf-packs instead,
+  // wrapping to as many rows as it needs rather than shrinking every node to
+  // fit a fixed area (the old layoutDensityScale crushed a 300-node board
+  // down to ~24% scale, past the point of being readable at all).
+  if (mode === 'grid') {
+    applyShelfPackedLayout(sortLayoutNodes(layoutNodes, mode, selected, links), {
+      ideas: nextIdeas,
+      images: nextImages,
+      palettes: nextPalettes,
+      diagrams: nextDiagrams,
+      placeholders: nextPlaceholders,
+    }, timestamp, 1, { width: shelfNodePercentWidth, height: shelfNodePercentHeight })
+    return {
+      ideas: nextIdeas,
+      images: nextImages,
+      palettes: nextPalettes,
+      diagrams: nextDiagrams,
+      placeholders: nextPlaceholders,
+    }
+  }
+
+  // ELK's 'layered' algorithm draws a directed hierarchy — exactly right for
+  // 'flow'/'timeline', wrong for a moodboard's soft idea clusters, which have
+  // no inherent direction. A physics simulation (repel + collide so nothing
+  // overlaps, pull along links so evidence drifts toward its idea) reads as
+  // organic groupings instead of ELK's rigid layered rows.
+  if (mode === 'cluster') {
+    await applyClusterForceLayout(sortLayoutNodes(layoutNodes, mode, selected, links), links, {
+      ideas: nextIdeas,
+      images: nextImages,
+      palettes: nextPalettes,
+      diagrams: nextDiagrams,
+      placeholders: nextPlaceholders,
+    }, timestamp)
+    return {
+      ideas: nextIdeas,
+      images: nextImages,
+      palettes: nextPalettes,
+      diagrams: nextDiagrams,
+      placeholders: nextPlaceholders,
+    }
+  }
 
   let layoutApplied = false
   try {
@@ -12513,7 +13673,9 @@ async function organizeGraphLayout(
           'elk.algorithm': 'layered',
           'elk.direction': direction,
           'elk.layered.spacing.nodeNodeBetweenLayers': mode === 'flow' ? '112' : '92',
-          'elk.spacing.nodeNode': mode === 'grid' ? '56' : '68',
+          // 'grid' no longer reaches ELK at all (see the early return above),
+          // so this only ever needs the one spacing value now.
+          'elk.spacing.nodeNode': '68',
           'elk.layered.crossingMinimization.strategy': 'LAYER_SWEEP',
           'elk.layered.nodePlacement.strategy': 'BRANDES_KOEPF',
           'elk.edgeRouting': 'ORTHOGONAL',
@@ -12522,8 +13684,8 @@ async function organizeGraphLayout(
         },
         children: sortedLayoutNodes.map((node) => ({
           id: node.key,
-          width: layoutNodeWidth(node.kind, node.importance),
-          height: layoutNodeHeight(node.kind, node.importance),
+          width: layoutNodeWidth(node.kind, node.sizeScale),
+          height: layoutNodeHeight(node.kind, node.sizeScale, node.aspect),
         })),
         edges: buildElkEdges(links, nodeKeySet),
       })
@@ -12549,13 +13711,13 @@ async function organizeGraphLayout(
 
   if (!layoutApplied) {
     const grouped = applyGroupedEvidenceLayout(nextIdeas, nextImages, links, timestamp)
-    if (!grouped) applyFallbackPackedLayout(layoutNodes, {
+    if (!grouped) applyShelfPackedLayout(layoutNodes, {
       ideas: nextIdeas,
       images: nextImages,
       palettes: nextPalettes,
       diagrams: nextDiagrams,
       placeholders: nextPlaceholders,
-    }, timestamp)
+    }, timestamp, densityScale)
   }
 
   return {
@@ -12571,14 +13733,16 @@ function layoutKey(kind: LayoutNodeKind, id: string) {
   return `${kind}:${id}`
 }
 
-function layoutNodeWidth(kind: LayoutNodeKind, importance: number | undefined) {
-  const base = kind === 'idea' ? 190 : kind === 'image' ? 150 : 140
-  return base + Math.min(nodeImportance(importance), 4) * 14
+function layoutNodeWidth(kind: LayoutNodeKind, sizeScale: number) {
+  const base = kind === 'idea' ? 260 : kind === 'image' ? 164 : 190
+  return Math.round(base * clamp(sizeScale, NODE_SCALE_MIN, NODE_SCALE_MAX))
 }
 
-function layoutNodeHeight(kind: LayoutNodeKind, importance: number | undefined) {
-  const base = kind === 'idea' ? 118 : kind === 'image' ? 138 : 104
-  return base + Math.min(nodeImportance(importance), 4) * 8
+function layoutNodeHeight(kind: LayoutNodeKind, sizeScale: number, aspect?: number) {
+  const scale = clamp(sizeScale, NODE_SCALE_MIN, NODE_SCALE_MAX)
+  if (kind === 'image') return Math.round((164 / (aspect ?? 4 / 3) + 34) * scale)
+  const base = kind === 'idea' ? 152 : 122
+  return Math.round(base * scale)
 }
 
 function sortLayoutNodes(nodes: LayoutNodeEntry[], mode: GraphOrganizeMode, selected: Selection, links: EvidenceLink[]) {
@@ -12655,8 +13819,8 @@ function createLayoutCandidate(
       key: position.id,
       x: clamp(8 + ((position.x + position.width / 2) / maxX) * 84, minX, maxPercentX),
       y: clamp(8 + ((position.y + position.height / 2) / maxY) * 84, minY, maxPercentY),
-      width: layoutNodePercentWidth(entry.kind, entry.importance, densityScale),
-      height: layoutNodePercentHeight(entry.kind, entry.importance, densityScale),
+      width: layoutNodePercentWidth(entry.kind, entry.sizeScale, densityScale),
+      height: layoutNodePercentHeight(entry.kind, entry.sizeScale, densityScale, entry.aspect),
     })
   })
 
@@ -12682,11 +13846,11 @@ function verifyGraphLayout(
   placeholders: PlaceholderNode[],
 ): LayoutVerificationReport {
   const layoutNodes: LayoutNodeEntry[] = [
-    ...ideas.map((node) => ({ key: layoutKey('idea', node.id), kind: 'idea' as const, id: node.id, title: node.title, importance: node.importance })),
-    ...images.map((node) => ({ key: layoutKey('image', node.id), kind: 'image' as const, id: node.id, title: node.title, importance: node.importance })),
-    ...palettes.map((node) => ({ key: layoutKey('palette', node.id), kind: 'palette' as const, id: node.id, title: node.title, importance: node.importance })),
-    ...diagrams.map((node) => ({ key: layoutKey('diagram', node.id), kind: 'diagram' as const, id: node.id, title: node.title, importance: node.importance })),
-    ...placeholders.map((node) => ({ key: layoutKey('placeholder', node.id), kind: 'placeholder' as const, id: node.id, title: node.title, importance: node.importance })),
+    ...ideas.map((node) => ({ key: layoutKey('idea', node.id), kind: 'idea' as const, id: node.id, title: node.title, importance: node.importance, sizeScale: effectiveNodeScale(node) })),
+    ...images.map((node) => ({ key: layoutKey('image', node.id), kind: 'image' as const, id: node.id, title: node.title, importance: node.importance, sizeScale: effectiveNodeScale(node), aspect: referenceAspect(node) })),
+    ...palettes.map((node) => ({ key: layoutKey('palette', node.id), kind: 'palette' as const, id: node.id, title: node.title, importance: node.importance, sizeScale: effectiveNodeScale(node) })),
+    ...diagrams.map((node) => ({ key: layoutKey('diagram', node.id), kind: 'diagram' as const, id: node.id, title: node.title, importance: node.importance, sizeScale: effectiveNodeScale(node) })),
+    ...placeholders.map((node) => ({ key: layoutKey('placeholder', node.id), kind: 'placeholder' as const, id: node.id, title: node.title, importance: node.importance, sizeScale: effectiveNodeScale(node) })),
   ]
   const positions = new Map<string, LayoutNodePosition>()
   const densityScale = layoutDensityScale(layoutNodes.length)
@@ -12699,8 +13863,8 @@ function verifyGraphLayout(
         key: entry.key,
         x: node.x,
         y: node.y,
-        width: layoutNodePercentWidth(kind, entry.importance, densityScale),
-        height: layoutNodePercentHeight(kind, entry.importance, densityScale),
+        width: layoutNodePercentWidth(kind, entry.sizeScale, densityScale),
+        height: layoutNodePercentHeight(kind, entry.sizeScale, densityScale, entry.aspect),
       })
     })
   }
@@ -12753,8 +13917,57 @@ function applyLayoutPositions(
   place('placeholder', nodes.placeholders)
 }
 
-function applyFallbackPackedLayout(
+// Shelf-packs nodes left to right, wrapping to a new row when the running
+// width would cross the canvas edge. Node width/height here is per-kind box
+// size and (for images) native aspect — the same values the node actually
+// renders at — so, unlike a width-varying "true" justified layout, cursor
+// math and on-screen size always agree: nothing overlaps, nothing gaps.
+// layoutNodePercentWidth/Height (used elsewhere for ELK candidate overlap
+// scoring) assume a much smaller node footprint than nodes actually render
+// at — harmless there, since ELK positions nodes with its own separately
+// calibrated pixel math and those percent functions only score risk after
+// the fact. But 'grid' mode packs directly from these numbers, so an
+// under-estimate becomes a real on-screen overlap. These are calibrated
+// against nodes' real fixed CSS pixel widths (idea 224px, image 104px,
+// palette/diagram/placeholder 156px) converted using a realistic canvas
+// size — deliberately on the narrow side (both side panels open) so rows
+// stay overlap-free even when the canvas isn't at its widest.
+const SHELF_REFERENCE_CANVAS_WIDTH = 620
+const SHELF_REFERENCE_CANVAS_HEIGHT = 820
+const SHELF_NODE_PIXEL_WIDTH: Record<LayoutNodeKind, number> = {
+  idea: 224,
+  image: 104,
+  palette: 156,
+  diagram: 156,
+  placeholder: 156,
+}
+// Idea/palette/diagram/placeholder height is content-driven (title/body text),
+// not fixed by CSS — these are typical resting-state heights, not exact.
+const SHELF_NODE_PIXEL_HEIGHT_FALLBACK: Record<LayoutNodeKind, number> = {
+  idea: 60,
+  image: 0,
+  palette: 65,
+  diagram: 65,
+  placeholder: 65,
+}
+
+function shelfNodePercentWidth(kind: LayoutNodeKind, sizeScale: number, _densityScale: number) {
+  return (SHELF_NODE_PIXEL_WIDTH[kind] * sizeScale / SHELF_REFERENCE_CANVAS_WIDTH) * 100
+}
+
+function shelfNodePercentHeight(kind: LayoutNodeKind, sizeScale: number, _densityScale: number, aspect?: number) {
+  const widthPx = SHELF_NODE_PIXEL_WIDTH[kind] * sizeScale
+  const heightPx = kind === 'image' ? widthPx / (aspect ?? 4 / 3) : SHELF_NODE_PIXEL_HEIGHT_FALLBACK[kind] * sizeScale
+  return (heightPx / SHELF_REFERENCE_CANVAS_HEIGHT) * 100
+}
+
+// Soft clustering for 'cluster' mode: a short physics simulation (repel +
+// collide so nothing overlaps, pull along links so evidence drifts toward its
+// idea) run to convergence and then discarded — this computes one static
+// layout, it doesn't keep simulating live like a force-directed graph view.
+async function applyClusterForceLayout(
   layoutNodes: LayoutNodeEntry[],
+  links: EvidenceLink[],
   nodes: {
     ideas: Idea[]
     images: EvidenceImage[]
@@ -12764,13 +13977,104 @@ function applyFallbackPackedLayout(
   },
   timestamp: string,
 ) {
+  const { forceSimulation, forceManyBody, forceCollide, forceLink, forceCenter } = await import('d3-force')
+
+  type ForceNode = { key: string; kind: LayoutNodeKind; sizeScale: number; aspect?: number; x: number; y: number }
+  // Seeded on a circle rather than a single point — d3-force's collide/charge
+  // forces need some initial separation to push against, or nodes starting
+  // exactly on top of each other can take many more ticks to spread out.
+  const simNodes: ForceNode[] = layoutNodes.map((entry, index) => {
+    const angle = (index / Math.max(layoutNodes.length, 1)) * Math.PI * 2
+    return { key: entry.key, kind: entry.kind, sizeScale: entry.sizeScale, aspect: entry.aspect, x: Math.cos(angle) * 140, y: Math.sin(angle) * 140 }
+  })
+
+  const nodeKeySet = new Set(simNodes.map((node) => node.key))
+  const simLinks = links
+    .map((link) => {
+      const sourceKind = link.sourceKind ?? 'image'
+      const targetKind = link.targetKind ?? 'idea'
+      return {
+        source: layoutKey(sourceKind, link.sourceNodeId ?? link.imageId),
+        target: layoutKey(targetKind, link.targetNodeId ?? link.ideaId),
+      }
+    })
+    .filter((link) => link.source !== link.target && nodeKeySet.has(link.source) && nodeKeySet.has(link.target))
+
+  // Same real fixed-pixel sizing as the grid shelf-pack (SHELF_NODE_PIXEL_*),
+  // so a node's collision radius matches what it actually renders at.
+  function nodeRadius(node: ForceNode) {
+    const widthPx = SHELF_NODE_PIXEL_WIDTH[node.kind] * node.sizeScale
+    const heightPx = node.kind === 'image' ? widthPx / (node.aspect ?? 4 / 3) : SHELF_NODE_PIXEL_HEIGHT_FALLBACK[node.kind] * node.sizeScale
+    return Math.max(widthPx, heightPx) / 2 + 14
+  }
+
+  const simulation = forceSimulation(simNodes)
+    .force('charge', forceManyBody().strength(-140))
+    .force('collide', forceCollide<ForceNode>().radius(nodeRadius).iterations(3))
+    .force(
+      'link',
+      forceLink<ForceNode, { source: string | ForceNode; target: string | ForceNode }>(simLinks)
+        .id((node) => node.key)
+        // A fixed distance here fights the collide force the moment two linked
+        // nodes are different sizes (an idea and its evidence image, say) —
+        // it either leaves them overlapping or stretches the link taut with
+        // nothing pulling it snug. Deriving it from each pair's own radii
+        // keeps evidence resting just outside its idea regardless of size mix.
+        .distance((link) => nodeRadius(link.source as ForceNode) + nodeRadius(link.target as ForceNode) + 10)
+        .strength(0.85),
+    )
+    .force('center', forceCenter(0, 0))
+    .stop()
+
+  for (let tick = 0; tick < 320; tick += 1) simulation.tick()
+
+  // The simulation runs in its own arbitrary coordinate space — normalize
+  // whatever extent it settled into onto the shared 8–92 percent canvas.
+  const xs = simNodes.map((node) => node.x)
+  const ys = simNodes.map((node) => node.y)
+  const spanX = Math.max(Math.max(...xs) - Math.min(...xs), 1)
+  const spanY = Math.max(Math.max(...ys) - Math.min(...ys), 1)
+  const minX = Math.min(...xs)
+  const minY = Math.min(...ys)
+
   const byKey = new Map<string, LayoutMutableNode>()
   nodes.ideas.forEach((node) => byKey.set(layoutKey('idea', node.id), node))
   nodes.images.forEach((node) => byKey.set(layoutKey('image', node.id), node))
   nodes.palettes.forEach((node) => byKey.set(layoutKey('palette', node.id), node))
   nodes.diagrams.forEach((node) => byKey.set(layoutKey('diagram', node.id), node))
   nodes.placeholders.forEach((node) => byKey.set(layoutKey('placeholder', node.id), node))
-  const densityScale = layoutDensityScale(layoutNodes.length)
+
+  simNodes.forEach((simNode) => {
+    const node = byKey.get(simNode.key)
+    if (!node) return
+    node.x = clamp(8 + ((simNode.x - minX) / spanX) * 84, 6, 94)
+    node.y = clamp(8 + ((simNode.y - minY) / spanY) * 84, 6, 94)
+    node.updatedAt = timestamp
+  })
+}
+
+function applyShelfPackedLayout(
+  layoutNodes: LayoutNodeEntry[],
+  nodes: {
+    ideas: Idea[]
+    images: EvidenceImage[]
+    palettes: PaletteNode[]
+    diagrams: DiagramNode[]
+    placeholders: PlaceholderNode[]
+  },
+  timestamp: string,
+  densityScale: number,
+  sizing: {
+    width: (kind: LayoutNodeKind, sizeScale: number, densityScale: number) => number
+    height: (kind: LayoutNodeKind, sizeScale: number, densityScale: number, aspect?: number) => number
+  } = { width: layoutNodePercentWidth, height: layoutNodePercentHeight },
+) {
+  const byKey = new Map<string, LayoutMutableNode>()
+  nodes.ideas.forEach((node) => byKey.set(layoutKey('idea', node.id), node))
+  nodes.images.forEach((node) => byKey.set(layoutKey('image', node.id), node))
+  nodes.palettes.forEach((node) => byKey.set(layoutKey('palette', node.id), node))
+  nodes.diagrams.forEach((node) => byKey.set(layoutKey('diagram', node.id), node))
+  nodes.placeholders.forEach((node) => byKey.set(layoutKey('placeholder', node.id), node))
   let cursorX = 8
   let cursorY = 10
   let rowHeight = 0
@@ -12778,11 +14082,15 @@ function applyFallbackPackedLayout(
   layoutNodes.forEach((entry) => {
     const node = byKey.get(entry.key)
     if (!node) return
-    const width = layoutNodePercentWidth(entry.kind, entry.importance, densityScale)
-    const height = layoutNodePercentHeight(entry.kind, entry.importance, densityScale)
+    const width = sizing.width(entry.kind, entry.sizeScale, densityScale)
+    const height = sizing.height(entry.kind, entry.sizeScale, densityScale, entry.aspect)
     if (cursorX + width / 2 > 94) {
       cursorX = 8
-      cursorY += rowHeight + 5
+      // A bit more than the nominal gap: node height in this percent-space is
+      // an estimate against an assumed canvas size (see SHELF_REFERENCE_*),
+      // not a measurement, so a small safety margin keeps rounding error from
+      // grazing the row below.
+      cursorY += rowHeight + 8
       rowHeight = 0
     }
     node.x = clamp(cursorX + width / 2, 6, 94)
@@ -12814,9 +14122,9 @@ function applyGroupedEvidenceLayout(
   const totalNodes = ideas.length + images.length
   const densityScale = layoutDensityScale(totalNodes)
   const collisionGap = Math.max(0.32, 1.2 * densityScale)
-  const imageWidth = layoutNodePercentWidth('image', undefined, densityScale)
-  const imageHeight = layoutNodePercentHeight('image', undefined, densityScale)
-  const ideaHeight = layoutNodePercentHeight('idea', undefined, densityScale)
+  const imageWidth = layoutNodePercentWidth('image', DEFAULT_NODE_SCALE, densityScale)
+  const imageHeight = layoutNodePercentHeight('image', DEFAULT_NODE_SCALE, densityScale)
+  const ideaHeight = layoutNodePercentHeight('idea', DEFAULT_NODE_SCALE, densityScale)
   const xStart = 31
   const xEnd = 95
   const maxColumns = Math.max(1, Math.floor((xEnd - xStart) / (imageWidth + collisionGap)))
@@ -12896,16 +14204,22 @@ function applyGroupedEvidenceLayout(
   return true
 }
 
-function layoutNodePercentWidth(kind: LayoutNodeKind, importance: number | undefined, densityScale = 1) {
-  const extra = Math.min(nodeImportance(importance), 4) * 0.4
-  const width = kind === 'idea' ? 12.5 + extra : kind === 'image' ? 6.4 + extra : 8.8 + extra
-  return width * densityScale
+// Canvas percent units are anisotropic (x is % of width, y is % of height), so a
+// square node needs a taller percent height. This is the working ratio for it.
+const CANVAS_PERCENT_ASPECT = 1.6
+
+function layoutNodePercentWidth(kind: LayoutNodeKind, sizeScale: number, densityScale = 1) {
+  const base = kind === 'idea' ? 13.4 : kind === 'image' ? 7 : 9.4
+  return base * clamp(sizeScale, NODE_SCALE_MIN, NODE_SCALE_MAX) * densityScale
 }
 
-function layoutNodePercentHeight(kind: LayoutNodeKind, importance: number | undefined, densityScale = 1) {
-  const extra = Math.min(nodeImportance(importance), 4) * 0.32
-  const height = kind === 'idea' ? 8.6 + extra : kind === 'image' ? 7.2 + extra : 5.9 + extra
-  return height * densityScale
+function layoutNodePercentHeight(kind: LayoutNodeKind, sizeScale: number, densityScale = 1, aspect?: number) {
+  if (kind === 'image') {
+    const width = layoutNodePercentWidth('image', sizeScale, densityScale)
+    return width * (CANVAS_PERCENT_ASPECT / (aspect ?? 4 / 3))
+  }
+  const base = kind === 'idea' ? 9.6 : 6.7
+  return base * clamp(sizeScale, NODE_SCALE_MIN, NODE_SCALE_MAX) * densityScale
 }
 
 function countLayoutOverlaps(nodes: LayoutNodePosition[], densityScale = 1) {
@@ -13129,6 +14443,7 @@ function toProjectSnapshot(
   project: ProjectMetadata = defaultProjectMetadata(),
   appearance: ProjectAppearance = defaultProjectAppearance(),
   slidesConfig: SlidesConfig = defaultSlidesConfig(),
+  frames: FrameNode[] = [],
 ): ProjectSnapshot {
   return {
     version: 2,
@@ -13139,6 +14454,7 @@ function toProjectSnapshot(
     palettes,
     diagrams,
     placeholders,
+    frames,
     aiSettings,
     versionState,
     versionHistory,
@@ -13358,6 +14674,10 @@ function createBlankProjectSnapshot(): ProjectSnapshot {
     nodeVersions: [],
     links: [],
     outlineDrafts: [],
+    // Without this, a freshly created tab's snapshot shape differs from what
+    // toProjectSnapshot() reconstructs from live state, so the dirty dot lit
+    // up immediately on a genuinely untouched board.
+    slidesConfig: defaultSlidesConfig(),
   }
 }
 
@@ -13531,7 +14851,7 @@ function readProjectSnapshot(): ProjectSnapshot {
   if (isTauriRuntime()) return toProjectSnapshot([], [], [])
 
   try {
-    const stored = window.localStorage.getItem(storageKey)
+    const stored = window.localStorage.getItem(baseStorageKey)
     if (!stored) return toProjectSnapshot(ideasSeed, imagesSeed, linksSeed)
     const parsed = JSON.parse(stored)
     return isProjectSnapshot(parsed) ? parsed : toProjectSnapshot(ideasSeed, imagesSeed, linksSeed)

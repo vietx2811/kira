@@ -1,7 +1,6 @@
-import type { PageImageCandidate, PendingCapture, KiraCapturePayload } from './types'
+import type { KiraBridgeMessage, KiraBridgeResponse, PageImageCandidate, PendingCapture, KiraCapturePayload } from './types'
 
 const pendingCaptureKey = 'pendingCapture'
-const captureEndpoint = 'http://127.0.0.1:47653/capture'
 
 const kindNode = document.getElementById('capture-kind') as HTMLSpanElement
 const titleNode = document.getElementById('capture-title') as HTMLHeadingElement
@@ -182,15 +181,16 @@ async function sendCapturesToKira(captures: KiraCapturePayload[]) {
 }
 
 async function sendCaptureToKira(capture: KiraCapturePayload) {
+  const response = await sendBridgeMessage({ type: 'kira-post-capture', capture })
+  return response?.ok === true
+}
+
+// The service worker is the only place that talks to the desktop app.
+async function sendBridgeMessage(message: KiraBridgeMessage): Promise<KiraBridgeResponse | null> {
   try {
-    const response = await fetch(captureEndpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(capture),
-    })
-    return response.ok
+    return (await chrome.runtime.sendMessage(message)) as KiraBridgeResponse
   } catch {
-    return false
+    return null
   }
 }
 

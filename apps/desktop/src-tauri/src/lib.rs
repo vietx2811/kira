@@ -54,6 +54,10 @@ struct ProjectSnapshot {
     diagrams: Vec<serde_json::Value>,
     #[serde(default)]
     placeholders: Vec<serde_json::Value>,
+    // Opaque like palettes/diagrams/placeholders above — Rust never needs to
+    // know a frame's shape, just round-trip it.
+    #[serde(default)]
+    frames: Vec<serde_json::Value>,
     #[serde(default, rename = "aiSettings")]
     ai_settings: serde_json::Value,
     #[serde(default, rename = "versionState")]
@@ -77,6 +81,8 @@ struct IdeaRecord {
     y: f64,
     #[serde(default)]
     importance: Option<f64>,
+    #[serde(default)]
+    scale: Option<f64>,
     #[serde(default, rename = "createdAt")]
     created_at: Option<String>,
     #[serde(default, rename = "addedAt")]
@@ -116,6 +122,8 @@ struct ReferenceRecord {
     thumb: String,
     #[serde(default)]
     importance: Option<f64>,
+    #[serde(default)]
+    scale: Option<f64>,
     #[serde(default, rename = "createdAt")]
     created_at: Option<String>,
     #[serde(default, rename = "addedAt")]
@@ -130,6 +138,17 @@ struct ReferenceRecord {
     fingerprint: String,
     #[serde(default, rename = "perceptualHash")]
     perceptual_hash: String,
+    #[serde(default, rename = "cropRect")]
+    crop_rect: Option<CropRectRecord>,
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CropRectRecord {
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
 }
 
 #[derive(Serialize)]
@@ -860,6 +879,14 @@ fn migrate(conn: &Connection) -> Result<(), String> {
     add_column_if_missing(conn, "reference_assets", "updated_at", "TEXT")?;
     add_column_if_missing(conn, "reference_assets", "source_url", "TEXT")?;
     add_column_if_missing(conn, "reference_assets", "notes", "TEXT")?;
+    // Visual size, split from `importance` so composition edits stay separate
+    // from semantic weight.
+    add_column_if_missing(conn, "ideas", "scale", "REAL")?;
+    add_column_if_missing(conn, "reference_assets", "scale", "REAL")?;
+    add_column_if_missing(conn, "reference_assets", "crop_x", "REAL")?;
+    add_column_if_missing(conn, "reference_assets", "crop_y", "REAL")?;
+    add_column_if_missing(conn, "reference_assets", "crop_width", "REAL")?;
+    add_column_if_missing(conn, "reference_assets", "crop_height", "REAL")?;
     rebuild_links_table_for_graph_v2(conn)?;
     add_column_if_missing(conn, "links", "source_node_id", "TEXT")?;
     add_column_if_missing(conn, "links", "target_node_id", "TEXT")?;
@@ -974,7 +1001,7 @@ fn write_snapshot(
 
     for idea in &snapshot.ideas {
         tx.execute(
-            "INSERT INTO ideas (id, title, body, status, x, y, importance, created_at, added_at, updated_at, source_url, notes) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+            "INSERT INTO ideas (id, title, body, status, x, y, importance, scale, created_at, added_at, updated_at, source_url, notes) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
             params![
                 idea.id,
                 idea.title,
@@ -983,6 +1010,7 @@ fn write_snapshot(
                 idea.x,
                 idea.y,
                 idea.importance,
+                idea.scale,
                 idea.created_at,
                 idea.added_at,
                 idea.updated_at,
@@ -1000,8 +1028,12 @@ fn write_snapshot(
         let width = reference.width.map(i64::from);
         let height = reference.height.map(i64::from);
         let size_bytes = reference.size_bytes.map(|value| value as i64);
+        let crop_x = reference.crop_rect.as_ref().map(|rect| rect.x);
+        let crop_y = reference.crop_rect.as_ref().map(|rect| rect.y);
+        let crop_width = reference.crop_rect.as_ref().map(|rect| rect.width);
+        let crop_height = reference.crop_rect.as_ref().map(|rect| rect.height);
         tx.execute(
-            "INSERT INTO reference_assets (id, title, source, origin_app, origin_id, source_path, palette_json, thumb, asset_path, thumb_path, fingerprint, perceptual_hash, x, y, width, height, size_bytes, mime_type, importance, created_at, added_at, updated_at, source_url, notes) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24)",
+            "INSERT INTO reference_assets (id, title, source, origin_app, origin_id, source_path, palette_json, thumb, asset_path, thumb_path, fingerprint, perceptual_hash, x, y, width, height, size_bytes, mime_type, importance, scale, created_at, added_at, updated_at, source_url, notes, crop_x, crop_y, crop_width, crop_height) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29)",
             params![
                 reference.id,
                 reference.title,
@@ -1022,11 +1054,16 @@ fn write_snapshot(
                 size_bytes,
                 reference.mime_type,
                 reference.importance,
+                reference.scale,
                 reference.created_at,
                 reference.added_at,
                 reference.updated_at,
                 reference.source_url,
-                reference.notes
+                reference.notes,
+                crop_x,
+                crop_y,
+                crop_width,
+                crop_height
             ],
         )
         .map_err(|error| error.to_string())?;
@@ -1095,6 +1132,7 @@ fn write_snapshot(
     write_json_collection(&tx, "palettes", &snapshot.palettes)?;
     write_json_collection(&tx, "diagrams", &snapshot.diagrams)?;
     write_json_collection(&tx, "placeholders", &snapshot.placeholders)?;
+    write_json_collection(&tx, "frames", &snapshot.frames)?;
     write_json_collection(&tx, "aiSettings", &snapshot.ai_settings)?;
     write_json_collection(&tx, "versionState", &snapshot.version_state)?;
     write_json_collection(&tx, "versionHistory", &snapshot.version_history)?;
@@ -1135,6 +1173,7 @@ fn read_snapshot(conn: &Connection) -> Result<ProjectSnapshot, String> {
     let palettes = read_json_collection(conn, "palettes")?.unwrap_or_default();
     let diagrams = read_json_collection(conn, "diagrams")?.unwrap_or_default();
     let placeholders = read_json_collection(conn, "placeholders")?.unwrap_or_default();
+    let frames = read_json_collection(conn, "frames")?.unwrap_or_default();
     let ai_settings = read_json_collection(conn, "aiSettings")?.unwrap_or_else(|| {
         serde_json::json!({
             "providers": [],
@@ -1163,6 +1202,7 @@ fn read_snapshot(conn: &Connection) -> Result<ProjectSnapshot, String> {
         palettes,
         diagrams,
         placeholders,
+        frames,
         ai_settings,
         version_state,
         version_history,
@@ -1174,7 +1214,7 @@ fn read_snapshot(conn: &Connection) -> Result<ProjectSnapshot, String> {
 
 fn read_ideas(conn: &Connection) -> Result<Vec<IdeaRecord>, String> {
     let mut statement = conn
-        .prepare("SELECT id, title, body, status, x, y, importance, created_at, added_at, updated_at, source_url, notes FROM ideas ORDER BY rowid")
+        .prepare("SELECT id, title, body, status, x, y, importance, created_at, added_at, updated_at, source_url, notes, scale FROM ideas ORDER BY rowid")
         .map_err(|error| error.to_string())?;
     let rows = statement
         .query_map([], |row| {
@@ -1191,6 +1231,7 @@ fn read_ideas(conn: &Connection) -> Result<Vec<IdeaRecord>, String> {
                 updated_at: row.get(9)?,
                 source_url: row.get(10)?,
                 notes: row.get(11)?,
+                scale: row.get(12)?,
             })
         })
         .map_err(|error| error.to_string())?;
@@ -1202,7 +1243,7 @@ fn read_ideas(conn: &Connection) -> Result<Vec<IdeaRecord>, String> {
 fn read_references(conn: &Connection) -> Result<Vec<ReferenceRecord>, String> {
     let mut statement = conn
         .prepare(
-            "SELECT id, title, source, origin_app, origin_id, source_path, palette_json, thumb, asset_path, thumb_path, fingerprint, perceptual_hash, x, y, width, height, size_bytes, mime_type, importance, created_at, added_at, updated_at, source_url, notes FROM reference_assets ORDER BY rowid",
+            "SELECT id, title, source, origin_app, origin_id, source_path, palette_json, thumb, asset_path, thumb_path, fingerprint, perceptual_hash, x, y, width, height, size_bytes, mime_type, importance, created_at, added_at, updated_at, source_url, notes, scale, crop_x, crop_y, crop_width, crop_height FROM reference_assets ORDER BY rowid",
         )
         .map_err(|error| error.to_string())?;
     let rows = statement
@@ -1210,6 +1251,16 @@ fn read_references(conn: &Connection) -> Result<Vec<ReferenceRecord>, String> {
             let id: String = row.get(0)?;
             let palette_json: String = row.get(6)?;
             let palette = serde_json::from_str::<Vec<String>>(&palette_json).unwrap_or_default();
+            let crop_x: Option<f64> = row.get(25)?;
+            let crop_y: Option<f64> = row.get(26)?;
+            let crop_width: Option<f64> = row.get(27)?;
+            let crop_height: Option<f64> = row.get(28)?;
+            let crop_rect = match (crop_x, crop_y, crop_width, crop_height) {
+                (Some(x), Some(y), Some(width), Some(height)) => {
+                    Some(CropRectRecord { x, y, width, height })
+                }
+                _ => None,
+            };
             Ok(ReferenceRecord {
                 tags: read_string_list(conn, "reference_tags", "tag", &id)?,
                 suggestions: read_tag_suggestions(conn, &id)?,
@@ -1235,6 +1286,8 @@ fn read_references(conn: &Connection) -> Result<Vec<ReferenceRecord>, String> {
                 updated_at: row.get(21)?,
                 source_url: row.get(22)?,
                 notes: row.get(23)?,
+                scale: row.get(24)?,
+                crop_rect,
             })
         })
         .map_err(|error| error.to_string())?;
@@ -3939,6 +3992,7 @@ mod tests {
                 x: 12.0,
                 y: 34.0,
                 importance: Some(3.0),
+                scale: Some(1.6),
                 created_at: Some("2026-06-01T00:00:00.000Z".to_string()),
                 added_at: Some("2026-06-01T00:01:00.000Z".to_string()),
                 updated_at: Some("2026-06-01T00:02:00.000Z".to_string()),
@@ -3968,6 +4022,7 @@ mod tests {
                 y: 78.0,
                 thumb,
                 importance: Some(4.0),
+                scale: Some(2.4),
                 created_at: Some("2026-06-01T01:00:00.000Z".to_string()),
                 added_at: Some("2026-06-01T01:01:00.000Z".to_string()),
                 updated_at: Some("2026-06-01T01:02:00.000Z".to_string()),
@@ -3975,6 +4030,12 @@ mod tests {
                 notes: Some("Reference notes".to_string()),
                 fingerprint: "sha256:test-fixture".to_string(),
                 perceptual_hash: "ahash:test-fixture".to_string(),
+                crop_rect: Some(CropRectRecord {
+                    x: 0.1,
+                    y: 0.2,
+                    width: 0.6,
+                    height: 0.5,
+                }),
             }],
             palettes: vec![serde_json::json!({
                 "id": "palette-a",
@@ -3999,6 +4060,14 @@ mod tests {
                 "targetKind": "image",
                 "x": 28,
                 "y": 32
+            })],
+            frames: vec![serde_json::json!({
+                "id": "frame-a",
+                "title": "Frame A",
+                "x": 40,
+                "y": 44,
+                "width": 30,
+                "height": 20
             })],
             ai_settings: serde_json::json!({
                 "providers": [{"id": "local-apple", "providerType": "local_apple"}],
@@ -4072,6 +4141,7 @@ mod tests {
         assert_eq!(restored.version, 2);
         assert_eq!(restored.ideas[0].title, "Idea A");
         assert_eq!(restored.ideas[0].importance, Some(3.0));
+        assert_eq!(restored.ideas[0].scale, Some(1.6));
         assert_eq!(
             restored.ideas[0].source_url.as_deref(),
             Some("https://example.com/idea")
@@ -4100,6 +4170,15 @@ mod tests {
         assert_eq!(restored.images[0].height, Some(1));
         assert_eq!(restored.images[0].mime_type.as_deref(), Some("image/png"));
         assert_eq!(restored.images[0].importance, Some(4.0));
+        assert_eq!(restored.images[0].scale, Some(2.4));
+        let restored_crop_rect = restored.images[0]
+            .crop_rect
+            .as_ref()
+            .expect("crop rect roundtrip");
+        assert_eq!(restored_crop_rect.x, 0.1);
+        assert_eq!(restored_crop_rect.y, 0.2);
+        assert_eq!(restored_crop_rect.width, 0.6);
+        assert_eq!(restored_crop_rect.height, 0.5);
         assert_eq!(
             restored.images[0].source_url.as_deref(),
             Some("https://example.com/reference")
@@ -4129,6 +4208,7 @@ mod tests {
         assert_eq!(restored.palettes[0]["id"], "palette-a");
         assert_eq!(restored.diagrams[0]["id"], "diagram-a");
         assert_eq!(restored.placeholders[0]["id"], "placeholder-a");
+        assert_eq!(restored.frames[0]["id"], "frame-a");
         assert_eq!(
             restored.ai_settings["selectedProviderId"].as_str(),
             Some("local-apple")
@@ -4830,6 +4910,7 @@ mod tests {
                 x: 20.0,
                 y: 30.0,
                 importance: None,
+                scale: None,
                 created_at: None,
                 added_at: None,
                 updated_at: None,
@@ -4840,6 +4921,7 @@ mod tests {
             palettes: vec![],
             diagrams: vec![],
             placeholders: vec![],
+            frames: vec![],
             ai_settings: serde_json::json!({
                 "providers": [],
                 "routingMode": "prefer_local",
@@ -4891,6 +4973,7 @@ mod tests {
                 x: 34.0,
                 y: 44.0,
                 importance: Some(1.8),
+                scale: None,
                 created_at: None,
                 added_at: None,
                 updated_at: None,
@@ -4901,6 +4984,7 @@ mod tests {
             palettes: vec![],
             diagrams: vec![],
             placeholders: vec![],
+            frames: vec![],
             ai_settings: serde_json::json!({
                 "providers": [],
                 "routingMode": "prefer_local",

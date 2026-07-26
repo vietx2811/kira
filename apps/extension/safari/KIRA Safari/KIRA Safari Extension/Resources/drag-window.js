@@ -1,6 +1,4 @@
 const pendingCaptureKey = 'pendingCapture';
-const captureEndpoint = 'http://127.0.0.1:47653/capture';
-const contextEndpoint = 'http://127.0.0.1:47653/context';
 const fileTitle = document.getElementById('file-title');
 const statusNode = document.getElementById('status');
 const nodeList = document.getElementById('node-list');
@@ -46,11 +44,13 @@ async function loadPendingCapture() {
     return stored.pendingCapture ?? null;
 }
 async function loadCaptureContext() {
+    const response = await sendBridgeMessage({ type: 'kira-get-context' });
+    return response?.ok ? response.context ?? null : null;
+}
+// The service worker is the only place that talks to the desktop app.
+async function sendBridgeMessage(message) {
     try {
-        const response = await fetch(contextEndpoint);
-        if (!response.ok)
-            return null;
-        return (await response.json());
+        return (await chrome.runtime.sendMessage(message));
     }
     catch {
         return null;
@@ -168,20 +168,13 @@ function toCaptureUrl(value, base) {
 }
 async function sendAndClose(capture) {
     setStatus('Sending to KIRA');
-    try {
-        const response = await fetch(captureEndpoint, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(capture),
-        });
-        if (!response.ok)
-            throw new Error('KIRA unavailable');
-        await chrome.storage.local.remove([pendingCaptureKey]);
-        window.close();
-    }
-    catch {
+    const response = await sendBridgeMessage({ type: 'kira-post-capture', capture });
+    if (!response?.ok) {
         setStatus('KIRA unavailable');
+        return;
     }
+    await chrome.storage.local.remove([pendingCaptureKey]);
+    window.close();
 }
 function setStatus(message) {
     statusNode.textContent = message;

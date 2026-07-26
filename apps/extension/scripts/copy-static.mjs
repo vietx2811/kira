@@ -16,3 +16,8 @@ await cp(join(root, 'public', 'icons'), join(dist, 'icons'), { recursive: true }
 const contentPath = join(dist, 'content.js')
 const contentScript = await readFile(contentPath, 'utf8')
 await writeFile(contentPath, contentScript.replace(/\nexport \{\};\s*$/u, '\n'))
+
+// The Safari target ships checked-in copies of the same bundle. Mirroring them
+// here is what stops Safari from silently running an older build than Chrome.
+const safariResources = join(root, 'safari', 'KIRA Safari', 'KIRA Safari Extension', 'Resources')
+await cp(dist, safariResources, { recursive: true })

@@ -38,6 +38,21 @@ export type KiraCaptureNode = KiraCaptureNodeRef & {
   thumb?: string
 }
 
+/**
+ * Every request to the desktop app goes through the service worker.
+ * A content script's fetch runs with the page's origin, so from Chrome 142 a
+ * direct call to 127.0.0.1 is subject to the Local Network Access prompt; the
+ * service worker is covered by the extension's own host_permissions instead.
+ */
+export type KiraBridgeMessage =
+  | { type: 'kira-post-capture'; capture: KiraCapturePayload }
+  | { type: 'kira-get-context' }
+  | { type: 'kira-open-drag-window'; capture: PendingCapture }
+
+export type KiraBridgeResponse =
+  | { ok: true; context?: KiraCaptureContext | null }
+  | { ok: false }
+
 export type KiraCaptureContext = {
   app: 'kira'
   fileTitle: string
