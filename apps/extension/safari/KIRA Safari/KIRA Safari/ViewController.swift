@@ -9,7 +9,7 @@ import Cocoa
 import SafariServices
 import WebKit
 
-let extensionBundleIdentifier = "app.kira.safari.Extension"
+let extensionBundleIdentifier = "vxstudio.kira.safari"
 
 class ViewController: NSViewController, WKNavigationDelegate, WKScriptMessageHandler {
 

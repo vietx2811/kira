@@ -274,8 +274,16 @@ function showDropPad(position = lastPointerPosition) {
     const isAlreadyVisible = pad.classList.contains('is-visible');
     if (!isAlreadyVisible)
         positionDropPad(pad, position);
+    void revealDropPadWhenAvailable(pad, !isAlreadyVisible);
+}
+async function revealDropPadWhenAvailable(pad, force) {
+    await refreshCaptureContext({ force });
+    if (!currentContext) {
+        closeDropPad();
+        showToast('Mở Kira App để sử dụng tính năng này');
+        return;
+    }
     pad.classList.add('is-visible');
-    void refreshCaptureContext({ force: !isAlreadyVisible });
 }
 function hideDropPadSoon() {
     window.clearTimeout(hideDropPadTimer);
@@ -867,13 +875,7 @@ async function sendCapture(capture) {
     }
     const pendingCapture = { ...capture, previewUrl: capture.url };
     await chrome.storage.local.set({ [pendingCaptureKey]: pendingCapture });
-    try {
-        await navigator.clipboard.writeText(JSON.stringify(capture));
-        showToast('KIRA unavailable. Capture copied.');
-    }
-    catch {
-        showToast('KIRA unavailable. Open extension popup.');
-    }
+    showToast('Mở Kira App để sử dụng tính năng này');
 }
 async function resolveBestCapture(capture) {
     if (capture.kind !== 'image')

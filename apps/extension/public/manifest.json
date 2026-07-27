@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "KIRA Capture",
-  "version": "0.1.0",
-  "description": "Capture image and page references for KIRA.",
+  "name": "KIRA",
+  "version": "1.0.0",
+  "description": "Capture to KIRA.",
   "permissions": ["activeTab", "contextMenus", "clipboardWrite", "scripting", "storage"],
   "host_permissions": ["http://127.0.0.1:47653/*"],
   "background": {
@@ -18,7 +18,7 @@
   ],
   "action": {
     "default_popup": "popup.html",
-    "default_title": "KIRA Capture"
+    "default_title": "KIRA"
   },
   "icons": {
     "16": "icons/icon-16.png",

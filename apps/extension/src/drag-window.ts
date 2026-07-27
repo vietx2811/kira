@@ -8,6 +8,7 @@ const nodeList = document.getElementById('node-list') as HTMLDivElement
 const combo = document.getElementById('combo') as HTMLDivElement
 const comboInput = document.getElementById('combo-input') as HTMLInputElement
 const comboList = document.getElementById('combo-list') as HTMLDivElement
+const unavailableNode = document.getElementById('app-unavailable') as HTMLElement
 
 let pendingCapture: PendingCapture | null = null
 let pendingComboCapture: KiraCapturePayload | null = null
@@ -18,7 +19,10 @@ void init()
 async function init() {
   pendingCapture = await loadPendingCapture()
   currentContext = await loadCaptureContext()
+  document.body.classList.toggle('is-kira-unavailable', currentContext === null)
+  unavailableNode.hidden = currentContext !== null
   renderContext()
+  if (!currentContext) return
   wireDropTarget(document.querySelector('[data-target="undecided"]'), (event) => {
     const capture = captureFromDrop(event) ?? pendingCapture
     if (!capture) return setStatus('No image found')

@@ -5,6 +5,7 @@ const nodeList = document.getElementById('node-list');
 const combo = document.getElementById('combo');
 const comboInput = document.getElementById('combo-input');
 const comboList = document.getElementById('combo-list');
+const unavailableNode = document.getElementById('app-unavailable');
 let pendingCapture = null;
 let pendingComboCapture = null;
 let currentContext = null;
@@ -12,7 +13,11 @@ void init();
 async function init() {
     pendingCapture = await loadPendingCapture();
     currentContext = await loadCaptureContext();
+    document.body.classList.toggle('is-kira-unavailable', currentContext === null);
+    unavailableNode.hidden = currentContext !== null;
     renderContext();
+    if (!currentContext)
+        return;
     wireDropTarget(document.querySelector('[data-target="undecided"]'), (event) => {
         const capture = captureFromDrop(event) ?? pendingCapture;
         if (!capture)

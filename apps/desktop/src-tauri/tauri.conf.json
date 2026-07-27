@@ -1,11 +1,11 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "KIRA",
-  "version": "0.1.0",
-  "identifier": "studio.kira.desktop",
+  "version": "1.0.0",
+  "identifier": "vxstudio.kira",
   "build": {
     "beforeDevCommand": "pnpm dev",
-    "beforeBuildCommand": "pnpm build",
+    "beforeBuildCommand": "pnpm build:tauri",
     "devUrl": "http://127.0.0.1:5173",
     "frontendDist": "../dist"
   },
@@ -39,10 +39,15 @@
       "binaries/kira-codex-helper",
       "binaries/codex"
     ],
-    "resources": [
-      "../../extension/dist",
-      "../../extension/safari/DerivedData/Build/Products/Release/KIRA Safari.app"
-    ],
+    "resources": {
+      "../../extension/dist": "extension/dist"
+    },
+    "macOS": {
+      "bundleVersion": "1",
+      "files": {
+        "PlugIns/KIRA Safari Extension.appex": "../../extension/safari/DerivedData/Build/Products/Release/KIRA Safari Extension.appex"
+      }
+    },
     "icon": ["icons/icon.icns"]
   }
 }

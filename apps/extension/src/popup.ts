@@ -16,12 +16,34 @@ const minHeightInput = document.getElementById('min-height') as HTMLInputElement
 const formatFilterInput = document.getElementById('format-filter') as HTMLSelectElement
 const tagsInput = document.getElementById('capture-tags') as HTMLInputElement
 const noteInput = document.getElementById('capture-note') as HTMLInputElement
+const unavailableNode = document.getElementById('app-unavailable') as HTMLElement
 
 let currentCapture: PendingCapture | null = null
 let imageCandidates: PageImageCandidate[] = []
 let selectedImageUrls = new Set<string>()
 
-void loadCapture()
+void initializePopup()
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && document.body.classList.contains('is-kira-unavailable')) {
+    void initializePopup()
+  }
+})
+
+async function initializePopup() {
+  document.body.classList.add('is-checking-kira')
+  const available = await isKiraAvailable()
+  document.body.classList.toggle('is-kira-unavailable', !available)
+  unavailableNode.hidden = available
+  document.body.classList.remove('is-checking-kira')
+  if (!available) return
+  await loadCapture()
+}
+
+async function isKiraAvailable() {
+  const response = await sendBridgeMessage({ type: 'kira-get-context' })
+  return response?.ok === true
+}
 
 copyButton.addEventListener('click', async () => {
   const captures = selectedCaptures()

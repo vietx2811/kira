@@ -43,10 +43,6 @@ import {
   MoreHorizontal,
   Network,
   Palette,
-  PanelLeftClose,
-  PanelLeftOpen,
-  PanelRightClose,
-  PanelRightOpen,
   Pause,
   Play,
   Plus,
@@ -57,6 +53,7 @@ import {
   ShieldCheck,
   SlidersHorizontal,
   Sparkles,
+  StickyNote,
   Tag,
   Trash2,
   Workflow,
@@ -134,6 +131,7 @@ type Idea = {
   updatedAt?: string
   sourceUrl?: string
   notes?: string
+  variant?: 'sticker'
 }
 
 type EvidenceImage = {
@@ -257,6 +255,7 @@ type PlaceholderNode = {
 type FrameNode = {
   id: string
   title: string
+  description?: string
   x: number
   y: number
   width: number
@@ -1097,11 +1096,11 @@ const extensionInstallTargets = [
   {
     id: 'safari',
     title: 'Safari',
-    status: 'Container app',
-    primary: 'Open bundled app',
+    status: 'Embedded',
+    primary: 'Enable in Safari',
     secondary: 'Open Safari settings',
-    instruction: 'Open the bundled KIRA Safari app once, then enable KIRA Capture in Safari Extensions.',
-    path: 'Bundled in KIRA.app/Contents/Resources/.../KIRA Safari.app',
+    instruction: 'KIRA includes the Safari extension. Enable KIRA Capture in Safari Extensions.',
+    path: 'Embedded in KIRA.app/Contents/PlugIns',
     href: 'x-apple.systempreferences:com.apple.Safari-Settings.extension',
     installActionId: 'safari_app',
     settingsActionId: 'safari',
@@ -1120,7 +1119,7 @@ function defaultExtensionInstallStatus(): ExtensionInstallStatus {
       installed: false,
       available: true,
       detail: 'Desktop status check not run',
-      installPath: 'Bundled in KIRA.app/Contents/Resources/.../KIRA Safari.app',
+      installPath: 'Embedded in KIRA.app/Contents/PlugIns',
     },
   }
 }
@@ -1511,6 +1510,10 @@ function FileWorkspace({
   const [isLibraryCollapsed, setIsLibraryCollapsed] = useState(false)
   const [isInspectorCollapsed, setIsInspectorCollapsed] = useState(false)
   const [isVersionHistoryOpen, setIsVersionHistoryOpen] = useState(false)
+
+  useEffect(() => {
+    if (selection.type !== 'project') setIsInspectorCollapsed(false)
+  }, [selection])
   // Rendered at this top level (not inside Inspector) so the overlay escapes
   // FloatingPanel's own positioning context when Inspector is undocked.
   const [cropTargetImageId, setCropTargetImageId] = useState<string | null>(null)
@@ -3530,6 +3533,7 @@ function FileWorkspace({
     const frame: FrameNode = {
       id: `frame-${Date.now()}`,
       title: 'New frame',
+      description: 'Group related references',
       x: 50,
       y: 50,
       width: 34,
@@ -3542,8 +3546,29 @@ function FileWorkspace({
     setSelection({ type: 'frame', id: frame.id })
   }
 
-  function updateFrame(frameId: string, patch: Partial<Pick<FrameNode, 'title'>>) {
+  function updateFrame(frameId: string, patch: Partial<Pick<FrameNode, 'title' | 'description'>>) {
     setFrames((current) => current.map((frame) => (frame.id === frameId ? { ...frame, ...patch, updatedAt: nowIso() } : frame)))
+  }
+
+  function createSticker() {
+    pushCanvasHistory()
+    const timestamp = nowIso()
+    const sticker: Idea = {
+      id: `sticker-${Date.now()}`,
+      title: 'Quick note',
+      body: 'Double-click to write',
+      status: 'forming',
+      variant: 'sticker',
+      x: 54,
+      y: 46,
+      importance: 1,
+      createdAt: timestamp,
+      addedAt: timestamp,
+      updatedAt: timestamp,
+    }
+    recordNodeVersion('idea', undefined, sticker, 'created')
+    setIdeas((current) => [...current, sticker])
+    setSelection({ type: 'idea', id: sticker.id })
   }
 
   function moveFrame(frameId: string, position: Pick<FrameNode, 'x' | 'y'>) {
@@ -4683,8 +4708,8 @@ function FileWorkspace({
   // Keep the canvas's own floating toolbars (canvas-tool-rail, canvas-secondary-rail) clear of
   // whichever overlay panels are currently open, since the canvas container itself is now always
   // full-window and no longer shrinks to make room for them.
-  const canvasLeftInset = 80 + (isLibraryCollapsed ? 56 : libraryDrawerWidth)
-  const canvasRightInset = isInspectorCollapsed ? 56 : 336
+  const canvasLeftInset = 80 + (isLibraryCollapsed ? 0 : libraryDrawerWidth)
+  const canvasRightInset = isInspectorCollapsed ? 0 : 336
 
   // Every hook above has already run, so bailing out here costs nothing but
   // still unmounts the heavy tree below (GraphCanvas, the WebGL 3D view,
@@ -4706,15 +4731,14 @@ function FileWorkspace({
         <TopBar
           activeView={activeView}
           isInspectorCollapsed={isInspectorCollapsed}
-          isSettingsOpen={isSettingsOpen}
           setActiveView={setActiveView}
-          onOpenSettings={() => setIsSettingsOpen(true)}
           onToggleInspector={() => setIsInspectorCollapsed((current) => !current)}
         />
         <SystemSidebar
           canRedo={canRedoCanvas}
           canUndo={canUndoCanvas}
           isLibraryCollapsed={isLibraryCollapsed}
+          isSettingsOpen={isSettingsOpen}
           libraryPanelMode={libraryPanelMode}
           saveLabel={projectHash === lastSavedHash ? 'Saved' : 'Save'}
           onImportProject={importProject}
@@ -4725,6 +4749,7 @@ function FileWorkspace({
           onSaveVersion={saveProjectAsNewVersion}
           onLibraryPanelModeChange={setLibraryPanelMode}
           onOpenVersionHistory={() => setIsVersionHistoryOpen(true)}
+          onOpenSettings={() => setIsSettingsOpen(true)}
           onToggleLibrary={() => setIsLibraryCollapsed((current) => !current)}
           onUndo={undoCanvas}
         />
@@ -4845,6 +4870,7 @@ function FileWorkspace({
                 onCreatePalette={() => createPaletteNode(selection.type === 'image' ? images.find((image) => image.id === selection.id) : undefined)}
                 onCreatePlaceholder={createPlaceholder}
                 onCreateFrame={createFrame}
+                onCreateSticker={createSticker}
                 onFrameMove={moveFrame}
                 onFrameResize={resizeFrame}
                 onFrameRename={(id, title) => updateFrame(id, { title })}
@@ -4907,6 +4933,7 @@ function FileWorkspace({
             onLinkSelectedReferences={linkSelectedReferencesToIdea}
             onLinkDelete={requestLinkDelete}
             onFrameRename={(id, title) => updateFrame(id, { title })}
+            onFrameDescriptionChange={(id, description) => updateFrame(id, { description })}
             onFrameDelete={requestFrameDelete}
             onNodeVersionRestore={restoreNodeVersion}
             onBeginLinkFromNode={beginCreateLinkFromNode}
@@ -5045,6 +5072,12 @@ function App() {
   const [files, setFiles] = useState<OpenFile[]>(() => [createUntitledFile(DEFAULT_FILE_ID)])
   const [activeFileId, setActiveFileId] = useState<string>(DEFAULT_FILE_ID)
   const [pendingCloseFileId, setPendingCloseFileId] = useState<string | null>(null)
+  const [showSplash, setShowSplash] = useState(true)
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setShowSplash(false), 1050)
+    return () => window.clearTimeout(timer)
+  }, [])
 
   const handleFileMetaChange = useCallback((id: string, meta: { title: string; isDirty: boolean; path: string | null }) => {
     setFiles((current) => {
@@ -5148,8 +5181,11 @@ function App() {
   }
 
   function closeFile(id: string) {
+    if (files.length <= 1) {
+      if (isTauriRuntime()) void getCurrentWindow().close()
+      return
+    }
     setFiles((current) => {
-      if (current.length <= 1) return current
       const index = current.findIndex((file) => file.id === id)
       if (index === -1) return current
       const next = current.filter((file) => file.id !== id)
@@ -5172,7 +5208,7 @@ function App() {
       onPointerDown={startWindowDrag}
     >
       <WindowControls />
-      <div className="file-tab-list">
+      <div className={files.length === 1 ? 'file-tab-list is-single' : 'file-tab-list'}>
         {files.map((file) => (
           <button
             key={file.id}
@@ -5187,26 +5223,24 @@ function App() {
           >
             {file.isDirty && <span className="file-tab-dirty" aria-hidden="true" />}
             <span className="file-tab-title">{file.title}</span>
-            {files.length > 1 && (
-              <span
-                role="button"
-                tabIndex={0}
-                className="file-tab-close"
-                aria-label={`Close ${file.title}`}
-                onClick={(event) => {
-                  event.stopPropagation()
-                  requestCloseFile(file.id)
-                }}
-                onKeyDown={(event) => {
-                  if (event.key !== 'Enter' && event.key !== ' ') return
-                  event.stopPropagation()
-                  event.preventDefault()
-                  requestCloseFile(file.id)
-                }}
-              >
-                <X size={11} />
-              </span>
-            )}
+            <span
+              role="button"
+              tabIndex={0}
+              className="file-tab-close"
+              aria-label={`Close ${file.title}`}
+              onClick={(event) => {
+                event.stopPropagation()
+                requestCloseFile(file.id)
+              }}
+              onKeyDown={(event) => {
+                if (event.key !== 'Enter' && event.key !== ' ') return
+                event.stopPropagation()
+                event.preventDefault()
+                requestCloseFile(file.id)
+              }}
+            >
+              <X size={11} />
+            </span>
           </button>
         ))}
       </div>
@@ -5218,6 +5252,14 @@ function App() {
 
   return (
     <>
+      {showSplash && (
+        <div className="app-splash" role="status" aria-label="Opening KIRA">
+          <div className="app-splash-symbol">
+            <img src="/kira-icon.png" alt="" />
+            <Sparkles className="app-splash-sparkle" size={18} aria-hidden="true" />
+          </div>
+        </div>
+      )}
       {files.map((file) => (
         <FileWorkspace
           key={file.id}
@@ -5365,11 +5407,13 @@ function SystemSidebar({
   canRedo,
   canUndo,
   isLibraryCollapsed,
+  isSettingsOpen,
   libraryPanelMode,
   saveLabel,
   onImportProject,
   onNewProject,
   onOpenProject,
+  onOpenSettings,
   onOpenVersionHistory,
   onRedo,
   onSaveProject,
@@ -5381,11 +5425,13 @@ function SystemSidebar({
   canRedo: boolean
   canUndo: boolean
   isLibraryCollapsed: boolean
+  isSettingsOpen: boolean
   libraryPanelMode: LibraryPanelMode
   saveLabel: string
   onImportProject: (file: File) => void
   onNewProject: () => void
   onOpenProject: () => void
+  onOpenSettings: () => void
   onOpenVersionHistory: () => void
   onRedo: () => void
   onSaveProject: () => void
@@ -5463,6 +5509,16 @@ function SystemSidebar({
           onSaveVersion={onSaveVersion}
           onUndo={onUndo}
         />
+        <button
+          className={isSettingsOpen ? 'sidebar-view-button sidebar-settings is-active' : 'sidebar-view-button sidebar-settings'}
+          type="button"
+          aria-label="Open Settings"
+          aria-pressed={isSettingsOpen}
+          title="Settings"
+          onClick={onOpenSettings}
+        >
+          <Settings size={18} />
+        </button>
       </div>
     </aside>
   )
@@ -5471,16 +5527,12 @@ function SystemSidebar({
 function TopBar({
   activeView,
   isInspectorCollapsed,
-  isSettingsOpen,
   setActiveView,
-  onOpenSettings,
   onToggleInspector,
 }: {
   activeView: ActiveView
   isInspectorCollapsed: boolean
-  isSettingsOpen: boolean
   setActiveView: (view: ActiveView) => void
-  onOpenSettings: () => void
   onToggleInspector: () => void
 }) {
   const views: { label: ActiveView; icon: typeof Network }[] = [
@@ -5515,16 +5567,6 @@ function TopBar({
 
       <div className="content-toolbar-actions">
         <button
-          className={isSettingsOpen ? 'icon-button top-settings-button is-active' : 'icon-button top-settings-button'}
-          type="button"
-          aria-label="Open Settings"
-          aria-pressed={isSettingsOpen}
-          title="Settings"
-          onClick={onOpenSettings}
-        >
-          <Settings size={16} />
-        </button>
-        <button
           className={isInspectorCollapsed ? 'icon-button top-inspector-button' : 'icon-button top-inspector-button is-active'}
           type="button"
           aria-label={isInspectorCollapsed ? 'Open Inspector' : 'Close Inspector'}
@@ -5532,7 +5574,7 @@ function TopBar({
           title="Inspector"
           onClick={onToggleInspector}
         >
-          {isInspectorCollapsed ? <PanelRightOpen size={16} /> : <PanelRightClose size={16} />}
+          <SlidersHorizontal size={16} />
         </button>
       </div>
     </header>
@@ -6434,13 +6476,7 @@ function EvidenceInbox({
   useDismissableLayer(isToolsOpen, '.library-drawer, [data-menu-trigger="library-tools"]', () => setIsToolsOpen(false))
 
   if (isCollapsed) {
-    return (
-      <aside className="inbox panel inbox--collapsed library-drawer-panel">
-        <button className="icon-button" type="button" aria-label="Expand library" onClick={onToggleCollapsed}>
-          <PanelLeftOpen size={16} />
-        </button>
-      </aside>
-    )
+    return null
   }
 
   return (
@@ -6472,9 +6508,6 @@ function EvidenceInbox({
           </span>
         </div>
         <div className="panel-actions">
-          <button className="icon-button" type="button" aria-label="Collapse library" onClick={onToggleCollapsed}>
-            <PanelLeftClose size={16} />
-          </button>
           <button className="icon-button" type="button" aria-label="Import image" onClick={() => importInput.current?.click()}>
             <ImagePlus size={16} />
           </button>
@@ -6798,6 +6831,7 @@ function GraphCanvas({
   onCreatePalette,
   onCreatePlaceholder,
   onCreateFrame,
+  onCreateSticker,
   onFrameMove,
   onFrameResize,
   onFrameRename,
@@ -6840,6 +6874,7 @@ function GraphCanvas({
   onCreatePalette: () => void
   onCreatePlaceholder: () => void
   onCreateFrame: () => void
+  onCreateSticker: () => void
   onFrameMove: (frameId: string, position: Pick<FrameNode, 'x' | 'y'>) => void
   onFrameResize: (frameId: string, size: Pick<FrameNode, 'width' | 'height'>) => void
   onFrameRename: (frameId: string, title: string) => void
@@ -6910,6 +6945,8 @@ function GraphCanvas({
   } | null>(null)
   const [resizingNode, setResizingNode] = useState<CanvasNodeSelection | null>(null)
   const panRef = useRef<{ startX: number; startY: number; originX: number; originY: number } | null>(null)
+  const linkDragRef = useRef<Pick<GraphNodeRef, 'kind' | 'id'> | null>(null)
+  const [linkDragPoint, setLinkDragPoint] = useState<{ x: number; y: number } | null>(null)
   const [graphTransform, setGraphTransform] = useState({ x: 0, y: 0, scale: 1 })
   const [isPanning, setIsPanning] = useState(false)
   const [graphMode, setGraphMode] = useState<GraphMode>('edit')
@@ -7132,11 +7169,6 @@ function GraphCanvas({
     setNodeContextMenu(null)
   }
 
-  function clearMultiSelect() {
-    setMultiSelectedNodes([])
-    setNodeContextMenu(null)
-  }
-
   function openNodeContextMenu(kind: GraphNodeKind, id: string, event: React.MouseEvent<HTMLElement>) {
     event.preventDefault()
     event.stopPropagation()
@@ -7152,19 +7184,6 @@ function GraphCanvas({
       nodes,
     })
     setArcMenu(null)
-  }
-
-  function applyContextImportance(delta: number) {
-    const nodes = nodeContextMenu?.nodes ?? selectedCanvasNodes()
-    onNodesImportanceChange(nodes, delta)
-    setNodeContextMenu(null)
-  }
-
-  function resetContextNodeScale() {
-    const nodes = nodeContextMenu?.nodes ?? selectedCanvasNodes()
-    if (nodes.length === 0) return
-    onNodeScaleReset(nodes)
-    setNodeContextMenu(null)
   }
 
   function deleteContextNodes() {
@@ -7259,6 +7278,69 @@ function GraphCanvas({
     onActiveCanvasToolChange('link')
     onPendingLinkSourceChange(source)
     setArcMenu(null)
+  }
+
+  function startDirectLink(
+    source: Pick<GraphNodeRef, 'kind' | 'id' | 'x' | 'y'>,
+    event: React.PointerEvent<HTMLElement>,
+  ) {
+    event.preventDefault()
+    event.stopPropagation()
+    const nodeRef = { kind: source.kind, id: source.id }
+    linkDragRef.current = nodeRef
+    setLinkDragPoint({ x: source.x, y: source.y })
+    onSelect({ type: source.kind, id: source.id } as Selection)
+    onPendingLinkSourceChange(nodeRef)
+    onActiveCanvasToolChange('link')
+    setArcMenu(null)
+    setNodeContextMenu(null)
+  }
+
+  function updateDirectLink(event: React.PointerEvent<HTMLDivElement>) {
+    if (!linkDragRef.current) return
+    const point = pointerPercent(event)
+    if (point) setLinkDragPoint(point)
+  }
+
+  function finishDirectLink(event: React.PointerEvent<HTMLDivElement>) {
+    const source = linkDragRef.current
+    if (!source) return false
+    linkDragRef.current = null
+    setLinkDragPoint(null)
+    const hit = document.elementFromPoint(event.clientX, event.clientY)
+    const targetNode = hit instanceof Element ? hit.closest<HTMLElement>('[data-node-kind][data-node-id]') : null
+    const targetKind = targetNode?.dataset.nodeKind as GraphNodeKind | undefined
+    const targetId = targetNode?.dataset.nodeId
+    if (!targetKind || !targetId || (targetKind === source.kind && targetId === source.id)) return true
+    onCreateLink(source, { kind: targetKind, id: targetId }, linkCreationRelation)
+    onPendingLinkSourceChange(null)
+    onActiveCanvasToolChange('select')
+    return true
+  }
+
+  function renderDirectLinkHandle(
+    kind: GraphNodeKind,
+    node: Pick<Idea, 'id' | 'x' | 'y'>,
+    label: string,
+  ) {
+    return (
+      <span
+        className="node-link-handle"
+        role="button"
+        tabIndex={0}
+        aria-label={`Link ${label}`}
+        title="Drag to connect"
+        onPointerDown={(event) => startDirectLink({ kind, ...node }, event)}
+        onKeyDown={(event) => {
+          if (event.key !== 'Enter' && event.key !== ' ') return
+          event.preventDefault()
+          onPendingLinkSourceChange({ kind, id: node.id })
+          onActiveCanvasToolChange('link')
+        }}
+      >
+        <Link2 size={10} />
+      </span>
+    )
   }
 
   function createLinkedNodeFromArc(targetKind: GraphNodeKind) {
@@ -7516,12 +7598,22 @@ function GraphCanvas({
 
   function startPan(event: React.PointerEvent<HTMLDivElement>) {
     const target = event.target instanceof Element ? event.target : null
-    if (target?.closest('[data-node-kind][data-node-id], button, input, textarea, select, .canvas-tool-rail, .canvas-view-rail, .canvas-zoom-rail, .graph-tools-drawer, .node-context-menu, .node-arc-menu, .canvas-zero-state, .ai-node-panel')) return
-    onSelect({ type: 'project' })
-    setNodeContextMenu(null)
-    setArcMenu(null)
-    setMultiSelectedNodes([])
-    onPendingLinkSourceChange(null)
+    const isMiddleButton = event.button === 1
+    if (!isMiddleButton) {
+      if (event.button !== 0 || target?.closest('[data-node-kind][data-node-id], button, input, textarea, select, .canvas-tool-rail, .canvas-view-rail, .canvas-zoom-rail, .graph-tools-drawer, .node-context-menu, .node-arc-menu, .canvas-zero-state, .ai-node-panel')) return
+      onSelect({ type: 'project' })
+      setNodeContextMenu(null)
+      setArcMenu(null)
+      setMultiSelectedNodes([])
+      onPendingLinkSourceChange(null)
+      return
+    }
+    event.preventDefault()
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId)
+    } catch {
+      // Synthetic browser events do not always own pointer capture.
+    }
     panRef.current = {
       startX: event.clientX,
       startY: event.clientY,
@@ -7537,14 +7629,40 @@ function GraphCanvas({
 
     setGraphTransform((current) => ({
       ...current,
-      x: clamp(pan.originX + event.clientX - pan.startX, -280, 280),
-      y: clamp(pan.originY + event.clientY - pan.startY, -220, 220),
+      x: clamp(pan.originX + event.clientX - pan.startX, -2400, 2400),
+      y: clamp(pan.originY + event.clientY - pan.startY, -1800, 1800),
     }))
   }
 
   function stopPan() {
     panRef.current = null
     setIsPanning(false)
+  }
+
+  function handleCanvasWheel(event: React.WheelEvent<HTMLDivElement>) {
+    if (event.target instanceof Element && event.target.closest('input, textarea, select, .graph-tools-drawer, .node-context-menu, .node-arc-menu, .ai-node-panel')) return
+    event.preventDefault()
+    if (event.ctrlKey || event.metaKey) {
+      const rect = canvasRef.current?.getBoundingClientRect()
+      if (!rect) return
+      const pointerX = event.clientX - rect.left
+      const pointerY = event.clientY - rect.top
+      setGraphTransform((current) => {
+        const scale = clamp(Number((current.scale * Math.exp(-event.deltaY * 0.002)).toFixed(3)), 0.12, 1.8)
+        const ratio = scale / current.scale
+        return {
+          scale,
+          x: pointerX - (pointerX - current.x) * ratio,
+          y: pointerY - (pointerY - current.y) * ratio,
+        }
+      })
+      return
+    }
+    setGraphTransform((current) => ({
+      ...current,
+      x: clamp(current.x - event.deltaX, -2400, 2400),
+      y: clamp(current.y - event.deltaY, -1800, 1800),
+    }))
   }
 
   function updateCanvasGridHotspot(event: React.PointerEvent<HTMLDivElement>) {
@@ -7566,10 +7684,20 @@ function GraphCanvas({
         onPointerDown={startPan}
         onPointerMove={(event) => {
           updateCanvasGridHotspot(event)
+          updateDirectLink(event)
           movePan(event)
         }}
-        onPointerUp={stopPan}
-        onPointerCancel={stopPan}
+        onPointerUp={(event) => {
+          finishDirectLink(event)
+          stopPan()
+        }}
+        onPointerCancel={() => {
+          linkDragRef.current = null
+          setLinkDragPoint(null)
+          stopPan()
+        }}
+        onAuxClick={(event) => event.preventDefault()}
+        onWheel={handleCanvasWheel}
       >
         {/* One row, three zones: view options left, create tools centre, viewport
             right. Flex keeps them from ever overlapping at any canvas width. */}
@@ -7606,6 +7734,7 @@ function GraphCanvas({
             <button
               type="button"
               aria-label="Select"
+              data-tooltip="Select"
               className={activeCanvasTool === 'select' ? 'is-active' : ''}
               onClick={() => {
                 onActiveCanvasToolChange('select')
@@ -7615,30 +7744,21 @@ function GraphCanvas({
             >
               <img className="tool-icon" src="/tool-icons/select.png" alt="" />
             </button>
-            <button
-              type="button"
-              aria-label="Create link"
-              className={activeCanvasTool === 'link' ? 'is-active' : ''}
-              onClick={() => {
-                onActiveCanvasToolChange((current) => current === 'link' ? 'select' : 'link')
-                onPendingLinkSourceChange(null)
-                setArcMenu(null)
-              }}
-            >
-              <img className="tool-icon" src="/tool-icons/link.png" alt="" />
-            </button>
           </div>
           <div className="canvas-tool-group" aria-label="Create nodes">
-            <button type="button" aria-label="Add image placeholder" onClick={onCreatePlaceholder}>
+            <button type="button" aria-label="Add image placeholder" data-tooltip="Image placeholder" onClick={onCreatePlaceholder}>
               <img className="tool-icon" src="/tool-icons/image-placeholder.png" alt="" />
             </button>
-            <button type="button" aria-label="Add palette" onClick={onCreatePalette}>
+            <button type="button" aria-label="Add palette" data-tooltip="Palette" onClick={onCreatePalette}>
               <img className="tool-icon" src="/tool-icons/palette.png" alt="" />
             </button>
-            <button type="button" aria-label="Add idea" onClick={onCreateIdea}>
+            <button type="button" aria-label="Add idea" data-tooltip="Idea" onClick={onCreateIdea}>
               <img className="tool-icon" src="/tool-icons/idea.png" alt="" />
             </button>
-            <button type="button" aria-label="Add frame" title="Group and name a region of the board" onClick={onCreateFrame}>
+            <button type="button" aria-label="Add sticker" data-tooltip="Sticker" onClick={onCreateSticker}>
+              <StickyNote size={16} />
+            </button>
+            <button type="button" aria-label="Add frame" data-tooltip="Frame" onClick={onCreateFrame}>
               <Frame size={15} />
             </button>
           </div>
@@ -7646,6 +7766,7 @@ function GraphCanvas({
             <button
               type="button"
               aria-label="Import Mermaid diagram"
+              data-tooltip="Mermaid diagram"
               onClick={() => {
                 const source = window.prompt('Paste Mermaid graph or flowchart')
                 if (source?.trim()) void onImportMermaid(source)
@@ -7687,8 +7808,8 @@ function GraphCanvas({
               </button>
             )}
             <div className="canvas-zero-heading">
-              <span><Sparkles size={14} /> Start board</span>
-              <h2>Choose a template or generate starter nodes</h2>
+              <img src="/kira-icon.png" alt="" />
+              <h2>New board</h2>
             </div>
             <div className="canvas-template-grid">
               {projectTemplateDefinitions.map((template) => (
@@ -7699,16 +7820,14 @@ function GraphCanvas({
                   onClick={() => onApplyProjectTemplate(template.id)}
                 >
                   <strong>{template.title}</strong>
-                  <span>{template.description}</span>
                 </button>
               ))}
             </div>
             <div className="canvas-prompt-starter">
-              <textarea
+              <input
                 value={starterPrompt}
                 onChange={(event) => setStarterPrompt(event.target.value)}
-                placeholder="Describe the board you want KIRA to prepare..."
-                rows={3}
+                placeholder="Describe a board"
               />
               <button type="button" className="primary-button" disabled={!starterPrompt.trim()} onClick={submitPromptStarter}>
                 <Sparkles size={14} />
@@ -7770,7 +7889,10 @@ function GraphCanvas({
                     onChange={(event) => onFrameRename(frame.id, event.target.value)}
                   />
                 ) : (
-                  <span className="canvas-frame-title">{frame.title}</span>
+                  <>
+                    <span className="canvas-frame-title">{frame.title}</span>
+                    <span className="canvas-frame-description">{frame.description ?? 'Group related references'}</span>
+                  </>
                 )}
               </button>
               <span
@@ -7785,7 +7907,7 @@ function GraphCanvas({
               />
             </div>
           ))}
-          <svg className="edge-layer" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true" data-edge-render="smooth">
+          <svg className="edge-layer" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true" data-edge-render="simplebezier">
             <defs>
               <linearGradient id="edgeGradient" x1="0" x2="1">
                 <stop offset="0%" stopColor="var(--accent-cyan)" stopOpacity="0.22" />
@@ -7826,6 +7948,19 @@ function GraphCanvas({
                 </g>
               )
             })}
+            {pendingLinkSource && linkDragPoint && (() => {
+              const source = resolveGraphNodePosition(
+                pendingLinkSource.id,
+                displayView.ideas,
+                displayView.images,
+                palettes,
+                diagrams,
+                placeholders,
+              )
+              if (!source) return null
+              const preview = smoothGraphEdge(source, linkDragPoint)
+              return <path d={preview.path} className="edge-line edge-line--preview" />
+            })()}
             {graphMode === 'discover' && displaySuggestions.map((suggestion) => {
               const image = displayView.images.find((candidate) => candidate.id === suggestion.imageId)
               const idea = displayView.ideas.find((candidate) => candidate.id === suggestion.ideaId)
@@ -7886,6 +8021,7 @@ function GraphCanvas({
                 key={idea.id}
                 className={[
                   'idea-node',
+                  idea.variant === 'sticker' ? 'idea-node--sticker' : '',
                   isSelectedIdea ? 'is-selected' : '',
                   isEditingIdea ? 'is-editing' : '',
                   isCanvasNodeSelected('idea', idea.id) && multiSelectedNodes.length > 0 ? 'is-multi-selected' : '',
@@ -7939,6 +8075,7 @@ function GraphCanvas({
                 >
                   <Plus size={11} />
                 </span>
+                {renderDirectLinkHandle('idea', idea, idea.title)}
                 <span className={`idea-status idea-status--${idea.status}`} />
                 {isEditingIdea ? (
                   // The edit area only exists while editing, so a stray click can
@@ -7968,7 +8105,7 @@ function GraphCanvas({
                 ) : (
                   <>
                     <strong>{idea.title}</strong>
-                    <small>{idea.status === 'thin' ? 'needs evidence' : `${evidenceCount} evidence`}</small>
+                    <small>{idea.variant === 'sticker' ? idea.body : idea.status === 'thin' ? 'needs evidence' : `${evidenceCount} evidence`}</small>
                   </>
                 )}
                 {renderResizeHandle('idea', idea)}
@@ -8014,6 +8151,7 @@ function GraphCanvas({
               >
                 <Plus size={11} />
               </span>
+              {renderDirectLinkHandle('image', image, image.title)}
               <ReferenceThumb image={image} />
               <span className="node-palette">
                 {image.palette.map((color, index) => (
@@ -8059,6 +8197,7 @@ function GraphCanvas({
               >
                 <Plus size={11} />
               </span>
+              {renderDirectLinkHandle('palette', palette, palette.title)}
               <span className="palette-strip">
                 {palette.colors.map((color, index) => (
                   <i key={`${palette.id}-${index}-${color}`} style={{ background: color }} />
@@ -8103,6 +8242,7 @@ function GraphCanvas({
               >
                 <Plus size={11} />
               </span>
+              {renderDirectLinkHandle('diagram', diagram, diagram.title)}
               <FileText size={15} />
               <strong>{diagram.title}</strong>
               <small>{diagram.nodeIds.length} nodes</small>
@@ -8148,6 +8288,7 @@ function GraphCanvas({
               >
                 <Plus size={11} />
               </span>
+              {renderDirectLinkHandle('placeholder', placeholder, placeholder.title)}
               <ImagePlus size={16} />
               <span>{placeholder.title}</span>
               {renderResizeHandle('placeholder', placeholder)}
@@ -8247,34 +8388,18 @@ function GraphCanvas({
             onContextMenu={(event) => event.preventDefault()}
           >
             <div className="node-context-heading">
-              <strong>{nodeContextMenu.nodes.length} selected</strong>
-              <span>{nodeContextMenu.nodes.map((node) => graphNodeKindLabel(node.kind)).join(', ')}</span>
+              <strong>
+                {nodeContextMenu.nodes.length === 1
+                  ? graphNodeKindLabel(nodeContextMenu.nodes[0].kind)
+                  : `${nodeContextMenu.nodes.length} selected`}
+              </strong>
             </div>
-            <button type="button" role="menuitem" onClick={() => applyContextImportance(0.25)}>
-              <ChevronUp size={13} />
-              Increase importance
-            </button>
-            <button type="button" role="menuitem" onClick={() => applyContextImportance(-0.25)}>
-              <ChevronDown size={13} />
-              Decrease importance
-            </button>
-            <button type="button" role="menuitem" onClick={resetContextNodeScale}>
-              <LocateFixed size={13} />
-              Reset size
-            </button>
-            <button
-              type="button"
-              role="menuitem"
-              disabled={nodeContextMenu.nodes.length !== 2}
-              onClick={linkContextNodes}
-            >
-              <Link2 size={13} />
-              Link selected
-            </button>
-            <button type="button" role="menuitem" onClick={clearMultiSelect}>
-              <X size={13} />
-              Clear selection
-            </button>
+            {nodeContextMenu.nodes.length === 2 && (
+              <button type="button" role="menuitem" onClick={linkContextNodes}>
+                <Link2 size={13} />
+                Link selected
+              </button>
+            )}
             <button type="button" role="menuitem" className="is-danger" onClick={deleteContextNodes}>
               <Trash2 size={13} />
               Delete selected
@@ -9326,6 +9451,7 @@ function Inspector({
   onLinkSelectedReferences,
   onLinkDelete,
   onFrameRename,
+  onFrameDescriptionChange,
   onFrameDelete,
   onNodeVersionRestore,
   onBeginLinkFromNode,
@@ -9391,6 +9517,7 @@ function Inspector({
   onLinkSelectedReferences: (ideaId: string) => void
   onLinkDelete: (linkId: string) => void
   onFrameRename: (frameId: string, title: string) => void
+  onFrameDescriptionChange: (frameId: string, description: string) => void
   onFrameDelete: (frameId: string) => void
   onNodeVersionRestore: (versionId: string) => void
   onBeginLinkFromNode: (source: Pick<GraphNodeRef, 'kind' | 'id'>) => void
@@ -9463,13 +9590,7 @@ function Inspector({
   })
 
   if (isCollapsed) {
-    return (
-      <aside className="inspector panel inspector--collapsed">
-        <button className="icon-button" type="button" aria-label="Expand inspector" onClick={onToggleCollapsed}>
-          <PanelRightOpen size={16} />
-        </button>
-      </aside>
-    )
+    return null
   }
 
   return (
@@ -9480,9 +9601,6 @@ function Inspector({
           <h2>{selected.heading}</h2>
         </div>
         <div className="panel-actions">
-          <button className="icon-button" type="button" aria-label="Collapse inspector" onClick={onToggleCollapsed}>
-            <PanelRightClose size={16} />
-          </button>
           {selectedNodeRef && (
             <button className="icon-button" type="button" aria-label="Create link from node" onClick={() => onBeginLinkFromNode(selectedNodeRef)}>
               <Link2 size={15} />
@@ -10193,6 +10311,13 @@ function Inspector({
               value={selected.frame.title}
               onChange={(event) => onFrameRename(selected.frame.id, event.target.value)}
             />
+            <textarea
+              className="note-input"
+              rows={2}
+              placeholder="Describe this frame"
+              value={selected.frame.description ?? ''}
+              onChange={(event) => onFrameDescriptionChange(selected.frame.id, event.target.value)}
+            />
             <p className="inspector-lede">
               {selected.containedImages.length === 0
                 ? 'Empty — drag references inside this region to group them.'
@@ -10665,9 +10790,9 @@ function buildProjectAppearanceStyle(appearance: ProjectAppearance): React.CSSPr
     '--node-shadow-hover': dark ? '0 12px 34px rgb(0 0 0 / 0.3)' : `0 10px 26px ${colorWithAlpha(tokens.textMain, 0.14)}`,
     '--window-border': dark ? 'rgb(255 255 255 / 0.08)' : colorWithAlpha(tokens.textMain, 0.08),
     '--glass-sidebar': dark ? colorWithAlpha(tokens.surface1, 0.32) : colorWithAlpha(tokens.surface1, 0.34),
-    '--glass-drawer': dark ? colorWithAlpha(tokens.surfaceDrawer, 0.34) : colorWithAlpha(tokens.surfaceDrawer, 0.38),
+    '--glass-drawer': dark ? colorWithAlpha(tokens.surfaceDrawer, 0.88) : colorWithAlpha(tokens.surfaceDrawer, 0.9),
     '--glass-content': dark ? colorWithAlpha(tokens.base, 0.22) : colorWithAlpha(tokens.base, 0.28),
-    '--glass-inspector': dark ? colorWithAlpha(tokens.surfaceInspector, 0.38) : colorWithAlpha(tokens.surfaceInspector, 0.42),
+    '--glass-inspector': dark ? colorWithAlpha(tokens.surfaceInspector, 0.86) : colorWithAlpha(tokens.surfaceInspector, 0.9),
     '--glass-hover': dark ? 'rgb(255 255 255 / 0.055)' : 'rgb(34 31 26 / 0.055)',
     '--glass-active': colorWithAlpha(accent, dark ? 0.24 : 0.22),
     '--separator-hairline': dark ? 'rgb(255 255 255 / 0.052)' : colorWithAlpha(tokens.textMain, 0.1),
@@ -12488,41 +12613,20 @@ function clamp(value: number, min: number, max: number) {
 }
 
 function smoothGraphEdge(source: Pick<GraphNodeRef, 'x' | 'y'>, target: Pick<GraphNodeRef, 'x' | 'y'>) {
-  const dx = target.x - source.x
-  const dy = target.y - source.y
   const start = graphEdgePort(source, target)
   const end = graphEdgePort(target, source)
-  const portDx = end.x - start.x
-  const portDy = end.y - start.y
-  const distance = Math.hypot(dx, dy) || 1
-  const normalX = -dy / distance
-  const normalY = dx / distance
-  const bendDirection = source.x <= target.x ? 1 : -1
-  const bend = clamp(distance * 0.16, 2.2, 7.8) * bendDirection
-  const tension = clamp(distance * 0.36, 8, 26)
-  const horizontalBias = Math.abs(dx) >= Math.abs(dy)
-  const c1 = horizontalBias
-    ? {
-        x: start.x + Math.sign(dx || 1) * tension + normalX * bend,
-        y: start.y + portDy * 0.08 + normalY * bend,
-      }
-    : {
-        x: start.x + portDx * 0.12 + normalX * bend,
-        y: start.y + Math.sign(dy || 1) * tension + normalY * bend,
-      }
-  const c2 = horizontalBias
-    ? {
-        x: end.x - Math.sign(dx || 1) * tension + normalX * bend,
-        y: end.y - portDy * 0.08 + normalY * bend,
-      }
-    : {
-        x: end.x - portDx * 0.12 + normalX * bend,
-        y: end.y - Math.sign(dy || 1) * tension + normalY * bend,
-      }
-  const midX = cubicPoint(start.x, c1.x, c2.x, end.x, 0.5)
-  const midY = cubicPoint(start.y, c1.y, c2.y, end.y, 0.5)
+  const dx = end.x - start.x
+  const dy = end.y - start.y
+  const horizontal = Math.abs(dx) >= Math.abs(dy)
+  const nearlyAligned = horizontal ? Math.abs(dy) < 1.4 : Math.abs(dx) < 1.4
+  const midX = (start.x + end.x) / 2
+  const midY = (start.y + end.y) / 2
   return {
-    path: `M ${formatEdgeNumber(start.x)} ${formatEdgeNumber(start.y)} C ${formatEdgeNumber(c1.x)} ${formatEdgeNumber(c1.y)}, ${formatEdgeNumber(c2.x)} ${formatEdgeNumber(c2.y)}, ${formatEdgeNumber(end.x)} ${formatEdgeNumber(end.y)}`,
+    path: nearlyAligned
+      ? `M ${formatEdgeNumber(start.x)} ${formatEdgeNumber(start.y)} L ${formatEdgeNumber(end.x)} ${formatEdgeNumber(end.y)}`
+      : horizontal
+        ? `M ${formatEdgeNumber(start.x)} ${formatEdgeNumber(start.y)} C ${formatEdgeNumber(midX)} ${formatEdgeNumber(start.y)}, ${formatEdgeNumber(midX)} ${formatEdgeNumber(end.y)}, ${formatEdgeNumber(end.x)} ${formatEdgeNumber(end.y)}`
+        : `M ${formatEdgeNumber(start.x)} ${formatEdgeNumber(start.y)} C ${formatEdgeNumber(start.x)} ${formatEdgeNumber(midY)}, ${formatEdgeNumber(end.x)} ${formatEdgeNumber(midY)}, ${formatEdgeNumber(end.x)} ${formatEdgeNumber(end.y)}`,
     midX,
     midY,
   }
@@ -12538,14 +12642,6 @@ function graphEdgePort(node: Pick<GraphNodeRef, 'x' | 'y'>, other: Pick<GraphNod
   return horizontal
     ? { x: node.x + Math.sign(dx || 1) * horizontalOffset, y: node.y }
     : { x: node.x, y: node.y + Math.sign(dy || 1) * verticalOffset }
-}
-
-function cubicPoint(start: number, controlA: number, controlB: number, end: number, t: number) {
-  const inverse = 1 - t
-  return inverse ** 3 * start
-    + 3 * inverse ** 2 * t * controlA
-    + 3 * inverse * t ** 2 * controlB
-    + t ** 3 * end
 }
 
 function formatEdgeNumber(value: number) {

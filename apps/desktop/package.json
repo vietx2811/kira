@@ -1,11 +1,12 @@
 {
   "name": "@kira/desktop",
   "private": true,
-  "version": "0.1.0",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "build": "tsc -b && vite build",
+    "build:tauri": "pnpm build && pnpm --filter @kira/extension build && xcodebuild -project \"../extension/safari/KIRA Safari/KIRA Safari.xcodeproj\" -scheme \"KIRA Safari\" -configuration Release -derivedDataPath \"../extension/safari/DerivedData\" CODE_SIGNING_ALLOWED=NO build",
     "preview": "vite preview --host 127.0.0.1",
     "tauri": "tauri"
   },

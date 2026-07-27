@@ -16,6 +16,7 @@ apps/extension/safari/DerivedData/
 
 # Local QA artifacts
 .playwright-mcp/
+release/
 kira-*.png
 kira-*.json
 kira-*.log

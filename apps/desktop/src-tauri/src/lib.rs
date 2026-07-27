@@ -33,7 +33,7 @@ const MIGRATION_GRAPH_V2_FIELDS: &str = "008_graph_v2_fields";
 const CAPTURE_SERVER_ADDR: &str = "127.0.0.1:47653";
 const CAPTURE_EVENT: &str = "kira:capture";
 const EAGLE_WEB_API_ADDR: &str = "127.0.0.1:41595";
-const AI_PROVIDER_KEYCHAIN_SERVICE: &str = "studio.kira.desktop.ai-provider";
+const AI_PROVIDER_KEYCHAIN_SERVICE: &str = "vxstudio.kira.ai-provider";
 
 #[derive(Clone, Default)]
 struct CaptureContextState(Arc<Mutex<String>>);
@@ -531,7 +531,10 @@ fn open_extension_install_target(app: AppHandle, target_id: String) -> Result<()
         "chrome" => open_system_target("chrome://extensions"),
         "safari" => open_system_target("x-apple.systempreferences:com.apple.Safari-Settings.extension"),
         "chrome_dist" => open_system_target(&extension_dist_path(Some(&app)).to_string_lossy()),
-        "safari_app" => open_system_target(&safari_container_app_path(Some(&app)).to_string_lossy()),
+        "safari_app" => {
+            register_safari_extension()?;
+            open_system_target("x-apple.systempreferences:com.apple.Safari-Settings.extension")
+        }
         _ => Err(format!("Unknown extension target: {target_id}")),
     }
 }
@@ -3091,7 +3094,9 @@ fn detect_safari_extension_status(app: Option<&AppHandle>) -> ExtensionTargetSta
     let (installed, detail) = match output {
         Ok(output) if output.status.success() => {
             let stdout = String::from_utf8_lossy(&output.stdout);
-            let matched = stdout.contains("app.kira.safari.Extension")
+            let matched = stdout.contains("vxstudio.kira.safari")
+                || stdout.contains("studio.kira.desktop.safari")
+                || stdout.contains("app.kira.safari.Extension")
                 || stdout.contains("KIRA Safari Extension");
             let detail = if matched {
                 "Detected by pluginkit".to_string()
@@ -3151,8 +3156,9 @@ fn extension_dist_path(app: Option<&AppHandle>) -> PathBuf {
 }
 
 fn safari_container_app_path(app: Option<&AppHandle>) -> PathBuf {
-    bundled_resource_path(app, Path::new("KIRA Safari.app"))
-        .or_else(|| bundled_resource_named_dir(app, "KIRA Safari.app"))
+    embedded_safari_extension_path()
+        .or_else(|| bundled_resource_path(app, Path::new("KIRA Safari Extension.appex")))
+        .or_else(|| bundled_resource_named_dir(app, "KIRA Safari Extension.appex"))
         .unwrap_or_else(|| {
         workspace_root_guess()
         .join("apps")
@@ -3162,8 +3168,47 @@ fn safari_container_app_path(app: Option<&AppHandle>) -> PathBuf {
         .join("Build")
         .join("Products")
         .join("Release")
-        .join("KIRA Safari.app")
+        .join("KIRA Safari Extension.appex")
     })
+}
+
+#[cfg(target_os = "macos")]
+fn embedded_safari_extension_path() -> Option<PathBuf> {
+    let executable = std::env::current_exe().ok()?;
+    let contents_dir = executable.parent()?.parent()?;
+    let extension = contents_dir
+        .join("PlugIns")
+        .join("KIRA Safari Extension.appex");
+    extension.exists().then_some(extension)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn embedded_safari_extension_path() -> Option<PathBuf> {
+    None
+}
+
+#[cfg(target_os = "macos")]
+fn register_safari_extension() -> Result<(), String> {
+    let extension = embedded_safari_extension_path()
+        .ok_or_else(|| "Bundled KIRA Safari extension was not found".to_string())?;
+    let output = Command::new("pluginkit")
+        .arg("-a")
+        .arg(&extension)
+        .output()
+        .map_err(|error| format!("Could not register KIRA Safari extension: {error}"))?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(format!(
+            "Safari extension registration failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ))
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn register_safari_extension() -> Result<(), String> {
+    Err("Safari extensions are available on macOS only".to_string())
 }
 
 fn bundled_resource_path(app: Option<&AppHandle>, resource_name: &Path) -> Option<PathBuf> {
@@ -3928,6 +3973,10 @@ pub fn run() {
                 }
             }
             start_capture_server(app.handle().clone());
+            #[cfg(target_os = "macos")]
+            if let Err(error) = register_safari_extension() {
+                eprintln!("KIRA Safari extension registration skipped: {error}");
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

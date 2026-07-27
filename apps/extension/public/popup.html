@@ -6,12 +6,29 @@
     <title>KIRA Capture</title>
     <link rel="stylesheet" href="popup.css" />
   </head>
-  <body>
+  <body class="is-checking-kira">
     <main class="popup-shell">
       <header>
-        <strong>KIRA</strong>
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true">
+            <span class="brand-square"></span>
+            <svg viewBox="0 0 24 24" focusable="false">
+              <path d="M12 1.75c.73 3.52 3.48 6.27 7 7-.01.01-.01.01 0 0-3.52.73-6.27 3.48-7 7-.73-3.52-3.48-6.27-7-7 3.52-.73 6.27-3.48 7-7Z" />
+            </svg>
+          </span>
+          <strong>KIRA</strong>
+        </div>
         <span id="capture-kind">Page</span>
       </header>
+      <section id="app-unavailable" class="app-unavailable" role="status" hidden>
+        <span class="brand-mark brand-mark--large" aria-hidden="true">
+          <span class="brand-square"></span>
+          <svg viewBox="0 0 24 24" focusable="false">
+            <path d="M12 1.75c.73 3.52 3.48 6.27 7 7-.01.01-.01.01 0 0-3.52.73-6.27 3.48-7 7-.73-3.52-3.48-6.27-7-7 3.52-.73 6.27-3.48 7-7Z" />
+          </svg>
+        </span>
+        <p>Mở <strong>Kira App</strong> để sử dụng tính năng này</p>
+      </section>
       <section class="capture-card">
         <img id="capture-preview" alt="" hidden />
         <div>

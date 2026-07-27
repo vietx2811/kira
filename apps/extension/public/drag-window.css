@@ -7,8 +7,8 @@ body {
   width: 100%;
   min-height: 100%;
   margin: 0;
-  background: #0d0f0e;
-  color: #f2f4ef;
+  background: rgb(242 242 244 / 0.95);
+  color: #1d1d1f;
   font: 12px/1.35 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
@@ -21,9 +21,7 @@ body {
   gap: 12px;
   min-height: 100vh;
   padding: 14px;
-  background:
-    linear-gradient(180deg, rgba(132, 205, 188, 0.08), rgba(13, 15, 14, 0) 34%),
-    #0d0f0e;
+  background: rgb(242 242 244 / 0.95);
 }
 
 header {
@@ -42,18 +40,104 @@ header strong {
   font-size: 13px;
 }
 
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.brand-mark {
+  position: relative;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 auto;
+  border: 1px solid rgb(29 29 31 / 0.09);
+  border-radius: 9px;
+  background: rgb(255 255 255 / 0.68);
+  color: #1d1d1f;
+}
+
+.brand-mark > span {
+  position: absolute;
+  left: 6px;
+  bottom: 6px;
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid currentColor;
+  border-radius: 3px;
+}
+
+.brand-mark svg {
+  position: absolute;
+  right: 3px;
+  top: 3px;
+  width: 15px;
+  height: 15px;
+  fill: currentColor;
+}
+
+.brand-mark--large {
+  width: 52px;
+  height: 52px;
+  border-radius: 15px;
+}
+
+.brand-mark--large > span {
+  left: 10px;
+  bottom: 10px;
+  width: 18px;
+  height: 18px;
+  border-width: 2px;
+  border-radius: 5px;
+}
+
+.brand-mark--large svg {
+  right: 6px;
+  top: 6px;
+  width: 26px;
+  height: 26px;
+}
+
 header span,
 #status,
 .drop-target span,
 .drop-target small,
 .node-card span {
-  color: rgba(242, 244, 239, 0.62);
+  color: #6e6e73;
   font-size: 11px;
 }
 
 #status {
   max-width: 150px;
   text-align: right;
+}
+
+.app-unavailable {
+  min-height: 345px;
+  place-items: center;
+  align-content: center;
+  gap: 14px;
+  text-align: center;
+}
+
+.app-unavailable:not([hidden]) {
+  display: grid;
+}
+
+.app-unavailable p {
+  margin: 0;
+  color: #6e6e73;
+  font-size: 14px;
+}
+
+.app-unavailable strong {
+  color: #1d1d1f;
+  font-weight: 620;
+}
+
+.is-kira-unavailable .capture-grid,
+.is-kira-unavailable #status {
+  display: none;
 }
 
 .capture-grid {
@@ -72,16 +156,16 @@ header span,
 
 .drop-target,
 .node-card {
-  border: 1px solid rgba(242, 244, 239, 0.14);
+  border: 1px solid rgb(29 29 31 / 0.1);
   border-radius: 10px;
-  background: rgba(242, 244, 239, 0.045);
+  background: rgb(255 255 255 / 0.68);
   transition: background 120ms ease, border-color 120ms ease, transform 120ms ease;
 }
 
 .drop-target.is-over,
 .node-card.is-over {
-  border-color: rgba(132, 205, 188, 0.86);
-  background: rgba(132, 205, 188, 0.12);
+  border-color: rgb(29 29 31 / 0.28);
+  background: rgb(29 29 31 / 0.055);
   transform: translateY(-1px);
 }
 
@@ -106,7 +190,7 @@ header span,
 }
 
 .create-target > span {
-  color: #f2f4ef;
+  color: #1d1d1f;
   font-weight: 720;
 }
 
@@ -123,11 +207,11 @@ header span,
   width: 100%;
   height: 34px;
   padding: 0 10px;
-  border: 1px solid rgba(132, 205, 188, 0.34);
+  border: 1px solid rgb(29 29 31 / 0.14);
   border-radius: 8px;
   outline: none;
-  background: rgba(0, 0, 0, 0.24);
-  color: #f2f4ef;
+  background: rgb(255 255 255 / 0.72);
+  color: #1d1d1f;
   font: inherit;
 }
 
@@ -175,5 +259,5 @@ button.node-card {
   height: 68px;
   object-fit: cover;
   border-radius: 7px;
-  background: rgba(255, 255, 255, 0.08);
+  background: rgb(29 29 31 / 0.06);
 }

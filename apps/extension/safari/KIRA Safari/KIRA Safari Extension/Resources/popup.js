@@ -13,10 +13,30 @@ const minHeightInput = document.getElementById('min-height');
 const formatFilterInput = document.getElementById('format-filter');
 const tagsInput = document.getElementById('capture-tags');
 const noteInput = document.getElementById('capture-note');
+const unavailableNode = document.getElementById('app-unavailable');
 let currentCapture = null;
 let imageCandidates = [];
 let selectedImageUrls = new Set();
-void loadCapture();
+void initializePopup();
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && document.body.classList.contains('is-kira-unavailable')) {
+        void initializePopup();
+    }
+});
+async function initializePopup() {
+    document.body.classList.add('is-checking-kira');
+    const available = await isKiraAvailable();
+    document.body.classList.toggle('is-kira-unavailable', !available);
+    unavailableNode.hidden = available;
+    document.body.classList.remove('is-checking-kira');
+    if (!available)
+        return;
+    await loadCapture();
+}
+async function isKiraAvailable() {
+    const response = await sendBridgeMessage({ type: 'kira-get-context' });
+    return response?.ok === true;
+}
 copyButton.addEventListener('click', async () => {
     const captures = selectedCaptures();
     if (captures.length === 0)

@@ -17,9 +17,9 @@
   --node-shadow-hover: 0 12px 34px rgb(0 0 0 / 0.3);
   --window-border: rgb(255 255 255 / 0.08);
   --glass-sidebar: rgb(12 14 13 / 0.34);
-  --glass-drawer: rgb(15 17 16 / 0.58);
+  --glass-drawer: rgb(15 17 16 / 0.88);
   --glass-content: rgb(10 12 11 / 0.34);
-  --glass-inspector: rgb(16 18 16 / 0.5);
+  --glass-inspector: rgb(16 18 16 / 0.86);
   --glass-hover: rgb(255 255 255 / 0.055);
   --glass-active: var(--accent-faint);
   --separator-hairline: rgb(255 255 255 / 0.052);
@@ -136,20 +136,18 @@ button {
   position: relative;
   z-index: 90;
   display: flex;
-  align-items: flex-end;
-  min-height: 40px;
-  padding: 8px var(--space-3) 0;
-  border-bottom: 1px solid var(--separator-hairline);
+  align-items: center;
+  min-height: 32px;
+  padding: 4px var(--space-3);
+  border-bottom: 0;
   gap: 4px;
-  background: linear-gradient(180deg, rgb(255 255 255 / 0.03), rgb(255 255 255 / 0));
-  -webkit-backdrop-filter: blur(16px);
-  backdrop-filter: blur(16px);
+  background: transparent;
 }
 
 .file-tab-bar .window-controls {
   flex: 0 0 auto;
   align-self: center;
-  margin: 0 var(--space-3) 6px 6px;
+  margin: 0 var(--space-3) 0 6px;
 }
 
 .file-tab-list {
@@ -163,6 +161,22 @@ button {
 
 .file-tab-list::-webkit-scrollbar {
   display: none;
+}
+
+.file-tab-list.is-single .file-tab {
+  min-width: 28px;
+  width: 28px;
+  padding: 0 6px;
+  border-radius: 7px;
+}
+
+.file-tab-list.is-single .file-tab-title,
+.file-tab-list.is-single .file-tab-dirty {
+  display: none;
+}
+
+.file-tab-list.is-single .file-tab-close {
+  opacity: 0.72;
 }
 
 .file-tab {
@@ -242,13 +256,55 @@ button {
   color: var(--text-main);
 }
 
+.app-splash {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: grid;
+  place-items: center;
+  background: #a7a7a7;
+  animation: splashExit 220ms ease 830ms forwards;
+}
+
+.app-splash-symbol {
+  position: relative;
+  width: 82px;
+  height: 82px;
+  animation: splashSymbolIn 420ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.app-splash-symbol img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 21px;
+  box-shadow: 0 16px 42px rgb(0 0 0 / 0.16);
+}
+
+.app-splash-sparkle {
+  position: absolute;
+  top: -9px;
+  right: -13px;
+  color: rgb(255 255 255 / 0.94);
+  filter: drop-shadow(0 3px 8px rgb(0 0 0 / 0.18));
+}
+
+@keyframes splashSymbolIn {
+  from { opacity: 0; transform: scale(0.88); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes splashExit {
+  to { opacity: 0; }
+}
+
 .file-tab-add {
   display: grid;
   width: 26px;
   height: 26px;
   flex: 0 0 auto;
   place-items: center;
-  margin: 0 0 4px 2px;
+  margin: 0 0 0 2px;
   border-radius: var(--radius-1);
   color: var(--text-soft);
   cursor: pointer;
@@ -261,22 +317,21 @@ button {
 
 .topbar {
   position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
+  top: 10px;
+  left: 92px;
+  right: 12px;
   z-index: 80;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  height: 56px;
+  height: 36px;
   gap: var(--space-3);
-  padding: 0 var(--space-4);
-  border-bottom: 1px solid var(--separator-hairline);
+  padding: 0;
+  border: 0;
   border-radius: 0;
-  background: linear-gradient(180deg, rgb(255 255 255 / 0.035), rgb(255 255 255 / 0));
-  -webkit-backdrop-filter: blur(16px);
-  backdrop-filter: blur(16px);
-  box-shadow: 0 1px 0 color-mix(in srgb, var(--text-main), transparent 92%);
+  background: transparent;
+  box-shadow: none;
+  pointer-events: none;
 }
 
 .app-shell[data-glass-state="native"] .topbar {
@@ -388,10 +443,26 @@ button {
   gap: var(--space-2);
 }
 
-.content-view-switch {
+.content-toolbar-leading {
+  grid-column: 1;
   justify-self: start;
-  margin-left: 0;
-  background: rgb(255 255 255 / 0.032);
+  pointer-events: auto;
+}
+
+.top-library-button,
+.top-inspector-button {
+  width: 34px;
+  border: 1px solid rgb(255 255 255 / 0.055);
+}
+
+.content-view-switch {
+  grid-column: 2;
+  justify-self: center;
+  background: var(--glass-inspector);
+  box-shadow: var(--panel-shadow);
+  -webkit-backdrop-filter: blur(18px) saturate(1.2);
+  backdrop-filter: blur(18px) saturate(1.2);
+  pointer-events: auto;
 }
 
 .top-inspector-button {
@@ -400,7 +471,9 @@ button {
 }
 
 .content-toolbar-actions {
+  grid-column: 3;
   justify-content: end;
+  pointer-events: auto;
 }
 
 .project-name {
@@ -515,7 +588,7 @@ button {
 
 .system-sidebar {
   position: absolute;
-  top: 56px;
+  top: 0;
   left: 0;
   bottom: 0;
   width: 80px;
@@ -631,7 +704,7 @@ button {
 }
 
 .sidebar-settings {
-  margin-top: 6px;
+  margin-top: 10px;
 }
 
 .secondary-rail-button {
@@ -728,25 +801,66 @@ button {
 
 .library-drawer-panel {
   position: absolute;
-  top: 56px;
+  top: 0;
   left: 80px;
   bottom: 0;
-  z-index: 10;
+  z-index: 50;
   width: var(--library-drawer-width, 360px);
+  overflow: visible;
 }
 
 .inspector {
   position: absolute;
-  top: 56px;
+  top: 0;
   right: 0;
   bottom: 0;
   z-index: 10;
   width: 336px;
+  overflow: visible;
+}
+
+.drawer-edge-toggle {
+  position: absolute;
+  top: 50%;
+  z-index: 12;
+  display: grid;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+  place-items: center;
+  background: color-mix(in srgb, var(--surface-inspector), transparent 8%);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.24);
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0.72;
+  transform: translateY(-50%);
+  transition: opacity 160ms ease, color 160ms ease, transform 180ms ease, background 160ms ease;
+}
+
+.drawer-edge-toggle--left {
+  right: -13px;
+}
+
+.drawer-edge-toggle--right {
+  left: -13px;
+}
+
+.drawer-edge-toggle:hover,
+.drawer-edge-toggle:focus-visible {
+  background: var(--glass-active);
+  color: var(--text-main);
+  opacity: 1;
+  transform: translateY(-50%) scale(1.08);
 }
 
 .content-region {
   position: absolute;
-  inset: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 80px;
   min-width: 0;
   min-height: 0;
   background:
@@ -764,7 +878,7 @@ button {
 
 .library-resize-handle {
   position: absolute;
-  top: 56px;
+  top: 0;
   left: calc(80px + var(--library-drawer-width, 360px));
   bottom: 0;
   z-index: 40;
@@ -1398,6 +1512,16 @@ button {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+.inbox:has(.drawer-edge-toggle),
+.inspector:has(.drawer-edge-toggle) {
+  overflow: visible;
+}
+
+.inbox:has(.drawer-edge-toggle) > :not(.drawer-edge-toggle),
+.inspector:has(.drawer-edge-toggle) > :not(.drawer-edge-toggle) {
+  min-width: 0;
 }
 
 .inbox {
@@ -2360,7 +2484,7 @@ p {
    there. Only the label chip and the corner handle opt back in. */
 .canvas-frame {
   position: absolute;
-  z-index: 0;
+  z-index: 1;
   border: 1.5px dashed var(--border-soft);
   border-radius: var(--radius-3);
   background: color-mix(in srgb, var(--text-main), transparent 97%);
@@ -2376,22 +2500,25 @@ p {
 
 .canvas-frame-label {
   position: absolute;
-  top: -13px;
+  top: -44px;
   left: 10px;
-  display: inline-flex;
+  display: grid;
   overflow: hidden;
-  max-width: calc(100% - 20px);
-  height: 26px;
-  padding: 0 10px;
+  width: max-content;
+  max-width: min(260px, calc(100% - 20px));
+  min-height: 38px;
+  padding: 5px 9px 6px;
   border: 1px solid var(--border-soft);
   border-radius: 999px;
   background: var(--node-surface-selected);
   color: var(--text-soft);
   cursor: grab;
   pointer-events: auto;
-  align-items: center;
+  align-content: center;
   font-size: 0.72rem;
   font-weight: 650;
+  gap: 1px;
+  text-align: left;
 }
 
 .canvas-frame.is-selected .canvas-frame-label {
@@ -2401,6 +2528,15 @@ p {
 
 .canvas-frame-title {
   overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.canvas-frame-description {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 0.62rem;
+  font-weight: 500;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -2428,6 +2564,7 @@ p {
   touch-action: none;
   opacity: 0;
   transition: opacity 120ms ease, background 120ms ease;
+  z-index: 4;
 }
 
 .canvas-frame:hover .canvas-frame-resize-handle,
@@ -2445,18 +2582,16 @@ p {
   left: 50%;
   z-index: 4;
   display: grid;
-  width: min(820px, calc(100% - 56px));
+  width: min(520px, calc(100% - 56px));
   max-height: calc(100% - 132px);
-  padding: 22px;
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius-3);
-  background: color-mix(in srgb, var(--surface-drawer), transparent 16%);
-  box-shadow:
-    inset 0 1px 0 color-mix(in srgb, var(--text-main), transparent 94%),
-    var(--panel-shadow);
+  padding: 26px;
+  border: 0;
+  border-radius: 20px;
+  background: color-mix(in srgb, var(--surface-drawer), transparent 7%);
+  box-shadow: 0 24px 70px rgb(0 0 0 / 0.2);
   -webkit-backdrop-filter: blur(28px) saturate(1.3);
   backdrop-filter: blur(28px) saturate(1.3);
-  gap: 18px;
+  gap: 16px;
   overflow: auto;
   transform: translate(-50%, -50%);
 }
@@ -2507,25 +2642,22 @@ p {
 
 .canvas-zero-heading {
   display: grid;
-  gap: 8px;
+  justify-items: center;
+  gap: 10px;
 }
 
-.canvas-zero-heading span {
-  display: inline-flex;
-  align-items: center;
-  color: var(--text-muted);
-  font-size: 0.72rem;
-  font-weight: 800;
-  gap: 7px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+.canvas-zero-heading img {
+  width: 42px;
+  height: 42px;
+  border-radius: 11px;
 }
 
 .canvas-zero-heading h2 {
   margin: 0;
   color: var(--text-main);
-  font-size: 1.3rem;
-  letter-spacing: 0;
+  font-size: 1.08rem;
+  font-weight: 640;
+  letter-spacing: -0.01em;
 }
 
 .canvas-template-grid {
@@ -2536,15 +2668,15 @@ p {
 
 .canvas-template-card {
   display: grid;
-  min-height: 112px;
-  padding: 14px;
+  min-height: 42px;
+  padding: 0 12px;
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-2);
   background: color-mix(in srgb, var(--surface-inset), transparent 20%);
   color: var(--text-main);
   cursor: pointer;
-  gap: 8px;
-  text-align: left;
+  place-items: center;
+  text-align: center;
 }
 
 .canvas-template-card:hover,
@@ -2555,12 +2687,6 @@ p {
 
 .canvas-template-card strong {
   font-size: 0.9rem;
-}
-
-.canvas-template-card span {
-  color: var(--text-muted);
-  font-size: 0.78rem;
-  line-height: 1.45;
 }
 
 .canvas-template-card.is-welcome {
@@ -2574,9 +2700,15 @@ p {
   gap: 10px;
 }
 
-.canvas-prompt-starter textarea {
-  min-height: 86px;
-  resize: vertical;
+.canvas-prompt-starter input {
+  min-width: 0;
+  height: 38px;
+  padding: 0 12px;
+  border: 1px solid var(--border-soft);
+  border-radius: 9px;
+  outline: none;
+  background: var(--surface-inset);
+  color: var(--text-main);
 }
 
 .edge-layer {
@@ -2622,6 +2754,13 @@ p {
   stroke-linecap: round;
   stroke-dasharray: 3.4 3.4;
   stroke-width: 1.4;
+}
+
+.edge-line--preview {
+  stroke: var(--accent-cyan);
+  stroke-dasharray: 2.5 2.5;
+  stroke-width: 1.8;
+  opacity: 0.9;
 }
 
 /* When a link or node is focused, fade unrelated edges so the active path reads cleanly. */
@@ -2732,6 +2871,28 @@ p {
   backdrop-filter: blur(12px);
 }
 
+.idea-node--sticker {
+  width: 176px;
+  min-height: 132px;
+  align-content: start;
+  padding: 16px;
+  border-color: color-mix(in srgb, var(--accent-amber), transparent 76%);
+  border-radius: 3px 12px 12px 12px;
+  background:
+    linear-gradient(145deg, rgb(255 255 255 / 0.1), transparent 34%),
+    color-mix(in srgb, var(--accent-amber), var(--bg-canvas) 72%);
+  box-shadow: 0 10px 24px rgb(0 0 0 / 0.16);
+}
+
+.idea-node--sticker small {
+  grid-column: 1 / -1;
+  padding-top: 8px;
+  color: color-mix(in srgb, var(--text-main), transparent 24%);
+  font-size: 0.72rem;
+  line-height: 1.4;
+  white-space: normal;
+}
+
 /* Calm resting state; hover lifts the card without shouting. */
 .idea-node:hover:not(.is-selected),
 .palette-node:hover:not(.is-selected),
@@ -2835,7 +2996,7 @@ p {
 .node-title-display:focus-visible,
 .node-note-display:focus-visible {
   background: var(--glass-hover);
-  box-shadow: 0 1px 0 color-mix(in srgb, var(--accent-cyan), transparent 48%);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-cyan), transparent 62%);
 }
 
 .node-meta-line {
@@ -2875,13 +3036,18 @@ p {
   display: grid;
   width: 104px;
   height: auto;
-  padding: 4px;
+  padding: 1px;
+  border-color: transparent;
   border-radius: var(--radius-2);
   background: transparent;
 }
 
 .image-node .reference-thumb img {
   object-fit: contain;
+}
+
+.image-node .reference-thumb {
+  background: transparent;
 }
 
 .node-caption {
@@ -3024,6 +3190,50 @@ p {
   background: var(--glass-active);
 }
 
+.node-link-handle {
+  position: absolute;
+  top: 50%;
+  right: -10px;
+  z-index: 4;
+  display: grid;
+  width: 20px;
+  height: 20px;
+  border: 1px solid color-mix(in srgb, var(--accent-cyan), transparent 42%);
+  border-radius: 999px;
+  place-items: center;
+  background: var(--node-surface-selected);
+  box-shadow: 0 3px 12px rgb(0 0 0 / 0.24);
+  color: var(--accent-cyan);
+  cursor: crosshair;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-50%) scale(calc(0.78 / var(--node-scale, 1)));
+  transform-origin: center;
+  transition: opacity 120ms ease, transform 160ms cubic-bezier(0.16, 1, 0.3, 1), background 120ms ease;
+}
+
+.idea-node:hover .node-link-handle,
+.image-node:hover .node-link-handle,
+.palette-node:hover .node-link-handle,
+.diagram-node:hover .node-link-handle,
+.placeholder-node:hover .node-link-handle,
+.idea-node.is-selected .node-link-handle,
+.image-node.is-selected .node-link-handle,
+.palette-node.is-selected .node-link-handle,
+.diagram-node.is-selected .node-link-handle,
+.placeholder-node.is-selected .node-link-handle {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(-50%) scale(calc(1 / var(--node-scale, 1)));
+}
+
+.node-link-handle:hover,
+.node-link-handle:focus-visible {
+  background: var(--glass-active);
+  color: var(--text-main);
+  transform: translateY(-50%) scale(calc(1.12 / var(--node-scale, 1)));
+}
+
 /* Free resize: drag from the corner. Only shown on the selected node so the
    board stays quiet, and counter-scaled so it stays a constant grab target. */
 .node-resize-handle {
@@ -3095,6 +3305,10 @@ p {
   width: 12px;
   height: 12px;
   margin: 0;
+}
+
+.graph-canvas[data-zoom-tier="far"] .node-link-handle {
+  display: grid;
 }
 
 /* Idea/palette/diagram/placeholder read as plain color chips once their text
@@ -3241,6 +3455,12 @@ p {
   transform: translate(-50%, -50%) scale(calc(var(--node-scale, 1) + 0.04));
 }
 
+.image-node.is-selected {
+  border-color: color-mix(in srgb, var(--accent-strong), transparent 62%);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-strong), transparent 48%);
+  transform: translate(-50%, -50%) scale(var(--node-scale, 1));
+}
+
 .idea-node.is-multi-selected,
 .image-node.is-multi-selected,
 .palette-node.is-multi-selected,
@@ -3262,14 +3482,12 @@ p {
   position: absolute;
   z-index: 20;
   display: grid;
-  width: 188px;
-  padding: 7px;
+  width: 164px;
+  padding: 5px;
   border: 1px solid var(--border-soft);
   border-radius: 10px;
   background: color-mix(in srgb, var(--surface-inspector), transparent 8%);
-  box-shadow:
-    inset 0 1px 0 color-mix(in srgb, var(--text-main), transparent 95%),
-    var(--panel-shadow);
+  box-shadow: 0 14px 34px rgb(0 0 0 / 0.28);
   -webkit-backdrop-filter: blur(22px) saturate(1.25);
   backdrop-filter: blur(22px) saturate(1.25);
   gap: 2px;
@@ -3278,7 +3496,7 @@ p {
 
 .node-context-heading {
   display: grid;
-  padding: 5px 7px 7px;
+  padding: 5px 7px 6px;
   border-bottom: 1px solid var(--separator-hairline);
   margin-bottom: 3px;
   gap: 1px;
@@ -3361,6 +3579,7 @@ p {
 }
 
 .canvas-tool-rail button {
+  position: relative;
   display: grid;
   width: 38px;
   height: 38px;
@@ -3370,6 +3589,33 @@ p {
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
+}
+
+.canvas-tool-rail button[data-tooltip]::after {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 50%;
+  z-index: 20;
+  padding: 5px 7px;
+  border: 1px solid var(--border-soft);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--surface-inspector), transparent 4%);
+  box-shadow: 0 8px 20px rgb(0 0 0 / 0.24);
+  color: var(--text-main);
+  content: attr(data-tooltip);
+  font-size: 0.66rem;
+  font-weight: 580;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, 4px);
+  transition: opacity 120ms ease, transform 140ms cubic-bezier(0.16, 1, 0.3, 1);
+  white-space: nowrap;
+}
+
+.canvas-tool-rail button[data-tooltip]:hover::after,
+.canvas-tool-rail button[data-tooltip]:focus-visible::after {
+  opacity: 1;
+  transform: translate(-50%, 0);
 }
 
 .canvas-tool-rail button:hover,
@@ -6220,7 +6466,7 @@ textarea {
 
 .title-input:focus-visible,
 .note-input:focus-visible {
-  box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--accent-cyan), transparent 55%);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-cyan), transparent 68%);
 }
 
 .danger-action {
