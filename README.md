@@ -1,108 +1,149 @@
-# KIRA
+<p align="center">
+  <img src="apps/desktop/src-tauri/icons/icon.png" width="96" alt="KIRA app icon" />
+</p>
 
-Visual research workspace for linking references to ideas and producing traceable outlines.
+<h1 align="center">KIRA</h1>
 
-Core loop:
+<p align="center">
+  A calm visual workspace for turning references into connected ideas, outlines, and presentations.
+</p>
 
-```txt
-Import references -> create ideas -> link references to ideas -> tag the collection -> create outline
-```
+<p align="center">
+  <a href="https://github.com/vietx2811/kira/releases/tag/v1.0"><strong>Download KIRA 1.0</strong></a>
+  ·
+  <a href="#quick-start">Quick start</a>
+  ·
+  <a href="#build-from-source">Build from source</a>
+</p>
 
-KIRA is a standalone desktop app first. Eagle can become an import/sync adapter later, but KIRA owns the idea-reference graph.
+![KIRA visual research workspace](docs/assets/workspace-overview.png)
 
-## Apps
+KIRA brings references, thinking, structure, and presentation into one local-first macOS app. Import visual material, arrange it on a flexible canvas, connect evidence to ideas, then move the same project into 3D, Slides, or Outline without rebuilding the work.
 
-```txt
-apps/
-  desktop/      Tauri 2 + React prototype
-  extension/    Chrome MV3 capture helper
-```
+## Features
 
-## Run
+### Visual research canvas
+
+- Import images, folders, URLs, screenshots, and Eagle-style reference folders.
+- Arrange ideas, references, frames, palettes, diagrams, placeholders, and stickers.
+- Create links directly from node handles with smooth, readable paths.
+- Move, resize, group, crop, tag, and inspect objects without leaving the canvas.
+- Zoom with the wheel or trackpad and pan with the middle mouse button.
+
+### One project, four views
+
+- **Canvas** — organize references and build the idea graph.
+- **3D** — explore relationships spatially.
+- **Slides** — turn the current research structure into a presentation deck.
+- **Outline** — review strong ideas, evidence gaps, and narrative order.
+
+### Browser capture
+
+- Capture pages and images from Chrome or Safari.
+- Discover multiple images on the current page and filter by dimensions or format.
+- Send captures to a selected KIRA node or keep them in the inbox.
+- Show a clear “Open Kira App” state when the desktop app is not running.
+- Safari Extension is embedded directly inside `KIRA.app`.
+
+### Local-first workflow
+
+- Native `.kira` project packages backed by normalized SQLite data.
+- Local thumbnails, image fingerprints, duplicate detection, and recovery states.
+- Optional Apple Vision OCR, Apple Natural Language, and Foundation Models helpers.
+- Optional Codex, Claude Code, OpenAI, or Anthropic connections.
+- Version checkpoints and branches for exploring directions without losing earlier work.
+
+## Quick start
+
+KIRA 1.0 is currently released for Apple Silicon Macs.
+
+1. Download [`KIRA-1.0-macos-arm64.zip`](https://github.com/vietx2811/kira/releases/download/v1.0/KIRA-1.0-macos-arm64.zip).
+2. Extract the archive and open Terminal in the extracted folder.
+3. Sign the app for your current Mac:
+
+   ```bash
+   chmod +x sign-kira.sh
+   ./sign-kira.sh
+   ```
+
+4. Move `KIRA.app` into `/Applications`.
+5. Open KIRA and choose **Open the guided board** for a short interactive introduction.
+
+The included script creates an ad-hoc signature for use on the machine that runs it. It also supports a Developer ID identity; see [`packaging/macos/HUONG-DAN.md`](packaging/macos/HUONG-DAN.md). The public 1.0 release is not notarized by Apple.
+
+### Basic workflow
+
+1. Create a board or open the guided example.
+2. Add references from the Library drawer or paste them onto the canvas.
+3. Create an idea node and drag from a node handle to connect supporting evidence.
+4. Select any object to open its properties in the Inspector.
+5. Switch between Canvas, 3D, Slides, and Outline as the project develops.
+6. Save the project as a `.kira` package or export the resulting outline, contact sheet, or presentation.
+
+### Enable Safari capture
+
+1. Install and open the current `KIRA.app` once.
+2. Open **Safari → Settings → Extensions**.
+3. Enable **KIRA** and allow access to the sites where capture is needed.
+
+### Enable Chrome capture
+
+1. Open **KIRA Settings → Capture → Open bundled dist**.
+2. Open `chrome://extensions`.
+3. Enable **Developer mode**, choose **Load unpacked**, and select the folder KIRA opened.
+
+When working from source, build the extension and load `apps/extension/dist` instead.
+
+## Build from source
+
+Requirements: Node.js, pnpm, Rust, Xcode, and the Tauri prerequisites for macOS.
 
 ```bash
 pnpm install
 pnpm dev
 ```
 
-Desktop shell:
+Run the native desktop shell:
 
 ```bash
 pnpm --filter @kira/desktop tauri dev
 ```
 
-Build gates:
+Build the macOS app and embedded Safari Extension:
 
 ```bash
-pnpm build
-pnpm --filter @kira/desktop tauri build --debug
+pnpm --filter @kira/desktop tauri build
 ```
 
-Chrome extension build:
+Build only the Chrome/Safari web-extension resources:
 
 ```bash
 pnpm --filter @kira/extension build
 ```
 
-Load `apps/extension/dist` as an unpacked Chrome extension.
+## Repository
 
-The debug desktop bundle is written to:
-
-```txt
-apps/desktop/src-tauri/target/debug/bundle/macos/KIRA.app
+```text
+apps/
+  desktop/       Tauri 2 + React desktop app
+  extension/     Chrome MV3 and Safari Web Extension
+  codex-helper/  Local Codex integration helper
+packaging/
+  macos/         Self-signing script and release instructions
+docs/            Architecture, research, and design documentation
 ```
-
-## Current State
-
-- React/Vite workflow prototype
-- Tauri desktop shell scaffold
-- Library / Canvas / Inspector / Outline
-- local image, native folder, pasted image, pasted URL, and native screenshot capture
-- native folder import can read Eagle-style item folders and map item metadata into KIRA references
-- Tauri can import the first page of local Eagle Web API V2 items when Eagle is running
-- Chrome extension helper captures image/page references and sends them directly to the running KIRA app
-- extension popup can discover page images, select multiple references, and send them as individual captures
-- clipboard payload capture remains as fallback when the app is unavailable
-- duplicate reference skip through persisted fingerprints and local perceptual hashes
-- idea CRUD and link CRUD
-- Library search, tag filters, density toggle, multi-select, batch tag
-- Library rows are virtualized for larger reference sets
-- tag add/remove editing in Inspector
-- tag suggestions can carry source, confidence, and status metadata while older plain suggestions remain readable
-- tag suggestions can be accepted or rejected directly in Inspector
-- local deterministic taxonomy adds palette, aspect, brightness, and color-family tags for image captures/imports
-- Apple Vision OCR can add local text-derived tag suggestions for data-backed images in the Tauri app
-- Apple Vision OCR uses a bundled sidecar helper in the `.app`, with Swift script fallback for development machines
-- OCR suggestions are refined locally with a bundled Apple Natural Language helper when available
-- Apple Foundation Models availability and tag refinement use a bundled sidecar helper in the `.app`
-- selected references can be linked directly to the selected idea
-- relation picker applies to drag/drop links and selected-reference linking
-- graph nodes can be repositioned directly and saved with the project
-- graph canvas has scope and relation filters for larger reference sets
-- graph canvas caps visible nodes for larger libraries while preserving the current selection neighborhood
-- dev builds expose `window.__kiraDev` for loading 120/300-reference benchmark fixtures and reading Canvas metrics
-- graph canvas has compact zoom and reset controls, with background panning
-- graph canvas has an Edit / Discover mode; Discover clusters references around idea support and shows inferred weak-support edges without saving them as truth
-- Discover mode can filter all references, candidate support, or open references
-- project snapshot save/load through browser JSON fallback
-- Tauri package save/load in app data
-- native New, Open, and Save As for `.kira` project packages
-- normalized SQLite tables for ideas, references, links, tags, and tag suggestions
-- schema migration ledger in SQLite
-- outline drafts and reference contact sheets can export to static files, with native exports written to `exports/`
-- persisted reference fingerprints and perceptual hashes for duplicate detection
-- near-duplicate candidates appear in project diagnostics through local perceptual hash distance
-- persisted optional reference origin metadata for adapter imports
-- reference thumbnails show a recoverable missing state if an image path or URL fails
-- imported data URL images are copied into `images/`
-- generated PNG thumbnails are written into `thumbs/`
-
-Persistence is not complete yet. The next step is graph engine evaluation for larger discovery views once real 100-300 node libraries are imported.
 
 ## Documentation
 
-- [Project Plan](./docs/PROJECT_PLAN.md)
-- [Tech Stack Research](./docs/RESEARCH.md)
-- [Architecture](./docs/ARCHITECTURE.md)
-- [Database Schema](./docs/DATABASE.md)
-- [UI Design System](./docs/UI_DESIGN.md)
+- [Architecture](docs/ARCHITECTURE.md)
+- [Database schema](docs/DATABASE.md)
+- [UI design system](docs/UI_DESIGN.md)
+- [Moodboard UX research](docs/RESEARCH_MOODBOARD_UX.md)
+- [macOS signing guide](packaging/macos/HUONG-DAN.md)
+
+## Release information
+
+- Version: **1.0**
+- Developer: **VX Studio**
+- Bundle identifier: `vxstudio.kira`
+- Platform: macOS Apple Silicon
