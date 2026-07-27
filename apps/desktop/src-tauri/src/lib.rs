@@ -1,7 +1,7 @@
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use image::{GenericImageView, ImageFormat};
 #[cfg(target_os = "macos")]
-use objc2_app_kit::{NSColor, NSView, NSWindow};
+use objc2_app_kit::{NSColor, NSWindow};
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -26,8 +26,6 @@ const MIGRATION_REFERENCE_FINGERPRINT: &str = "003_reference_fingerprint";
 const MIGRATION_REFERENCE_PERCEPTUAL_HASH: &str = "004_reference_perceptual_hash";
 const MIGRATION_REFERENCE_ORIGIN: &str = "005_reference_origin";
 const MIGRATION_TAG_SUGGESTION_META: &str = "006_tag_suggestion_meta";
-#[cfg(target_os = "macos")]
-const MACOS_WINDOW_CORNER_RADIUS: f64 = 22.0;
 const MIGRATION_OUTLINE_DRAFTS: &str = "007_outline_drafts";
 const MIGRATION_GRAPH_V2_FIELDS: &str = "008_graph_v2_fields";
 const CAPTURE_SERVER_ADDR: &str = "127.0.0.1:47653";
@@ -3923,20 +3921,8 @@ fn project_dir(app: &AppHandle) -> Result<PathBuf, String> {
 }
 
 #[cfg(target_os = "macos")]
-unsafe fn apply_native_corner_radius(view: &NSView) {
-    view.setWantsLayer(true);
-    if let Some(layer) = view.layer() {
-        layer.setCornerRadius(MACOS_WINDOW_CORNER_RADIUS);
-        layer.setMasksToBounds(true);
-        layer.setOpaque(false);
-        layer.setBackgroundColor(None);
-    }
-}
-
-#[cfg(target_os = "macos")]
 fn configure_native_macos_window(window: &tauri::WebviewWindow) -> Result<(), String> {
     let ns_window = window.ns_window().map_err(|error| error.to_string())?;
-    let ns_view = window.ns_view().map_err(|error| error.to_string())?;
 
     unsafe {
         let ns_window = &*(ns_window.cast::<NSWindow>());
@@ -3944,17 +3930,6 @@ fn configure_native_macos_window(window: &tauri::WebviewWindow) -> Result<(), St
         ns_window.setBackgroundColor(Some(&NSColor::clearColor()));
         ns_window.setTitlebarAppearsTransparent(true);
         ns_window.setHasShadow(true);
-
-        let ns_view = &*(ns_view.cast::<NSView>());
-        apply_native_corner_radius(ns_view);
-
-        if let Some(parent_view) = ns_view.superview() {
-            apply_native_corner_radius(&parent_view);
-        }
-
-        if let Some(content_view) = ns_window.contentView() {
-            apply_native_corner_radius(&content_view);
-        }
     }
 
     Ok(())

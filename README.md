@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/vietx2811/kira/releases/tag/v1.0"><strong>Download KIRA 1.0</strong></a>
+  <a href="https://github.com/vietx2811/kira/releases/tag/v1.0.1"><strong>Download KIRA 1.0.1</strong></a>
   ·
   <a href="#quick-start">Quick start</a>
   ·
@@ -55,9 +55,9 @@ KIRA brings references, thinking, structure, and presentation into one local-fir
 
 ## Quick start
 
-KIRA 1.0 is currently released for Apple Silicon Macs.
+KIRA 1.0.1 is currently released for Apple Silicon Macs.
 
-1. Download [`KIRA-1.0-macos-arm64.zip`](https://github.com/vietx2811/kira/releases/download/v1.0/KIRA-1.0-macos-arm64.zip).
+1. Download [`KIRA-1.0.1-macos-arm64.zip`](https://github.com/vietx2811/kira/releases/download/v1.0.1/KIRA-1.0.1-macos-arm64.zip).
 2. Extract the archive and open Terminal in the extracted folder.
 3. Sign the app for your current Mac:
 
@@ -69,7 +69,7 @@ KIRA 1.0 is currently released for Apple Silicon Macs.
 4. Move `KIRA.app` into `/Applications`.
 5. Open KIRA and choose **Open the guided board** for a short interactive introduction.
 
-The included script creates an ad-hoc signature for use on the machine that runs it. It also supports a Developer ID identity; see [`packaging/macos/HUONG-DAN.md`](packaging/macos/HUONG-DAN.md). The public 1.0 release is not notarized by Apple.
+The included script creates an ad-hoc signature for use on the machine that runs it. It also supports a Developer ID identity; see [`packaging/macos/HUONG-DAN.md`](packaging/macos/HUONG-DAN.md). The public 1.0.1 release is not notarized by Apple.
 
 ### Basic workflow
 
@@ -143,7 +143,7 @@ docs/            Architecture, research, and design documentation
 
 ## Release information
 
-- Version: **1.0**
+- Version: **1.0.1**
 - Developer: **VX Studio**
 - Bundle identifier: `vxstudio.kira`
 - Platform: macOS Apple Silicon

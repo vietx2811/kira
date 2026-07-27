@@ -1364,7 +1364,7 @@ const projectColorFormulas: Array<{ id: ProjectColorFormula; label: string; desc
 
 function defaultProjectMetadata(): ProjectMetadata {
   return {
-    title: 'KIRA Project',
+    title: 'Untitled',
     description: 'Creative workspace file.',
     author: '',
     kind: 'moodboard',
@@ -1551,7 +1551,9 @@ function FileWorkspace({
   // must stay live so the tab bar reflects work happening off-screen.
   useEffect(() => {
     onFileMetaChange(fileId, {
-      title: projectMetadata.title.trim() || 'Untitled',
+      title: projectPackage?.path
+        ? projectFileDisplayName(projectPackage.path)
+        : projectMetadata.title.trim() || 'Untitled',
       isDirty: projectHash !== lastSavedHash,
       path: projectPackage?.path ?? null,
     })
@@ -1617,22 +1619,22 @@ function FileWorkspace({
       setGlassStatus('browser')
       return
     }
-    void getCurrentWindow().setEffects({
-      effects: [
-        Effect.UnderWindowBackground,
-        Effect.HeaderView,
-        Effect.Mica,
-        Effect.Blur,
-      ],
-      state: EffectState.FollowsWindowActiveState,
-      radius: 14,
-      color: { red: 26, green: 28, blue: 26, alpha: 82 },
-    }).then(() => {
-      setGlassStatus('native')
-    }).catch(() => {
-      setGlassStatus('fallback')
-      // Window effects are platform-dependent; transparent CSS remains the fallback.
-    })
+    const appWindow = getCurrentWindow()
+    // KIRA owns its chrome appearance. Leaving this unset makes macOS flip
+    // native controls and vibrancy whenever the system appearance changes.
+    void appWindow.setTheme('dark').catch(() => undefined)
+    void appWindow
+      .setEffects({
+        effects: [Effect.UnderWindowBackground],
+        state: EffectState.FollowsWindowActiveState,
+      })
+      .then(() => {
+        setGlassStatus('native')
+      })
+      .catch(() => {
+        setGlassStatus('fallback')
+        // Window effects are platform-dependent; transparent CSS remains the fallback.
+      })
   }, [isActive])
 
   const outlineSections = useMemo(
@@ -4643,15 +4645,25 @@ function FileWorkspace({
   }, [activeView, projectContentHash])
 
   async function saveProject() {
-    window.localStorage.setItem(storageKey, projectHash)
-
     if (isTauriRuntime()) {
-      const savedPackage = await saveNativeProjectPackage(projectHash, projectPackage?.path)
-      setProjectPackage(savedPackage)
-      setLastSavedHash(projectHash)
+      if (!projectPackage?.path) {
+        await saveProjectAs()
+        return
+      }
+
+      try {
+        const savedPackage = await saveNativeProjectPackage(projectHash, projectPackage.path)
+        window.localStorage.setItem(storageKey, projectHash)
+        setProjectPackage(savedPackage)
+        setLastSavedHash(projectHash)
+        setLibraryStatus('Project saved')
+      } catch (error) {
+        setLibraryStatus(error instanceof Error ? `Save failed: ${error.message}` : 'Save failed')
+      }
       return
     }
 
+    window.localStorage.setItem(storageKey, projectHash)
     setLastSavedHash(projectHash)
     downloadProject(projectSnapshot)
   }
@@ -4662,16 +4674,21 @@ function FileWorkspace({
       return
     }
 
-    const selectedPath = await save({
-      defaultPath: projectPackage?.path ?? 'KIRA Project.kira',
-      filters: [{ name: 'KIRA Project', extensions: ['kira'] }],
-    })
-    if (!selectedPath) return
+    try {
+      const selectedPath = await save({
+        defaultPath: projectPackage?.path ?? projectFileDefaultName(projectMetadata.title),
+        filters: [{ name: 'KIRA Project', extensions: ['kira'] }],
+      })
+      if (!selectedPath) return
 
-    window.localStorage.setItem(storageKey, projectHash)
-    const savedPackage = await saveNativeProjectPackage(projectHash, selectedPath)
-    setProjectPackage(savedPackage)
-    setLastSavedHash(projectHash)
+      const savedPackage = await saveNativeProjectPackage(projectHash, selectedPath)
+      window.localStorage.setItem(storageKey, projectHash)
+      setProjectPackage(savedPackage)
+      setLastSavedHash(projectHash)
+      setLibraryStatus('Project saved')
+    } catch (error) {
+      setLibraryStatus(error instanceof Error ? `Save failed: ${error.message}` : 'Save failed')
+    }
   }
 
   async function saveProjectAsNewVersion() {
@@ -4710,6 +4727,8 @@ function FileWorkspace({
   // full-window and no longer shrinks to make room for them.
   const canvasLeftInset = 80 + (isLibraryCollapsed ? 0 : libraryDrawerWidth)
   const canvasRightInset = isInspectorCollapsed ? 0 : 336
+  const canvasOverlayLeftInset = isLibraryCollapsed ? 0 : libraryDrawerWidth
+  const canvasOverlayShift = (canvasOverlayLeftInset - canvasRightInset) / 2
 
   // Every hook above has already run, so bailing out here costs nothing but
   // still unmounts the heavy tree below (GraphCanvas, the WebGL 3D view,
@@ -4726,6 +4745,8 @@ function FileWorkspace({
           '--library-drawer-width': `${libraryDrawerWidth}px`,
           '--canvas-left-inset': `${canvasLeftInset}px`,
           '--canvas-right-inset': `${canvasRightInset}px`,
+          '--canvas-overlay-left-inset': `${canvasOverlayLeftInset}px`,
+          '--canvas-overlay-shift': `${canvasOverlayShift}px`,
         } as React.CSSProperties}
       >
         <TopBar
@@ -4792,6 +4813,16 @@ function FileWorkspace({
           onToggleCollapsed={() => setIsLibraryCollapsed((current) => !current)}
         />
         {!isLibraryCollapsed && <div className="library-resize-handle" aria-hidden="true" onPointerDown={startLibraryDrawerResize} />}
+        <div
+          className="window-resize-handle window-resize-handle--south-east"
+          aria-hidden="true"
+          onPointerDown={(event) => {
+            if (!isTauriRuntime()) return
+            event.preventDefault()
+            event.stopPropagation()
+            void getCurrentWindow().startResizeDragging('SouthEast')
+          }}
+        />
         <section className="content-region">
           <div className="view-region">
             {activeView === 'Outline' ? (
@@ -5059,8 +5090,27 @@ type OpenFile = {
 // only re-fires on an actual change, not on every unrelated App render.
 const EMPTY_NODE_TRANSFERS: NodeTransferPayload[] = []
 
-function createUntitledFile(id: string): OpenFile {
-  return { id, title: 'Untitled', isDirty: false, path: null, initialSnapshot: null, initialPackage: null }
+function projectFileDisplayName(projectPath: string) {
+  const filename = projectPath.split(/[\\/]/).filter(Boolean).at(-1) ?? ''
+  return filename.replace(/\.kira$/i, '').trim() || 'Untitled'
+}
+
+function projectFileDefaultName(title: string) {
+  const safeTitle = title.trim().replace(/[/:]/g, '-').trim() || 'Untitled'
+  return `${safeTitle}.kira`
+}
+
+function nextUntitledFileTitle(files: OpenFile[]) {
+  const usedTitles = new Set(files.map((file) => file.title.trim().toLocaleLowerCase()))
+  if (!usedTitles.has('untitled')) return 'Untitled'
+
+  let suffix = 2
+  while (usedTitles.has(`untitled ${suffix}`)) suffix += 1
+  return `Untitled ${suffix}`
+}
+
+function createUntitledFile(id: string, title = 'Untitled', initialSnapshot: ProjectSnapshot | null = null): OpenFile {
+  return { id, title, isDirty: false, path: null, initialSnapshot, initialPackage: null }
 }
 
 /**
@@ -5113,28 +5163,15 @@ function App() {
     })
   }, [])
 
-  async function requestNewFile() {
-    const snapshot = createBlankProjectSnapshot()
+  function requestNewFile() {
     const id = makeFileId()
 
-    if (!isTauriRuntime()) {
-      setFiles((current) => [...current, { ...createUntitledFile(id), initialSnapshot: snapshot }])
-      setActiveFileId(id)
-      downloadProject(snapshot)
-      return
-    }
-
-    const selectedPath = await save({
-      defaultPath: 'Untitled.kira',
-      filters: [{ name: 'KIRA Project', extensions: ['kira'] }],
+    setFiles((current) => {
+      const title = nextUntitledFileTitle(current)
+      const snapshot = createBlankProjectSnapshot()
+      snapshot.project = { ...snapshot.project, title }
+      return [...current, createUntitledFile(id, title, snapshot)]
     })
-    if (!selectedPath) return
-
-    const savedPackage = await saveNativeProjectPackage(JSON.stringify(snapshot), selectedPath)
-    setFiles((current) => [
-      ...current,
-      { id, title: snapshot.project.title.trim() || 'Untitled', isDirty: false, path: selectedPath, initialSnapshot: snapshot, initialPackage: savedPackage },
-    ])
     setActiveFileId(id)
   }
 
@@ -5166,7 +5203,7 @@ function App() {
     }
     setFiles((current) => [
       ...current,
-      { id, title: snapshot.project.title.trim() || 'Untitled', isDirty: false, path: selectedPath, initialSnapshot: snapshot, initialPackage },
+      { id, title: projectFileDisplayName(selectedPath), isDirty: false, path: selectedPath, initialSnapshot: snapshot, initialPackage },
     ])
     setActiveFileId(id)
   }
@@ -5468,10 +5505,18 @@ function SystemSidebar({
             key={mode}
             className={!isLibraryCollapsed && libraryPanelMode === mode ? 'sidebar-view-button is-active' : 'sidebar-view-button'}
             type="button"
-            aria-label={isLibraryCollapsed ? `Open ${label}` : label}
+            aria-label={
+              !isLibraryCollapsed && libraryPanelMode === mode
+                ? `Close ${label}`
+                : `Open ${label}`
+            }
             aria-pressed={!isLibraryCollapsed && libraryPanelMode === mode}
             title={label}
             onClick={() => {
+              if (!isLibraryCollapsed && libraryPanelMode === mode) {
+                onToggleLibrary()
+                return
+              }
               onLibraryPanelModeChange(mode)
               if (isLibraryCollapsed) onToggleLibrary()
             }}

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "KIRA",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Capture to KIRA.",
   "permissions": ["activeTab", "contextMenus", "clipboardWrite", "scripting", "storage"],
   "host_permissions": ["http://127.0.0.1:47653/*"],

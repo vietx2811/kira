@@ -1,4 +1,4 @@
-# KIRA 1.0 cho macOS
+# KIRA 1.0.1 cho macOS
 
 Nhà phát triển: **VX Studio**
 

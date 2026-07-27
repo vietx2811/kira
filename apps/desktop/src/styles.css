@@ -1,5 +1,5 @@
 :root {
-  color-scheme: dark;
+  color-scheme: only dark;
   --bg-base: #0d0e0d;
   --bg-canvas: #101211;
   --surface-1: #151716;
@@ -18,6 +18,7 @@
   --window-border: rgb(255 255 255 / 0.08);
   --glass-sidebar: rgb(12 14 13 / 0.34);
   --glass-drawer: rgb(15 17 16 / 0.88);
+  --glass-chrome: rgb(10 12 11 / 0.34);
   --glass-content: rgb(10 12 11 / 0.34);
   --glass-inspector: rgb(16 18 16 / 0.86);
   --glass-hover: rgb(255 255 255 / 0.055);
@@ -99,27 +100,21 @@ button {
   grid-template-rows: auto minmax(0, 1fr);
   height: 100dvh;
   padding: 0;
-  border: 1px solid var(--window-border);
+  border: 0;
   overflow: hidden;
-  background:
-    linear-gradient(180deg, rgb(255 255 255 / 0.065), rgb(255 255 255 / 0.018)),
-    var(--glass-content);
-  -webkit-backdrop-filter: blur(30px) saturate(1.28);
-  backdrop-filter: blur(30px) saturate(1.28);
-  box-shadow: var(--shell-shadow);
+  background: transparent;
+  box-shadow: none;
 }
 
 .app-shell[data-glass-state="native"] {
-  background:
-    linear-gradient(180deg, rgb(255 255 255 / 0.055), rgb(255 255 255 / 0.012)),
-    var(--glass-content);
+  background: transparent;
 }
 
 .app-shell[data-glass-state="fallback"],
 .app-shell[data-glass-state="browser"] {
   background:
     linear-gradient(180deg, rgb(255 255 255 / 0.035), rgb(255 255 255 / 0.01)),
-    var(--glass-content);
+    rgb(13 14 13 / 0.96);
 }
 
 .app-shell[data-color-mode="light"] {
@@ -137,11 +132,13 @@ button {
   z-index: 90;
   display: flex;
   align-items: center;
-  min-height: 32px;
-  padding: 4px var(--space-3);
+  min-height: 42px;
+  padding: 5px var(--space-3);
   border-bottom: 0;
   gap: 4px;
-  background: transparent;
+  background: var(--glass-chrome);
+  -webkit-backdrop-filter: blur(28px) saturate(1.22);
+  backdrop-filter: blur(28px) saturate(1.22);
 }
 
 .file-tab-bar .window-controls {
@@ -153,30 +150,14 @@ button {
 .file-tab-list {
   display: flex;
   overflow-x: auto;
-  align-items: flex-end;
+  align-items: center;
   min-width: 0;
-  gap: 2px;
+  gap: 4px;
   scrollbar-width: none;
 }
 
 .file-tab-list::-webkit-scrollbar {
   display: none;
-}
-
-.file-tab-list.is-single .file-tab {
-  min-width: 28px;
-  width: 28px;
-  padding: 0 6px;
-  border-radius: 7px;
-}
-
-.file-tab-list.is-single .file-tab-title,
-.file-tab-list.is-single .file-tab-dirty {
-  display: none;
-}
-
-.file-tab-list.is-single .file-tab-close {
-  opacity: 0.72;
 }
 
 .file-tab {
@@ -186,11 +167,10 @@ button {
   align-items: center;
   min-width: 96px;
   max-width: 200px;
-  height: 32px;
+  height: 30px;
   padding: 0 8px 0 10px;
-  border: 1px solid transparent;
-  border-bottom: 0;
-  border-radius: var(--radius-2) var(--radius-2) 0 0;
+  border: 0;
+  border-radius: 9px;
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
@@ -200,23 +180,23 @@ button {
 
 .file-tab:hover {
   color: var(--text-main);
-  background: rgb(255 255 255 / 0.035);
+  background: rgb(255 255 255 / 0.055);
 }
 
 .file-tab.is-active {
-  border-color: var(--border-soft);
-  background: var(--glass-content);
+  background: rgb(255 255 255 / 0.09);
   color: var(--text-main);
-  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text-main), transparent 92%);
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.16),
+    inset 0 1px 0 rgb(255 255 255 / 0.08);
 }
 
 /* Dragging a node up from the canvas hovers this instead of clicking it —
    the highlight is the only feedback until release actually commits the move. */
 .file-tab.is-drop-target {
-  border-color: var(--accent-cyan);
   background: var(--accent-faint);
   color: var(--text-main);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-cyan), transparent 40%);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-cyan), transparent 40%);
 }
 
 .file-tab-dirty {
@@ -318,8 +298,8 @@ button {
 .topbar {
   position: absolute;
   top: 10px;
-  left: 92px;
-  right: 12px;
+  left: calc(var(--canvas-left-inset, 80px) + 12px);
+  right: calc(var(--canvas-right-inset, 0px) + 12px);
   z-index: 80;
   display: grid;
   grid-template-columns: 1fr auto 1fr;
@@ -458,7 +438,7 @@ button {
 .content-view-switch {
   grid-column: 2;
   justify-self: center;
-  background: var(--glass-inspector);
+  background: var(--glass-chrome);
   box-shadow: var(--panel-shadow);
   -webkit-backdrop-filter: blur(18px) saturate(1.2);
   backdrop-filter: blur(18px) saturate(1.2);
@@ -468,6 +448,10 @@ button {
 .top-inspector-button {
   width: 34px;
   border: 1px solid rgb(255 255 255 / 0.055);
+  background: var(--glass-chrome);
+  box-shadow: var(--panel-shadow);
+  -webkit-backdrop-filter: blur(18px) saturate(1.2);
+  backdrop-filter: blur(18px) saturate(1.2);
 }
 
 .content-toolbar-actions {
@@ -600,15 +584,11 @@ button {
   min-width: 0;
   min-height: 0;
   padding: 12px 10px 14px;
-  border-right: 1px solid var(--separator-hairline);
-  background:
-    linear-gradient(180deg, rgb(255 255 255 / 0.055), rgb(255 255 255 / 0.012)),
-    var(--glass-sidebar);
-  box-shadow:
-    inset -1px 0 0 color-mix(in srgb, var(--text-main), transparent 92%),
-    inset 1px 0 0 color-mix(in srgb, var(--bg-canvas), transparent 90%);
-  -webkit-backdrop-filter: blur(32px) saturate(1.32);
-  backdrop-filter: blur(32px) saturate(1.32);
+  border-right: 0;
+  background: var(--glass-chrome);
+  box-shadow: none;
+  -webkit-backdrop-filter: blur(28px) saturate(1.22);
+  backdrop-filter: blur(28px) saturate(1.22);
 }
 
 .system-sidebar-top {
@@ -863,16 +843,16 @@ button {
   left: 80px;
   min-width: 0;
   min-height: 0;
-  background:
-    radial-gradient(circle at 40% 0%, color-mix(in srgb, var(--accent-cyan), transparent 94%), transparent 34%),
-    var(--glass-content);
+  background: transparent;
 }
 
 .view-region {
   position: absolute;
-  inset: 0;
+  inset: 6px;
   min-width: 0;
   min-height: 0;
+  border: 0;
+  border-radius: 16px;
   overflow: hidden;
 }
 
@@ -901,6 +881,40 @@ button {
 
 .library-resize-handle:hover::after {
   background: color-mix(in srgb, var(--accent-cyan), transparent 45%);
+}
+
+.window-resize-handle {
+  position: absolute;
+  z-index: 220;
+  width: 22px;
+  height: 22px;
+  background: transparent;
+  touch-action: none;
+}
+
+.window-resize-handle--south-east {
+  right: 0;
+  bottom: 0;
+  cursor: nwse-resize;
+}
+
+.window-resize-handle--south-east::after {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  width: 7px;
+  height: 7px;
+  border-right: 1px solid color-mix(in srgb, var(--text-main), transparent 78%);
+  border-bottom: 1px solid color-mix(in srgb, var(--text-main), transparent 78%);
+  border-radius: 0 0 3px;
+  content: "";
+  opacity: 0.5;
+  transition: border-color 120ms ease, opacity 120ms ease;
+}
+
+.window-resize-handle--south-east:hover::after {
+  border-color: var(--text-soft);
+  opacity: 0.9;
 }
 
 .onboarding-backdrop {
@@ -1526,14 +1540,8 @@ button {
 
 .inbox {
   border-right: 0;
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--text-main), transparent 96%), transparent),
-    var(--glass-drawer);
-  box-shadow:
-    inset -1px 0 0 var(--separator-hairline),
-    inset 1px 0 0 color-mix(in srgb, var(--text-main), transparent 96%);
-  -webkit-backdrop-filter: blur(36px) saturate(1.36);
-  backdrop-filter: blur(36px) saturate(1.36);
+  background: var(--glass-chrome);
+  box-shadow: inset -1px 0 0 var(--separator-hairline);
 }
 
 .inspector {
@@ -2417,7 +2425,7 @@ p {
   min-height: 0;
   height: 100%;
   border: 0;
-  border-radius: var(--radius-3);
+  border-radius: inherit;
   background: var(--bg-canvas);
   overflow: hidden;
 }
@@ -2579,10 +2587,13 @@ p {
 .canvas-zero-state {
   position: absolute;
   top: 50%;
-  left: 50%;
+  left: calc(50% + var(--canvas-overlay-shift, 0px));
   z-index: 4;
   display: grid;
-  width: min(520px, calc(100% - 56px));
+  width: min(
+    520px,
+    calc(100% - var(--canvas-overlay-left-inset, 0px) - var(--canvas-right-inset, 0px) - 56px)
+  );
   max-height: calc(100% - 132px);
   padding: 26px;
   border: 0;
@@ -3380,7 +3391,7 @@ p {
 .ai-node-panel {
   position: absolute;
   top: 14px;
-  right: 14px;
+  right: calc(var(--canvas-right-inset, 0px) + 14px);
   z-index: 9;
   display: grid;
   width: 330px;
@@ -3641,9 +3652,9 @@ p {
    The top-right corner belongs to the app chrome only. */
 .canvas-bottom-bar {
   position: absolute;
-  right: var(--space-4);
+  right: calc(var(--canvas-right-inset, 0px) + var(--space-4));
   bottom: var(--space-4);
-  left: var(--space-4);
+  left: calc(var(--canvas-overlay-left-inset, 0px) + var(--space-4));
   z-index: 5;
   display: flex;
   align-items: center;
@@ -3721,7 +3732,7 @@ p {
 .graph-tools-drawer {
   position: absolute;
   bottom: 60px;
-  left: var(--space-4);
+  left: calc(var(--canvas-overlay-left-inset, 0px) + var(--space-4));
   z-index: 6;
   display: grid;
   grid-template-columns: repeat(2, minmax(118px, 1fr));

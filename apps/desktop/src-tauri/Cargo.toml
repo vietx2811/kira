@@ -1,6 +1,6 @@
 [package]
 name = "kira-desktop"
-version = "1.0.0"
+version = "1.0.1"
 description = "KIRA desktop shell"
 authors = ["VX Studio"]
 edition = "2021"

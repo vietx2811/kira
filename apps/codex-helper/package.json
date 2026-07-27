@@ -1,7 +1,7 @@
 {
   "name": "@kira/codex-helper",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.0.1",
   "type": "module",
   "bin": { "kira-codex-helper": "src/index.ts" },
   "scripts": {

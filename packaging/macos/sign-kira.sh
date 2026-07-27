@@ -24,16 +24,23 @@ if [[ ! -d "$APPEX" || ! -f "$ENTITLEMENTS" ]]; then
   exit 1
 fi
 
-if [[ "${KIRA_KEEP_QUARANTINE:-0}" != "1" ]]; then
-  xattr -dr com.apple.quarantine "$APP_PATH" 2>/dev/null || true
+# Finder, browsers, and non-system volumes can attach resource-fork/Finder
+# metadata that makes codesign reject otherwise valid nested executables.
+# Clear those attributes before signing; optionally preserve quarantine only
+# for workflows that explicitly need it.
+if [[ "${KIRA_KEEP_QUARANTINE:-0}" == "1" ]]; then
+  xattr -dr com.apple.FinderInfo "$APP_PATH" 2>/dev/null || true
+  xattr -dr com.apple.ResourceFork "$APP_PATH" 2>/dev/null || true
+else
+  xattr -cr "$APP_PATH" 2>/dev/null || true
 fi
 
 if [[ "$IDENTITY" == "-" ]]; then
   SIGN_ARGS=(--force --sign -)
-  echo "Đang ký ad-hoc KIRA 1.0 cho máy hiện tại…"
+  echo "Đang ký ad-hoc KIRA 1.0.1 cho máy hiện tại…"
 else
   SIGN_ARGS=(--force --sign "$IDENTITY" --options runtime --timestamp)
-  echo "Đang ký KIRA 1.0 bằng: $IDENTITY"
+  echo "Đang ký KIRA 1.0.1 bằng: $IDENTITY"
 fi
 
 while IFS= read -r -d '' executable; do
