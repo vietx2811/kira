@@ -818,11 +818,11 @@ button {
 
 .view-region {
   position: absolute;
-  inset: 0;
+  inset: 6px;
   min-width: 0;
   min-height: 0;
   border: 0;
-  border-radius: 0;
+  border-radius: 16px;
   overflow: hidden;
 }
 
