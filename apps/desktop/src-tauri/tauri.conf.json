@@ -19,10 +19,11 @@
         "minWidth": 1180,
         "minHeight": 720,
         "resizable": true,
-        "decorations": false,
+        "decorations": true,
         "transparent": true,
         "shadow": true,
-        "titleBarStyle": "Overlay"
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true
       }
     ],
     "security": {

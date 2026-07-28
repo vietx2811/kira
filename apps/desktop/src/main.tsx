@@ -5244,7 +5244,6 @@ function App() {
       onDoubleClick={toggleWindowMaximizeFromChrome}
       onPointerDown={startWindowDrag}
     >
-      <WindowControls />
       <div className={files.length === 1 ? 'file-tab-list is-single' : 'file-tab-list'}>
         {files.map((file) => (
           <button
@@ -6338,34 +6337,6 @@ function SettingsView({
         )}
       </div>
     </section>
-  )
-}
-
-function WindowControls() {
-  if (!isTauriRuntime()) return null
-  const appWindow = getCurrentWindow()
-
-  return (
-    <div className="window-controls" aria-label="Window controls">
-      <button
-        className="window-control window-control--close"
-        type="button"
-        aria-label="Close window"
-        onClick={() => void appWindow.close()}
-      />
-      <button
-        className="window-control window-control--minimize"
-        type="button"
-        aria-label="Minimize window"
-        onClick={() => void appWindow.minimize()}
-      />
-      <button
-        className="window-control window-control--maximize"
-        type="button"
-        aria-label="Toggle maximize"
-        onClick={() => void appWindow.toggleMaximize()}
-      />
-    </div>
   )
 }
 

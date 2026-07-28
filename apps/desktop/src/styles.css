@@ -22,11 +22,10 @@
   --material-sidebar: rgb(10 12 11 / 0.52);
   --material-drawer: rgb(12 14 13 / 0.78);
   --material-inspector: rgb(13 15 14 / 0.82);
-  --material-canvas-gutter: rgb(7 9 8 / 0.68);
   --glass-sidebar: var(--material-sidebar);
   --glass-drawer: var(--material-drawer);
   --glass-chrome: var(--material-titlebar);
-  --glass-content: var(--material-canvas-gutter);
+  --glass-content: rgb(10 12 11 / 0.34);
   --glass-inspector: var(--material-inspector);
   --glass-hover: rgb(255 255 255 / 0.055);
   --glass-active: var(--accent-faint);
@@ -140,18 +139,12 @@ button {
   display: flex;
   align-items: center;
   min-height: 42px;
-  padding: 5px var(--space-3);
+  padding: 5px var(--space-3) 5px 78px;
   border-bottom: 0;
   gap: 4px;
   background: var(--material-titlebar);
   -webkit-backdrop-filter: blur(28px) saturate(1.22);
   backdrop-filter: blur(28px) saturate(1.22);
-}
-
-.file-tab-bar .window-controls {
-  flex: 0 0 auto;
-  align-self: center;
-  margin: 0 var(--space-3) 0 6px;
 }
 
 .file-tab-list {
@@ -345,36 +338,6 @@ button {
 .brand-lockup {
   gap: 9px;
   min-width: 0;
-}
-
-.window-controls {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  padding-right: var(--space-1);
-}
-
-.window-control {
-  width: 12px;
-  height: 12px;
-  border-radius: 999px;
-  cursor: pointer;
-}
-
-.window-control--close {
-  background: #ef6a5d;
-}
-
-.window-control--minimize {
-  background: #f3bd4e;
-}
-
-.window-control--maximize {
-  background: #61c554;
-}
-
-.window-control:hover {
-  filter: brightness(1.12);
 }
 
 .brand-mark {
@@ -850,23 +813,16 @@ button {
   left: 80px;
   min-width: 0;
   min-height: 0;
-  /*
-   * Keep the rounded canvas inset on top of a real material surface. Leaving
-   * this transparent exposes the light desktop through UnderWindowBackground
-   * and reads as a white border around the canvas.
-   */
-  background: var(--material-canvas-gutter);
-  -webkit-backdrop-filter: blur(28px) saturate(1.16);
-  backdrop-filter: blur(28px) saturate(1.16);
+  background: transparent;
 }
 
 .view-region {
   position: absolute;
-  inset: 6px;
+  inset: 0;
   min-width: 0;
   min-height: 0;
   border: 0;
-  border-radius: 16px;
+  border-radius: 0;
   overflow: hidden;
 }
 
