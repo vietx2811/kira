@@ -16,11 +16,18 @@
   --node-shadow-rest: 0 6px 20px rgb(0 0 0 / 0.22);
   --node-shadow-hover: 0 12px 34px rgb(0 0 0 / 0.3);
   --window-border: rgb(255 255 255 / 0.08);
-  --glass-sidebar: rgb(12 14 13 / 0.34);
-  --glass-drawer: rgb(15 17 16 / 0.88);
-  --glass-chrome: rgb(10 12 11 / 0.34);
-  --glass-content: rgb(10 12 11 / 0.34);
-  --glass-inspector: rgb(16 18 16 / 0.86);
+  /* Semantic tints layered over AppKit's UnderWindowBackground material.
+     Navigation stays translucent; content keeps a stable, quiet surface. */
+  --material-titlebar: rgb(9 11 10 / 0.46);
+  --material-sidebar: rgb(10 12 11 / 0.52);
+  --material-drawer: rgb(12 14 13 / 0.78);
+  --material-inspector: rgb(13 15 14 / 0.82);
+  --material-canvas-gutter: rgb(7 9 8 / 0.68);
+  --glass-sidebar: var(--material-sidebar);
+  --glass-drawer: var(--material-drawer);
+  --glass-chrome: var(--material-titlebar);
+  --glass-content: var(--material-canvas-gutter);
+  --glass-inspector: var(--material-inspector);
   --glass-hover: rgb(255 255 255 / 0.055);
   --glass-active: var(--accent-faint);
   --separator-hairline: rgb(255 255 255 / 0.052);
@@ -136,7 +143,7 @@ button {
   padding: 5px var(--space-3);
   border-bottom: 0;
   gap: 4px;
-  background: var(--glass-chrome);
+  background: var(--material-titlebar);
   -webkit-backdrop-filter: blur(28px) saturate(1.22);
   backdrop-filter: blur(28px) saturate(1.22);
 }
@@ -585,7 +592,7 @@ button {
   min-height: 0;
   padding: 12px 10px 14px;
   border-right: 0;
-  background: var(--glass-chrome);
+  background: var(--material-sidebar);
   box-shadow: none;
   -webkit-backdrop-filter: blur(28px) saturate(1.22);
   backdrop-filter: blur(28px) saturate(1.22);
@@ -843,7 +850,14 @@ button {
   left: 80px;
   min-width: 0;
   min-height: 0;
-  background: transparent;
+  /*
+   * Keep the rounded canvas inset on top of a real material surface. Leaving
+   * this transparent exposes the light desktop through UnderWindowBackground
+   * and reads as a white border around the canvas.
+   */
+  background: var(--material-canvas-gutter);
+  -webkit-backdrop-filter: blur(28px) saturate(1.16);
+  backdrop-filter: blur(28px) saturate(1.16);
 }
 
 .view-region {
@@ -1540,18 +1554,18 @@ button {
 
 .inbox {
   border-right: 0;
-  background: var(--glass-chrome);
-  box-shadow: inset -1px 0 0 var(--separator-hairline);
+  background: var(--material-drawer);
+  box-shadow: none;
+  -webkit-backdrop-filter: blur(26px) saturate(1.18);
+  backdrop-filter: blur(26px) saturate(1.18);
 }
 
 .inspector {
-  border-left: 1px solid var(--separator-hairline);
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--text-main), transparent 97%), transparent),
-    var(--glass-inspector);
-  box-shadow: inset 1px 0 0 color-mix(in srgb, var(--text-main), transparent 96%);
-  -webkit-backdrop-filter: blur(22px) saturate(1.18);
-  backdrop-filter: blur(22px) saturate(1.18);
+  border-left: 0;
+  background: var(--material-inspector);
+  box-shadow: none;
+  -webkit-backdrop-filter: blur(26px) saturate(1.18);
+  backdrop-filter: blur(26px) saturate(1.18);
 }
 
 .inbox.is-dragging-files {
