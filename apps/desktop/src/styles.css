@@ -16,15 +16,14 @@
   --node-shadow-rest: 0 6px 20px rgb(0 0 0 / 0.22);
   --node-shadow-hover: 0 12px 34px rgb(0 0 0 / 0.3);
   --window-border: rgb(255 255 255 / 0.08);
-  /* Semantic tints layered over AppKit's UnderWindowBackground material.
-     Navigation stays translucent; content keeps a stable, quiet surface. */
-  --material-titlebar: rgb(9 11 10 / 0.46);
-  --material-sidebar: rgb(10 12 11 / 0.52);
+  /* The window chrome and canvas gutter share the same native
+     UnderWindowBackground layer. Only floating controls and drawers add tint. */
+  --material-window-chrome: transparent;
   --material-drawer: rgb(12 14 13 / 0.78);
   --material-inspector: rgb(13 15 14 / 0.82);
-  --glass-sidebar: var(--material-sidebar);
+  --glass-sidebar: var(--material-window-chrome);
   --glass-drawer: var(--material-drawer);
-  --glass-chrome: var(--material-titlebar);
+  --glass-chrome: rgb(10 12 11 / 0.58);
   --glass-content: rgb(10 12 11 / 0.34);
   --glass-inspector: var(--material-inspector);
   --glass-hover: rgb(255 255 255 / 0.055);
@@ -142,9 +141,7 @@ button {
   padding: 5px var(--space-3) 5px 78px;
   border-bottom: 0;
   gap: 4px;
-  background: var(--material-titlebar);
-  -webkit-backdrop-filter: blur(28px) saturate(1.22);
-  backdrop-filter: blur(28px) saturate(1.22);
+  background: var(--material-window-chrome);
 }
 
 .file-tab-list {
@@ -555,10 +552,8 @@ button {
   min-height: 0;
   padding: 12px 10px 14px;
   border-right: 0;
-  background: var(--material-sidebar);
+  background: var(--material-window-chrome);
   box-shadow: none;
-  -webkit-backdrop-filter: blur(28px) saturate(1.22);
-  backdrop-filter: blur(28px) saturate(1.22);
 }
 
 .system-sidebar-top {
