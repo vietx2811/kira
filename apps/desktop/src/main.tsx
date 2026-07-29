@@ -2303,7 +2303,8 @@ function FileWorkspace({
           continue
         }
         if (!response.ok || !response.body) continue
-        if (!(response.headers.get('content-type') ?? '').startsWith('image/')) continue
+        const contentType = response.headers.get('content-type') ?? ''
+        if (!contentType.startsWith('image/')) continue
 
         const total = Number(response.headers.get('content-length')) || 0
         if (total > MAX_PINTEREST_DOWNLOAD_BYTES) continue
@@ -2334,7 +2335,7 @@ function FileWorkspace({
           continue
         }
 
-        const dataUrl = await readFileAsDataUrl(new Blob(chunks))
+        const dataUrl = await readFileAsDataUrl(new Blob(chunks, { type: contentType }))
         setImages((current) =>
           current.map((image) => (image.id === imageId ? { ...image, thumb: dataUrl, updatedAt: nowIso() } : image)),
         )
@@ -7283,6 +7284,14 @@ function GraphCanvas({
   }
 
   function handleReferenceDrop(event: React.DragEvent<HTMLElement>, target: DroppedReferenceTarget) {
+    // Cancel the native drop and stop it bubbling before validating — since
+    // dragover always accepts (see handleReferenceDragOver), an un-prevented
+    // rejected drop can fall through to browser navigation (a dropped URL),
+    // and letting it bubble would re-run a node-level rejection against the
+    // canvas's own handler.
+    event.preventDefault()
+    event.stopPropagation()
+
     if (graphMode !== 'edit') {
       onNotice('Switch to Edit mode to drop images')
       return false
@@ -7292,8 +7301,6 @@ function GraphCanvas({
       onNotice('Unsupported drop — use an image file, URL, or an item from the Library')
       return false
     }
-    event.preventDefault()
-    event.stopPropagation()
     void onDroppedReference(payload, target)
     return true
   }
