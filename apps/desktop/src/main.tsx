@@ -2731,10 +2731,14 @@ function FileWorkspace({
     const extensionCaptures = parseKiraCapturePayloads(pastedText)
     if (extensionCaptures.length > 0) {
       event.preventDefault()
+      const references = extensionCaptures.map((capture, index) => createReferenceFromCapture(capture, images.length + index))
       appendReferences(
-        extensionCaptures.map((capture, index) => createReferenceFromCapture(capture, images.length + index)),
+        references,
         `${extensionCaptures.length} browser capture${extensionCaptures.length === 1 ? '' : 's'} imported`,
       )
+      references.forEach((reference, index) => {
+        void upgradePinterestCapture(reference.id, reference.title, extensionCaptures[index].url)
+      })
       return
     }
 
