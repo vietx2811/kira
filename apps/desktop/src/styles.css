@@ -3333,14 +3333,18 @@ p {
   animation: kira-glint 7.6s linear infinite;
 }
 
-.node-kira-control:hover {
+/* Matches the specificity of the .is-selected rule above (0,3,0) — the
+   control is only ever visible while selected, so a lower-specificity hover
+   rule here would silently lose the cascade to that rule's own
+   transform/background and never apply. */
+:is(.idea-node, .image-node, .palette-node, .diagram-node, .placeholder-node).is-selected .node-kira-control:hover {
   background-size: 220% 220%;
   animation: kira-sweep-travel 720ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
   box-shadow: 0 0 0 4px var(--kira-halo);
   transform: scale(calc(1.14 / var(--node-scale, 1)));
 }
 
-.node-kira-control:hover .kira-mark-satellite {
+:is(.idea-node, .image-node, .palette-node, .diagram-node, .placeholder-node).is-selected .node-kira-control:hover .kira-mark-satellite {
   animation-play-state: paused;
 }
 
@@ -3591,7 +3595,8 @@ p {
   .kira-mark-satellite,
   .kira-mark.is-thinking .kira-mark-satellite,
   .kira-mark.is-thinking .kira-mark-core,
-  .node-kira-control:hover,
+  :is(.idea-node, .image-node, .palette-node, .diagram-node, .placeholder-node).is-selected .node-kira-control:hover,
+  .kira-popover,
   .kira-popover.is-thinking .kira-popover-head::after {
     animation: none !important;
   }

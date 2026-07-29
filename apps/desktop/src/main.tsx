@@ -3857,7 +3857,10 @@ function FileWorkspace({
       }
     }
     // The action/scope/instruction/provider bookkeeping now lives in the Kira
-    // panel and the link note below, not stamped into every generated node.
+    // panel and the link note below, not stamped into every generated node —
+    // but the outcome still needs to reach the user somewhere, so it goes to
+    // the library status line instead of vanishing silently on failure.
+    setLibraryStatus(generatedBody ? `Kira: ${generationStatus}` : `Kira used a fallback draft — ${generationStatus}`)
     const body = generatedBody || [
       'Generated draft fallback.',
       '',
@@ -7093,7 +7096,7 @@ function GraphCanvas({
   async function submitKiraSession() {
     if (!kiraSession) return
     const sources = [kiraSession.source, ...kiraSession.extraSources].filter(Boolean) as Pick<GraphNodeRef, 'kind' | 'id'>[]
-    const contextNodes = collectKiraContext(kiraSession.source, kiraSession.scope, { ideas, images, palettes, diagrams, placeholders, links })
+    const contextNodes = collectKiraContextForSources(sources, kiraSession.scope, { ideas, images, palettes, diagrams, placeholders, links })
       .filter((node) => !kiraSession.removedContextKeys.includes(`${node.kind}:${node.id}`))
     setKiraSession((current) => current ? { ...current, status: 'thinking', message: null } : current)
     try {
@@ -7485,6 +7488,27 @@ function GraphCanvas({
     )
   }
 
+  function renderKiraControl(kind: GraphNodeKind, id: string, title: string) {
+    return (
+      <span
+        className="node-kira-control"
+        role="button"
+        tabIndex={0}
+        aria-label={`Ask Kira about ${title}`}
+        onPointerDown={(event) => event.stopPropagation()}
+        onClick={(event) => { event.stopPropagation(); openKiraFromNode(kind, id) }}
+        onKeyDown={(event) => {
+          if (event.key !== 'Enter' && event.key !== ' ') return
+          event.preventDefault()
+          event.stopPropagation()
+          openKiraFromNode(kind, id)
+        }}
+      >
+        <KiraMark size={12} />
+      </span>
+    )
+  }
+
   function createLinkedNodeFromArc(targetKind: GraphNodeKind) {
     if (!arcMenu) return
     const source = arcMenu
@@ -7686,7 +7710,8 @@ function GraphCanvas({
     const anchorNode = kiraSession.source
       ? resolveGraphNodeRef(kiraSession.source.id, ideas, images, palettes, diagrams, placeholders)
       : null
-    const contextNodes = collectKiraContext(kiraSession.source, kiraSession.scope, { ideas, images, palettes, diagrams, placeholders, links })
+    const popoverSources = [kiraSession.source, ...kiraSession.extraSources].filter(Boolean) as Pick<GraphNodeRef, 'kind' | 'id'>[]
+    const contextNodes = collectKiraContextForSources(popoverSources, kiraSession.scope, { ideas, images, palettes, diagrams, placeholders, links })
       .filter((node) => !kiraSession.removedContextKeys.includes(`${node.kind}:${node.id}`))
     const route = selectAiProviderForTask('generate_node', aiProviders, aiRoutingMode, selectedAiProviderId, kiraSession.providerOverrideId ?? undefined)
     const routedProvider = route.providerId ? aiProviders.find((candidate) => candidate.id === route.providerId) : undefined
@@ -7730,6 +7755,7 @@ function GraphCanvas({
           <button
             type="button"
             className={isKiraContextOpen ? 'kira-chip-toggle is-open' : 'kira-chip-toggle'}
+            aria-label={`Context (${contextNodes.length} nodes)`}
             aria-expanded={isKiraContextOpen}
             onClick={() => { setIsKiraContextOpen((current) => !current); setIsKiraSuggestOpen(false) }}
           >
@@ -8349,16 +8375,7 @@ function GraphCanvas({
                 >
                   <Plus size={11} />
                 </span>
-                <span
-                  className="node-kira-control"
-                  role="button"
-                  tabIndex={0}
-                  aria-label={`Ask Kira about ${idea.title}`}
-                  onPointerDown={(event) => event.stopPropagation()}
-                  onClick={(event) => { event.stopPropagation(); openKiraFromNode('idea', idea.id) }}
-                >
-                  <KiraMark size={12} />
-                </span>
+                {renderKiraControl('idea', idea.id, idea.title)}
                 {renderDirectLinkHandle('idea', idea, idea.title)}
                 <span className={`idea-status idea-status--${idea.status}`} />
                 {isEditingIdea ? (
@@ -8435,16 +8452,7 @@ function GraphCanvas({
               >
                 <Plus size={11} />
               </span>
-              <span
-                className="node-kira-control"
-                role="button"
-                tabIndex={0}
-                aria-label={`Ask Kira about ${image.title}`}
-                onPointerDown={(event) => event.stopPropagation()}
-                onClick={(event) => { event.stopPropagation(); openKiraFromNode('image', image.id) }}
-              >
-                <KiraMark size={12} />
-              </span>
+              {renderKiraControl('image', image.id, image.title)}
               {renderDirectLinkHandle('image', image, image.title)}
               <ReferenceThumb image={image} />
               <span className="node-palette">
@@ -8491,16 +8499,7 @@ function GraphCanvas({
               >
                 <Plus size={11} />
               </span>
-              <span
-                className="node-kira-control"
-                role="button"
-                tabIndex={0}
-                aria-label={`Ask Kira about ${palette.title}`}
-                onPointerDown={(event) => event.stopPropagation()}
-                onClick={(event) => { event.stopPropagation(); openKiraFromNode('palette', palette.id) }}
-              >
-                <KiraMark size={12} />
-              </span>
+              {renderKiraControl('palette', palette.id, palette.title)}
               {renderDirectLinkHandle('palette', palette, palette.title)}
               <span className="palette-strip">
                 {palette.colors.map((color, index) => (
@@ -8546,16 +8545,7 @@ function GraphCanvas({
               >
                 <Plus size={11} />
               </span>
-              <span
-                className="node-kira-control"
-                role="button"
-                tabIndex={0}
-                aria-label={`Ask Kira about ${diagram.title}`}
-                onPointerDown={(event) => event.stopPropagation()}
-                onClick={(event) => { event.stopPropagation(); openKiraFromNode('diagram', diagram.id) }}
-              >
-                <KiraMark size={12} />
-              </span>
+              {renderKiraControl('diagram', diagram.id, diagram.title)}
               {renderDirectLinkHandle('diagram', diagram, diagram.title)}
               <FileText size={15} />
               <strong>{diagram.title}</strong>
@@ -8602,16 +8592,7 @@ function GraphCanvas({
               >
                 <Plus size={11} />
               </span>
-              <span
-                className="node-kira-control"
-                role="button"
-                tabIndex={0}
-                aria-label={`Ask Kira about ${placeholder.title}`}
-                onPointerDown={(event) => event.stopPropagation()}
-                onClick={(event) => { event.stopPropagation(); openKiraFromNode('placeholder', placeholder.id) }}
-              >
-                <KiraMark size={12} />
-              </span>
+              {renderKiraControl('placeholder', placeholder.id, placeholder.title)}
               {renderDirectLinkHandle('placeholder', placeholder, placeholder.title)}
               <ImagePlus size={16} />
               <span>{placeholder.title}</span>
@@ -11905,15 +11886,16 @@ function collectKiraContext(
     ...graph.placeholders.map((placeholder) => ({ kind: 'placeholder' as const, id: placeholder.id, title: placeholder.title, x: placeholder.x, y: placeholder.y })),
   ]
   if (!source || scope === 'full_board') {
+    const importanceByKey = new Map<string, number>([
+      ...graph.ideas.map((node) => [`idea:${node.id}`, node.importance ?? 1] as const),
+      ...graph.images.map((node) => [`image:${node.id}`, node.importance ?? 1] as const),
+      ...graph.palettes.map((node) => [`palette:${node.id}`, node.importance ?? 1] as const),
+      ...graph.diagrams.map((node) => [`diagram:${node.id}`, node.importance ?? 1] as const),
+      ...graph.placeholders.map((node) => [`placeholder:${node.id}`, node.importance ?? 1] as const),
+    ])
     return allNodes
       .slice()
-      .sort((a, b) => {
-        const importanceOf = (node: GraphNodeRef) =>
-          graph.ideas.find((idea) => idea.id === node.id)?.importance
-          ?? graph.diagrams.find((diagram) => diagram.id === node.id)?.importance
-          ?? 1
-        return importanceOf(b) - importanceOf(a)
-      })
+      .sort((a, b) => (importanceByKey.get(`${b.kind}:${b.id}`) ?? 1) - (importanceByKey.get(`${a.kind}:${a.id}`) ?? 1))
       .slice(0, limit)
   }
 
@@ -11951,6 +11933,29 @@ function collectKiraContext(
         ? walk(sourceKey, outbound)
         : [sourceKey]
   return baseKeys.map((key) => nodeByKey.get(key)).filter(Boolean).slice(0, limit) as GraphNodeRef[]
+}
+
+// Multi-select entry point: union the per-source context walks (dedup by
+// kind:id) instead of only reading the first selected node's context.
+function collectKiraContextForSources(
+  sources: Pick<GraphNodeRef, 'kind' | 'id'>[],
+  scope: AiNodeScope,
+  graph: Parameters<typeof collectKiraContext>[2],
+  limit = 12,
+): GraphNodeRef[] {
+  if (sources.length <= 1) return collectKiraContext(sources[0] ?? null, scope, graph, limit)
+  const seen = new Set<string>()
+  const merged: GraphNodeRef[] = []
+  for (const source of sources) {
+    for (const node of collectKiraContext(source, scope, graph, limit)) {
+      const key = `${node.kind}:${node.id}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      merged.push(node)
+      if (merged.length >= limit) return merged
+    }
+  }
+  return merged
 }
 
 // Pragmatic token estimate with no tokenizer dependency: this corpus is short
