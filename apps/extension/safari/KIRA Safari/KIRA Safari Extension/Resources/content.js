@@ -16,7 +16,10 @@ let lastDragPosition = null;
 let dragMoveCount = 0;
 let revealDropPadTimer = 0;
 let pointerDropCompleting = false;
-const pointerDropHandlers = new Map();
+// WeakMap so renderCaptureContext()'s innerHTML = '' rebuild of node cards
+// (see below) lets detached cards and their closures get garbage collected
+// instead of being kept alive by this registry forever.
+const pointerDropHandlers = new WeakMap();
 document.addEventListener('pointerdown', rememberPointerCapture, true);
 document.addEventListener('mousedown', rememberPointerCapture, true);
 document.addEventListener('pointermove', handlePointerMoveProbe, true);
@@ -48,6 +51,7 @@ function rememberPointerCapture(event) {
     lastPointerPosition = { x: event.clientX, y: event.clientY };
     lastPointerCapture = captureFromPoint(event.clientX, event.clientY) ?? captureFromEventTarget(event.target);
     pointerDragWindowOpened = false;
+    pointerDropCompleting = false;
     dragMoveCount = 0;
 }
 function handlePointerMoveProbe(event) {
@@ -701,13 +705,14 @@ function wireDropTarget(target, onDrop) {
 // Completes the pointer-fallback drag (see handlePointerMoveProbe): since no
 // native drag session exists, wireDropTarget's own 'drop' listener never
 // fires, so the target under the release point is resolved and invoked here.
+// pointerup and mouseup both fire for the same physical release and aren't
+// guaranteed to land in the same task, so the guard is cleared on the next
+// press (rememberPointerCapture) rather than on a deferred timer, which could
+// unlock between the two events and let the drop complete twice.
 function handlePointerDropRelease(event) {
     if (!pointerDragWindowOpened || pointerDropCompleting)
         return;
     pointerDropCompleting = true;
-    window.setTimeout(() => {
-        pointerDropCompleting = false;
-    }, 0);
     const releasedOn = event.target instanceof Element ? event.target.closest('[data-drop-target]') : null;
     const handler = releasedOn ? pointerDropHandlers.get(releasedOn) : undefined;
     if (handler) {

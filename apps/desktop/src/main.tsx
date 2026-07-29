@@ -2252,10 +2252,13 @@ function FileWorkspace({
       return
     }
     recentCaptureKeys.set(duplicateKey, now)
-    void upgradePinterestCapture(reference.id, reference.title, capture.url)
 
+    // Queued after the capture is actually persisted — replace/placeholder
+    // attachment can assign a different id than reference.id, and upgrading
+    // by the wrong id would silently patch nothing.
     if (capture.createIdeaTitle?.trim()) {
-      attachCaptureToNewIdea(reference, capture.createIdeaTitle.trim())
+      const persistedId = attachCaptureToNewIdea(reference, capture.createIdeaTitle.trim())
+      void upgradePinterestCapture(persistedId, reference.title, capture.url)
       return
     }
 
@@ -2264,11 +2267,13 @@ function FileWorkspace({
       : null
 
     if (target) {
-      attachCaptureToGraphNode(reference, target)
+      const persistedId = attachCaptureToGraphNode(reference, target)
+      if (persistedId) void upgradePinterestCapture(persistedId, reference.title, capture.url)
       return
     }
 
     appendReferences([reference], '1 browser capture imported')
+    void upgradePinterestCapture(reference.id, reference.title, capture.url)
   }
 
   // Browser captures only ever carry a remote thumbnail URL (see
@@ -2298,22 +2303,35 @@ function FileWorkspace({
           continue
         }
         if (!response.ok || !response.body) continue
+        if (!(response.headers.get('content-type') ?? '').startsWith('image/')) continue
 
         const total = Number(response.headers.get('content-length')) || 0
+        if (total > MAX_PINTEREST_DOWNLOAD_BYTES) continue
+
         const reader = response.body.getReader()
         const chunks: BlobPart[] = []
         let received = 0
+        let exceededLimit = false
 
         for (;;) {
           const { done, value } = await reader.read()
           if (done) break
-          chunks.push(value)
           received += value.length
+          if (received > MAX_PINTEREST_DOWNLOAD_BYTES) {
+            exceededLimit = true
+            break
+          }
+          chunks.push(value)
           const now = Date.now()
           if (total > 0 && now - lastProgressUpdate > 80) {
             lastProgressUpdate = now
             setPinDownload({ imageId, title, progress: received / total })
           }
+        }
+
+        if (exceededLimit) {
+          await reader.cancel().catch(() => undefined)
+          continue
         }
 
         const dataUrl = await readFileAsDataUrl(new Blob(chunks))
@@ -2331,7 +2349,7 @@ function FileWorkspace({
     }
   }
 
-  function attachCaptureToNewIdea(reference: EvidenceImage, title: string) {
+  function attachCaptureToNewIdea(reference: EvidenceImage, title: string): string {
     pushCanvasHistory()
     const timestamp = nowIso()
     const idea: Idea = {
@@ -2371,19 +2389,20 @@ function FileWorkspace({
     setIdeaTitleFocusId(idea.id)
     setActiveView('Canvas')
     setLibraryStatus(`Created ${idea.title}`)
+    return positioned.id
   }
 
-  function attachCaptureToGraphNode(reference: EvidenceImage, target: GraphNodeRef) {
+  function attachCaptureToGraphNode(reference: EvidenceImage, target: GraphNodeRef): string | null {
     if (target.kind === 'image') {
-      replaceReferenceWithReference(target.id, reference, `Replaced reference with ${reference.title}`)
+      const replacedId = replaceReferenceWithReference(target.id, reference, `Replaced reference with ${reference.title}`)
       setActiveView('Canvas')
-      return
+      return replacedId
     }
 
     if (target.kind === 'placeholder') {
-      attachPlaceholderReference(target.id, reference)
+      const attachedId = attachPlaceholderReference(target.id, reference)
       setActiveView('Canvas')
-      return
+      return attachedId
     }
 
     pushCanvasHistory()
@@ -2410,6 +2429,7 @@ function FileWorkspace({
     setSelection({ type: 'image', id: positioned.id })
     setActiveView('Canvas')
     setLibraryStatus(`Attached ${positioned.title}`)
+    return positioned.id
   }
 
   async function importReferences(files: FileList | File[]) {
@@ -2436,9 +2456,9 @@ function FileWorkspace({
     }
   }
 
-  function replaceReferenceWithReference(imageId: string, replacement: EvidenceImage, status: string) {
+  function replaceReferenceWithReference(imageId: string, replacement: EvidenceImage, status: string): string | null {
     const current = images.find((candidate) => candidate.id === imageId)
-    if (!current) return
+    if (!current) return null
     pushCanvasHistory()
     setImages((items) =>
       items.map((image) =>
@@ -2460,11 +2480,12 @@ function FileWorkspace({
     )
     setSelection({ type: 'image', id: imageId })
     setLibraryStatus(status)
+    return imageId
   }
 
-  function attachPlaceholderReference(placeholderId: string, reference: EvidenceImage) {
+  function attachPlaceholderReference(placeholderId: string, reference: EvidenceImage): string | null {
     const placeholder = placeholders.find((candidate) => candidate.id === placeholderId)
-    if (!placeholder) return
+    if (!placeholder) return null
     const converted: EvidenceImage = {
       ...reference,
       id: `img-placeholder-${Date.now()}`,
@@ -2498,6 +2519,7 @@ function FileWorkspace({
     )
     setSelection({ type: 'image', id: converted.id })
     setLibraryStatus(`Attached ${converted.title}`)
+    return converted.id
   }
 
   async function handleDroppedReference(payload: DroppedReferencePayload, target: DroppedReferenceTarget) {
@@ -2733,10 +2755,14 @@ function FileWorkspace({
     const pastedText = (await navigator.clipboard.readText()).trim()
     const extensionCaptures = parseKiraCapturePayloads(pastedText)
     if (extensionCaptures.length > 0) {
+      const references = extensionCaptures.map((capture, index) => createReferenceFromCapture(capture, images.length + index))
       appendReferences(
-        extensionCaptures.map((capture, index) => createReferenceFromCapture(capture, images.length + index)),
+        references,
         `${extensionCaptures.length} browser capture${extensionCaptures.length === 1 ? '' : 's'} imported`,
       )
+      references.forEach((reference, index) => {
+        void upgradePinterestCapture(reference.id, reference.title, extensionCaptures[index].url)
+      })
       return
     }
 
@@ -7245,9 +7271,11 @@ function GraphCanvas({
   }
 
   function handleReferenceDragOver(event: React.DragEvent<HTMLElement>) {
-    if (graphMode !== 'edit' || !hasDroppedReferencePayload(event.dataTransfer)) return
+    // Always accept the drag (even when it will end up rejected) so 'drop'
+    // still dispatches — browsers only fire it when dragover called
+    // preventDefault, otherwise handleReferenceDrop's notices never show.
     event.preventDefault()
-    event.dataTransfer.dropEffect = 'copy'
+    event.dataTransfer.dropEffect = graphMode === 'edit' && hasDroppedReferencePayload(event.dataTransfer) ? 'copy' : 'none'
   }
 
   function handleReferenceDrop(event: React.DragEvent<HTMLElement>, target: DroppedReferenceTarget) {
@@ -12295,12 +12323,18 @@ function readFileAsDataUrl(file: Blob): Promise<string> {
   })
 }
 
+// Caps how much of a "pin original" response gets buffered into memory as a
+// data URL — enforced both from Content-Length and while streaming, since a
+// missing or dishonest header shouldn't let a response grow unbounded.
+const MAX_PINTEREST_DOWNLOAD_BYTES = 25 * 1024 * 1024
+
 // Pinterest CDN paths look like /{size}/aa/bb/cc/{hash}.{ext}, where {size} is
 // a resolution segment (60x60, 236x, 564x, ...) and `originals` is the true
 // full-resolution asset. The extension at `originals` can differ from the
 // thumbnail's, so candidates are tried in order until one resolves.
 function resolvePinterestOriginalCandidates(url: URL): string[] {
-  if (!url.hostname.includes('pinimg.com')) return []
+  if (url.protocol !== 'https:') return []
+  if (url.hostname !== 'pinimg.com' && !url.hostname.endsWith('.pinimg.com')) return []
   if (!/\.(jpg|jpeg|png|webp|gif)(?:$|\?)/i.test(url.href)) return []
   if (url.href.includes('/originals/')) return []
 
