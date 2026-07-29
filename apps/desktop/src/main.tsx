@@ -284,7 +284,6 @@ type OutlineDraft = {
 type ProjectKind = 'moodboard' | 'ideaboard'
 type ProjectColorMode = 'dark' | 'light'
 type ProjectAccentPreset = 'cyan' | 'amber' | 'sage' | 'violet' | 'rose' | 'custom'
-type ProjectColorFormula = 'material' | 'fluent' | 'apple-glass' | 'carbon'
 
 type ProjectMetadata = {
   title: string
@@ -297,7 +296,6 @@ type ProjectMetadata = {
 type ProjectAppearance = {
   colorMode: ProjectColorMode
   canvasColor: string
-  colorFormula: ProjectColorFormula
   accentPreset: ProjectAccentPreset
   accentColor: string
 }
@@ -1147,6 +1145,28 @@ function useDismissableLayer(active: boolean, ignoreSelector: string, onDismiss:
   }, [active, ignoreSelector, onDismiss])
 }
 
+// Keeps a panel mounted for `exitDurationMs` after `isOpen` goes false so its
+// CSS closing transition can play instead of the panel vanishing instantly,
+// and defers the "entered" flag by a frame on open so the opening transition
+// has a from-state to animate out of instead of mounting straight into it.
+function usePanelMountState(isOpen: boolean, exitDurationMs: number) {
+  const [mounted, setMounted] = useState(isOpen)
+  const [entered, setEntered] = useState(isOpen)
+
+  useEffect(() => {
+    if (isOpen) {
+      setMounted(true)
+      const raf = requestAnimationFrame(() => setEntered(true))
+      return () => cancelAnimationFrame(raf)
+    }
+    setEntered(false)
+    const timeout = window.setTimeout(() => setMounted(false), exitDurationMs)
+    return () => window.clearTimeout(timeout)
+  }, [isOpen, exitDurationMs])
+
+  return { mounted, entered }
+}
+
 const defaultAiProviderProfiles: AiProviderProfile[] = [
   {
     id: 'apple-foundation',
@@ -1355,13 +1375,6 @@ const projectAccentPresets: Array<{ id: ProjectAccentPreset; label: string; colo
   { id: 'custom', label: 'Custom', color: '#84cdbc' },
 ]
 
-const projectColorFormulas: Array<{ id: ProjectColorFormula; label: string; description: string }> = [
-  { id: 'material', label: 'Material', description: 'tonal harmony' },
-  { id: 'fluent', label: 'Fluent', description: 'calm analogous' },
-  { id: 'apple-glass', label: 'Apple Glass', description: 'low-chroma glass' },
-  { id: 'carbon', label: 'Carbon', description: 'cool complement' },
-]
-
 function defaultProjectMetadata(): ProjectMetadata {
   return {
     title: 'Untitled',
@@ -1374,11 +1387,10 @@ function defaultProjectMetadata(): ProjectMetadata {
 
 function defaultProjectAppearance(): ProjectAppearance {
   const accentColor = projectAccentPresets[0].color
-  const canvasColor = deriveCanvasFromAccent(accentColor, 'material', 'dark')
+  const canvasColor = deriveCanvasFromAccent(accentColor, 'dark')
   return {
     colorMode: 'dark',
     canvasColor,
-    colorFormula: 'material',
     accentPreset: 'cyan',
     accentColor,
   }
@@ -1509,6 +1521,8 @@ function FileWorkspace({
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null)
   const [isLibraryCollapsed, setIsLibraryCollapsed] = useState(false)
   const [isInspectorCollapsed, setIsInspectorCollapsed] = useState(false)
+  const libraryPanelMountState = usePanelMountState(!isLibraryCollapsed, 200)
+  const inspectorPanelMountState = usePanelMountState(!isInspectorCollapsed, 200)
   const [isVersionHistoryOpen, setIsVersionHistoryOpen] = useState(false)
 
   useEffect(() => {
@@ -2096,19 +2110,17 @@ function FileWorkspace({
     setProjectAppearance((current) => {
       const nextPreset = patch.accentPreset ?? current.accentPreset
       const presetColor = projectAccentPresets.find((preset) => preset.id === nextPreset)?.color
-      const nextFormula = normalizeProjectColorFormula(patch.colorFormula ?? current.colorFormula)
       const explicitAccent = patch.accentColor ? normalizeHexInput(patch.accentColor) : undefined
       const presetAccent = patch.accentPreset && patch.accentPreset !== 'custom' ? presetColor : undefined
       const nextAccentColor = normalizeHexInput(explicitAccent ?? presetAccent ?? current.accentColor)
       const nextColorMode = patch.colorMode ?? current.colorMode
-      const generatedCanvas = deriveCanvasFromAccent(nextAccentColor, nextFormula, nextColorMode)
-      const shouldRegenerateCanvas = Boolean(patch.accentColor || patch.accentPreset || patch.colorFormula || patch.colorMode)
+      const generatedCanvas = deriveCanvasFromAccent(nextAccentColor, nextColorMode)
+      const shouldRegenerateCanvas = Boolean(patch.accentColor || patch.accentPreset || patch.colorMode)
       return {
         ...current,
         ...patch,
         colorMode: shouldRegenerateCanvas ? inferCanvasColorMode(generatedCanvas) : current.colorMode,
         canvasColor: shouldRegenerateCanvas ? generatedCanvas : normalizeHexInput(patch.canvasColor ?? current.canvasColor),
-        colorFormula: nextFormula,
         accentPreset: explicitAccent ? 'custom' : nextPreset,
         accentColor: nextAccentColor,
       }
@@ -4774,12 +4786,12 @@ function FileWorkspace({
           onToggleLibrary={() => setIsLibraryCollapsed((current) => !current)}
           onUndo={undoCanvas}
         />
-        <EvidenceInbox
+        {libraryPanelMountState.mounted && <EvidenceInbox
           allTags={libraryTags}
           browseMode={libraryBrowseMode}
           density={density}
           ideas={ideas}
-          isCollapsed={isLibraryCollapsed}
+          isCollapsed={!libraryPanelMountState.entered}
           images={visibleImages}
           links={links}
           panelMode={libraryPanelMode}
@@ -4811,7 +4823,7 @@ function FileWorkspace({
           onSelectIdea={(id) => setSelection({ type: 'idea', id })}
           onSelectLink={(id) => setSelection({ type: 'link', id })}
           onToggleCollapsed={() => setIsLibraryCollapsed((current) => !current)}
-        />
+        />}
         {!isLibraryCollapsed && <div className="library-resize-handle" aria-hidden="true" onPointerDown={startLibraryDrawerResize} />}
         <div
           className="window-resize-handle window-resize-handle--south-east"
@@ -4924,8 +4936,8 @@ function FileWorkspace({
             )}
           </div>
         </section>
-        <Inspector
-            isCollapsed={isInspectorCollapsed}
+        {inspectorPanelMountState.mounted && <Inspector
+            isCollapsed={!inspectorPanelMountState.entered}
             selected={selected}
             images={images}
             ideas={ideas}
@@ -4988,7 +5000,7 @@ function FileWorkspace({
             onIdeaTitleFocused={() => setIdeaTitleFocusId(null)}
             selectedReferenceCount={selectedReferenceIds.size}
             onToggleCollapsed={() => setIsInspectorCollapsed((current) => !current)}
-          />
+          />}
       </section>
       <ConfirmDeleteDialog
         pendingDelete={pendingDelete}
@@ -5291,8 +5303,7 @@ function App() {
       {showSplash && (
         <div className="app-splash" role="status" aria-label="Opening KIRA">
           <div className="app-splash-symbol">
-            <img src="/kira-icon.png" alt="" />
-            <Sparkles className="app-splash-sparkle" size={18} aria-hidden="true" />
+            <img src="/kira-symbol.svg" alt="" />
           </div>
         </div>
       )}
@@ -6491,13 +6502,13 @@ function EvidenceInbox({
 
   useDismissableLayer(isToolsOpen, '.library-drawer, [data-menu-trigger="library-tools"]', () => setIsToolsOpen(false))
 
-  if (isCollapsed) {
-    return null
-  }
-
   return (
     <aside
-      className={isDraggingFiles ? 'inbox panel library-drawer-panel is-dragging-files' : 'inbox panel library-drawer-panel'}
+      className={[
+        'inbox panel library-drawer-panel',
+        isDraggingFiles ? 'is-dragging-files' : '',
+        isCollapsed ? 'is-closed' : '',
+      ].filter(Boolean).join(' ')}
       onDragLeave={(event) => {
         const relatedTarget = event.relatedTarget as Node | null
         if (relatedTarget && event.currentTarget.contains(relatedTarget)) return
@@ -9605,12 +9616,8 @@ function Inspector({
     setIsInspectorToolsOpen(false)
   })
 
-  if (isCollapsed) {
-    return null
-  }
-
   return (
-    <aside className="inspector panel">
+    <aside className={isCollapsed ? 'inspector panel is-closed' : 'inspector panel'}>
       <div className="panel-header">
         <div>
           <p className="panel-kicker"><T k="inspector.title" /></p>
@@ -9698,31 +9705,8 @@ function Inspector({
               isOpen={isProjectColorOpen}
               onToggle={() => setIsProjectColorOpen((current) => !current)}
             />
-            {isProjectColorOpen && (
-              <div className="project-color-editor">
-                <div className="color-formula-grid" aria-label="Color formula style">
-                  {projectColorFormulas.map((formula) => {
-                    const preview = accentThemeRecipe(selected.appearance.accentColor, formula.id, selected.appearance.colorMode ?? 'dark')
-                    return (
-                      <button
-                        key={formula.id}
-                        type="button"
-                        className={selected.appearance.colorFormula === formula.id ? 'is-active' : ''}
-                        onClick={() => onProjectAppearanceChange({ colorFormula: formula.id })}
-                      >
-                        <div className="formula-swatch-strip" aria-hidden="true">
-                          <i style={{ background: preview.canvas }} />
-                          <i style={{ background: preview.nodeSurface }} />
-                          <i style={{ background: preview.surface2 }} />
-                        </div>
-                        <div className="formula-label-row">
-                          <span>{formula.label}</span>
-                          <small>{formula.description}</small>
-                        </div>
-                      </button>
-                    )
-                  })}
-                </div>
+            <div className={isProjectColorOpen ? 'project-color-editor is-open' : 'project-color-editor'}>
+              <div className="project-color-editor-content">
                 <div className="accent-color-recommendations" aria-label="Accent colors">
                   {projectAccentPresets.filter((preset) => preset.id !== 'custom').map((preset) => (
                     <button
@@ -9755,7 +9739,7 @@ function Inspector({
                   <code>{normalizeHexInput(selected.appearance.canvasColor).toUpperCase()}</code>
                 </div>
               </div>
-            )}
+            </div>
           </section>
         </>
       )}
@@ -10555,7 +10539,7 @@ function ProjectColorSummary({
         <strong>Accent scheme</strong>
         <small>{appearance.accentColor.toUpperCase()} · {tokens.mood} · canvas {tokens.canvas.toUpperCase()}</small>
       </span>
-      <ChevronRight size={14} />
+      <ChevronRight size={14} className={isOpen ? 'project-color-summary-chevron is-open' : 'project-color-summary-chevron'} />
     </button>
   )
 }
@@ -10838,19 +10822,17 @@ function buildProjectAppearanceStyle(appearance: ProjectAppearance): React.CSSPr
   } as React.CSSProperties
 }
 
-function projectColorTokens(appearance: Pick<ProjectAppearance, 'canvasColor' | 'accentColor'> & Partial<Pick<ProjectAppearance, 'colorFormula' | 'colorMode'>>) {
-  const formula = normalizeProjectColorFormula(appearance.colorFormula)
-  const accentSeed = normalizeHexInput(appearance.accentColor || deriveAccentFromCanvas(appearance.canvasColor, formula))
+function projectColorTokens(appearance: Pick<ProjectAppearance, 'canvasColor' | 'accentColor'> & Partial<Pick<ProjectAppearance, 'colorMode'>>) {
+  const accentSeed = normalizeHexInput(appearance.accentColor || deriveAccentFromCanvas(appearance.canvasColor))
   const preferredMode = appearance.colorMode ?? inferCanvasColorMode(appearance.canvasColor)
-  const palette = accentThemeRecipe(accentSeed, formula, preferredMode)
+  const palette = accentThemeRecipe(accentSeed, preferredMode)
   const canvas = palette.canvas
   const mode = inferCanvasColorMode(canvas)
   const dark = mode === 'dark'
-  const accentToken = deriveAccentTokenFromAccent(accentSeed, canvas, formula)
+  const accentToken = deriveAccentTokenFromAccent(accentSeed, canvas)
   const textMain = readableTextColor(canvas, dark)
   return {
     mode,
-    formula,
     canvas,
     canvasSurface: palette.canvasSurface,
     accent: accentToken.color,
@@ -10879,20 +10861,20 @@ function inferCanvasColorMode(color: string): ProjectColorMode {
   return (oklch?.l ?? 0.4) > 0.64 ? 'light' : 'dark'
 }
 
-function deriveAccentFromCanvas(color: string, formula: ProjectColorFormula = 'material') {
-  return deriveAccentTokenFromCanvas(color, formula).color
+function deriveAccentFromCanvas(color: string) {
+  return deriveAccentTokenFromCanvas(color).color
 }
 
-function deriveCanvasFromAccent(accent: string, formula: ProjectColorFormula = 'material', preferredMode: ProjectColorMode = 'dark') {
-  return accentThemeRecipe(accent, formula, preferredMode).canvas
+function deriveCanvasFromAccent(accent: string, preferredMode: ProjectColorMode = 'dark') {
+  return accentThemeRecipe(accent, preferredMode).canvas
 }
 
-function deriveAccentTokenFromAccent(accent: string, canvas: string, formula: ProjectColorFormula = 'material') {
+function deriveAccentTokenFromAccent(accent: string, canvas: string) {
   const accentOklch = converter('oklch')(normalizeHexInput(accent))
   if (!accentOklch) {
-    return deriveAccentTokenFromCanvas(canvas, formula)
+    return deriveAccentTokenFromCanvas(canvas)
   }
-  const recipe = accentThemeFormulaRecipe(formula)
+  const recipe = appleGlassThemeRecipe()
   const mode = inferCanvasColorMode(canvas)
   const dark = mode === 'dark'
   const hue = normalizeHue(accentOklch.h ?? recipe.fallbackHue)
@@ -10920,9 +10902,9 @@ function deriveAccentTokenFromAccent(accent: string, canvas: string, formula: Pr
   }
 }
 
-function accentThemeRecipe(accent: string, formula: ProjectColorFormula, preferredMode: ProjectColorMode) {
+function accentThemeRecipe(accent: string, preferredMode: ProjectColorMode) {
   const accentOklch = converter('oklch')(normalizeHexInput(accent))
-  const recipe = accentThemeFormulaRecipe(formula)
+  const recipe = appleGlassThemeRecipe()
   const mode = preferredMode
   const dark = mode === 'dark'
   const hue = normalizeHue(accentOklch?.h ?? recipe.fallbackHue)
@@ -10949,88 +10931,33 @@ function accentThemeRecipe(accent: string, formula: ProjectColorFormula, preferr
   }
 }
 
-function accentThemeFormulaRecipe(formula: ProjectColorFormula) {
-  if (formula === 'fluent') {
-    return {
-      label: 'Fluent',
-      source: 'analogous UI',
-      backgroundHueOffset: 8,
-      secondaryHueOffset: -14,
-      backgroundChromaScale: 0.14,
-      secondaryChromaScale: 0.18,
-      accentDarkLightness: 0.74,
-      accentLightLightness: 0.42,
-      altDarkLightness: 0.68,
-      altLightLightness: 0.46,
-      altHueOffset: 32,
-      altChromaScale: 0.78,
-      accentMinChroma: 0.07,
-      accentMaxChroma: 0.17,
-      fallbackHue: 196,
-      targetContrast: 4.4,
-    }
-  }
-  if (formula === 'apple-glass') {
-    return {
-      label: 'Apple Glass',
-      source: 'glass harmony',
-      backgroundHueOffset: 18,
-      secondaryHueOffset: 42,
-      backgroundChromaScale: 0.095,
-      secondaryChromaScale: 0.13,
-      accentDarkLightness: 0.78,
-      accentLightLightness: 0.44,
-      altDarkLightness: 0.74,
-      altLightLightness: 0.5,
-      altHueOffset: 48,
-      altChromaScale: 0.64,
-      accentMinChroma: 0.06,
-      accentMaxChroma: 0.14,
-      fallbackHue: 184,
-      targetContrast: 4.1,
-    }
-  }
-  if (formula === 'carbon') {
-    return {
-      label: 'Carbon',
-      source: 'complement UI',
-      backgroundHueOffset: 178,
-      secondaryHueOffset: 205,
-      backgroundChromaScale: 0.16,
-      secondaryChromaScale: 0.2,
-      accentDarkLightness: 0.72,
-      accentLightLightness: 0.38,
-      altDarkLightness: 0.64,
-      altLightLightness: 0.4,
-      altHueOffset: 76,
-      altChromaScale: 0.88,
-      accentMinChroma: 0.08,
-      accentMaxChroma: 0.19,
-      fallbackHue: 220,
-      targetContrast: 4.8,
-    }
-  }
+// The shell's single color rule: a low-chroma "glass" harmony tuned to sit
+// quietly on top of macOS's translucent vibrancy materials, rather than the
+// more saturated tonal/complement recipes a Material- or IBM-style system
+// would use. Backgrounds stay barely tinted; only the accent itself carries
+// real chroma.
+function appleGlassThemeRecipe() {
   return {
-    label: 'Material',
-    source: 'tonal harmony',
-    backgroundHueOffset: -6,
-    secondaryHueOffset: 18,
-    backgroundChromaScale: 0.17,
-    secondaryChromaScale: 0.22,
-    accentDarkLightness: 0.76,
-    accentLightLightness: 0.4,
-    altDarkLightness: 0.7,
-    altLightLightness: 0.44,
-    altHueOffset: -36,
-    altChromaScale: 0.82,
-    accentMinChroma: 0.08,
-    accentMaxChroma: 0.2,
-    fallbackHue: 176,
-    targetContrast: 4.4,
+    label: 'Apple Glass',
+    source: 'glass harmony',
+    backgroundHueOffset: 18,
+    secondaryHueOffset: 42,
+    backgroundChromaScale: 0.095,
+    secondaryChromaScale: 0.13,
+    accentDarkLightness: 0.78,
+    accentLightLightness: 0.44,
+    altDarkLightness: 0.74,
+    altLightLightness: 0.5,
+    altHueOffset: 48,
+    altChromaScale: 0.64,
+    accentMinChroma: 0.06,
+    accentMaxChroma: 0.14,
+    fallbackHue: 184,
+    targetContrast: 4.1,
   }
 }
 
-function deriveAccentTokenFromCanvas(color: string, formula: ProjectColorFormula = 'material') {
+function deriveAccentTokenFromCanvas(color: string) {
   const oklch = converter('oklch')(normalizeHexInput(color))
   if (!oklch) {
     return {
@@ -11048,7 +10975,7 @@ function deriveAccentTokenFromCanvas(color: string, formula: ProjectColorFormula
   const canvasHue = normalizeHue(oklch.h ?? neutralHueFromCanvas(oklch))
   const canvasChroma = oklch.c ?? 0
   const isNeutral = canvasChroma < 0.04
-  const recipe = colorFormulaRecipe(formula, canvasHue, oklch, isNeutral)
+  const recipe = colorFormulaRecipe(canvasHue, oklch, isNeutral)
   const strategies = recipe.strategies
   const lightnessStops = dark ? recipe.darkLightness : recipe.lightLightness
   const chromaBase = clamp(canvasChroma + recipe.chromaBoost, recipe.minChroma, recipe.maxChroma)
@@ -11107,97 +11034,28 @@ function deriveAccentTokenFromCanvas(color: string, formula: ProjectColorFormula
 }
 
 function colorFormulaRecipe(
-  formula: ProjectColorFormula,
   canvasHue: number,
   oklch: { l?: number; c?: number; h?: number },
   isNeutral: boolean,
 ) {
-  if (formula === 'fluent') {
-    const anchor = isNeutral ? neutralAccentStrategies(oklch)[0].hue : canvasHue + 168
-    return {
-      label: 'Fluent',
-      strategies: [
-        { source: 'brand accent', hue: anchor, weight: 1 },
-        { source: 'brand hover', hue: anchor + 18, weight: 0.86 },
-        { source: 'shared accent', hue: anchor - 28, weight: 0.78 },
-      ],
-      darkLightness: [0.74, 0.68, 0.8, 0.62],
-      lightLightness: [0.4, 0.34, 0.46, 0.3],
-      altDarkLightness: 0.66,
-      altLightLightness: 0.42,
-      altHueOffset: 30,
-      chromaBoost: 0.075,
-      minChroma: 0.08,
-      maxChroma: 0.16,
-      hueSeparationWeight: 6,
-      targetContrast: 4.5,
-    }
-  }
-  if (formula === 'apple-glass') {
-    const anchor = isNeutral ? neutralAccentStrategies(oklch)[0].hue : canvasHue + 132
-    return {
-      label: 'Apple',
-      strategies: [
-        { source: 'system accent', hue: anchor, weight: 1 },
-        { source: 'glass tint', hue: anchor + 46, weight: 0.72 },
-        { source: 'selection tint', hue: anchor - 42, weight: 0.72 },
-      ],
-      darkLightness: [0.82, 0.76, 0.88, 0.7],
-      lightLightness: [0.44, 0.38, 0.5, 0.34],
-      altDarkLightness: 0.78,
-      altLightLightness: 0.48,
-      altHueOffset: 46,
-      chromaBoost: 0.055,
-      minChroma: 0.07,
-      maxChroma: 0.13,
-      hueSeparationWeight: 4,
-      targetContrast: 4.1,
-    }
-  }
-  if (formula === 'carbon') {
-    const anchor = isNeutral ? 255 : canvasHue + 205
-    return {
-      label: 'Carbon',
-      strategies: [
-        { source: 'blue core', hue: anchor, weight: 1 },
-        { source: 'support accent', hue: anchor + 78, weight: 0.76 },
-        { source: 'data accent', hue: anchor - 62, weight: 0.72 },
-      ],
-      darkLightness: [0.7, 0.64, 0.76, 0.58],
-      lightLightness: [0.36, 0.3, 0.42, 0.48],
-      altDarkLightness: 0.62,
-      altLightLightness: 0.38,
-      altHueOffset: 76,
-      chromaBoost: 0.105,
-      minChroma: 0.1,
-      maxChroma: 0.19,
-      hueSeparationWeight: 10,
-      targetContrast: 4.8,
-    }
-  }
-
+  const anchor = isNeutral ? neutralAccentStrategies(oklch)[0].hue : canvasHue + 132
   return {
-    label: 'Material',
-    strategies: isNeutral
-      ? neutralAccentStrategies(oklch)
-      : [
-          { source: 'complement', hue: canvasHue + 180, weight: 1 },
-          { source: 'split complement', hue: canvasHue + 150, weight: 0.96 },
-          { source: 'split complement', hue: canvasHue + 210, weight: 0.96 },
-          { source: 'triadic', hue: canvasHue + 120, weight: 0.82 },
-          { source: 'triadic', hue: canvasHue + 240, weight: 0.82 },
-          { source: 'analog contrast', hue: canvasHue + 70, weight: 0.68 },
-        ],
-    darkLightness: [0.76, 0.7, 0.82, 0.64],
-    lightLightness: [0.42, 0.36, 0.5, 0.3],
-    altDarkLightness: 0.7,
-    altLightLightness: 0.46,
-    altHueOffset: isNeutral ? 42 : -34,
-    chromaBoost: 0.09,
-    minChroma: 0.1,
-    maxChroma: 0.2,
-    hueSeparationWeight: 8,
-    targetContrast: 4.4,
+    label: 'Apple Glass',
+    strategies: [
+      { source: 'system accent', hue: anchor, weight: 1 },
+      { source: 'glass tint', hue: anchor + 46, weight: 0.72 },
+      { source: 'selection tint', hue: anchor - 42, weight: 0.72 },
+    ],
+    darkLightness: [0.82, 0.76, 0.88, 0.7],
+    lightLightness: [0.44, 0.38, 0.5, 0.34],
+    altDarkLightness: 0.78,
+    altLightLightness: 0.48,
+    altHueOffset: 46,
+    chromaBoost: 0.055,
+    minChroma: 0.07,
+    maxChroma: 0.13,
+    hueSeparationWeight: 4,
+    targetContrast: 4.1,
   }
 }
 
@@ -15032,23 +14890,17 @@ function normalizeProjectAppearance(value: unknown): ProjectAppearance {
   const preset = projectAccentPresets.some((item) => item.id === candidate.accentPreset) ? candidate.accentPreset as ProjectAccentPreset : fallback.accentPreset
   const presetColor = projectAccentPresets.find((item) => item.id === preset)?.color ?? fallback.accentColor
   const legacyCanvasColor = typeof candidate.canvasColor === 'string' ? normalizeHexInput(candidate.canvasColor) : fallback.canvasColor
-  const colorFormula = normalizeProjectColorFormula(candidate.colorFormula)
   const colorMode = candidate.colorMode === 'light' || candidate.colorMode === 'dark' ? candidate.colorMode : inferCanvasColorMode(legacyCanvasColor)
   const accentColor = typeof candidate.accentColor === 'string'
     ? normalizeHexInput(candidate.accentColor)
-    : deriveAccentFromCanvas(legacyCanvasColor, colorFormula) || presetColor
-  const canvasColor = deriveCanvasFromAccent(accentColor, colorFormula, colorMode)
+    : deriveAccentFromCanvas(legacyCanvasColor) || presetColor
+  const canvasColor = deriveCanvasFromAccent(accentColor, colorMode)
   return {
     colorMode: inferCanvasColorMode(canvasColor),
     canvasColor,
-    colorFormula,
     accentPreset: preset,
     accentColor,
   }
-}
-
-function normalizeProjectColorFormula(value: unknown): ProjectColorFormula {
-  return projectColorFormulas.some((formula) => formula.id === value) ? value as ProjectColorFormula : 'material'
 }
 
 function normalizeVersionHistory(records: ProjectVersionRecord[]) {
