@@ -68,6 +68,23 @@
   --radius-1: 4px;
   --radius-2: 6px;
   --radius-3: 8px;
+  /* Single source of truth for the shell's floating-panel geometry — the
+     rail width, the canvas card's inset from the chrome, and its corner
+     radius. The tab strip and every drawer/inspector panel key off these
+     so they can never drift out of alignment with the canvas card again. */
+  --shell-rail-width: 80px;
+  --shell-card-inset: 6px;
+  --shell-card-radius: 16px;
+  /* Shared motion language — every micro-interaction in the shell picks one
+     of these instead of inventing its own duration/curve. Fades and color
+     swaps use --ease-soft; anything that moves/slides/pops uses
+     --ease-out-soft, which already existed ad-hoc on tooltips and link
+     handles before this was named. */
+  --ease-soft: ease;
+  --ease-out-soft: cubic-bezier(0.16, 1, 0.3, 1);
+  --duration-fast: 120ms;
+  --duration-base: 160ms;
+  --duration-panel: 200ms;
   --shadow-soft: 0 20px 70px rgb(0 0 0 / 0.28);
   --shell-shadow: inset 0 1px 0 rgb(255 255 255 / 0.08);
   --panel-shadow: 0 20px 70px rgb(0 0 0 / 0.28);
@@ -154,7 +171,7 @@ button {
   display: flex;
   align-items: center;
   min-height: 42px;
-  padding: 5px var(--space-3) 5px 78px;
+  padding: 5px var(--space-3) 5px calc(var(--shell-rail-width) + var(--shell-card-inset));
   border-bottom: 0;
   gap: 4px;
   background: var(--material-window-chrome);
@@ -189,6 +206,8 @@ button {
   cursor: pointer;
   gap: 6px;
   font-size: 0.76rem;
+  transition: background var(--duration-base) var(--ease-soft), color var(--duration-base) var(--ease-soft), box-shadow var(--duration-base) var(--ease-soft);
+  animation: fileTabIn var(--duration-panel) var(--ease-out-soft) both;
 }
 
 .file-tab:hover {
@@ -212,12 +231,29 @@ button {
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-cyan), transparent 40%);
 }
 
+@keyframes fileTabIn {
+  from {
+    opacity: 0;
+    transform: scale(0.9) translateY(2px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
 .file-tab-dirty {
   width: 6px;
   height: 6px;
   flex: 0 0 auto;
   border-radius: 999px;
   background: var(--accent-amber);
+  animation: dirtyDotIn var(--duration-base) var(--ease-out-soft) both;
+}
+
+@keyframes dirtyDotIn {
+  from { opacity: 0; transform: scale(0.2); }
+  to { opacity: 1; transform: scale(1); }
 }
 
 .file-tab-title {
@@ -255,36 +291,67 @@ button {
   z-index: 300;
   display: grid;
   place-items: center;
-  background: #a7a7a7;
+  background: #000;
   animation: splashExit 220ms ease 830ms forwards;
 }
 
 .app-splash-symbol {
   position: relative;
-  width: 82px;
-  height: 82px;
-  animation: splashSymbolIn 420ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  width: 160px;
+  height: 160px;
+  animation:
+    splashSymbolIn 600ms cubic-bezier(0.34, 1.56, 0.64, 1) both,
+    splashSymbolBreathe 1400ms ease-in-out 600ms infinite,
+    splashSymbolOut 220ms ease 830ms both;
 }
 
 .app-splash-symbol img {
   display: block;
   width: 100%;
   height: 100%;
-  border-radius: 21px;
-  box-shadow: 0 16px 42px rgb(0 0 0 / 0.16);
 }
 
-.app-splash-sparkle {
-  position: absolute;
-  top: -9px;
-  right: -13px;
-  color: rgb(255 255 255 / 0.94);
-  filter: drop-shadow(0 3px 8px rgb(0 0 0 / 0.18));
+@media (prefers-reduced-motion: reduce) {
+  .app-splash-symbol {
+    animation: splashSymbolFadeOnly 300ms ease both;
+  }
 }
 
 @keyframes splashSymbolIn {
-  from { opacity: 0; transform: scale(0.88); }
-  to { opacity: 1; transform: scale(1); }
+  from {
+    opacity: 0;
+    transform: scale(0.55) rotate(-14deg);
+  }
+  65% {
+    opacity: 1;
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) rotate(0deg);
+  }
+}
+
+@keyframes splashSymbolBreathe {
+  0%,
+  100% {
+    transform: scale(1);
+    filter: drop-shadow(0 0 0 rgb(158 220 205 / 0));
+  }
+  50% {
+    transform: scale(1.035);
+    filter: drop-shadow(0 0 20px rgb(158 220 205 / 0.4));
+  }
+}
+
+@keyframes splashSymbolOut {
+  to {
+    transform: scale(1.08);
+  }
+}
+
+@keyframes splashSymbolFadeOnly {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 @keyframes splashExit {
@@ -464,6 +531,7 @@ button {
   background: transparent;
   color: var(--text-muted);
   gap: var(--space-2);
+  transition: background var(--duration-base) var(--ease-soft), color var(--duration-base) var(--ease-soft), transform var(--duration-base) var(--ease-out-soft);
 }
 
 .view-tab.is-active {
@@ -558,7 +626,7 @@ button {
   top: 0;
   left: 0;
   bottom: 0;
-  width: 80px;
+  width: var(--shell-rail-width);
   z-index: 120;
   display: grid;
   grid-template-rows: auto auto 1fr auto;
@@ -614,6 +682,7 @@ button {
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
+  transition: background var(--duration-base) var(--ease-soft), color var(--duration-base) var(--ease-soft);
 }
 
 .sidebar-view-button:hover {
@@ -627,14 +696,23 @@ button {
   box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text-main), transparent 94%);
 }
 
-.sidebar-view-button.is-active::before {
+.sidebar-view-button::before {
   position: absolute;
+  top: 50%;
   left: -10px;
   width: 3px;
   height: 20px;
   border-radius: 999px;
   background: var(--accent-cyan);
   content: "";
+  opacity: 0;
+  transform: translateY(-50%) scaleY(0.4);
+  transition: opacity var(--duration-base) var(--ease-soft), transform var(--duration-base) var(--ease-out-soft);
+}
+
+.sidebar-view-button.is-active::before {
+  opacity: 1;
+  transform: translateY(-50%) scaleY(1);
 }
 
 .system-sidebar .secondary-rail {
@@ -703,6 +781,19 @@ button {
   box-shadow: 0 18px 44px rgb(0 0 0 / 0.36);
   backdrop-filter: blur(18px) saturate(1.16);
   gap: 2px;
+  transform-origin: top;
+  animation: popoverIn var(--duration-base) var(--ease-out-soft) both;
+}
+
+@keyframes popoverIn {
+  from {
+    opacity: 0;
+    transform: scale(0.92) translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
 }
 
 .rail-popover {
@@ -762,22 +853,40 @@ button {
 
 .library-drawer-panel {
   position: absolute;
-  top: 0;
-  left: 80px;
-  bottom: 0;
+  top: var(--shell-card-inset);
+  left: calc(var(--shell-rail-width) + var(--shell-card-inset));
+  bottom: var(--shell-card-inset);
   z-index: 50;
   width: var(--library-drawer-width, 360px);
   overflow: visible;
+  opacity: 1;
+  transform: translateX(0) scale(1);
+  transition: opacity var(--duration-panel) var(--ease-out-soft), transform var(--duration-panel) var(--ease-out-soft);
+}
+
+.library-drawer-panel.is-closed {
+  opacity: 0;
+  transform: translateX(-16px) scale(0.97);
+  pointer-events: none;
 }
 
 .inspector {
   position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
+  top: var(--shell-card-inset);
+  right: var(--shell-card-inset);
+  bottom: var(--shell-card-inset);
   z-index: 10;
   width: 336px;
   overflow: visible;
+  opacity: 1;
+  transform: translateX(0) scale(1);
+  transition: opacity var(--duration-panel) var(--ease-out-soft), transform var(--duration-panel) var(--ease-out-soft);
+}
+
+.inspector.is-closed {
+  opacity: 0;
+  transform: translateX(16px) scale(0.97);
+  pointer-events: none;
 }
 
 .drawer-edge-toggle {
@@ -821,7 +930,7 @@ button {
   top: 0;
   right: 0;
   bottom: 0;
-  left: 80px;
+  left: var(--shell-rail-width);
   min-width: 0;
   min-height: 0;
   background: transparent;
@@ -829,18 +938,18 @@ button {
 
 .view-region {
   position: absolute;
-  inset: 6px;
+  inset: var(--shell-card-inset);
   min-width: 0;
   min-height: 0;
   border: 0;
-  border-radius: 16px;
+  border-radius: var(--shell-card-radius);
   overflow: hidden;
 }
 
 .library-resize-handle {
   position: absolute;
   top: 0;
-  left: calc(80px + var(--library-drawer-width, 360px));
+  left: calc(var(--shell-rail-width) + var(--shell-card-inset) + var(--library-drawer-width, 360px));
   bottom: 0;
   z-index: 40;
   width: 8px;
@@ -1521,7 +1630,8 @@ button {
 
 .inbox {
   border-right: 0;
-  background: var(--material-drawer);
+  border-radius: var(--shell-card-radius);
+  background: var(--glass-drawer);
   box-shadow: none;
   -webkit-backdrop-filter: blur(26px) saturate(1.18);
   backdrop-filter: blur(26px) saturate(1.18);
@@ -1529,7 +1639,8 @@ button {
 
 .inspector {
   border-left: 0;
-  background: var(--material-inspector);
+  border-radius: var(--shell-card-radius);
+  background: var(--glass-inspector);
   box-shadow: none;
   -webkit-backdrop-filter: blur(26px) saturate(1.18);
   backdrop-filter: blur(26px) saturate(1.18);
@@ -1743,6 +1854,8 @@ p {
   -webkit-backdrop-filter: blur(24px) saturate(1.25);
   backdrop-filter: blur(24px) saturate(1.25);
   gap: 8px;
+  transform-origin: top right;
+  animation: popoverIn var(--duration-base) var(--ease-out-soft) both;
 }
 
 .library-command-menu {
@@ -4077,7 +4190,19 @@ p {
   background: var(--glass-inspector);
   backdrop-filter: blur(18px);
   gap: var(--space-2);
-  transform: none;
+  transform-origin: bottom left;
+  animation: popoverInUp var(--duration-base) var(--ease-out-soft) both;
+}
+
+@keyframes popoverInUp {
+  from {
+    opacity: 0;
+    transform: scale(0.94) translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
 }
 
 .graph-tools-drawer label {
@@ -4968,6 +5093,15 @@ p {
   background: var(--glass-active);
 }
 
+.project-color-summary,
+.project-color-summary-chevron {
+  transition: border-color var(--duration-base) var(--ease-soft), background var(--duration-base) var(--ease-soft), transform var(--duration-base) var(--ease-out-soft);
+}
+
+.project-color-summary-chevron.is-open {
+  transform: rotate(90deg);
+}
+
 .project-color-summary > span:nth-child(2) {
   display: grid;
   min-width: 0;
@@ -5009,73 +5143,19 @@ p {
 
 .project-color-editor {
   display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows var(--duration-panel) var(--ease-out-soft);
+}
+
+.project-color-editor.is-open {
+  grid-template-rows: 1fr;
+}
+
+.project-color-editor-content {
+  display: grid;
   gap: 10px;
-}
-
-.color-formula-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6px;
-}
-
-.color-formula-grid button {
-  display: grid;
-  min-width: 0;
-  padding: 0;
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius-2);
-  background: var(--inset-field);
-  color: var(--text-soft);
-  cursor: pointer;
-  gap: 0;
   overflow: hidden;
-  text-align: left;
-}
-
-.color-formula-grid button:hover,
-.color-formula-grid button.is-active {
-  border-color: color-mix(in srgb, var(--accent-strong), transparent 38%);
-  background: var(--glass-active);
-  color: var(--text-main);
-}
-
-.color-formula-grid button.is-active .formula-swatch-strip {
-  opacity: 1;
-}
-
-.formula-swatch-strip {
-  display: flex;
-  height: 28px;
-  overflow: hidden;
-  border-radius: 0;
-  opacity: 0.72;
-  transition: opacity 0.15s ease;
-}
-
-.formula-swatch-strip i {
-  flex: 1;
-}
-
-.formula-label-row {
-  display: grid;
-  gap: 2px;
-  padding: 7px 10px 8px;
-}
-
-.color-formula-grid span,
-.color-formula-grid small {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.color-formula-grid span {
-  font-weight: 600;
-}
-
-.color-formula-grid small {
-  color: var(--text-muted);
-  font-size: 0.68rem;
+  min-height: 0;
 }
 
 .accent-color-recommendations {
@@ -5488,6 +5568,8 @@ p {
   background: var(--surface-2);
   box-shadow: var(--panel-shadow);
   gap: 2px;
+  transform-origin: top right;
+  animation: popoverIn var(--duration-base) var(--ease-out-soft) both;
 }
 
 .slide-export-popover button {
