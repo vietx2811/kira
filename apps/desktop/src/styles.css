@@ -56,8 +56,6 @@
   --kira-halo: color-mix(in srgb, var(--kira-mid), transparent 76%);
   --kira-border: color-mix(in srgb, var(--kira-mid), transparent 64%);
   --kira-text: #e8cfd9;
-  --canvas-kira-inset: 0px;
-  --kira-panel-width: 380px;
   --danger: #d98779;
   --space-1: 4px;
   --space-2: 8px;
@@ -3346,10 +3344,6 @@ p {
   animation-play-state: paused;
 }
 
-[data-node-kind].is-kira-anchored {
-  box-shadow: 0 0 0 1.5px var(--kira-mid), 0 0 0 8px var(--kira-halo);
-}
-
 .node-link-handle {
   position: absolute;
   top: 50%;
@@ -3598,7 +3592,7 @@ p {
   .kira-mark.is-thinking .kira-mark-satellite,
   .kira-mark.is-thinking .kira-mark-core,
   .node-kira-control:hover,
-  .kira-panel.is-thinking .kira-panel-head::after {
+  .kira-popover.is-thinking .kira-popover-head::after {
     animation: none !important;
   }
 
@@ -3612,15 +3606,20 @@ p {
   }
 }
 
-/* The Kira launcher lives beside the tool rail, not inside it — a detached
-   pill so it reads as a different class of control, not an 8th identical
-   circle in the rail. */
-.canvas-kira-launcher {
+/* The Kira launcher lives beside the tool rail, not inside it — icon-only,
+   the same footprint as a rail button, but with a gradient ring so it still
+   reads as a distinct control rather than an 8th identical tool. */
+.kira-launcher-wrap {
+  position: relative;
   display: inline-flex;
+}
+
+.canvas-kira-launcher {
+  display: grid;
   flex: 0 0 auto;
-  align-items: center;
-  height: 54px;
-  padding: 0 16px;
+  width: 44px;
+  height: 44px;
+  place-items: center;
   border: 1px solid transparent;
   border-radius: 999px;
   background:
@@ -3633,9 +3632,6 @@ p {
   backdrop-filter: blur(24px) saturate(1.35);
   color: var(--text-main);
   cursor: pointer;
-  font-size: 0.78rem;
-  font-weight: 800;
-  gap: 8px;
   transition: transform 140ms cubic-bezier(0.16, 1, 0.3, 1), background 140ms ease;
 }
 
@@ -3649,47 +3645,49 @@ p {
     var(--kira-sweep) border-box;
 }
 
-/* Right-edge dock — Gemini/NotebookLM-style, not a node-anchored float (the
-   old .ai-node-panel gave up on that; see the comment it used to carry). */
-.kira-panel {
+/* A small box that opens right above the Kira button — not a side panel.
+   Context and suggestions stay collapsed behind their own toggle (see
+   .kira-dropdown) so the default view is just the anchor line + a text
+   field, matching a compact assistant composer rather than a settings form. */
+.kira-popover {
   position: absolute;
-  top: 14px;
-  right: calc(var(--canvas-right-inset, 0px) + 14px);
-  bottom: 14px;
+  right: 50%;
+  bottom: calc(100% + 10px);
   z-index: 9;
   display: grid;
-  width: var(--kira-panel-width);
-  padding: 16px;
-  overflow-y: auto;
+  width: 320px;
+  padding: 10px;
   border: 1px solid var(--kira-border);
   border-radius: var(--radius-3);
-  background: color-mix(in srgb, var(--surface-inspector), transparent 12%);
+  background: color-mix(in srgb, var(--surface-inspector), transparent 8%);
   box-shadow:
     inset 0 1px 0 color-mix(in srgb, var(--text-main), transparent 94%),
     var(--panel-shadow);
   -webkit-backdrop-filter: blur(24px) saturate(1.25);
   backdrop-filter: blur(24px) saturate(1.25);
-  gap: 12px;
-  align-content: start;
-  animation: kira-panel-in 220ms cubic-bezier(0.16, 1, 0.3, 1);
+  gap: 8px;
+  transform: translateX(50%);
+  transform-origin: bottom center;
+  animation: kira-popover-in 160ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-@keyframes kira-panel-in {
-  from { opacity: 0; transform: translateX(12px); }
-  to { opacity: 1; transform: translateX(0); }
+@keyframes kira-popover-in {
+  from { opacity: 0; transform: translateX(50%) translateY(6px) scale(0.97); }
+  to { opacity: 1; transform: translateX(50%) translateY(0) scale(1); }
 }
 
-.kira-panel-head {
+.kira-popover-head {
   position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 8px;
 }
 
-.kira-panel.is-thinking .kira-panel-head::after {
+.kira-popover.is-thinking .kira-popover-head::after {
   position: absolute;
   right: 0;
-  bottom: -8px;
+  bottom: -6px;
   left: 0;
   height: 2px;
   background: var(--kira-sweep);
@@ -3698,39 +3696,96 @@ p {
   content: "";
 }
 
-.kira-panel-title {
+.kira-popover-title {
   display: inline-flex;
+  overflow: hidden;
   align-items: center;
   color: var(--text-main);
-  font-size: 0.9rem;
-  font-weight: 800;
-  gap: 7px;
-}
-
-.kira-anchor-line {
-  margin: 0;
-  color: var(--text-soft);
-  font-size: 0.78rem;
-  line-height: 1.4;
-}
-
-.kira-section {
-  display: grid;
+  font-size: 0.76rem;
+  font-weight: 700;
   gap: 6px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.kira-section-head {
+.kira-popover-input {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-2);
+  background: var(--surface-inset);
+  color: var(--text-main);
+  font: inherit;
+  line-height: 1.4;
+  resize: none;
+}
+
+.kira-popover-row {
   display: flex;
   align-items: center;
-  color: var(--text-muted);
-  font-size: 0.72rem;
-  font-weight: 800;
-  gap: 6px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  gap: 5px;
 }
 
-.kira-section-head select {
+.kira-popover-spacer {
+  flex: 1;
+}
+
+.kira-chip-toggle {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+  background: var(--surface-inset);
+  color: var(--text-soft);
+  cursor: pointer;
+  font-size: 0.68rem;
+  gap: 4px;
+}
+
+.kira-chip-toggle:hover,
+.kira-chip-toggle.is-open {
+  border-color: var(--kira-border);
+  background: var(--kira-tint);
+  color: var(--text-main);
+}
+
+.kira-popover-submit {
+  display: inline-flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--kira-sweep);
+  color: var(--bg-base);
+  cursor: pointer;
+  font-size: 0.72rem;
+  font-weight: 800;
+  gap: 5px;
+}
+
+.kira-popover-submit:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.kira-dropdown {
+  display: grid;
+  padding-top: 8px;
+  border-top: 1px solid var(--separator-hairline);
+  gap: 6px;
+}
+
+.kira-dropdown-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.kira-dropdown-head select {
   flex: 1;
   height: 26px;
   padding: 0 6px;
@@ -3741,9 +3796,10 @@ p {
   font-size: 0.7rem;
 }
 
-.kira-section-count {
+.kira-dropdown-meta {
   color: var(--text-muted);
-  font-size: 0.68rem;
+  font-size: 0.66rem;
+  white-space: nowrap;
 }
 
 .kira-chip-row {
@@ -3761,7 +3817,7 @@ p {
   border-radius: 999px;
   background: var(--kira-tint);
   color: var(--text-soft);
-  font-size: 0.68rem;
+  font-size: 0.66rem;
   gap: 5px;
 }
 
@@ -3789,48 +3845,23 @@ p {
   color: var(--text-main);
 }
 
-.kira-budget {
-  display: grid;
-  gap: 4px;
-}
-
-.kira-budget-bar {
-  height: 4px;
-  overflow: hidden;
-  border-radius: 999px;
-  background: var(--surface-inset);
-}
-
-.kira-budget-fill {
-  height: 100%;
-  background: var(--kira-sweep);
-  transition: width 160ms ease;
-}
-
-.kira-budget.is-heavy .kira-budget-fill {
-  background: var(--accent-amber);
-}
-
-.kira-budget-label {
-  color: var(--text-muted);
-  font-size: 0.68rem;
-}
-
 .kira-suggestion-list {
   display: grid;
   gap: 4px;
+  max-height: 220px;
+  overflow-y: auto;
 }
 
 .kira-suggestion {
   display: grid;
-  padding: 7px 9px;
+  padding: 6px 8px;
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-2);
   background: var(--surface-inset);
   color: var(--text-main);
   cursor: pointer;
-  font-size: 0.76rem;
-  gap: 2px;
+  font-size: 0.72rem;
+  gap: 1px;
   text-align: left;
 }
 
@@ -3841,58 +3872,18 @@ p {
 
 .kira-suggestion-why {
   color: var(--text-muted);
-  font-size: 0.68rem;
+  font-size: 0.66rem;
 }
 
-.kira-panel label {
-  display: grid;
+.kira-popover-foot {
+  margin: 0;
+  padding-top: 6px;
+  border-top: 1px solid var(--separator-hairline);
   color: var(--text-muted);
-  font-size: 0.72rem;
-  font-weight: 800;
-  gap: 6px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  font-size: 0.66rem;
 }
 
-.kira-panel select,
-.kira-panel textarea,
-.canvas-prompt-starter textarea {
-  width: 100%;
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius-2);
-  background: var(--surface-inset);
-  color: var(--text-main);
-  font: inherit;
-}
-
-.kira-panel select {
-  height: 36px;
-  padding: 0 10px;
-}
-
-.kira-panel textarea,
-.canvas-prompt-starter textarea {
-  padding: 10px;
-  line-height: 1.45;
-}
-
-.kira-composer {
-  display: grid;
-}
-
-.kira-submit {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-}
-
-.kira-panel-foot {
-  color: var(--text-muted);
-  font-size: 0.68rem;
-}
-
-.kira-panel-foot .link-button {
+.kira-popover-foot .link-button {
   padding: 0;
   border: 0;
   background: none;
@@ -4112,6 +4103,13 @@ p {
   flex-wrap: wrap-reverse;
   gap: 8px var(--space-3);
   pointer-events: none;
+}
+
+/* The library drawer floats at z-index 50 and can visually overlap the
+   bottom bar's horizontal center. Bump above it only while the Kira
+   popover is open, so its controls stay reachable under the drawer. */
+.canvas-bottom-bar.has-kira-open {
+  z-index: 60;
 }
 
 .canvas-bottom-bar > * {

@@ -31,9 +31,11 @@ import {
   FolderOpen,
   Frame,
   GitBranch,
+  HelpCircle,
   History,
   Image as ImageIcon,
   ImagePlus,
+  Layers,
   Link2,
   Lightbulb,
   ListTree,
@@ -7041,6 +7043,10 @@ function GraphCanvas({
   const resizingFrameRef = useRef<{ id: string; startWidth: number; startHeight: number; startX: number; startY: number } | null>(null)
   const [starterPrompt, setStarterPrompt] = useState('')
   const [kiraSession, setKiraSession] = useState<KiraSession | null>(null)
+  // Kira's context/suggestion detail is collapsed by default — the popover
+  // stays a single small box until the user asks to see more.
+  const [isKiraContextOpen, setIsKiraContextOpen] = useState(false)
+  const [isKiraSuggestOpen, setIsKiraSuggestOpen] = useState(false)
 
   function openKiraSession(origin: 'node' | 'rail', source: Pick<GraphNodeRef, 'kind' | 'id'> | null, scope: AiNodeScope, extraSources: Pick<GraphNodeRef, 'kind' | 'id'>[] = []) {
     setKiraSession({
@@ -7057,6 +7063,8 @@ function GraphCanvas({
       status: 'idle',
       message: null,
     })
+    setIsKiraContextOpen(false)
+    setIsKiraSuggestOpen(false)
     setArcMenu(null)
   }
 
@@ -7669,6 +7677,143 @@ function GraphCanvas({
     event.stopPropagation()
   }
 
+  // A small box anchored right above the Kira button — not a full side
+  // panel. Context and suggestions stay collapsed behind their own toggle
+  // so the default view is just "what am I working from" + a text field.
+  function renderKiraPopover() {
+    if (!kiraSession) return null
+
+    const anchorNode = kiraSession.source
+      ? resolveGraphNodeRef(kiraSession.source.id, ideas, images, palettes, diagrams, placeholders)
+      : null
+    const contextNodes = collectKiraContext(kiraSession.source, kiraSession.scope, { ideas, images, palettes, diagrams, placeholders, links })
+      .filter((node) => !kiraSession.removedContextKeys.includes(`${node.kind}:${node.id}`))
+    const route = selectAiProviderForTask('generate_node', aiProviders, aiRoutingMode, selectedAiProviderId, kiraSession.providerOverrideId ?? undefined)
+    const routedProvider = route.providerId ? aiProviders.find((candidate) => candidate.id === route.providerId) : undefined
+    const suggestions = kiraSuggestions[anchorNode?.kind ?? 'board']
+    const contextLines = contextNodes.map((node) => `- ${graphNodeKindLabel(node.kind)}: ${node.title}`).join('\n')
+    const tokenEstimate = estimateKiraTokens(kiraSession.prompt) + contextNodes.length * 8 + estimateKiraTokens(contextLines) + 120
+    const isThinking = kiraSession.status === 'thinking'
+    const statusLine = isThinking
+      ? kiraCopy.loading[0]
+      : kiraSession.status === 'error' && kiraSession.message
+        ? kiraSession.message
+        : anchorNode
+          ? anchorNode.title
+          : 'Whole board'
+
+    return (
+      <div className={isThinking ? 'kira-popover is-thinking' : 'kira-popover'} role="dialog" aria-label="Kira">
+        <div className="kira-popover-head">
+          <span className="kira-popover-title">
+            <KiraMark size={14} state={isThinking ? 'thinking' : 'rest'} />
+            {statusLine}
+          </span>
+          <button type="button" className="icon-button" aria-label="Close Kira" onClick={() => setKiraSession(null)}>
+            <X size={12} />
+          </button>
+        </div>
+        <textarea
+          className="kira-popover-input"
+          rows={2}
+          placeholder={!routedProvider ? kiraCopy.noProvider : aiNodeActionPrompts[kiraSession.action]}
+          value={kiraSession.prompt}
+          onChange={(event) => setKiraSession((current) => current ? { ...current, prompt: event.target.value } : current)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && !isThinking) {
+              event.preventDefault()
+              void submitKiraSession()
+            }
+          }}
+        />
+        <div className="kira-popover-row">
+          <button
+            type="button"
+            className={isKiraContextOpen ? 'kira-chip-toggle is-open' : 'kira-chip-toggle'}
+            aria-expanded={isKiraContextOpen}
+            onClick={() => { setIsKiraContextOpen((current) => !current); setIsKiraSuggestOpen(false) }}
+          >
+            <Layers size={12} />
+            {contextNodes.length}
+          </button>
+          <button
+            type="button"
+            className={isKiraSuggestOpen ? 'kira-chip-toggle is-open' : 'kira-chip-toggle'}
+            aria-label="Suggestions"
+            aria-expanded={isKiraSuggestOpen}
+            onClick={() => { setIsKiraSuggestOpen((current) => !current); setIsKiraContextOpen(false) }}
+          >
+            <HelpCircle size={12} />
+          </button>
+          <span className="kira-popover-spacer" />
+          <button
+            type="button"
+            className="kira-popover-submit"
+            disabled={isThinking || !kiraSession.prompt.trim()}
+            onClick={() => void submitKiraSession()}
+          >
+            <KiraMark size={13} state={isThinking ? 'thinking' : 'rest'} />
+            {isThinking ? '…' : 'Ask'}
+          </button>
+        </div>
+        {isKiraContextOpen && (
+          <div className="kira-dropdown">
+            <div className="kira-dropdown-head">
+              <select
+                value={kiraSession.scope}
+                onChange={(event) => setKiraSession((current) => current ? { ...current, scope: event.target.value as AiNodeScope, removedContextKeys: [] } : current)}
+              >
+                {(Object.keys(aiNodeScopeLabels) as AiNodeScope[]).map((scope) => (
+                  <option key={scope} value={scope}>{aiNodeScopeLabels[scope]}</option>
+                ))}
+              </select>
+              <span className="kira-dropdown-meta">~{tokenEstimate.toLocaleString()} tokens</span>
+            </div>
+            <div className="kira-chip-row">
+              {contextNodes.map((node) => (
+                <span className="kira-chip" key={`${node.kind}:${node.id}`} title={node.title}>
+                  <span className="kira-chip-kind">{graphNodeKindLabel(node.kind)}</span>
+                  {node.title.length > 20 ? `${node.title.slice(0, 20)}…` : node.title}
+                  <button
+                    type="button"
+                    className="kira-chip-remove"
+                    aria-label={`Remove ${node.title} from context`}
+                    onClick={() => setKiraSession((current) => current ? { ...current, removedContextKeys: [...current.removedContextKeys, `${node.kind}:${node.id}`] } : current)}
+                  >
+                    <X size={10} />
+                  </button>
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+        {isKiraSuggestOpen && (
+          <div className="kira-dropdown kira-suggestion-list">
+            {suggestions.map((suggestion) => (
+              <button
+                key={suggestion.id}
+                type="button"
+                className="kira-suggestion"
+                onClick={() => {
+                  setKiraSession((current) => current ? { ...current, action: suggestion.action, prompt: suggestion.prompt } : current)
+                  setIsKiraSuggestOpen(false)
+                }}
+              >
+                <span>{suggestion.label}</span>
+                <span className="kira-suggestion-why">{suggestion.why}</span>
+              </button>
+            ))}
+          </div>
+        )}
+        {!routedProvider && (
+          <p className="kira-popover-foot">
+            {kiraCopy.noProvider} <button type="button" className="link-button" onClick={onOpenAiSettings}>Open AI settings →</button>
+          </p>
+        )}
+      </div>
+    )
+  }
+
   function beginIdeaFieldEdit(ideaId: string, field: 'title' | 'body', event: React.SyntheticEvent<HTMLElement>) {
     event.preventDefault()
     event.stopPropagation()
@@ -7716,7 +7861,7 @@ function GraphCanvas({
     const target = event.target instanceof Element ? event.target : null
     const isMiddleButton = event.button === 1
     if (!isMiddleButton) {
-      if (event.button !== 0 || target?.closest('[data-node-kind][data-node-id], button, input, textarea, select, .canvas-tool-rail, .canvas-view-rail, .canvas-zoom-rail, .graph-tools-drawer, .node-context-menu, .node-arc-menu, .canvas-zero-state, .kira-panel, .canvas-kira-launcher')) return
+      if (event.button !== 0 || target?.closest('[data-node-kind][data-node-id], button, input, textarea, select, .canvas-tool-rail, .canvas-view-rail, .canvas-zoom-rail, .graph-tools-drawer, .node-context-menu, .node-arc-menu, .canvas-zero-state, .kira-popover, .canvas-kira-launcher')) return
       onSelect({ type: 'project' })
       setNodeContextMenu(null)
       setArcMenu(null)
@@ -7756,7 +7901,7 @@ function GraphCanvas({
   }
 
   function handleCanvasWheel(event: React.WheelEvent<HTMLDivElement>) {
-    if (event.target instanceof Element && event.target.closest('input, textarea, select, .graph-tools-drawer, .node-context-menu, .node-arc-menu, .kira-panel')) return
+    if (event.target instanceof Element && event.target.closest('input, textarea, select, .graph-tools-drawer, .node-context-menu, .node-arc-menu, .kira-popover')) return
     event.preventDefault()
     if (event.ctrlKey || event.metaKey) {
       const rect = canvasRef.current?.getBoundingClientRect()
@@ -7817,7 +7962,7 @@ function GraphCanvas({
       >
         {/* One row, three zones: view options left, create tools centre, viewport
             right. Flex keeps them from ever overlapping at any canvas width. */}
-        <div className="canvas-bottom-bar">
+        <div className={kiraSession ? 'canvas-bottom-bar has-kira-open' : 'canvas-bottom-bar'}>
         <div className="canvas-view-rail" aria-label="Canvas view tools">
           <div className="graph-mode-toggle" aria-label="Canvas mode">
             {Object.keys(graphModeLabels).map((mode) => (
@@ -7893,16 +8038,18 @@ function GraphCanvas({
           </div>
         </div>
 
-        <button
-          type="button"
-          className={kiraSession ? 'canvas-kira-launcher is-active' : 'canvas-kira-launcher'}
-          aria-label="Ask Kira"
-          data-tooltip="Kira"
-          onClick={() => (kiraSession ? setKiraSession(null) : openKiraFromRail())}
-        >
-          <KiraMark size={18} />
-          Kira
-        </button>
+        <div className="kira-launcher-wrap">
+          <button
+            type="button"
+            className={kiraSession ? 'canvas-kira-launcher is-active' : 'canvas-kira-launcher'}
+            aria-label="Ask Kira"
+            data-tooltip="Kira"
+            onClick={() => (kiraSession ? setKiraSession(null) : openKiraFromRail())}
+          >
+            <KiraMark size={18} state={kiraSession?.status === 'thinking' ? 'thinking' : 'rest'} />
+          </button>
+          {renderKiraPopover()}
+        </div>
 
         <div className="canvas-zoom-rail" aria-label="Canvas zoom">
           <button type="button" aria-label="Zoom out" onClick={() => updateZoom(-0.15)}>
@@ -8503,118 +8650,6 @@ function GraphCanvas({
             </div>
           )}
         </div>
-
-        {kiraSession && (() => {
-          const anchorNode = kiraSession.source
-            ? resolveGraphNodeRef(kiraSession.source.id, ideas, images, palettes, diagrams, placeholders)
-            : null
-          const contextNodes = collectKiraContext(kiraSession.source, kiraSession.scope, { ideas, images, palettes, diagrams, placeholders, links })
-            .filter((node) => !kiraSession.removedContextKeys.includes(`${node.kind}:${node.id}`))
-          const route = selectAiProviderForTask('generate_node', aiProviders, aiRoutingMode, selectedAiProviderId, kiraSession.providerOverrideId ?? undefined)
-          const routedProvider = route.providerId ? aiProviders.find((candidate) => candidate.id === route.providerId) : undefined
-          const suggestions = kiraSuggestions[anchorNode?.kind ?? 'board']
-          const contextLines = contextNodes.map((node) => `- ${graphNodeKindLabel(node.kind)}: ${node.title}`).join('\n')
-          const tokenEstimate = estimateKiraTokens(kiraSession.prompt) + contextNodes.length * 8 + estimateKiraTokens(contextLines) + 120
-          const budgetZone = tokenEstimate > 6000 ? 'heavy' : tokenEstimate > 2000 ? 'generous' : 'comfortable'
-          const isThinking = kiraSession.status === 'thinking'
-          return (
-            <div className={isThinking ? 'kira-panel is-thinking' : 'kira-panel'} role="dialog" aria-label="Kira">
-              <header className="kira-panel-head">
-                <span className="kira-panel-title"><KiraMark size={16} state={isThinking ? 'thinking' : 'rest'} /> Kira</span>
-                <button type="button" className="icon-button" aria-label="Close Kira" onClick={() => setKiraSession(null)}>
-                  <X size={13} />
-                </button>
-              </header>
-              <p className="kira-anchor-line">
-                {isThinking
-                  ? kiraCopy.loading[0]
-                  : kiraSession.status === 'error' && kiraSession.message
-                    ? kiraSession.message
-                    : anchorNode ? kiraCopy.emptyNode(anchorNode.title) : kiraCopy.emptyBoard}
-              </p>
-              <div className="kira-section">
-                <div className="kira-section-head">
-                  <span>Context</span>
-                  <select
-                    value={kiraSession.scope}
-                    onChange={(event) => setKiraSession((current) => current ? { ...current, scope: event.target.value as AiNodeScope, removedContextKeys: [] } : current)}
-                  >
-                    {(Object.keys(aiNodeScopeLabels) as AiNodeScope[]).map((scope) => (
-                      <option key={scope} value={scope}>{aiNodeScopeLabels[scope]}</option>
-                    ))}
-                  </select>
-                  <span className="kira-section-count">{contextNodes.length} nodes</span>
-                </div>
-                <div className="kira-chip-row">
-                  {contextNodes.map((node) => (
-                    <span className="kira-chip" key={`${node.kind}:${node.id}`} title={node.title}>
-                      <span className="kira-chip-kind">{graphNodeKindLabel(node.kind)}</span>
-                      {node.title.length > 24 ? `${node.title.slice(0, 24)}…` : node.title}
-                      <button
-                        type="button"
-                        className="kira-chip-remove"
-                        aria-label={`Remove ${node.title} from context`}
-                        onClick={() => setKiraSession((current) => current ? { ...current, removedContextKeys: [...current.removedContextKeys, `${node.kind}:${node.id}`] } : current)}
-                      >
-                        <X size={10} />
-                      </button>
-                    </span>
-                  ))}
-                </div>
-              </div>
-              <div className={budgetZone === 'heavy' ? 'kira-budget is-heavy' : 'kira-budget'}>
-                <div className="kira-budget-bar">
-                  <div className="kira-budget-fill" style={{ width: `${Math.min(100, (tokenEstimate / 8000) * 100)}%` }} />
-                </div>
-                <span className="kira-budget-label">~{tokenEstimate.toLocaleString()} tokens · {budgetZone}</span>
-              </div>
-              <div className="kira-section">
-                <div className="kira-section-head"><span>Suggestions</span></div>
-                <div className="kira-suggestion-list">
-                  {suggestions.map((suggestion) => (
-                    <button
-                      key={suggestion.id}
-                      type="button"
-                      className="kira-suggestion"
-                      onClick={() => setKiraSession((current) => current ? { ...current, action: suggestion.action, prompt: suggestion.prompt } : current)}
-                    >
-                      <span>{suggestion.label}</span>
-                      <span className="kira-suggestion-why">{suggestion.why}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <label>
-                Action
-                <select
-                  value={kiraSession.action}
-                  onChange={(event) => setKiraSession((current) => current ? { ...current, action: event.target.value as AiNodeAction } : current)}
-                >
-                  {(Object.keys(aiNodeActionLabels) as AiNodeAction[]).map((action) => (
-                    <option key={action} value={action}>{aiNodeActionLabels[action]}</option>
-                  ))}
-                </select>
-              </label>
-              <div className="kira-composer">
-                <textarea
-                  rows={4}
-                  placeholder={aiNodeActionPrompts[kiraSession.action]}
-                  value={kiraSession.prompt}
-                  onChange={(event) => setKiraSession((current) => current ? { ...current, prompt: event.target.value } : current)}
-                />
-              </div>
-              <button type="button" className="primary-button kira-submit" disabled={isThinking} onClick={() => void submitKiraSession()}>
-                <KiraMark size={14} state={isThinking ? 'thinking' : 'rest'} />
-                {isThinking ? 'Working…' : 'Ask Kira'}
-              </button>
-              <footer className="kira-panel-foot">
-                {routedProvider ? `${routedProvider.name} · ${route.reason}` : kiraCopy.noProvider}
-                {' — '}
-                <button type="button" className="link-button" onClick={onOpenAiSettings}>Open AI settings →</button>
-              </footer>
-            </div>
-          )
-        })()}
 
         {nodeContextMenu && (
           <div
