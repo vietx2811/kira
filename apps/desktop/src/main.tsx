@@ -1484,6 +1484,19 @@ function FileWorkspace({
   const [sortMode, setSortMode] = useState<SortMode>('recent')
   const [batchTag, setBatchTag] = useState('')
   const [libraryStatus, setLibraryStatus] = useState('Ready')
+  const [pinDownload, setPinDownload] = useState<{ imageId: string; title: string; progress: number | null } | null>(null)
+  const [isCanvasNoticeVisible, setIsCanvasNoticeVisible] = useState(false)
+  const canvasNoticeTimerRef = useRef(0)
+
+  // Surfaces libraryStatus as a transient pill over the canvas so drop
+  // feedback is visible even when the (collapsible) Library panel is closed.
+  useEffect(() => {
+    if (libraryStatus === 'Ready') return
+    setIsCanvasNoticeVisible(true)
+    window.clearTimeout(canvasNoticeTimerRef.current)
+    canvasNoticeTimerRef.current = window.setTimeout(() => setIsCanvasNoticeVisible(false), 2500)
+    return () => window.clearTimeout(canvasNoticeTimerRef.current)
+  }, [libraryStatus])
   const [outlineStatus, setOutlineStatus] = useState('Ready')
   const [slideshowStatus, setSlideshowStatus] = useState('Ready')
   const [linkCreationRelation, setLinkCreationRelation] = useState<Relation>('supports')
@@ -2239,6 +2252,7 @@ function FileWorkspace({
       return
     }
     recentCaptureKeys.set(duplicateKey, now)
+    void upgradePinterestCapture(reference.id, reference.title, capture.url)
 
     if (capture.createIdeaTitle?.trim()) {
       attachCaptureToNewIdea(reference, capture.createIdeaTitle.trim())
@@ -2255,6 +2269,66 @@ function FileWorkspace({
     }
 
     appendReferences([reference], '1 browser capture imported')
+  }
+
+  // Browser captures only ever carry a remote thumbnail URL (see
+  // createReferenceFromCapture). For Pinterest pins specifically, walk the
+  // CDN's resolution candidates, actually download the highest-quality one
+  // that resolves, and swap it into the already-added image once ready.
+  async function upgradePinterestCapture(imageId: string, title: string, sourceUrl: string) {
+    let url: URL
+    try {
+      url = new URL(sourceUrl)
+    } catch {
+      return
+    }
+
+    const candidates = resolvePinterestOriginalCandidates(url)
+    if (candidates.length === 0) return
+
+    setPinDownload({ imageId, title, progress: null })
+    let lastProgressUpdate = 0
+
+    try {
+      for (const candidate of candidates) {
+        let response: Response
+        try {
+          response = await fetch(candidate)
+        } catch {
+          continue
+        }
+        if (!response.ok || !response.body) continue
+
+        const total = Number(response.headers.get('content-length')) || 0
+        const reader = response.body.getReader()
+        const chunks: BlobPart[] = []
+        let received = 0
+
+        for (;;) {
+          const { done, value } = await reader.read()
+          if (done) break
+          chunks.push(value)
+          received += value.length
+          const now = Date.now()
+          if (total > 0 && now - lastProgressUpdate > 80) {
+            lastProgressUpdate = now
+            setPinDownload({ imageId, title, progress: received / total })
+          }
+        }
+
+        const dataUrl = await readFileAsDataUrl(new Blob(chunks))
+        setImages((current) =>
+          current.map((image) => (image.id === imageId ? { ...image, thumb: dataUrl, updatedAt: nowIso() } : image)),
+        )
+        setLibraryStatus('Downloaded original pin image')
+        return
+      }
+      setLibraryStatus('Could not fetch original pin quality — using preview')
+    } catch {
+      setLibraryStatus('Could not fetch original pin quality — using preview')
+    } finally {
+      setPinDownload((current) => (current?.imageId === imageId ? null : current))
+    }
   }
 
   function attachCaptureToNewIdea(reference: EvidenceImage, title: string) {
@@ -2441,7 +2515,11 @@ function FileWorkspace({
         if (source) attachPlaceholderReference(target.placeholderId, source)
         return
       }
+      const dropped = images.find((image) => image.id === payload.imageId)
+      pushCanvasHistory()
+      moveGraphNode('image', payload.imageId, target.position)
       setSelection({ type: 'image', id: payload.imageId })
+      setLibraryStatus(dropped ? `Moved ${dropped.title}` : 'Moved reference')
       return
     }
 
@@ -4789,6 +4867,7 @@ function FileWorkspace({
           batchTag={batchTag}
           searchQuery={searchQuery}
           status={libraryStatus}
+          downloadProgress={pinDownload}
           selectedReferenceIds={selectedReferenceIds}
           selected={selection}
           onBrowseModeChange={setLibraryBrowseMode}
@@ -4825,6 +4904,11 @@ function FileWorkspace({
         />
         <section className="content-region">
           <div className="view-region">
+            {activeView === 'Canvas' && (
+              <div className={isCanvasNoticeVisible ? 'canvas-notice is-visible' : 'canvas-notice'} role="status">
+                {libraryStatus}
+              </div>
+            )}
             {activeView === 'Outline' ? (
               <OutlineView
                 draft={latestOutlineDraft}
@@ -4910,6 +4994,7 @@ function FileWorkspace({
                 onLinkCreationRelationChange={setLinkCreationRelation}
                 onIdeaInlineChange={updateIdea}
                 onDroppedReference={handleDroppedReference}
+                onNotice={setLibraryStatus}
                 onNodeMove={moveGraphNode}
                 onNodeImportanceChange={changeNodeImportance}
                 onNodesImportanceChange={changeSelectedNodesImportance}
@@ -6371,6 +6456,7 @@ function EvidenceInbox({
   batchTag,
   searchQuery,
   status,
+  downloadProgress,
   selectedReferenceIds,
   selected,
   onBrowseModeChange,
@@ -6408,6 +6494,7 @@ function EvidenceInbox({
   batchTag: string
   searchQuery: string
   status: string
+  downloadProgress: { imageId: string; title: string; progress: number | null } | null
   selectedReferenceIds: Set<string>
   selected: Selection
   onBrowseModeChange: (mode: LibraryBrowseMode) => void
@@ -6792,6 +6879,20 @@ function EvidenceInbox({
         </div>
       )}
       {isDraggingFiles && <div className="drop-copy">Drop images into Library</div>}
+      {downloadProgress && (
+        <div className="library-download-bar" role="status">
+          <span className="library-download-label">
+            Downloading original · {downloadProgress.title}
+            {downloadProgress.progress != null ? ` (${Math.round(downloadProgress.progress * 100)}%)` : ''}
+          </span>
+          <div className="library-download-track">
+            <div
+              className={downloadProgress.progress == null ? 'library-download-fill is-indeterminate' : 'library-download-fill'}
+              style={downloadProgress.progress == null ? undefined : { width: `${Math.min(100, Math.round(downloadProgress.progress * 100))}%` }}
+            />
+          </div>
+        </div>
+      )}
       <div className="library-footer">
         {selectedCount > 0 ? (
           <div className="batch-bar">
@@ -6856,6 +6957,7 @@ function GraphCanvas({
   onLinkCreationRelationChange,
   onIdeaInlineChange,
   onDroppedReference,
+  onNotice,
   onNodeMove,
   onNodeImportanceChange,
   onNodesImportanceChange,
@@ -6899,6 +7001,7 @@ function GraphCanvas({
   onLinkCreationRelationChange: (relation: Relation) => void
   onIdeaInlineChange: (ideaId: string, patch: Partial<Pick<Idea, 'title' | 'body' | 'notes'>>) => void
   onDroppedReference: (payload: DroppedReferencePayload, target: DroppedReferenceTarget) => void | Promise<void>
+  onNotice: (message: string) => void
   onNodeMove: (kind: GraphNodeKind, id: string, position: Pick<Idea, 'x' | 'y'>) => void
   onNodeImportanceChange: (kind: GraphNodeKind, id: string, delta: number) => void
   onNodesImportanceChange: (nodes: CanvasNodeSelection[], delta: number) => void
@@ -7148,9 +7251,15 @@ function GraphCanvas({
   }
 
   function handleReferenceDrop(event: React.DragEvent<HTMLElement>, target: DroppedReferenceTarget) {
-    if (graphMode !== 'edit') return false
+    if (graphMode !== 'edit') {
+      onNotice('Switch to Edit mode to drop images')
+      return false
+    }
     const payload = extractDroppedReferencePayload(event.dataTransfer)
-    if (!payload) return false
+    if (!payload) {
+      onNotice('Unsupported drop — use an image file, URL, or an item from the Library')
+      return false
+    }
     event.preventDefault()
     event.stopPropagation()
     void onDroppedReference(payload, target)
@@ -7714,6 +7823,15 @@ function GraphCanvas({
         }}
         onAuxClick={(event) => event.preventDefault()}
         onWheel={handleCanvasWheel}
+        onDragOver={handleReferenceDragOver}
+        onDrop={(event) => {
+          // Attached here (the untransformed, full-bleed element) rather than
+          // on .graph-viewport, whose hit-test box shrinks/shifts with pan
+          // and zoom (it carries the live CSS transform) and would otherwise
+          // silently swallow drops outside its transformed bounds.
+          const position = dragPercent(event) ?? { x: 50, y: 50 }
+          handleReferenceDrop(event, { kind: 'canvas', position })
+        }}
       >
         {/* One row, three zones: view options left, create tools centre, viewport
             right. Flex keeps them from ever overlapping at any canvas width. */}
@@ -7855,11 +7973,6 @@ function GraphCanvas({
         <div
           className="graph-viewport"
           style={{ transform: `translate(${graphTransform.x}px, ${graphTransform.y}px) scale(${graphTransform.scale})` }}
-          onDragOver={handleReferenceDragOver}
-          onDrop={(event) => {
-            const position = dragPercent(event) ?? { x: 50, y: 50 }
-            handleReferenceDrop(event, { kind: 'canvas', position })
-          }}
         >
           {frames.map((frame) => (
             <div
@@ -12173,13 +12286,36 @@ function createReferenceFromCapture(capture: KiraCapturePayload, index: number):
   }
 }
 
-function readFileAsDataUrl(file: File): Promise<string> {
+function readFileAsDataUrl(file: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
     reader.onload = () => resolve(String(reader.result))
     reader.onerror = () => reject(reader.error)
     reader.readAsDataURL(file)
   })
+}
+
+// Pinterest CDN paths look like /{size}/aa/bb/cc/{hash}.{ext}, where {size} is
+// a resolution segment (60x60, 236x, 564x, ...) and `originals` is the true
+// full-resolution asset. The extension at `originals` can differ from the
+// thumbnail's, so candidates are tried in order until one resolves.
+function resolvePinterestOriginalCandidates(url: URL): string[] {
+  if (!url.hostname.includes('pinimg.com')) return []
+  if (!/\.(jpg|jpeg|png|webp|gif)(?:$|\?)/i.test(url.href)) return []
+  if (url.href.includes('/originals/')) return []
+
+  const base = url.href
+    .replace(/\/[0-9]+x[0-9]*(?:_[A-Za-z]+)?\//, '/originals/')
+    .replace('/enabled/', '/')
+    .replace('/enabled_lo/', '/')
+    .replace('/enabled_hi/', '/')
+    .replace('/control/', '/')
+  if (!base.includes('/originals/')) return []
+
+  const extension = base.match(/\.(jpg|jpeg|png|webp|gif)(?:$|\?)/i)?.[1] || 'jpg'
+  const candidateExtensions = ['jpg', 'jpeg', 'png', 'webp', 'gif']
+  const ordered = [extension, ...candidateExtensions.filter((candidate) => candidate !== extension)]
+  return ordered.map((candidate) => base.replace(new RegExp(`\\.${extension}(?=$|\\?)`, 'i'), `.${candidate}`))
 }
 
 type LocalImageAnalysis = {
