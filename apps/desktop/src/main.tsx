@@ -102,10 +102,79 @@ type AiNodeAction = 'summarize' | 'break_down' | 'synthesize' | 'find_gaps' | 'g
 type AiNodeScope = 'selected' | 'upstream_branch' | 'downstream_branch' | 'full_board'
 
 type AiNodeRequest = {
-  source: Pick<GraphNodeRef, 'kind' | 'id'>
+  source: Pick<GraphNodeRef, 'kind' | 'id'> | null
   action: AiNodeAction
   scope: AiNodeScope
   prompt: string
+  contextNodes?: GraphNodeRef[]
+  providerOverrideId?: string | null
+  modelOverride?: string | null
+}
+
+// One Kira panel session per open/close cycle. `source: null` means "whole
+// board" (opened from the rail launcher with nothing selected).
+type KiraSession = {
+  origin: 'node' | 'rail'
+  source: Pick<GraphNodeRef, 'kind' | 'id'> | null
+  extraSources: Pick<GraphNodeRef, 'kind' | 'id'>[]
+  scope: AiNodeScope
+  action: AiNodeAction
+  prompt: string
+  previousPrompt: string | null
+  removedContextKeys: string[]
+  providerOverrideId: string | null
+  modelOverride: string | null
+  status: 'idle' | 'thinking' | 'refining' | 'error'
+  message: string | null
+}
+
+type KiraSuggestion = { id: string; label: string; why: string; action: AiNodeAction; prompt: string }
+
+const kiraSuggestions: Record<GraphNodeKind | 'board', KiraSuggestion[]> = {
+  idea: [
+    { id: 'idea-sharpen', label: 'Sharpen this into a positioning line', why: 'Distill the idea to one sentence', action: 'synthesize', prompt: 'Sharpen this idea into one clear positioning line.' },
+    { id: 'idea-kill', label: 'What would kill this idea?', why: 'Stress-test the concept', action: 'find_gaps', prompt: 'What would kill this idea? Name the weakest assumptions.' },
+    { id: 'idea-adjacent', label: 'Three adjacent territories', why: 'Widen the exploration', action: 'generate_variations', prompt: 'Suggest three adjacent creative territories that still fit this idea.' },
+    { id: 'idea-not-for', label: 'Who is this NOT for?', why: 'Sharpen the audience', action: 'find_gaps', prompt: 'Who is this idea explicitly not for, and why?' },
+  ],
+  image: [
+    { id: 'image-language', label: 'Name the visual language here', why: 'Put words to the aesthetic', action: 'summarize', prompt: 'Name and describe the visual language in this image.' },
+    { id: 'image-brief', label: 'Art-direction notes to brief a shoot', why: 'Turn a reference into a brief', action: 'break_down', prompt: 'Write art-direction notes to brief a photo shoot from this reference.' },
+    { id: 'image-cliche', label: "What's the cliché risk?", why: 'Catch overused tropes early', action: 'find_gaps', prompt: 'What is the cliché risk in this image, and how would you avoid it?' },
+    { id: 'image-palette', label: 'Pull a palette brief from this', why: 'Extract a usable color direction', action: 'synthesize', prompt: 'Pull a palette brief from this image.' },
+  ],
+  palette: [
+    { id: 'palette-break', label: 'Where does this palette break?', why: 'Check accessibility/print risk', action: 'find_gaps', prompt: 'Where does this palette break down for accessibility or print?' },
+    { id: 'palette-roles', label: 'Give each colour a role', why: 'Turn swatches into a system', action: 'break_down', prompt: 'Give each color in this palette a functional role.' },
+    { id: 'palette-warmer', label: 'A warmer sibling of this palette', why: 'Explore a tonal variant', action: 'generate_variations', prompt: 'Propose a warmer sibling of this palette.' },
+    { id: 'palette-owned', label: 'What brands already own this?', why: 'Check differentiation', action: 'find_gaps', prompt: 'What brands already own a palette like this?' },
+  ],
+  diagram: [
+    { id: 'diagram-narrative', label: 'Read this back as a narrative', why: 'Turn structure into a story', action: 'synthesize', prompt: 'Read this diagram back as a narrative.' },
+    { id: 'diagram-weak-link', label: 'Find the weakest link in this flow', why: 'Spot the fragile step', action: 'find_gaps', prompt: 'Find the weakest link in this flow.' },
+    { id: 'diagram-compress', label: 'Compress to five steps', why: 'Force clarity', action: 'summarize', prompt: 'Compress this diagram to five steps.' },
+    { id: 'diagram-missing', label: "What's missing between A and B?", why: 'Surface the gap', action: 'find_gaps', prompt: 'What is missing between the first and last steps of this flow?' },
+  ],
+  placeholder: [
+    { id: 'placeholder-brief', label: 'Write the brief for this slot', why: 'Define what should fill it', action: 'break_down', prompt: 'Write the brief for what should fill this image slot.' },
+    { id: 'placeholder-refs', label: 'Three references I should look for', why: 'Kickstart sourcing', action: 'generate_variations', prompt: 'Suggest three references to look for to fill this slot.' },
+    { id: 'placeholder-job', label: 'What job does this image do?', why: 'Clarify its function', action: 'summarize', prompt: 'What job does this image slot do in the board?' },
+    { id: 'placeholder-format', label: 'Suggest an alternative format', why: 'Consider a different medium', action: 'generate_variations', prompt: 'Suggest an alternative format for this slot.' },
+  ],
+  board: [
+    { id: 'board-summary', label: 'Summarize this board as a creative direction', why: 'One clear read of the whole board', action: 'synthesize', prompt: 'Summarize this board as a single creative direction.' },
+    { id: 'board-thin', label: 'Where is this board thin?', why: 'Spot the weak spots', action: 'find_gaps', prompt: 'Where is this board thin on evidence or ideas?' },
+    { id: 'board-group', label: 'Group these into three territories', why: 'Cluster the noise', action: 'break_down', prompt: 'Group these nodes into three territories.' },
+    { id: 'board-slide', label: 'Write the one-slide summary', why: 'Prep a stakeholder read', action: 'summarize', prompt: 'Write a one-slide summary of this board.' },
+  ],
+}
+
+const kiraCopy = {
+  emptyBoard: "Nothing selected. I'll read the whole board — or pick a node to narrow me down.",
+  emptyNode: (title: string) => `Working from ${title}. Ask for something, or take a suggestion.`,
+  loading: ['Reading the branch.', 'Looking for the throughline.', 'Holding this against the rest of the board.', 'Nearly there.'],
+  noProvider: "I'm not connected to a model yet. Pick one in Settings and I'll start.",
+  placed: (source: string) => `Placed. It's linked to ${source}.`,
 }
 
 type PendingDelete =
@@ -3720,62 +3789,32 @@ function FileWorkspace({
   }
 
   async function createAiNode(request: AiNodeRequest) {
-    const sourceNode = resolveGraphNodeRef(request.source.id, ideas, images, palettes, diagrams, placeholders)
-    if (!sourceNode) return
+    const sourceNode = request.source
+      ? resolveGraphNodeRef(request.source.id, ideas, images, palettes, diagrams, placeholders)
+      : null
+    if (request.source && !sourceNode) return
 
-    const allNodes = [
-      ...ideas.map((idea) => ({ kind: 'idea' as const, id: idea.id, title: idea.title, x: idea.x, y: idea.y })),
-      ...images.map((image) => ({ kind: 'image' as const, id: image.id, title: image.title, x: image.x, y: image.y })),
-      ...palettes.map((palette) => ({ kind: 'palette' as const, id: palette.id, title: palette.title, x: palette.x, y: palette.y })),
-      ...diagrams.map((diagram) => ({ kind: 'diagram' as const, id: diagram.id, title: diagram.title, x: diagram.x, y: diagram.y })),
-      ...placeholders.map((placeholder) => ({ kind: 'placeholder' as const, id: placeholder.id, title: placeholder.title, x: placeholder.x, y: placeholder.y })),
-    ]
-    const nodeKey = (node: Pick<GraphNodeRef, 'kind' | 'id'>) => `${node.kind}:${node.id}`
-    const nodeByKey = new Map(allNodes.map((node) => [nodeKey(node), node]))
-    const inbound = new Map<string, string[]>()
-    const outbound = new Map<string, string[]>()
-    links.forEach((link) => {
-      const sourceKey = nodeKey({ kind: link.sourceKind ?? 'image', id: link.sourceNodeId ?? link.imageId })
-      const targetKey = nodeKey({ kind: link.targetKind ?? 'idea', id: link.targetNodeId ?? link.ideaId })
-      outbound.set(sourceKey, [...(outbound.get(sourceKey) ?? []), targetKey])
-      inbound.set(targetKey, [...(inbound.get(targetKey) ?? []), sourceKey])
-    })
-
-    function walk(start: string, graph: Map<string, string[]>) {
-      const seen = new Set([start])
-      const queue = [start]
-      while (queue.length > 0) {
-        const current = queue.shift()
-        if (!current) continue
-        for (const next of graph.get(current) ?? []) {
-          if (seen.has(next)) continue
-          seen.add(next)
-          queue.push(next)
-        }
-      }
-      return [...seen]
-    }
-
-    const sourceKey = nodeKey(sourceNode)
-    const baseKeys =
-      request.scope === 'full_board'
-        ? allNodes.map(nodeKey)
-        : request.scope === 'upstream_branch'
-          ? walk(sourceKey, inbound)
-          : request.scope === 'downstream_branch'
-            ? walk(sourceKey, outbound)
-            : [sourceKey]
-    const baseNodes = baseKeys.map((key) => nodeByKey.get(key)).filter(Boolean).slice(0, 12) as GraphNodeRef[]
+    const baseNodes = request.contextNodes
+      ?? collectKiraContext(request.source, request.scope, { ideas, images, palettes, diagrams, placeholders, links })
     const instruction = request.prompt.trim() || aiNodeActionPrompts[request.action]
-    const route = selectAiProviderForTask('generate_node', aiProviders, aiRoutingMode, selectedAiProviderId)
-    const provider = route.providerId ? aiProviders.find((candidate) => candidate.id === route.providerId) : undefined
+    const route = selectAiProviderForTask(
+      'generate_node',
+      aiProviders,
+      aiRoutingMode,
+      selectedAiProviderId,
+      request.providerOverrideId ?? undefined,
+    )
+    const routedProvider = route.providerId ? aiProviders.find((candidate) => candidate.id === route.providerId) : undefined
+    const provider = routedProvider && request.modelOverride
+      ? { ...routedProvider, model: request.modelOverride }
+      : routedProvider
     const baseNodeLines = baseNodes.map((node) => `- ${graphNodeKindLabel(node.kind)}: ${node.title}`)
     const generationPrompt = [
-      'You are KIRA, a creative workspace assistant. Generate concise, useful content for a new canvas node.',
+      'You are Kira, a creative workspace assistant. Generate concise, useful content for a new canvas node.',
       `Action: ${aiNodeActionLabels[request.action]}`,
       `Scope: ${aiNodeScopeLabels[request.scope]}`,
       `User instruction: ${instruction}`,
-      `Source node: ${graphNodeKindLabel(sourceNode.kind)} - ${sourceNode.title}`,
+      sourceNode ? `Source node: ${graphNodeKindLabel(sourceNode.kind)} - ${sourceNode.title}` : 'Source: whole board',
       '',
       'Base nodes:',
       ...baseNodeLines,
@@ -3803,53 +3842,50 @@ function FileWorkspace({
         }
       }
     }
-    const body = [
-      `AI action: ${aiNodeActionLabels[request.action]}`,
-      `Scope: ${aiNodeScopeLabels[request.scope]}`,
-      `Instruction: ${instruction}`,
-      `Provider: ${generationStatus}`,
+    // The action/scope/instruction/provider bookkeeping now lives in the Kira
+    // panel and the link note below, not stamped into every generated node.
+    const body = generatedBody || [
+      'Generated draft fallback.',
       '',
-      generatedBody || [
-        'Generated draft fallback.',
-        '',
-        'Base nodes:',
-        ...baseNodeLines,
-        '',
-        'Connect and test a provider in Settings to replace this fallback with live model output.',
-      ].join('\n'),
+      'Base nodes:',
+      ...baseNodeLines,
+      '',
+      'Connect and test a provider in Settings to replace this fallback with live model output.',
     ].join('\n')
     const timestamp = nowIso()
+    const anchor = sourceNode ?? baseNodes[0] ?? { x: 50, y: 50 }
     const idea: Idea = {
       id: `idea-ai-${Date.now()}`,
-      title: `${aiNodeActionLabels[request.action]}: ${sourceNode.title}`.slice(0, 82),
+      title: `${aiNodeActionLabels[request.action]}: ${sourceNode ? sourceNode.title : 'Whole board'}`.slice(0, 82),
       body,
       status: 'forming',
-      x: clamp(sourceNode.x + 14, 8, 92),
-      y: clamp(sourceNode.y + 12, 8, 92),
+      x: clamp(anchor.x + 14, 8, 92),
+      y: clamp(anchor.y + 12, 8, 92),
       importance: 1.05,
       createdAt: timestamp,
       addedAt: timestamp,
       updatedAt: timestamp,
     }
-    const link: EvidenceLink = {
-      id: `link-ai-${Date.now()}`,
-      imageId: sourceNode.kind === 'image' ? sourceNode.id : '',
-      ideaId: idea.id,
-      sourceNodeId: sourceNode.id,
-      targetNodeId: idea.id,
-      sourceKind: sourceNode.kind,
-      targetKind: 'idea',
-      relation: 'derived-from',
-      note: `${aiNodeActionLabels[request.action]} generated from ${aiNodeScopeLabels[request.scope]}.`,
-      confidence: 0.62,
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    }
-
     pushCanvasHistory()
     recordNodeVersion('idea', undefined, idea, 'created')
     setIdeas((current) => [...current, idea])
-    setLinks((current) => [...current, link])
+    if (sourceNode) {
+      const link: EvidenceLink = {
+        id: `link-ai-${Date.now()}`,
+        imageId: sourceNode.kind === 'image' ? sourceNode.id : '',
+        ideaId: idea.id,
+        sourceNodeId: sourceNode.id,
+        targetNodeId: idea.id,
+        sourceKind: sourceNode.kind,
+        targetKind: 'idea',
+        relation: 'derived-from',
+        note: `${aiNodeActionLabels[request.action]} generated from ${aiNodeScopeLabels[request.scope]}.`,
+        confidence: 0.62,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      }
+      setLinks((current) => [...current, link])
+    }
     setSelection({ type: 'idea', id: idea.id })
   }
 
@@ -4893,6 +4929,10 @@ function FileWorkspace({
                 onCreateLink={createNodeLink}
                 onCreateLinkedNode={createLinkedNode}
                 onCreateAiNode={createAiNode}
+                aiProviders={aiProviders}
+                aiRoutingMode={aiRoutingMode}
+                selectedAiProviderId={selectedAiProviderId}
+                onOpenAiSettings={() => setIsSettingsOpen(true)}
                 onApplyProjectTemplate={applyProjectTemplate}
                 onGeneratePromptStarter={generatePromptStarter}
                 onActiveCanvasToolChange={setActiveCanvasTool}
@@ -5288,11 +5328,12 @@ function App() {
 
   return (
     <>
+      <KiraGradientDefs />
       {showSplash && (
         <div className="app-splash" role="status" aria-label="Opening KIRA">
           <div className="app-splash-symbol">
             <img src="/kira-icon.png" alt="" />
-            <Sparkles className="app-splash-sparkle" size={18} aria-hidden="true" />
+            <KiraMark size={18} state="thinking" />
           </div>
         </div>
       )}
@@ -6839,6 +6880,10 @@ function GraphCanvas({
   onCreateLink,
   onCreateLinkedNode,
   onCreateAiNode,
+  aiProviders,
+  aiRoutingMode,
+  selectedAiProviderId,
+  onOpenAiSettings,
   onApplyProjectTemplate,
   onGeneratePromptStarter,
   onActiveCanvasToolChange,
@@ -6882,6 +6927,10 @@ function GraphCanvas({
   onCreateLink: (source: Pick<GraphNodeRef, 'kind' | 'id'>, target: Pick<GraphNodeRef, 'kind' | 'id'>, relation?: Relation) => void
   onCreateLinkedNode: (source: Pick<GraphNodeRef, 'kind' | 'id'>, targetKind: GraphNodeKind) => void
   onCreateAiNode: (request: AiNodeRequest) => void | Promise<void>
+  aiProviders: AiProviderProfile[]
+  aiRoutingMode: AiRoutingMode
+  selectedAiProviderId: string
+  onOpenAiSettings: () => void
   onApplyProjectTemplate: (templateId: ProjectTemplateId) => void
   onGeneratePromptStarter: (prompt: string) => void
   onActiveCanvasToolChange: React.Dispatch<React.SetStateAction<CanvasTool>>
@@ -6980,16 +7029,74 @@ function GraphCanvas({
   const draggingFrameRef = useRef<{ id: string; offsetX: number; offsetY: number } | null>(null)
   const resizingFrameRef = useRef<{ id: string; startWidth: number; startHeight: number; startX: number; startY: number } | null>(null)
   const [starterPrompt, setStarterPrompt] = useState('')
-  const [aiNodeDraft, setAiNodeDraft] = useState<{
-    source: Pick<GraphNodeRef, 'kind' | 'id'>
-    action: AiNodeAction
-    scope: AiNodeScope
-    prompt: string
-  } | null>(null)
+  const [kiraSession, setKiraSession] = useState<KiraSession | null>(null)
+
+  function openKiraSession(origin: 'node' | 'rail', source: Pick<GraphNodeRef, 'kind' | 'id'> | null, scope: AiNodeScope, extraSources: Pick<GraphNodeRef, 'kind' | 'id'>[] = []) {
+    setKiraSession({
+      origin,
+      source,
+      extraSources,
+      scope,
+      action: 'summarize',
+      prompt: '',
+      previousPrompt: null,
+      removedContextKeys: [],
+      providerOverrideId: null,
+      modelOverride: null,
+      status: 'idle',
+      message: null,
+    })
+    setArcMenu(null)
+  }
+
+  function openKiraFromNode(kind: GraphNodeKind, id: string) {
+    openKiraSession('node', { kind, id }, 'downstream_branch')
+  }
+
+  function openKiraFromArc() {
+    if (!arcMenu) return
+    openKiraSession('node', { kind: arcMenu.kind, id: arcMenu.id }, 'downstream_branch')
+  }
+
+  function openKiraFromRail() {
+    if (multiSelectedNodes.length > 1) {
+      const [first, ...rest] = multiSelectedNodes
+      openKiraSession('rail', { kind: first.kind, id: first.id }, 'selected', rest.map((node) => ({ kind: node.kind, id: node.id })))
+      return
+    }
+    if (selected.type !== 'project' && selected.type !== 'link' && selected.type !== 'frame') {
+      openKiraSession('rail', { kind: selected.type, id: selected.id }, 'downstream_branch')
+      return
+    }
+    openKiraSession('rail', null, 'full_board')
+  }
+
+  async function submitKiraSession() {
+    if (!kiraSession) return
+    const sources = [kiraSession.source, ...kiraSession.extraSources].filter(Boolean) as Pick<GraphNodeRef, 'kind' | 'id'>[]
+    const contextNodes = collectKiraContext(kiraSession.source, kiraSession.scope, { ideas, images, palettes, diagrams, placeholders, links })
+      .filter((node) => !kiraSession.removedContextKeys.includes(`${node.kind}:${node.id}`))
+    setKiraSession((current) => current ? { ...current, status: 'thinking', message: null } : current)
+    try {
+      await onCreateAiNode({
+        source: kiraSession.source,
+        action: kiraSession.action,
+        scope: sources.length > 1 ? 'selected' : kiraSession.scope,
+        prompt: kiraSession.prompt,
+        contextNodes,
+        providerOverrideId: kiraSession.providerOverrideId,
+        modelOverride: kiraSession.modelOverride,
+      })
+      setKiraSession(null)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Kira could not complete that.'
+      setKiraSession((current) => current ? { ...current, status: 'error', message } : current)
+    }
+  }
 
   useDismissableLayer(
     isGraphToolsOpen || Boolean(arcMenu) || Boolean(nodeContextMenu),
-    '.node-context-menu, .node-arc-menu, .graph-tools-drawer, [data-menu-trigger="graph-tools"], .node-add-control',
+    '.node-context-menu, .node-arc-menu, .graph-tools-drawer, [data-menu-trigger="graph-tools"], .node-add-control, .node-kira-control',
     () => {
       setIsGraphToolsOpen(false)
       setArcMenu(null)
@@ -7366,24 +7473,6 @@ function GraphCanvas({
     onCreateLinkedNode(source, targetKind)
   }
 
-  function openAiNodeDraftFromArc() {
-    if (!arcMenu) return
-    const source = { kind: arcMenu.kind, id: arcMenu.id }
-    setAiNodeDraft({
-      source,
-      action: 'summarize',
-      scope: 'downstream_branch',
-      prompt: aiNodeActionPrompts.summarize,
-    })
-    setArcMenu(null)
-  }
-
-  function submitAiNodeDraft() {
-    if (!aiNodeDraft) return
-    void onCreateAiNode(aiNodeDraft)
-    setAiNodeDraft(null)
-  }
-
   function submitPromptStarter() {
     const prompt = starterPrompt.trim()
     if (!prompt) return
@@ -7616,7 +7705,7 @@ function GraphCanvas({
     const target = event.target instanceof Element ? event.target : null
     const isMiddleButton = event.button === 1
     if (!isMiddleButton) {
-      if (event.button !== 0 || target?.closest('[data-node-kind][data-node-id], button, input, textarea, select, .canvas-tool-rail, .canvas-view-rail, .canvas-zoom-rail, .graph-tools-drawer, .node-context-menu, .node-arc-menu, .canvas-zero-state, .ai-node-panel')) return
+      if (event.button !== 0 || target?.closest('[data-node-kind][data-node-id], button, input, textarea, select, .canvas-tool-rail, .canvas-view-rail, .canvas-zoom-rail, .graph-tools-drawer, .node-context-menu, .node-arc-menu, .canvas-zero-state, .kira-panel, .canvas-kira-launcher')) return
       onSelect({ type: 'project' })
       setNodeContextMenu(null)
       setArcMenu(null)
@@ -7656,7 +7745,7 @@ function GraphCanvas({
   }
 
   function handleCanvasWheel(event: React.WheelEvent<HTMLDivElement>) {
-    if (event.target instanceof Element && event.target.closest('input, textarea, select, .graph-tools-drawer, .node-context-menu, .node-arc-menu, .ai-node-panel')) return
+    if (event.target instanceof Element && event.target.closest('input, textarea, select, .graph-tools-drawer, .node-context-menu, .node-arc-menu, .kira-panel')) return
     event.preventDefault()
     if (event.ctrlKey || event.metaKey) {
       const rect = canvasRef.current?.getBoundingClientRect()
@@ -7792,6 +7881,17 @@ function GraphCanvas({
             </button>
           </div>
         </div>
+
+        <button
+          type="button"
+          className={kiraSession ? 'canvas-kira-launcher is-active' : 'canvas-kira-launcher'}
+          aria-label="Ask Kira"
+          data-tooltip="Kira"
+          onClick={() => (kiraSession ? setKiraSession(null) : openKiraFromRail())}
+        >
+          <KiraMark size={18} />
+          Kira
+        </button>
 
         <div className="canvas-zoom-rail" aria-label="Canvas zoom">
           <button type="button" aria-label="Zoom out" onClick={() => updateZoom(-0.15)}>
@@ -8091,6 +8191,16 @@ function GraphCanvas({
                 >
                   <Plus size={11} />
                 </span>
+                <span
+                  className="node-kira-control"
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`Ask Kira about ${idea.title}`}
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={(event) => { event.stopPropagation(); openKiraFromNode('idea', idea.id) }}
+                >
+                  <KiraMark size={12} />
+                </span>
                 {renderDirectLinkHandle('idea', idea, idea.title)}
                 <span className={`idea-status idea-status--${idea.status}`} />
                 {isEditingIdea ? (
@@ -8167,6 +8277,16 @@ function GraphCanvas({
               >
                 <Plus size={11} />
               </span>
+              <span
+                className="node-kira-control"
+                role="button"
+                tabIndex={0}
+                aria-label={`Ask Kira about ${image.title}`}
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={(event) => { event.stopPropagation(); openKiraFromNode('image', image.id) }}
+              >
+                <KiraMark size={12} />
+              </span>
               {renderDirectLinkHandle('image', image, image.title)}
               <ReferenceThumb image={image} />
               <span className="node-palette">
@@ -8213,6 +8333,16 @@ function GraphCanvas({
               >
                 <Plus size={11} />
               </span>
+              <span
+                className="node-kira-control"
+                role="button"
+                tabIndex={0}
+                aria-label={`Ask Kira about ${palette.title}`}
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={(event) => { event.stopPropagation(); openKiraFromNode('palette', palette.id) }}
+              >
+                <KiraMark size={12} />
+              </span>
               {renderDirectLinkHandle('palette', palette, palette.title)}
               <span className="palette-strip">
                 {palette.colors.map((color, index) => (
@@ -8257,6 +8387,16 @@ function GraphCanvas({
                 onClick={(event) => openArcMenu('diagram', diagram, event)}
               >
                 <Plus size={11} />
+              </span>
+              <span
+                className="node-kira-control"
+                role="button"
+                tabIndex={0}
+                aria-label={`Ask Kira about ${diagram.title}`}
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={(event) => { event.stopPropagation(); openKiraFromNode('diagram', diagram.id) }}
+              >
+                <KiraMark size={12} />
               </span>
               {renderDirectLinkHandle('diagram', diagram, diagram.title)}
               <FileText size={15} />
@@ -8304,6 +8444,16 @@ function GraphCanvas({
               >
                 <Plus size={11} />
               </span>
+              <span
+                className="node-kira-control"
+                role="button"
+                tabIndex={0}
+                aria-label={`Ask Kira about ${placeholder.title}`}
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={(event) => { event.stopPropagation(); openKiraFromNode('placeholder', placeholder.id) }}
+              >
+                <KiraMark size={12} />
+              </span>
               {renderDirectLinkHandle('placeholder', placeholder, placeholder.title)}
               <ImagePlus size={16} />
               <span>{placeholder.title}</span>
@@ -8336,9 +8486,6 @@ function GraphCanvas({
               <button type="button" role="menuitem" aria-label="Create linked diagram" title="Diagram" onClick={() => createLinkedNodeFromArc('diagram')}>
                 <FileText size={13} />
               </button>
-              <button type="button" role="menuitem" aria-label="Create AI node" title="AI node" onClick={openAiNodeDraftFromArc}>
-                <Bot size={13} />
-              </button>
               <button type="button" role="menuitem" aria-label="Begin link from node" title="Link" onClick={() => beginLinkFromArc(arcMenu)}>
                 <Link2 size={13} />
               </button>
@@ -8346,53 +8493,117 @@ function GraphCanvas({
           )}
         </div>
 
-        {aiNodeDraft && (
-          <div className="ai-node-panel" role="dialog" aria-label="Create AI node">
-            <header>
-              <span><Bot size={14} /> AI node</span>
-              <button type="button" className="icon-button" aria-label="Close AI node panel" onClick={() => setAiNodeDraft(null)}>
-                <X size={13} />
+        {kiraSession && (() => {
+          const anchorNode = kiraSession.source
+            ? resolveGraphNodeRef(kiraSession.source.id, ideas, images, palettes, diagrams, placeholders)
+            : null
+          const contextNodes = collectKiraContext(kiraSession.source, kiraSession.scope, { ideas, images, palettes, diagrams, placeholders, links })
+            .filter((node) => !kiraSession.removedContextKeys.includes(`${node.kind}:${node.id}`))
+          const route = selectAiProviderForTask('generate_node', aiProviders, aiRoutingMode, selectedAiProviderId, kiraSession.providerOverrideId ?? undefined)
+          const routedProvider = route.providerId ? aiProviders.find((candidate) => candidate.id === route.providerId) : undefined
+          const suggestions = kiraSuggestions[anchorNode?.kind ?? 'board']
+          const contextLines = contextNodes.map((node) => `- ${graphNodeKindLabel(node.kind)}: ${node.title}`).join('\n')
+          const tokenEstimate = estimateKiraTokens(kiraSession.prompt) + contextNodes.length * 8 + estimateKiraTokens(contextLines) + 120
+          const budgetZone = tokenEstimate > 6000 ? 'heavy' : tokenEstimate > 2000 ? 'generous' : 'comfortable'
+          const isThinking = kiraSession.status === 'thinking'
+          return (
+            <div className={isThinking ? 'kira-panel is-thinking' : 'kira-panel'} role="dialog" aria-label="Kira">
+              <header className="kira-panel-head">
+                <span className="kira-panel-title"><KiraMark size={16} state={isThinking ? 'thinking' : 'rest'} /> Kira</span>
+                <button type="button" className="icon-button" aria-label="Close Kira" onClick={() => setKiraSession(null)}>
+                  <X size={13} />
+                </button>
+              </header>
+              <p className="kira-anchor-line">
+                {isThinking
+                  ? kiraCopy.loading[0]
+                  : kiraSession.status === 'error' && kiraSession.message
+                    ? kiraSession.message
+                    : anchorNode ? kiraCopy.emptyNode(anchorNode.title) : kiraCopy.emptyBoard}
+              </p>
+              <div className="kira-section">
+                <div className="kira-section-head">
+                  <span>Context</span>
+                  <select
+                    value={kiraSession.scope}
+                    onChange={(event) => setKiraSession((current) => current ? { ...current, scope: event.target.value as AiNodeScope, removedContextKeys: [] } : current)}
+                  >
+                    {(Object.keys(aiNodeScopeLabels) as AiNodeScope[]).map((scope) => (
+                      <option key={scope} value={scope}>{aiNodeScopeLabels[scope]}</option>
+                    ))}
+                  </select>
+                  <span className="kira-section-count">{contextNodes.length} nodes</span>
+                </div>
+                <div className="kira-chip-row">
+                  {contextNodes.map((node) => (
+                    <span className="kira-chip" key={`${node.kind}:${node.id}`} title={node.title}>
+                      <span className="kira-chip-kind">{graphNodeKindLabel(node.kind)}</span>
+                      {node.title.length > 24 ? `${node.title.slice(0, 24)}…` : node.title}
+                      <button
+                        type="button"
+                        className="kira-chip-remove"
+                        aria-label={`Remove ${node.title} from context`}
+                        onClick={() => setKiraSession((current) => current ? { ...current, removedContextKeys: [...current.removedContextKeys, `${node.kind}:${node.id}`] } : current)}
+                      >
+                        <X size={10} />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              </div>
+              <div className={budgetZone === 'heavy' ? 'kira-budget is-heavy' : 'kira-budget'}>
+                <div className="kira-budget-bar">
+                  <div className="kira-budget-fill" style={{ width: `${Math.min(100, (tokenEstimate / 8000) * 100)}%` }} />
+                </div>
+                <span className="kira-budget-label">~{tokenEstimate.toLocaleString()} tokens · {budgetZone}</span>
+              </div>
+              <div className="kira-section">
+                <div className="kira-section-head"><span>Suggestions</span></div>
+                <div className="kira-suggestion-list">
+                  {suggestions.map((suggestion) => (
+                    <button
+                      key={suggestion.id}
+                      type="button"
+                      className="kira-suggestion"
+                      onClick={() => setKiraSession((current) => current ? { ...current, action: suggestion.action, prompt: suggestion.prompt } : current)}
+                    >
+                      <span>{suggestion.label}</span>
+                      <span className="kira-suggestion-why">{suggestion.why}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <label>
+                Action
+                <select
+                  value={kiraSession.action}
+                  onChange={(event) => setKiraSession((current) => current ? { ...current, action: event.target.value as AiNodeAction } : current)}
+                >
+                  {(Object.keys(aiNodeActionLabels) as AiNodeAction[]).map((action) => (
+                    <option key={action} value={action}>{aiNodeActionLabels[action]}</option>
+                  ))}
+                </select>
+              </label>
+              <div className="kira-composer">
+                <textarea
+                  rows={4}
+                  placeholder={aiNodeActionPrompts[kiraSession.action]}
+                  value={kiraSession.prompt}
+                  onChange={(event) => setKiraSession((current) => current ? { ...current, prompt: event.target.value } : current)}
+                />
+              </div>
+              <button type="button" className="primary-button kira-submit" disabled={isThinking} onClick={() => void submitKiraSession()}>
+                <KiraMark size={14} state={isThinking ? 'thinking' : 'rest'} />
+                {isThinking ? 'Working…' : 'Ask Kira'}
               </button>
-            </header>
-            <label>
-              Action
-              <select
-                value={aiNodeDraft.action}
-                onChange={(event) => {
-                  const action = event.target.value as AiNodeAction
-                  setAiNodeDraft((current) => current ? { ...current, action, prompt: aiNodeActionPrompts[action] } : current)
-                }}
-              >
-                {(Object.keys(aiNodeActionLabels) as AiNodeAction[]).map((action) => (
-                  <option key={action} value={action}>{aiNodeActionLabels[action]}</option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Scope
-              <select
-                value={aiNodeDraft.scope}
-                onChange={(event) => setAiNodeDraft((current) => current ? { ...current, scope: event.target.value as AiNodeScope } : current)}
-              >
-                {(Object.keys(aiNodeScopeLabels) as AiNodeScope[]).map((scope) => (
-                  <option key={scope} value={scope}>{aiNodeScopeLabels[scope]}</option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Prompt
-              <textarea
-                rows={4}
-                value={aiNodeDraft.prompt}
-                onChange={(event) => setAiNodeDraft((current) => current ? { ...current, prompt: event.target.value } : current)}
-              />
-            </label>
-            <button type="button" className="primary-button" onClick={submitAiNodeDraft}>
-              <Sparkles size={14} />
-              Create AI node
-            </button>
-          </div>
-        )}
+              <footer className="kira-panel-foot">
+                {routedProvider ? `${routedProvider.name} · ${route.reason}` : kiraCopy.noProvider}
+                {' — '}
+                <button type="button" className="link-button" onClick={onOpenAiSettings}>Open AI settings →</button>
+              </footer>
+            </div>
+          )
+        })()}
 
         {nodeContextMenu && (
           <div
@@ -9350,6 +9561,58 @@ function ProjectDiagnostics({
         ))}
       </div>
     </div>
+  )
+}
+
+// Kira's brand mark: an asymmetric four-point "glint" star with one smaller
+// satellite, filled from a single shared gradient def so every instance reads
+// as the same signature color regardless of size. Deliberately not
+// lucide-react's Sparkles icon, which already means "generic AI" elsewhere
+// in this app (splash screen, capture status, prompt starter).
+function KiraMark({ size = 16, state = 'rest' }: { size?: number; state?: 'rest' | 'thinking' }) {
+  return (
+    <svg
+      className={state === 'thinking' ? 'kira-mark is-thinking' : 'kira-mark'}
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+    >
+      <path
+        className="kira-mark-core"
+        d="M11 2 C11.9 6.2 12.8 9.6 15 11.5 C12.8 12.7 11.9 16.6 11 20 C10.1 16.6 9.2 12.7 7 11.5 C9.2 9.6 10.1 6.2 11 2 Z"
+        fill="url(#kira-grad)"
+      />
+      <path
+        className="kira-mark-satellite"
+        d="M18.5 3.6 C18.85 4.9 19.3 5.75 20.3 6.3 C19.3 6.8 18.85 7.9 18.5 9.2 C18.15 7.9 17.7 6.8 16.7 6.3 C17.7 5.75 18.15 4.9 18.5 3.6 Z"
+        fill="url(#kira-grad)"
+      />
+      {size >= 18 && (
+        <path
+          className="kira-mark-micro"
+          d="M5 16.6 C5.16 17.2 5.36 17.6 5.8 17.85 C5.36 18.08 5.16 18.5 5 19.1 C4.84 18.5 4.64 18.08 4.2 17.85 C4.64 17.6 4.84 17.2 5 16.6 Z"
+          fill="url(#kira-grad)"
+          opacity={0.55}
+        />
+      )}
+    </svg>
+  )
+}
+
+// Mounted once at the app shell root so every KiraMark instance shares the
+// same gradient definition instead of each carrying its own <defs>.
+function KiraGradientDefs() {
+  return (
+    <svg className="kira-gradient-defs" aria-hidden="true" width="0" height="0">
+      <defs>
+        <linearGradient id="kira-grad" x1="0" y1="1" x2="1" y2="0">
+          <stop offset="0%" stopColor="var(--kira-warm)" />
+          <stop offset="52%" stopColor="var(--kira-mid)" />
+          <stop offset="100%" stopColor="var(--kira-cool)" />
+        </linearGradient>
+      </defs>
+    </svg>
   )
 }
 
@@ -11724,6 +11987,84 @@ function resolveGraphNodeRef(
   const placeholder = placeholders.find((node) => node.id === id)
   if (placeholder) return { kind: 'placeholder', id: placeholder.id, title: placeholder.title, x: placeholder.x, y: placeholder.y }
   return null
+}
+
+// Shared by the Kira panel's context-chip list and createAiNode's actual
+// generation call, so the chips shown are provably the chips sent.
+function collectKiraContext(
+  source: Pick<GraphNodeRef, 'kind' | 'id'> | null,
+  scope: AiNodeScope,
+  graph: {
+    ideas: Idea[]
+    images: EvidenceImage[]
+    palettes: PaletteNode[]
+    diagrams: DiagramNode[]
+    placeholders: PlaceholderNode[]
+    links: EvidenceLink[]
+  },
+  limit = 12,
+): GraphNodeRef[] {
+  const allNodes: GraphNodeRef[] = [
+    ...graph.ideas.map((idea) => ({ kind: 'idea' as const, id: idea.id, title: idea.title, x: idea.x, y: idea.y })),
+    ...graph.images.map((image) => ({ kind: 'image' as const, id: image.id, title: image.title, x: image.x, y: image.y })),
+    ...graph.palettes.map((palette) => ({ kind: 'palette' as const, id: palette.id, title: palette.title, x: palette.x, y: palette.y })),
+    ...graph.diagrams.map((diagram) => ({ kind: 'diagram' as const, id: diagram.id, title: diagram.title, x: diagram.x, y: diagram.y })),
+    ...graph.placeholders.map((placeholder) => ({ kind: 'placeholder' as const, id: placeholder.id, title: placeholder.title, x: placeholder.x, y: placeholder.y })),
+  ]
+  if (!source || scope === 'full_board') {
+    return allNodes
+      .slice()
+      .sort((a, b) => {
+        const importanceOf = (node: GraphNodeRef) =>
+          graph.ideas.find((idea) => idea.id === node.id)?.importance
+          ?? graph.diagrams.find((diagram) => diagram.id === node.id)?.importance
+          ?? 1
+        return importanceOf(b) - importanceOf(a)
+      })
+      .slice(0, limit)
+  }
+
+  const nodeKey = (node: Pick<GraphNodeRef, 'kind' | 'id'>) => `${node.kind}:${node.id}`
+  const nodeByKey = new Map(allNodes.map((node) => [nodeKey(node), node]))
+  const inbound = new Map<string, string[]>()
+  const outbound = new Map<string, string[]>()
+  graph.links.forEach((link) => {
+    const sourceKey = nodeKey({ kind: link.sourceKind ?? 'image', id: link.sourceNodeId ?? link.imageId })
+    const targetKey = nodeKey({ kind: link.targetKind ?? 'idea', id: link.targetNodeId ?? link.ideaId })
+    outbound.set(sourceKey, [...(outbound.get(sourceKey) ?? []), targetKey])
+    inbound.set(targetKey, [...(inbound.get(targetKey) ?? []), sourceKey])
+  })
+
+  function walk(start: string, direction: Map<string, string[]>) {
+    const seen = new Set([start])
+    const queue = [start]
+    while (queue.length > 0) {
+      const current = queue.shift()
+      if (!current) continue
+      for (const next of direction.get(current) ?? []) {
+        if (seen.has(next)) continue
+        seen.add(next)
+        queue.push(next)
+      }
+    }
+    return [...seen]
+  }
+
+  const sourceKey = nodeKey(source)
+  const baseKeys =
+    scope === 'upstream_branch'
+      ? walk(sourceKey, inbound)
+      : scope === 'downstream_branch'
+        ? walk(sourceKey, outbound)
+        : [sourceKey]
+  return baseKeys.map((key) => nodeByKey.get(key)).filter(Boolean).slice(0, limit) as GraphNodeRef[]
+}
+
+// Pragmatic token estimate with no tokenizer dependency: this corpus is short
+// titles/hex codes/bullets, which tokenize denser than prose, so 3.6 (not the
+// usual ~4.0) keeps the estimate conservative rather than overpromising.
+function estimateKiraTokens(text: string): number {
+  return Math.ceil(text.length / 3.6)
 }
 
 function resolveGraphNodePosition(

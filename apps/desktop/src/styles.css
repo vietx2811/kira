@@ -42,6 +42,22 @@
   --accent-amber: #dfae67;
   --accent-sage: #9cae83;
   --accent-violet: #b7a4df;
+  --kira-warm: #f0c07f;
+  --kira-mid: #d79fc0;
+  --kira-cool: #a5a6ea;
+  --kira-sweep: linear-gradient(135deg, var(--kira-warm) 0%, var(--kira-mid) 52%, var(--kira-cool) 100%);
+  --kira-sweep-soft: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--kira-warm), transparent 62%) 0%,
+    color-mix(in srgb, var(--kira-mid), transparent 62%) 52%,
+    color-mix(in srgb, var(--kira-cool), transparent 62%) 100%
+  );
+  --kira-tint: color-mix(in srgb, var(--kira-mid), transparent 92%);
+  --kira-halo: color-mix(in srgb, var(--kira-mid), transparent 76%);
+  --kira-border: color-mix(in srgb, var(--kira-mid), transparent 64%);
+  --kira-text: #e8cfd9;
+  --canvas-kira-inset: 0px;
+  --kira-panel-width: 380px;
   --danger: #d98779;
   --space-1: 4px;
   --space-2: 8px;
@@ -3166,6 +3182,61 @@ p {
   background: var(--glass-active);
 }
 
+/* Mirrors .node-add-control on the opposite corner — "add" and "ask" get
+   equal weight on every node. Selection-gated, same as .node-add-control. */
+.node-kira-control {
+  position: absolute;
+  top: -9px;
+  left: -9px;
+  z-index: 3;
+  display: grid;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+  border: 1px solid var(--kira-border);
+  border-radius: 999px;
+  background: var(--node-surface-selected);
+  color: var(--kira-mid);
+  opacity: 0;
+  transform: scale(calc(0.82 / var(--node-scale, 1)));
+  transform-origin: top left;
+  transition: opacity 120ms ease, transform 120ms ease, background 120ms ease, box-shadow 120ms ease;
+}
+
+.idea-node.is-selected .node-kira-control,
+.image-node.is-selected .node-kira-control,
+.palette-node.is-selected .node-kira-control,
+.diagram-node.is-selected .node-kira-control,
+.placeholder-node.is-selected .node-kira-control {
+  opacity: 1;
+  background: var(--kira-sweep);
+  color: var(--bg-base);
+  transform: scale(calc(1 / var(--node-scale, 1)));
+}
+
+.idea-node.is-selected .node-kira-control .kira-mark,
+.image-node.is-selected .node-kira-control .kira-mark,
+.palette-node.is-selected .node-kira-control .kira-mark,
+.diagram-node.is-selected .node-kira-control .kira-mark,
+.placeholder-node.is-selected .node-kira-control .kira-mark {
+  animation: kira-glint 7.6s linear infinite;
+}
+
+.node-kira-control:hover {
+  background-size: 220% 220%;
+  animation: kira-sweep-travel 720ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  box-shadow: 0 0 0 4px var(--kira-halo);
+  transform: scale(calc(1.14 / var(--node-scale, 1)));
+}
+
+.node-kira-control:hover .kira-mark-satellite {
+  animation-play-state: paused;
+}
+
+[data-node-kind].is-kira-anchored {
+  box-shadow: 0 0 0 1.5px var(--kira-mid), 0 0 0 8px var(--kira-halo);
+}
+
 .node-link-handle {
   position: absolute;
   top: 50%;
@@ -3352,16 +3423,132 @@ p {
   transform: translate(-62px, -104px);
 }
 
-/* Moved out of the bottom-right corner now that zoom lives there. */
-.ai-node-panel {
+/* Kira brand mark: a still primary star + a satellite that carries all the
+   idle/hover/loading motion (see keyframes below), so the mark reads as a
+   glint rather than a pulsing app icon. */
+.kira-gradient-defs {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+
+.kira-mark {
+  display: inline-block;
+  vertical-align: middle;
+  flex: 0 0 auto;
+}
+
+.kira-mark-satellite {
+  animation: kira-glint 7.6s linear infinite;
+  transform-origin: 18.5px 5.5px;
+}
+
+.kira-mark.is-thinking .kira-mark-satellite {
+  animation: kira-orbit 1.6s linear infinite;
+  transform-origin: 11px 11px;
+}
+
+.kira-mark.is-thinking .kira-mark-core {
+  animation: kira-breathe 1.6s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  transform-origin: 11px 11px;
+}
+
+@keyframes kira-glint {
+  0%, 78%, 100% { opacity: 0.55; transform: scale(1) rotate(0deg); }
+  84% { opacity: 1; transform: scale(1.5) rotate(28deg); }
+  90% { opacity: 0.7; transform: scale(0.92) rotate(14deg); }
+}
+
+@keyframes kira-sweep-travel {
+  from { background-position: 0% 50%; }
+  to { background-position: 100% 50%; }
+}
+
+@keyframes kira-orbit {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes kira-breathe {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.08); }
+}
+
+@keyframes kira-thinking-bar {
+  from { background-position: 0% 0%; }
+  to { background-position: 300% 0%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kira-mark-satellite,
+  .kira-mark.is-thinking .kira-mark-satellite,
+  .kira-mark.is-thinking .kira-mark-core,
+  .node-kira-control:hover,
+  .kira-panel.is-thinking .kira-panel-head::after {
+    animation: none !important;
+  }
+
+  .kira-mark.is-thinking {
+    animation: kira-mark-fade 1.4s ease-in-out infinite;
+  }
+
+  @keyframes kira-mark-fade {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+  }
+}
+
+/* The Kira launcher lives beside the tool rail, not inside it — a detached
+   pill so it reads as a different class of control, not an 8th identical
+   circle in the rail. */
+.canvas-kira-launcher {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  height: 54px;
+  padding: 0 16px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background:
+    linear-gradient(var(--surface-inspector), var(--surface-inspector)) padding-box,
+    var(--kira-sweep) border-box;
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--text-main), transparent 94%),
+    var(--panel-shadow);
+  -webkit-backdrop-filter: blur(24px) saturate(1.35);
+  backdrop-filter: blur(24px) saturate(1.35);
+  color: var(--text-main);
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 800;
+  gap: 8px;
+  transition: transform 140ms cubic-bezier(0.16, 1, 0.3, 1), background 140ms ease;
+}
+
+.canvas-kira-launcher:hover {
+  transform: translateY(-1px);
+}
+
+.canvas-kira-launcher.is-active {
+  background:
+    linear-gradient(var(--kira-tint), var(--kira-tint)) padding-box,
+    var(--kira-sweep) border-box;
+}
+
+/* Right-edge dock — Gemini/NotebookLM-style, not a node-anchored float (the
+   old .ai-node-panel gave up on that; see the comment it used to carry). */
+.kira-panel {
   position: absolute;
   top: 14px;
   right: calc(var(--canvas-right-inset, 0px) + 14px);
+  bottom: 14px;
   z-index: 9;
   display: grid;
-  width: 330px;
-  padding: 14px;
-  border: 1px solid var(--border-soft);
+  width: var(--kira-panel-width);
+  padding: 16px;
+  overflow-y: auto;
+  border: 1px solid var(--kira-border);
   border-radius: var(--radius-3);
   background: color-mix(in srgb, var(--surface-inspector), transparent 12%);
   box-shadow:
@@ -3370,24 +3557,181 @@ p {
   -webkit-backdrop-filter: blur(24px) saturate(1.25);
   backdrop-filter: blur(24px) saturate(1.25);
   gap: 12px;
+  align-content: start;
+  animation: kira-panel-in 220ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.ai-node-panel header {
+@keyframes kira-panel-in {
+  from { opacity: 0; transform: translateX(12px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+.kira-panel-head {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
 }
 
-.ai-node-panel header span {
+.kira-panel.is-thinking .kira-panel-head::after {
+  position: absolute;
+  right: 0;
+  bottom: -8px;
+  left: 0;
+  height: 2px;
+  background: var(--kira-sweep);
+  background-size: 300% 100%;
+  animation: kira-thinking-bar 1.9s linear infinite;
+  content: "";
+}
+
+.kira-panel-title {
   display: inline-flex;
   align-items: center;
   color: var(--text-main);
-  font-size: 0.86rem;
+  font-size: 0.9rem;
   font-weight: 800;
   gap: 7px;
 }
 
-.ai-node-panel label {
+.kira-anchor-line {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+.kira-section {
+  display: grid;
+  gap: 6px;
+}
+
+.kira-section-head {
+  display: flex;
+  align-items: center;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  gap: 6px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.kira-section-head select {
+  flex: 1;
+  height: 26px;
+  padding: 0 6px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-1);
+  background: var(--surface-inset);
+  color: var(--text-soft);
+  font-size: 0.7rem;
+}
+
+.kira-section-count {
+  color: var(--text-muted);
+  font-size: 0.68rem;
+}
+
+.kira-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.kira-chip {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  padding: 4px 6px 4px 8px;
+  border: 1px solid var(--kira-border);
+  border-radius: 999px;
+  background: var(--kira-tint);
+  color: var(--text-soft);
+  font-size: 0.68rem;
+  gap: 5px;
+}
+
+.kira-chip-kind {
+  color: var(--kira-text);
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.kira-chip-remove {
+  display: grid;
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  place-items: center;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.kira-chip-remove:hover {
+  background: var(--glass-hover);
+  color: var(--text-main);
+}
+
+.kira-budget {
+  display: grid;
+  gap: 4px;
+}
+
+.kira-budget-bar {
+  height: 4px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--surface-inset);
+}
+
+.kira-budget-fill {
+  height: 100%;
+  background: var(--kira-sweep);
+  transition: width 160ms ease;
+}
+
+.kira-budget.is-heavy .kira-budget-fill {
+  background: var(--accent-amber);
+}
+
+.kira-budget-label {
+  color: var(--text-muted);
+  font-size: 0.68rem;
+}
+
+.kira-suggestion-list {
+  display: grid;
+  gap: 4px;
+}
+
+.kira-suggestion {
+  display: grid;
+  padding: 7px 9px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-2);
+  background: var(--surface-inset);
+  color: var(--text-main);
+  cursor: pointer;
+  font-size: 0.76rem;
+  gap: 2px;
+  text-align: left;
+}
+
+.kira-suggestion:hover {
+  border-color: var(--kira-border);
+  background: var(--kira-tint);
+}
+
+.kira-suggestion-why {
+  color: var(--text-muted);
+  font-size: 0.68rem;
+}
+
+.kira-panel label {
   display: grid;
   color: var(--text-muted);
   font-size: 0.72rem;
@@ -3397,8 +3741,8 @@ p {
   text-transform: uppercase;
 }
 
-.ai-node-panel select,
-.ai-node-panel textarea,
+.kira-panel select,
+.kira-panel textarea,
 .canvas-prompt-starter textarea {
   width: 100%;
   border: 1px solid var(--border-soft);
@@ -3408,15 +3752,41 @@ p {
   font: inherit;
 }
 
-.ai-node-panel select {
+.kira-panel select {
   height: 36px;
   padding: 0 10px;
 }
 
-.ai-node-panel textarea,
+.kira-panel textarea,
 .canvas-prompt-starter textarea {
   padding: 10px;
   line-height: 1.45;
+}
+
+.kira-composer {
+  display: grid;
+}
+
+.kira-submit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+}
+
+.kira-panel-foot {
+  color: var(--text-muted);
+  font-size: 0.68rem;
+}
+
+.kira-panel-foot .link-button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--kira-mid);
+  cursor: pointer;
+  font: inherit;
+  text-decoration: underline;
 }
 
 .idea-node.is-selected,
