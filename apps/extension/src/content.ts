@@ -64,12 +64,25 @@ let dragStartPosition: { x: number; y: number } | null = null
 let lastDragPosition: { x: number; y: number } | null = null
 let dragMoveCount = 0
 let revealDropPadTimer = 0
+let pointerDropCompleting = false
+
+// Native `dragenter/dragover/drop` never fire for the pointer-fallback drag
+// (see handlePointerMoveProbe) since no real HTML5 drag session exists, so
+// every drop-target element registered via wireDropTarget is tracked here to
+// let pointerup/mouseup resolve + complete the drop manually.
+type CaptureDropHandler = (dataTransfer: DataTransfer | null) => void
+// WeakMap so renderCaptureContext()'s innerHTML = '' rebuild of node cards
+// (see below) lets detached cards and their closures get garbage collected
+// instead of being kept alive by this registry forever.
+const pointerDropHandlers = new WeakMap<HTMLElement, CaptureDropHandler>()
 
 document.addEventListener('pointerdown', rememberPointerCapture, true)
 document.addEventListener('mousedown', rememberPointerCapture, true)
 document.addEventListener('pointermove', handlePointerMoveProbe, true)
 document.addEventListener('pointerup', clearPointerCapture, true)
 document.addEventListener('mouseup', clearPointerCapture, true)
+document.addEventListener('pointerup', handlePointerDropRelease, true)
+document.addEventListener('mouseup', handlePointerDropRelease, true)
 document.addEventListener('dragstart', handleDragStart, true)
 document.addEventListener('dragenter', handleDocumentDragProbe, true)
 document.addEventListener('dragover', handleDocumentDragProbe, true)
@@ -96,6 +109,7 @@ function rememberPointerCapture(event: MouseEvent | PointerEvent) {
   lastPointerPosition = { x: event.clientX, y: event.clientY }
   lastPointerCapture = captureFromPoint(event.clientX, event.clientY) ?? captureFromEventTarget(event.target)
   pointerDragWindowOpened = false
+  pointerDropCompleting = false
   dragMoveCount = 0
 }
 
@@ -701,15 +715,15 @@ function wireCaptureWindow(pad: HTMLElement) {
   const create = pad.querySelector<HTMLElement>('[data-drop-target="create"]')
   const input = pad.querySelector<HTMLInputElement>('.kira-capture-create input')
 
-  wireDropTarget(undecided, (event) => {
-    const capture = currentDroppedCapture(event.dataTransfer)
+  wireDropTarget(undecided, (dataTransfer) => {
+    const capture = currentDroppedCapture(dataTransfer)
     if (!capture) return
     closeDropPad()
     void sendCapture({ ...capture, captureIntent: 'undecided' })
   })
 
-  wireDropTarget(create, (event) => {
-    const capture = currentDroppedCapture(event.dataTransfer)
+  wireDropTarget(create, (dataTransfer) => {
+    const capture = currentDroppedCapture(dataTransfer)
     if (!capture) return
     pendingComboCapture = { ...capture, captureIntent: 'create-or-select' }
     showCombo()
@@ -741,8 +755,9 @@ function wireCaptureWindow(pad: HTMLElement) {
   })
 }
 
-function wireDropTarget(target: HTMLElement | null, onDrop: (event: DragEvent) => void) {
+function wireDropTarget(target: HTMLElement | null, onDrop: CaptureDropHandler) {
   if (!target) return
+  pointerDropHandlers.set(target, onDrop)
   target.addEventListener('dragenter', (event) => {
     event.preventDefault()
     target.classList.add('is-over')
@@ -758,8 +773,33 @@ function wireDropTarget(target: HTMLElement | null, onDrop: (event: DragEvent) =
     event.preventDefault()
     event.stopPropagation()
     target.classList.remove('is-over')
-    onDrop(event)
+    onDrop(event.dataTransfer)
   })
+}
+
+// Completes the pointer-fallback drag (see handlePointerMoveProbe): since no
+// native drag session exists, wireDropTarget's own 'drop' listener never
+// fires, so the target under the release point is resolved and invoked here.
+// pointerup and mouseup both fire for the same physical release and aren't
+// guaranteed to land in the same task, so the guard is cleared on the next
+// press (rememberPointerCapture) rather than on a deferred timer, which could
+// unlock between the two events and let the drop complete twice.
+function handlePointerDropRelease(event: MouseEvent | PointerEvent) {
+  if (!pointerDragWindowOpened || pointerDropCompleting) return
+  pointerDropCompleting = true
+
+  const releasedOn = event.target instanceof Element ? event.target.closest<HTMLElement>('[data-drop-target]') : null
+  const handler = releasedOn ? pointerDropHandlers.get(releasedOn) : undefined
+  if (handler) {
+    releasedOn?.classList.remove('is-over')
+    handler(null)
+    return
+  }
+
+  if (document.getElementById(dropPadId)?.classList.contains('is-visible')) {
+    showToast('Thả đúng vào khung KIRA để lưu')
+  }
+  hideDropPadSoon()
 }
 
 function currentDroppedCapture(dataTransfer?: DataTransfer | null) {
@@ -810,8 +850,8 @@ function renderCaptureContext() {
     card.dataset.dropTarget = `node:${node.kind}:${node.id}`
     const meta = node.snippet || node.subtitle || node.kind
     card.innerHTML = `${node.thumb ? `<img src="${escapeHtml(node.thumb)}" alt="" />` : '<span class="kira-node-icon"></span>'}<span class="kira-node-text"><strong>${escapeHtml(node.title)}</strong>${meta ? `<span>${escapeHtml(meta)}</span>` : ''}</span>`
-    wireDropTarget(card, (event) => {
-      const capture = currentDroppedCapture(event.dataTransfer)
+    wireDropTarget(card, (dataTransfer) => {
+      const capture = currentDroppedCapture(dataTransfer)
       if (!capture) return
       closeDropPad()
       void sendCapture({ ...capture, targetNode: { kind: node.kind, id: node.id }, captureIntent: 'target-node' })
