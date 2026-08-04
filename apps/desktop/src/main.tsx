@@ -183,7 +183,6 @@ const kiraSuggestions: Record<GraphNodeKind | 'board', KiraSuggestion[]> = {
 
 const kiraCopy = {
   loading: 'Reading the branch.',
-  noProvider: "I'm not connected to a model yet. Pick one in Settings and I'll start.",
 }
 
 type PendingDelete =
@@ -676,7 +675,9 @@ const UI_STRINGS: Record<string, { en: string; vi: string }> = {
   'kira.placeholderNode': { en: 'Ask about {title}…', vi: 'Hỏi về {title}…' },
   'kira.placeholderNoProvider': { en: 'Connect a model to start…', vi: 'Kết nối một mô hình để bắt đầu…' },
   'kira.tryAgain': { en: 'Try again', vi: 'Thử lại' },
+  'kira.noProvider': { en: "I'm not connected to a model yet. Pick one in Settings and I'll start.", vi: 'Chưa kết nối mô hình nào. Hãy chọn một mô hình trong Cài đặt để bắt đầu.' },
   'kira.openAiSettings': { en: 'Open AI settings →', vi: 'Mở cài đặt AI →' },
+  'kira.scopeFullBoard': { en: 'Full board', vi: 'Toàn bộ bảng' },
 }
 
 function readStoredLang(): Lang {
@@ -756,10 +757,22 @@ function Segmented<T extends string>({
   }
 
   function handleKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
-    if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return
+    // radiogroup also expects vertical arrows to move the selection, per the
+    // WAI-ARIA radio-group pattern; Home/End are the expected shortcuts for
+    // both variants to jump to the first/last option.
+    let nextIndex: number
+    if (event.key === 'ArrowRight' || (variant === 'radio' && event.key === 'ArrowDown')) {
+      nextIndex = (activeIndex + 1) % options.length
+    } else if (event.key === 'ArrowLeft' || (variant === 'radio' && event.key === 'ArrowUp')) {
+      nextIndex = (activeIndex - 1 + options.length) % options.length
+    } else if (event.key === 'Home') {
+      nextIndex = 0
+    } else if (event.key === 'End') {
+      nextIndex = options.length - 1
+    } else {
+      return
+    }
     event.preventDefault()
-    const delta = event.key === 'ArrowRight' ? 1 : -1
-    const nextIndex = (activeIndex + delta + options.length) % options.length
     onChange(options[nextIndex].value)
     focusOption(nextIndex)
   }
@@ -1675,6 +1688,7 @@ function FileWorkspace({
   onTransfersConsumed: () => void
 }) {
   const initialProject = useMemo(() => initialSnapshot ?? readProjectSnapshot(), [initialSnapshot])
+  const lang = useLangStore((state) => state.lang)
   const [canvasHistoryStore] = useState(createCanvasHistoryStore)
   // Browser-mode (non-Tauri) fallback storage is namespaced per tab so a second
   // open file can't overwrite the first's autosave under the same key.
@@ -4122,7 +4136,7 @@ function FileWorkspace({
     const anchor = sourceNode ?? baseNodes[0] ?? { x: 50, y: 50 }
     const idea: Idea = {
       id: `idea-ai-${Date.now()}`,
-      title: `${aiNodeActionLabels[request.action]}: ${sourceNode ? sourceNode.title : aiNodeScopeLabels.full_board}`.slice(0, 82),
+      title: `${aiNodeActionLabels[request.action]}: ${sourceNode ? sourceNode.title : t('kira.scopeFullBoard', lang)}`.slice(0, 82),
       body,
       status: 'forming',
       x: clamp(anchor.x + 14, 8, 92),
@@ -5907,10 +5921,16 @@ function TopBar({
       onDoubleClick={toggleWindowMaximizeFromChrome}
       onPointerDown={startWindowDrag}
     >
+      {/* variant="radio", not "tabs": the four views fully unmount when
+          inactive (they're swapped by a ternary in .view-region, not kept in
+          the DOM with `hidden`), so there's no persistent panel to pair via
+          role="tabpanel"/aria-controls the way real ARIA tabs assume. This
+          is an exclusive-choice picker, which radiogroup/radio describes
+          honestly without a panel relationship it can't back up. */}
       <Segmented
         className="content-view-switch"
         ariaLabel="View"
-        variant="tabs"
+        variant="radio"
         value={activeView}
         onChange={setActiveView}
         options={views.map(({ label, key, icon: Icon }) => ({
@@ -6853,6 +6873,10 @@ function EvidenceInbox({
   // the same column count the CSS's `repeat(auto-fill, minmax(128px, 1fr))`
   // would produce, then renders (and vertically offsets) only the visible
   // rows' items, same overscan/scroll-driven approach as the list above.
+  // These four constants are read off styles.css and hand-kept in sync —
+  // change `.image-grid-window`'s gap/minmax or `.image-list--grid`'s
+  // padding (styles.css, near `.image-grid-window`) and update here too, or
+  // the estimated column count drifts from what actually renders.
   const gridGap = 12 // var(--space-3)
   const gridItemMinWidth = 128
   const gridHorizontalPadding = 32 // var(--space-4) * 2, matches .image-list--grid
@@ -6880,7 +6904,11 @@ function EvidenceInbox({
     const observer = new ResizeObserver(updateViewportSize)
     observer.observe(element)
     return () => observer.disconnect()
-  }, [])
+    // `.image-list` only renders while panelMode === 'images' (EvidenceInbox
+    // itself stays mounted across panel switches), so listRef.current is a
+    // brand new node each time the user comes back to Images — re-run to
+    // reattach, or the viewport size sticks at 0 and virtualization collapses.
+  }, [panelMode])
 
   useEffect(() => {
     setLibraryScrollTop(0)
@@ -7398,15 +7426,25 @@ function GraphCanvas({
     openKiraSession('rail', null, 'full_board')
   }
 
+  const shouldRestoreOrbFocusRef = useRef(false)
+
   const closeKiraSession = useCallback(() => {
     setKiraSession(null)
     setIsKiraContextOpen(false)
     setIsKiraSuggestOpen(false)
-    // Deferred: the orb is `inert` while the dock is open, and `inert`
-    // elements refuse `.focus()` — calling this synchronously would target
-    // the DOM before React commits the re-render that lifts `inert`.
-    requestAnimationFrame(() => kiraOrbRef.current?.focus())
+    // The orb is `inert` while the dock is open, and `inert` elements
+    // refuse `.focus()`. A single requestAnimationFrame isn't ordered
+    // against React's commit — under concurrent rendering it can fire
+    // before the re-render that lifts `inert`. The effect below, keyed on
+    // isKiraOpen, is guaranteed to run after that commit.
+    shouldRestoreOrbFocusRef.current = true
   }, [])
+
+  useEffect(() => {
+    if (isKiraOpen || !shouldRestoreOrbFocusRef.current) return
+    shouldRestoreOrbFocusRef.current = false
+    kiraOrbRef.current?.focus()
+  }, [isKiraOpen])
 
   async function submitKiraSession() {
     if (!kiraSession) return
@@ -7431,23 +7469,24 @@ function GraphCanvas({
     }
   }
 
+  // Single source of truth for "can the dock submit right now" — the submit
+  // button's `disabled` and the Enter-key shortcut used to carry their own
+  // copies of this check and had drifted apart: Enter didn't verify a
+  // provider was routed or that the prompt was non-empty, so it could
+  // trigger a submit the button itself reported as unavailable.
+  function canSubmitKira(): boolean {
+    if (!kiraSession || kiraSession.status === 'thinking' || !kiraSession.prompt.trim()) return false
+    const route = selectAiProviderForTask('generate_node', aiProviders, aiRoutingMode, selectedAiProviderId, kiraSession.providerOverrideId ?? undefined)
+    return Boolean(route.providerId && aiProviders.some((candidate) => candidate.id === route.providerId))
+  }
+
   function handleKiraInputKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>) {
     // Stop canvas shortcuts (e.g. the bare "L" for link mode) from firing
     // while typing into the dock.
     event.stopPropagation()
-    if (event.key === 'Escape') {
+    if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault()
-      if (isKiraContextOpen || isKiraSuggestOpen) {
-        setIsKiraContextOpen(false)
-        setIsKiraSuggestOpen(false)
-        return
-      }
-      closeKiraSession()
-      return
-    }
-    if (event.key === 'Enter' && !event.shiftKey && kiraSession?.status !== 'thinking') {
-      event.preventDefault()
-      void submitKiraSession()
+      if (canSubmitKira()) void submitKiraSession()
     }
   }
 
@@ -7589,7 +7628,9 @@ function GraphCanvas({
     function blocksSpacePan(target: EventTarget | null) {
       if (!(target instanceof Element)) return false
       if (isEditableEventTarget(target)) return true
-      return Boolean(target.closest('button, [role="button"], input, textarea, select'))
+      return Boolean(target.closest(
+        'button, [role="button"], input, textarea, select, summary, a[href], [contenteditable]:not([contenteditable="false"])',
+      ))
     }
 
     function handleKeyDown(event: KeyboardEvent) {
@@ -7771,6 +7812,11 @@ function GraphCanvas({
     event: React.PointerEvent<HTMLElement>,
   ) {
     if (event.button === 2) return
+    // Space-armed drags always pan the canvas. startPan takes pointer
+    // capture on the canvas element, which retargets every later pointer
+    // event there — a node drag started here would never see its own
+    // pointerup, leaving draggingNodeRef and .is-dragging-node stuck set.
+    if (event.button === 0 && spacePanArmedRef.current) return
     if (event.shiftKey || event.metaKey || event.ctrlKey) {
       event.preventDefault()
       event.stopPropagation()
@@ -8163,13 +8209,28 @@ function GraphCanvas({
         role={open ? 'dialog' : undefined}
         aria-label="Kira"
         aria-modal={false}
+        onKeyDown={(event) => {
+          // Bound to the whole dock, not just the textarea, so Escape works
+          // from every focusable element inside it — the scope <select>,
+          // context chip remove buttons, and suggestion buttons are all
+          // tabbable, and Escape did nothing from any of them before this.
+          if (event.key !== 'Escape') return
+          event.preventDefault()
+          if (isKiraContextOpen || isKiraSuggestOpen) {
+            setIsKiraContextOpen(false)
+            setIsKiraSuggestOpen(false)
+            kiraInputRef.current?.focus()
+            return
+          }
+          closeKiraSession()
+        }}
       >
         <div className="kira-dock-row">
           <button
             type="button"
             ref={kiraOrbRef}
             className="kira-dock-orb"
-            aria-label="Ask Kira"
+            aria-label={t('kira.askLabel', lang)}
             aria-expanded={open}
             data-tooltip={open ? undefined : 'Kira'}
             tabIndex={open ? -1 : 0}
@@ -8220,8 +8281,8 @@ function GraphCanvas({
             <button
               type="button"
               className="kira-dock-submit"
-              aria-label="Ask Kira"
-              disabled={isThinking || !kiraSession?.prompt.trim() || !routedProvider}
+              aria-label={t('kira.askLabel', lang)}
+              disabled={!canSubmitKira()}
               onClick={() => void submitKiraSession()}
             >
               {isThinking ? <KiraMark size={13} state="thinking" /> : <ArrowUp size={15} />}
@@ -8244,7 +8305,7 @@ function GraphCanvas({
 
         {open && !routedProvider && (
           <p className="kira-dock-notice">
-            <span>{kiraCopy.noProvider}</span>
+            <span>{t('kira.noProvider', lang)}</span>
             <button type="button" className="link-button" onClick={onOpenAiSettings}>{t('kira.openAiSettings', lang)}</button>
           </p>
         )}
@@ -8496,7 +8557,7 @@ function GraphCanvas({
           <div className="canvas-tool-group" aria-label="Select tools">
             <button
               type="button"
-              aria-label="Select"
+              aria-label={t('tool.select', lang)}
               data-tooltip={t('tool.select', lang)}
               className={activeCanvasTool === 'select' ? 'is-active' : ''}
               onClick={() => {
@@ -8509,26 +8570,26 @@ function GraphCanvas({
             </button>
           </div>
           <div className="canvas-tool-group" aria-label="Create nodes">
-            <button type="button" aria-label="Add image placeholder" data-tooltip={t('tool.imagePlaceholder', lang)} onClick={onCreatePlaceholder}>
+            <button type="button" aria-label={t('tool.imagePlaceholder', lang)} data-tooltip={t('tool.imagePlaceholder', lang)} onClick={onCreatePlaceholder}>
               <ImageSquare className="tool-icon" size={19} />
             </button>
-            <button type="button" aria-label="Add palette" data-tooltip={t('tool.palette', lang)} onClick={onCreatePalette}>
+            <button type="button" aria-label={t('tool.palette', lang)} data-tooltip={t('tool.palette', lang)} onClick={onCreatePalette}>
               <PaletteIcon className="tool-icon" size={19} />
             </button>
-            <button type="button" aria-label="Add idea" data-tooltip={t('tool.idea', lang)} onClick={onCreateIdea}>
+            <button type="button" aria-label={t('tool.idea', lang)} data-tooltip={t('tool.idea', lang)} onClick={onCreateIdea}>
               <LightbulbIcon className="tool-icon" size={19} />
             </button>
-            <button type="button" aria-label="Add sticker" data-tooltip={t('tool.sticker', lang)} onClick={onCreateSticker}>
+            <button type="button" aria-label={t('tool.sticker', lang)} data-tooltip={t('tool.sticker', lang)} onClick={onCreateSticker}>
               <NoteIcon className="tool-icon" size={19} />
             </button>
-            <button type="button" aria-label="Add frame" data-tooltip={t('tool.frame', lang)} onClick={onCreateFrame}>
+            <button type="button" aria-label={t('tool.frame', lang)} data-tooltip={t('tool.frame', lang)} onClick={onCreateFrame}>
               <FrameCorners className="tool-icon" size={19} />
             </button>
           </div>
           <div className="canvas-tool-group" aria-label="Import tools">
             <button
               type="button"
-              aria-label="Import Mermaid diagram"
+              aria-label={t('tool.mermaid', lang)}
               data-tooltip={t('tool.mermaid', lang)}
               onClick={() => {
                 const source = window.prompt('Paste Mermaid graph or flowchart')

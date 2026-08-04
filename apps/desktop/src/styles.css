@@ -2,9 +2,18 @@
    so every more specific :focus-visible rule declared later in this file
    still wins — this only fills the gap for the ~15 controls that reset
    `outline: none` with nothing to replace it, which today have no visible
-   focus state at all. */
+   focus state at all.
+
+   A transparent outline, not `outline: none` — forced-colors mode strips
+   box-shadow entirely (and this box-shadow can also disappear behind
+   overflow clipping, e.g. .kira-dock or a scrolled image grid), so a
+   shadow-only ring can be invisible outright. A transparent outline renders
+   nothing in normal color modes (the box-shadow is what's seen), but the
+   browser substitutes the system high-contrast color for `transparent` in
+   forced-colors mode, so a real focus indicator survives there too. */
 :focus-visible {
-  outline: none;
+  outline: 2px solid transparent;
+  outline-offset: 2px;
   box-shadow: var(--focus-ring);
 }
 
@@ -128,8 +137,9 @@
      font file) — every build already fell back to SF Pro on macOS. Naming
      the fallback makes that intentional instead of accidental. */
   --font-sans:
-    -apple-system, BlinkMacSystemFont, ui-sans-serif, system-ui, "Segoe UI",
+    -apple-system, blinkmacsystemfont, ui-sans-serif, system-ui, "Segoe UI",
     sans-serif;
+
   font-family: var(--font-sans);
   /* Root stays 14px: hundreds of existing rules still size themselves in
      rem against it, and the new --text-* scale above is absolute px, not
@@ -551,16 +561,22 @@ button {
   gap: 2px;
 }
 
+/* The 1/N width math below only holds if every option is exactly 1/N of the
+   track — .segmented-option gives them an equal flex basis for that reason
+   (options used to size to their own label, so the thumb sat visibly off
+   the active option for anything but index 0 on unequal-width sets like the
+   Canvas/3D/Slides/Outline view switcher). The 2px inter-option gap is
+   folded into both the width and the per-step transform. */
 .segmented-thumb {
   position: absolute;
   top: 3px;
   left: 3px;
   z-index: 0;
-  width: calc((100% - 6px) / var(--seg-count));
+  width: calc((100% - 6px - 2px * (var(--seg-count) - 1)) / var(--seg-count));
   height: calc(100% - 6px);
   border-radius: var(--radius-1);
   background: var(--accent-weak);
-  transform: translateX(calc(var(--seg-index) * 100%));
+  transform: translateX(calc(var(--seg-index) * (100% + 2px)));
   transition: transform var(--duration-base) var(--ease-spring);
   pointer-events: none;
 }
@@ -569,6 +585,8 @@ button {
   position: relative;
   z-index: 1;
   display: inline-flex;
+  flex: 1 1 0;
+  min-width: 0;
   align-items: center;
   justify-content: center;
   height: var(--control-h-sm);
@@ -3806,7 +3824,12 @@ p {
 }
 
 .kira-dock.is-open {
-  width: var(--kira-dock-width, min(640px, calc(100% - 2 * var(--space-4))));
+  /* No fallback here on purpose: --kira-dock-width is always set on :root
+     (see the tokens above), and a calc(100% - ...) fallback is exactly the
+     bug that token exists to avoid — % resolves against this element's own
+     44px launcher-slot containing block, not the viewport, and would
+     silently collapse the open dock back down to a sliver. */
+  width: var(--kira-dock-width);
   transform: translate(calc(-50% + var(--kira-dock-shift, 0px)), calc(-1 * var(--kira-dock-lift, 74px)));
   border-radius: var(--radius-5);
   cursor: default;
