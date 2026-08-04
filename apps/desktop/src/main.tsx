@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { create, useStore } from 'zustand'
 import { temporal } from 'zundo'
@@ -7,7 +7,9 @@ import { listen } from '@tauri-apps/api/event'
 import { Effect, EffectState, getCurrentWindow } from '@tauri-apps/api/window'
 import { open, save } from '@tauri-apps/plugin-dialog'
 import {
+  AlertTriangle,
   ArrowDownToLine,
+  ArrowUp,
   ArrowUpFromLine,
   Bot,
   Box,
@@ -63,6 +65,15 @@ import {
   ZoomOut,
   X,
 } from 'lucide-react'
+import {
+  Cursor,
+  FlowArrow,
+  FrameCorners,
+  ImageSquare,
+  Lightbulb as LightbulbIcon,
+  Note as NoteIcon,
+  Palette as PaletteIcon,
+} from '@phosphor-icons/react'
 import { HexColorPicker } from 'react-colorful'
 import Cropper, { type Area as CropArea } from 'react-easy-crop'
 import { converter, formatHex } from 'culori'
@@ -122,11 +133,10 @@ type KiraSession = {
   scope: AiNodeScope
   action: AiNodeAction
   prompt: string
-  previousPrompt: string | null
   removedContextKeys: string[]
   providerOverrideId: string | null
   modelOverride: string | null
-  status: 'idle' | 'thinking' | 'refining' | 'error'
+  status: 'idle' | 'thinking' | 'error'
   message: string | null
 }
 
@@ -172,11 +182,8 @@ const kiraSuggestions: Record<GraphNodeKind | 'board', KiraSuggestion[]> = {
 }
 
 const kiraCopy = {
-  emptyBoard: "Nothing selected. I'll read the whole board — or pick a node to narrow me down.",
-  emptyNode: (title: string) => `Working from ${title}. Ask for something, or take a suggestion.`,
-  loading: ['Reading the branch.', 'Looking for the throughline.', 'Holding this against the rest of the board.', 'Nearly there.'],
+  loading: 'Reading the branch.',
   noProvider: "I'm not connected to a model yet. Pick one in Settings and I'll start.",
-  placed: (source: string) => `Placed. It's linked to ${source}.`,
 }
 
 type PendingDelete =
@@ -628,6 +635,14 @@ type CanvasHistoryStoreApi = ReturnType<typeof createCanvasHistoryStore>
 // ── Lightweight bilingual i18n (en / vi) ─────────────────────────────────────
 type Lang = 'en' | 'vi'
 
+// Covers the highest-visibility chrome — view switcher, tool rail groups,
+// Kira dock, and the library empty state — on top of the inspector/library
+// panel strings that were already here. Still far from every string in the
+// app; the remaining surfaces (settings body copy, outline, slides, node
+// context menus) stay English-only until a fuller sweep, and now that this
+// dictionary drives more of the chrome, unification bugs like the same
+// concept using different keys in two places will show up as translated in
+// one place and not the other.
 const UI_STRINGS: Record<string, { en: string; vi: string }> = {
   'lang.label': { en: 'Language', vi: 'Ngôn ngữ' },
   'lang.hint': { en: 'Interface language for labels and panels.', vi: 'Ngôn ngữ hiển thị cho nhãn và bảng điều khiển.' },
@@ -638,6 +653,30 @@ const UI_STRINGS: Record<string, { en: string; vi: string }> = {
   'inspector.kind': { en: 'Kind', vi: 'Loại' },
   'inspector.styleNote': { en: 'Style note', vi: 'Ghi chú phong cách' },
   'library.title': { en: 'Library', vi: 'Thư viện' },
+  'view.canvas': { en: 'Canvas', vi: 'Bảng vẽ' },
+  'view.3d': { en: '3D', vi: '3D' },
+  'view.slides': { en: 'Slides', vi: 'Trình chiếu' },
+  'view.outline': { en: 'Outline', vi: 'Dàn ý' },
+  'tool.select': { en: 'Select', vi: 'Chọn' },
+  'tool.imagePlaceholder': { en: 'Image placeholder', vi: 'Ô chờ hình ảnh' },
+  'tool.palette': { en: 'Palette', vi: 'Bảng màu' },
+  'tool.idea': { en: 'Idea', vi: 'Ý tưởng' },
+  'tool.sticker': { en: 'Sticker', vi: 'Ghi chú' },
+  'tool.frame': { en: 'Frame', vi: 'Khung' },
+  'tool.mermaid': { en: 'Mermaid diagram', vi: 'Sơ đồ Mermaid' },
+  'library.browseMode.list': { en: 'List', vi: 'Danh sách' },
+  'library.browseMode.grid': { en: 'Grid', vi: 'Lưới' },
+  'library.density.compact': { en: 'Compact', vi: 'Gọn' },
+  'library.density.relaxed': { en: 'Relaxed', vi: 'Thoải mái' },
+  'library.empty.title': { en: 'No references yet', vi: 'Chưa có tư liệu tham khảo' },
+  'library.empty.body': { en: 'Drag in images, paste a URL, or import a folder to start your moodboard.', vi: 'Kéo thả hình ảnh, dán URL, hoặc nhập một thư mục để bắt đầu moodboard.' },
+  'library.empty.import': { en: 'Import images', vi: 'Nhập hình ảnh' },
+  'kira.askLabel': { en: 'Ask Kira', vi: 'Hỏi Kira' },
+  'kira.placeholderBoard': { en: 'Ask Kira about this board…', vi: 'Hỏi Kira về bảng này…' },
+  'kira.placeholderNode': { en: 'Ask about {title}…', vi: 'Hỏi về {title}…' },
+  'kira.placeholderNoProvider': { en: 'Connect a model to start…', vi: 'Kết nối một mô hình để bắt đầu…' },
+  'kira.tryAgain': { en: 'Try again', vi: 'Thử lại' },
+  'kira.openAiSettings': { en: 'Open AI settings →', vi: 'Mở cài đặt AI →' },
 }
 
 function readStoredLang(): Lang {
@@ -667,6 +706,97 @@ function T({ k }: { k: string }): React.ReactElement {
   return <>{UI_STRINGS[k]?.[lang] ?? k}</>
 }
 
+/** Same lookup as <T>, as a plain string — for aria-label/placeholder/title,
+    which can't take an element. Not reactive on its own; call it from inside
+    a component that already reads useLangStore so the component re-renders
+    on toggle. `vars` fills `{name}` placeholders in the translated string. */
+function t(key: string, lang: Lang, vars?: Record<string, string>): string {
+  const template = UI_STRINGS[key]?.[lang] ?? key
+  if (!vars) return template
+  return template.replace(/\{(\w+)\}/g, (match, name) => vars[name] ?? match)
+}
+
+type SegmentedOption<T extends string> = { value: T; label: React.ReactNode; ariaLabel?: string; title?: string }
+
+/**
+ * One shared segmented control for every "pick one of N" picker in the app —
+ * replaces nine hand-rolled variants (view tabs, List/Grid, density, Edit/
+ * Discover, outline filter, 3D scope, the language toggle, settings nav) that
+ * each reinvented radius, active fill, and transitions differently, and none
+ * of which animated the selection. `variant="tabs"` renders a real
+ * `role="tablist"`/`role="tab"` group (mutually exclusive *views*);
+ * `variant="radio"` renders `role="radiogroup"`/`role="radio"` (mutually
+ * exclusive *settings*) — the app previously used `aria-pressed` toggle-button
+ * semantics for both, which announces "pressed/not pressed" instead of
+ * "2 of 4, selected".
+ */
+function Segmented<T extends string>({
+  options,
+  value,
+  onChange,
+  ariaLabel,
+  variant = 'tabs',
+  className,
+}: {
+  options: SegmentedOption<T>[]
+  value: T
+  onChange: (value: T) => void
+  ariaLabel: string
+  variant?: 'tabs' | 'radio'
+  className?: string
+}): React.ReactElement {
+  const groupRole = variant === 'tabs' ? 'tablist' : 'radiogroup'
+  const itemRole = variant === 'tabs' ? 'tab' : 'radio'
+  const activeIndex = Math.max(0, options.findIndex((option) => option.value === value))
+  const rootRef = useRef<HTMLDivElement | null>(null)
+
+  function focusOption(index: number) {
+    const buttons = rootRef.current?.querySelectorAll<HTMLButtonElement>('.segmented-option')
+    buttons?.[index]?.focus()
+  }
+
+  function handleKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
+    if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return
+    event.preventDefault()
+    const delta = event.key === 'ArrowRight' ? 1 : -1
+    const nextIndex = (activeIndex + delta + options.length) % options.length
+    onChange(options[nextIndex].value)
+    focusOption(nextIndex)
+  }
+
+  return (
+    <div
+      ref={rootRef}
+      className={className ? `segmented ${className}` : 'segmented'}
+      role={groupRole}
+      aria-label={ariaLabel}
+      style={{ '--seg-count': options.length, '--seg-index': activeIndex } as React.CSSProperties}
+      onKeyDown={handleKeyDown}
+    >
+      <span className="segmented-thumb" aria-hidden="true" />
+      {options.map((option, index) => {
+        const selected = option.value === value
+        return (
+          <button
+            key={option.value}
+            type="button"
+            role={itemRole}
+            className={selected ? 'segmented-option is-active' : 'segmented-option'}
+            aria-label={option.ariaLabel}
+            title={option.title}
+            aria-selected={variant === 'tabs' ? selected : undefined}
+            aria-checked={variant === 'radio' ? selected : undefined}
+            tabIndex={selected ? 0 : -1}
+            onClick={() => onChange(option.value)}
+          >
+            {option.label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 const baseStorageKey = 'kira.project.v2'
 // The default tab keeps the legacy unscoped key so existing browser-mode users'
 // saved content still loads after this upgrade. Tabs opened via New/Open always
@@ -690,9 +820,19 @@ const inspectorLinkedListLimit = 8
 const outlineReferenceLimit = 6
 const libraryOverscan = 5
 const duplicateCandidateThreshold = 8
+// The rendered row box (.image-row's border-box min-height in styles.css) is
+// 86px compact / 102px relaxed. The virtualized list positions rows every
+// libraryRowHeights[density]px via `transform: translateY(...)`, so the
+// difference below is a deliberate gutter between rows, not slack to trim —
+// keep the two in sync if either the CSS min-height or this gutter changes.
+const libraryRowGutter = 6
+const libraryRowBoxHeights: Record<LibraryDensity, number> = {
+  compact: 86,
+  relaxed: 102,
+}
 const libraryRowHeights: Record<LibraryDensity, number> = {
-  compact: 92,
-  relaxed: 108,
+  compact: libraryRowBoxHeights.compact + libraryRowGutter,
+  relaxed: libraryRowBoxHeights.relaxed + libraryRowGutter,
 }
 const libraryGridItemHeight = 184
 
@@ -3982,7 +4122,7 @@ function FileWorkspace({
     const anchor = sourceNode ?? baseNodes[0] ?? { x: 50, y: 50 }
     const idea: Idea = {
       id: `idea-ai-${Date.now()}`,
-      title: `${aiNodeActionLabels[request.action]}: ${sourceNode ? sourceNode.title : 'Whole board'}`.slice(0, 82),
+      title: `${aiNodeActionLabels[request.action]}: ${sourceNode ? sourceNode.title : aiNodeScopeLabels.full_board}`.slice(0, 82),
       body,
       status: 'forming',
       x: clamp(anchor.x + 14, 8, 92),
@@ -5752,11 +5892,12 @@ function TopBar({
   setActiveView: (view: ActiveView) => void
   onToggleInspector: () => void
 }) {
-  const views: { label: ActiveView; icon: typeof Network }[] = [
-    { label: 'Canvas', icon: Network },
-    { label: '3D', icon: Box },
-    { label: 'Slides', icon: FileText },
-    { label: 'Outline', icon: ListTree },
+  const lang = useLangStore((state) => state.lang)
+  const views: { label: ActiveView; key: string; icon: typeof Network }[] = [
+    { label: 'Canvas', key: 'view.canvas', icon: Network },
+    { label: '3D', key: 'view.3d', icon: Box },
+    { label: 'Slides', key: 'view.slides', icon: FileText },
+    { label: 'Outline', key: 'view.outline', icon: ListTree },
   ]
 
   return (
@@ -5766,21 +5907,23 @@ function TopBar({
       onDoubleClick={toggleWindowMaximizeFromChrome}
       onPointerDown={startWindowDrag}
     >
-      <nav className="view-switch content-view-switch" aria-label="View">
-        {views.map(({ label, icon: Icon }) => (
-          <button
-            key={label}
-            className={activeView === label ? 'view-tab is-active' : 'view-tab'}
-            type="button"
-            aria-pressed={activeView === label}
-            title={label}
-            onClick={() => setActiveView(label)}
-          >
-            <Icon size={14} />
-            <span>{label}</span>
-          </button>
-        ))}
-      </nav>
+      <Segmented
+        className="content-view-switch"
+        ariaLabel="View"
+        variant="tabs"
+        value={activeView}
+        onChange={setActiveView}
+        options={views.map(({ label, key, icon: Icon }) => ({
+          value: label,
+          ariaLabel: t(key, lang),
+          label: (
+            <>
+              <Icon size={14} />
+              <span>{t(key, lang)}</span>
+            </>
+          ),
+        }))}
+      />
 
       <div className="content-toolbar-actions">
         <button
@@ -6107,14 +6250,16 @@ function SettingsView({
             <section className="settings-panel" aria-label="Language">
               <h3><T k="lang.label" /></h3>
               <p className="settings-language__hint"><T k="lang.hint" /></p>
-              <div className="settings-language__toggle" role="group" aria-label="Language">
-                <button type="button" className={lang === 'en' ? 'is-active' : ''} aria-pressed={lang === 'en'} onClick={() => setLang('en')}>
-                  English
-                </button>
-                <button type="button" className={lang === 'vi' ? 'is-active' : ''} aria-pressed={lang === 'vi'} onClick={() => setLang('vi')}>
-                  Tiếng Việt
-                </button>
-              </div>
+              <Segmented
+                ariaLabel="Language"
+                variant="radio"
+                value={lang}
+                onChange={setLang}
+                options={[
+                  { value: 'en', label: 'English' },
+                  { value: 'vi', label: 'Tiếng Việt' },
+                ]}
+              />
             </section>
 
             <section className="settings-panel" aria-label="Local model">
@@ -6519,6 +6664,62 @@ function startWindowDrag(event: React.PointerEvent<HTMLElement>) {
   void getCurrentWindow().startDragging().catch(() => undefined)
 }
 
+/** Shared markup for one reference in the library — used by both the
+    virtualized list row and the grid tile, which previously duplicated this
+    ~20-line body verbatim. */
+function ReferenceCard({
+  image,
+  variant,
+  isSelected,
+  isChecked,
+  style,
+  onSelect,
+  onToggle,
+}: {
+  image: EvidenceImage
+  variant: 'row' | 'grid'
+  isSelected: boolean
+  isChecked: boolean
+  style?: React.CSSProperties
+  onSelect: (id: string) => void
+  onToggle: (id: string) => void
+}) {
+  const baseClass = variant === 'row' ? 'image-row' : 'image-grid-card'
+  return (
+    <div className={isSelected ? `${baseClass} is-selected` : baseClass} style={style}>
+      <label className="reference-check">
+        <input
+          aria-label={`Select ${image.title}`}
+          checked={isChecked}
+          type="checkbox"
+          onChange={() => onToggle(image.id)}
+        />
+        <span aria-hidden="true" />
+      </label>
+      <button
+        draggable
+        type="button"
+        onClick={() => onSelect(image.id)}
+        onDragStart={(event) => {
+          event.dataTransfer.setData('application/x-kira-image-id', image.id)
+          event.dataTransfer.setData('text/plain', image.id)
+        }}
+      >
+        <ReferenceThumb image={image} />
+        <span className="image-row-copy">
+          <strong>{image.title}</strong>
+          <small>{image.source}</small>
+          <span className="mini-tags">
+            {image.tags.slice(0, 2).map((tag) => (
+              <span key={tag}>{tag}</span>
+            ))}
+          </span>
+        </span>
+      </button>
+    </div>
+  )
+}
+
 function toggleWindowMaximizeFromChrome(event: React.MouseEvent<HTMLElement>) {
   if (!isTauriRuntime()) return
   if (isInteractiveChromeTarget(event.target)) return
@@ -6606,12 +6807,14 @@ function EvidenceInbox({
   onSelectLink: (id: string) => void
   onToggleCollapsed: () => void
 }) {
+  const lang = useLangStore((state) => state.lang)
   const importInput = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
   const [isDraggingFiles, setIsDraggingFiles] = useState(false)
   const [isToolsOpen, setIsToolsOpen] = useState(false)
   const [libraryScrollTop, setLibraryScrollTop] = useState(0)
   const [libraryViewportHeight, setLibraryViewportHeight] = useState(0)
+  const [libraryViewportWidth, setLibraryViewportWidth] = useState(0)
   const unassigned = images.filter((image) => image.suggestions.length > 0)
   const selectedCount = selectedReferenceIds.size
   const panelCounts: Record<LibraryPanelMode, number> = {
@@ -6638,23 +6841,43 @@ function EvidenceInbox({
     }),
     [ideaTitleById, imageTitleById, links, searchQuery],
   )
-  const rowHeight = browseMode === 'grid' ? libraryGridItemHeight : libraryRowHeights[density]
+  const rowHeight = libraryRowHeights[density]
   const totalListHeight = images.length * rowHeight
   const startIndex = Math.max(0, Math.floor(libraryScrollTop / rowHeight) - libraryOverscan)
   const visibleCount = Math.ceil((libraryViewportHeight || 1) / rowHeight) + libraryOverscan * 2
   const endIndex = Math.min(images.length, startIndex + visibleCount)
   const visibleImages = images.slice(startIndex, endIndex)
 
+  // Grid virtualization windows by ROW, not by item — a CSS `auto-fill` grid
+  // has no per-item position to transform individually, so this re-derives
+  // the same column count the CSS's `repeat(auto-fill, minmax(128px, 1fr))`
+  // would produce, then renders (and vertically offsets) only the visible
+  // rows' items, same overscan/scroll-driven approach as the list above.
+  const gridGap = 12 // var(--space-3)
+  const gridItemMinWidth = 128
+  const gridHorizontalPadding = 32 // var(--space-4) * 2, matches .image-list--grid
+  const gridAvailableWidth = Math.max(0, libraryViewportWidth - gridHorizontalPadding)
+  const gridColumns = Math.max(1, Math.floor((gridAvailableWidth + gridGap) / (gridItemMinWidth + gridGap)))
+  const gridRowHeight = libraryGridItemHeight + gridGap
+  const totalGridRows = Math.ceil(images.length / gridColumns)
+  const totalGridHeight = totalGridRows * gridRowHeight
+  const startGridRow = Math.max(0, Math.floor(libraryScrollTop / gridRowHeight) - libraryOverscan)
+  const visibleGridRowCount = Math.ceil((libraryViewportHeight || 1) / gridRowHeight) + libraryOverscan * 2
+  const endGridRow = Math.min(totalGridRows, startGridRow + visibleGridRowCount)
+  const visibleGridImages = images.slice(startGridRow * gridColumns, endGridRow * gridColumns)
+  const gridTranslateY = startGridRow * gridRowHeight
+
   useEffect(() => {
     const element = listRef.current
     if (!element) return
 
-    function updateViewportHeight() {
+    function updateViewportSize() {
       setLibraryViewportHeight(element?.clientHeight ?? 0)
+      setLibraryViewportWidth(element?.clientWidth ?? 0)
     }
 
-    updateViewportHeight()
-    const observer = new ResizeObserver(updateViewportHeight)
+    updateViewportSize()
+    const observer = new ResizeObserver(updateViewportSize)
     observer.observe(element)
     return () => observer.disconnect()
   }, [])
@@ -6739,24 +6962,17 @@ function EvidenceInbox({
 
       {panelMode === 'images' && (
       <div className="library-browse-bar" aria-label="Library browse controls">
-        <div className="library-browse-mode" aria-label="Browse mode">
-          <button
-            aria-pressed={browseMode === 'list'}
-            className={browseMode === 'list' ? 'is-active' : ''}
-            type="button"
-            onClick={() => onBrowseModeChange('list')}
-          >
-            List
-          </button>
-          <button
-            aria-pressed={browseMode === 'grid'}
-            className={browseMode === 'grid' ? 'is-active' : ''}
-            type="button"
-            onClick={() => onBrowseModeChange('grid')}
-          >
-            Grid
-          </button>
-        </div>
+        <Segmented
+          className="library-browse-mode"
+          ariaLabel="Browse mode"
+          variant="radio"
+          value={browseMode}
+          onChange={onBrowseModeChange}
+          options={[
+            { value: 'list', label: t('library.browseMode.list', lang) },
+            { value: 'grid', label: t('library.browseMode.grid', lang) },
+          ]}
+        />
         <span>{images.length} visible</span>
       </div>
       )}
@@ -6810,26 +7026,17 @@ function EvidenceInbox({
               <option value="title">Title</option>
               <option value="source">Source</option>
             </select>
-            <div className="density-toggle" aria-label="Density">
-              <button
-                aria-pressed={density === 'compact'}
-                aria-label="Compact density"
-                className={density === 'compact' ? 'is-active' : ''}
-                type="button"
-                onClick={() => onDensityChange('compact')}
-              >
-                C
-              </button>
-              <button
-                aria-pressed={density === 'relaxed'}
-                aria-label="Relaxed density"
-                className={density === 'relaxed' ? 'is-active' : ''}
-                type="button"
-                onClick={() => onDensityChange('relaxed')}
-              >
-                R
-              </button>
-            </div>
+            <Segmented
+              className="density-toggle"
+              ariaLabel="Density"
+              variant="radio"
+              value={density}
+              onChange={onDensityChange}
+              options={[
+                { value: 'compact', label: t('library.density.compact', lang) },
+                { value: 'relaxed', label: t('library.density.relaxed', lang) },
+              ]}
+            />
           </div>
           )}
         </div>
@@ -6838,96 +7045,54 @@ function EvidenceInbox({
       {panelMode === 'images' ? (
         <div
           className={`image-list image-list--${density} image-list--${browseMode}`}
-        data-rendered-count={visibleImages.length}
-        data-total-count={images.length}
-        ref={listRef}
-        onScroll={(event) => setLibraryScrollTop(event.currentTarget.scrollTop)}
-      >
-        {images.length > 0 && browseMode === 'grid' ? (
-          <div className="image-grid-window">
-            {images.map((image) => (
-              <div
-                key={image.id}
-                className={selected.type === 'image' && selected.id === image.id ? 'image-grid-card is-selected' : 'image-grid-card'}
-              >
-                <input
-                  aria-label={`Select ${image.title}`}
-                  checked={selectedReferenceIds.has(image.id)}
-                  type="checkbox"
-                  onChange={() => onToggleReference(image.id)}
-                />
-                <button
-                  draggable
-                  type="button"
-                  onClick={() => onSelect(image.id)}
-                  onDragStart={(event) => {
-                    event.dataTransfer.setData('application/x-kira-image-id', image.id)
-                    event.dataTransfer.setData('text/plain', image.id)
-                  }}
-                >
-                  <ReferenceThumb image={image} />
-                  <span className="image-row-copy">
-                    <strong>{image.title}</strong>
-                    <small>{image.source}</small>
-                    <span className="mini-tags">
-                      {image.tags.slice(0, 2).map((tag) => (
-                        <span key={tag}>{tag}</span>
-                      ))}
-                    </span>
-                  </span>
-                </button>
+          data-rendered-count={browseMode === 'grid' ? visibleGridImages.length : visibleImages.length}
+          data-total-count={images.length}
+          ref={listRef}
+          onScroll={(event) => setLibraryScrollTop(event.currentTarget.scrollTop)}
+        >
+          {images.length > 0 && browseMode === 'grid' ? (
+            <div className="image-grid-outer" style={{ height: totalGridHeight }}>
+              <div className="image-grid-window" style={{ transform: `translateY(${gridTranslateY}px)` }}>
+                {visibleGridImages.map((image) => (
+                  <ReferenceCard
+                    key={image.id}
+                    image={image}
+                    variant="grid"
+                    isSelected={selected.type === 'image' && selected.id === image.id}
+                    isChecked={selectedReferenceIds.has(image.id)}
+                    onSelect={onSelect}
+                    onToggle={onToggleReference}
+                  />
+                ))}
               </div>
-            ))}
-          </div>
-        ) : images.length > 0 ? (
-          <div className="image-list-window" style={{ height: totalListHeight }}>
-            {visibleImages.map((image, visibleIndex) => {
-              const index = startIndex + visibleIndex
-              return (
-            <div
-              key={image.id}
-              className={selected.type === 'image' && selected.id === image.id ? 'image-row is-selected' : 'image-row'}
-              style={{ transform: `translateY(${index * rowHeight}px)` }}
-            >
-              <input
-                aria-label={`Select ${image.title}`}
-                checked={selectedReferenceIds.has(image.id)}
-                type="checkbox"
-                onChange={() => onToggleReference(image.id)}
-              />
-              <button
-                draggable
-                type="button"
-                onClick={() => onSelect(image.id)}
-                onDragStart={(event) => {
-                  event.dataTransfer.setData('application/x-kira-image-id', image.id)
-                  event.dataTransfer.setData('text/plain', image.id)
-                }}
-              >
-                <ReferenceThumb image={image} />
-                <span className="image-row-copy">
-                  <strong>{image.title}</strong>
-                  <small>{image.source}</small>
-                  <span className="mini-tags">
-                    {image.tags.slice(0, 2).map((tag) => (
-                      <span key={tag}>{tag}</span>
-                    ))}
-                  </span>
-                </span>
+            </div>
+          ) : images.length > 0 ? (
+            <div className="image-list-window" style={{ height: totalListHeight }}>
+              {visibleImages.map((image, visibleIndex) => {
+                const index = startIndex + visibleIndex
+                return (
+                  <ReferenceCard
+                    key={image.id}
+                    image={image}
+                    variant="row"
+                    isSelected={selected.type === 'image' && selected.id === image.id}
+                    isChecked={selectedReferenceIds.has(image.id)}
+                    style={{ transform: `translateY(${index * rowHeight}px)` }}
+                    onSelect={onSelect}
+                    onToggle={onToggleReference}
+                  />
+                )
+              })}
+            </div>
+          ) : (
+            <div className="empty-state">
+              <strong><T k="library.empty.title" /></strong>
+              <span><T k="library.empty.body" /></span>
+              <button className="primary-button" type="button" onClick={() => importInput.current?.click()}>
+                <T k="library.empty.import" />
               </button>
             </div>
-              )
-            })}
-          </div>
-        ) : (
-          <div className="empty-state">
-            <strong>No references yet</strong>
-            <span>Drag in images, paste a URL, or import a folder to start your moodboard.</span>
-            <button className="primary-button" type="button" onClick={() => importInput.current?.click()}>
-              Import images
-            </button>
-          </div>
-        )}
+          )}
         </div>
       ) : panelMode === 'ideas' ? (
         <div className="library-node-list" role="list" aria-label="Ideas">
@@ -7159,7 +7324,12 @@ function GraphCanvas({
     begun: boolean
   } | null>(null)
   const [resizingNode, setResizingNode] = useState<CanvasNodeSelection | null>(null)
+  const lang = useLangStore((state) => state.lang)
   const panRef = useRef<{ startX: number; startY: number; originX: number; originY: number } | null>(null)
+  // Ref for the synchronous check inside startPan's pointerdown handler; state
+  // exists only so the cursor (.is-space-armed) can react to it.
+  const spacePanArmedRef = useRef(false)
+  const [isSpacePanArmed, setIsSpacePanArmed] = useState(false)
   const linkDragRef = useRef<Pick<GraphNodeRef, 'kind' | 'id'> | null>(null)
   const [linkDragPoint, setLinkDragPoint] = useState<{ x: number; y: number } | null>(null)
   const [graphTransform, setGraphTransform] = useState({ x: 0, y: 0, scale: 1 })
@@ -7180,10 +7350,14 @@ function GraphCanvas({
   const resizingFrameRef = useRef<{ id: string; startWidth: number; startHeight: number; startX: number; startY: number } | null>(null)
   const [starterPrompt, setStarterPrompt] = useState('')
   const [kiraSession, setKiraSession] = useState<KiraSession | null>(null)
-  // Kira's context/suggestion detail is collapsed by default — the popover
-  // stays a single small box until the user asks to see more.
+  // Kira's context/suggestion detail is collapsed by default — the dock
+  // stays a single composer line until the user asks to see more.
   const [isKiraContextOpen, setIsKiraContextOpen] = useState(false)
   const [isKiraSuggestOpen, setIsKiraSuggestOpen] = useState(false)
+  const isKiraOpen = Boolean(kiraSession)
+  const kiraDockRef = useRef<HTMLDivElement | null>(null)
+  const kiraOrbRef = useRef<HTMLButtonElement | null>(null)
+  const kiraInputRef = useRef<HTMLTextAreaElement | null>(null)
 
   function openKiraSession(origin: 'node' | 'rail', source: Pick<GraphNodeRef, 'kind' | 'id'> | null, scope: AiNodeScope, extraSources: Pick<GraphNodeRef, 'kind' | 'id'>[] = []) {
     setKiraSession({
@@ -7193,7 +7367,6 @@ function GraphCanvas({
       scope,
       action: 'summarize',
       prompt: '',
-      previousPrompt: null,
       removedContextKeys: [],
       providerOverrideId: null,
       modelOverride: null,
@@ -7203,15 +7376,13 @@ function GraphCanvas({
     setIsKiraContextOpen(false)
     setIsKiraSuggestOpen(false)
     setArcMenu(null)
+    // The Arrange drawer floats at the same bottom-left corner the dock
+    // drifts toward on open — close it so the two surfaces can't collide.
+    setIsGraphToolsOpen(false)
   }
 
   function openKiraFromNode(kind: GraphNodeKind, id: string) {
     openKiraSession('node', { kind, id }, 'downstream_branch')
-  }
-
-  function openKiraFromArc() {
-    if (!arcMenu) return
-    openKiraSession('node', { kind: arcMenu.kind, id: arcMenu.id }, 'downstream_branch')
   }
 
   function openKiraFromRail() {
@@ -7226,6 +7397,16 @@ function GraphCanvas({
     }
     openKiraSession('rail', null, 'full_board')
   }
+
+  const closeKiraSession = useCallback(() => {
+    setKiraSession(null)
+    setIsKiraContextOpen(false)
+    setIsKiraSuggestOpen(false)
+    // Deferred: the orb is `inert` while the dock is open, and `inert`
+    // elements refuse `.focus()` — calling this synchronously would target
+    // the DOM before React commits the re-render that lifts `inert`.
+    requestAnimationFrame(() => kiraOrbRef.current?.focus())
+  }, [])
 
   async function submitKiraSession() {
     if (!kiraSession) return
@@ -7249,6 +7430,55 @@ function GraphCanvas({
       setKiraSession((current) => current ? { ...current, status: 'error', message } : current)
     }
   }
+
+  function handleKiraInputKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>) {
+    // Stop canvas shortcuts (e.g. the bare "L" for link mode) from firing
+    // while typing into the dock.
+    event.stopPropagation()
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      if (isKiraContextOpen || isKiraSuggestOpen) {
+        setIsKiraContextOpen(false)
+        setIsKiraSuggestOpen(false)
+        return
+      }
+      closeKiraSession()
+      return
+    }
+    if (event.key === 'Enter' && !event.shiftKey && kiraSession?.status !== 'thinking') {
+      event.preventDefault()
+      void submitKiraSession()
+    }
+  }
+
+  // Measure the horizontal offset from the closed orb's slot to the bottom
+  // bar's centre, and write it before paint so the very first open frame
+  // already drifts the dock toward the canvas centre instead of snapping
+  // there after a flash under the (right-biased) launcher position.
+  useLayoutEffect(() => {
+    if (!isKiraOpen) return
+    const dock = kiraDockRef.current
+    const bar = dock?.closest('.canvas-bottom-bar')
+    if (dock instanceof HTMLElement && bar instanceof HTMLElement) {
+      const dockBox = dock.getBoundingClientRect()
+      const barBox = bar.getBoundingClientRect()
+      const shift = Math.round((barBox.left + barBox.width / 2) - (dockBox.left + dockBox.width / 2))
+      dock.style.setProperty('--kira-dock-shift', `${shift}px`)
+    }
+    // Focus once the content cross-fade has had time to become visible —
+    // focusing an invisible field mid-morph would show no caret at all.
+    const timer = window.setTimeout(() => kiraInputRef.current?.focus(), 180)
+    return () => window.clearTimeout(timer)
+  }, [isKiraOpen])
+
+  // The Kira dock is the only floating canvas layer that doesn't already use
+  // this. Gated off while a tray is open so the capture-phase Escape here
+  // doesn't preempt "Esc closes the tray first" in handleKiraInputKeyDown.
+  useDismissableLayer(
+    isKiraOpen && !isKiraContextOpen && !isKiraSuggestOpen,
+    '.kira-dock',
+    closeKiraSession,
+  )
 
   useDismissableLayer(
     isGraphToolsOpen || Boolean(arcMenu) || Boolean(nodeContextMenu),
@@ -7352,6 +7582,48 @@ function GraphCanvas({
     window.addEventListener('keydown', handleCanvasKeydown)
     return () => window.removeEventListener('keydown', handleCanvasKeydown)
   }, [multiSelectedNodes, onActiveCanvasToolChange, onDeleteNodes, onPendingLinkSourceChange])
+
+  // Hold-space-to-pan (Figma/Sketch/Illustrator/Miro convention). The cursor
+  // only promises a drag-to-pan while this is armed — see .is-space-armed.
+  useEffect(() => {
+    function blocksSpacePan(target: EventTarget | null) {
+      if (!(target instanceof Element)) return false
+      if (isEditableEventTarget(target)) return true
+      return Boolean(target.closest('button, [role="button"], input, textarea, select'))
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.code !== 'Space' || event.repeat) return
+      if (blocksSpacePan(event.target)) return
+      event.preventDefault()
+      spacePanArmedRef.current = true
+      setIsSpacePanArmed(true)
+    }
+
+    function handleKeyUp(event: KeyboardEvent) {
+      if (event.code !== 'Space' || !spacePanArmedRef.current) return
+      spacePanArmedRef.current = false
+      setIsSpacePanArmed(false)
+    }
+
+    function handleBlur() {
+      // Without this, Cmd-Tabbing away mid-hold never delivers the keyup and
+      // the canvas comes back stuck in pan mode.
+      if (!spacePanArmedRef.current) return
+      spacePanArmedRef.current = false
+      setIsSpacePanArmed(false)
+      stopPan()
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    window.addEventListener('keyup', handleKeyUp)
+    window.addEventListener('blur', handleBlur)
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown)
+      window.removeEventListener('keyup', handleKeyUp)
+      window.removeEventListener('blur', handleBlur)
+    }
+  }, [])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -7852,138 +8124,186 @@ function GraphCanvas({
   // A small box anchored right above the Kira button — not a full side
   // panel. Context and suggestions stay collapsed behind their own toggle
   // so the default view is just "what am I working from" + a text field.
-  function renderKiraPopover() {
-    if (!kiraSession) return null
-
-    const anchorNode = kiraSession.source
+  function renderKiraDock() {
+    const open = isKiraOpen
+    const anchorNode = kiraSession?.source
       ? resolveGraphNodeRef(kiraSession.source.id, ideas, images, palettes, diagrams, placeholders)
       : null
-    const popoverSources = [kiraSession.source, ...kiraSession.extraSources].filter(Boolean) as Pick<GraphNodeRef, 'kind' | 'id'>[]
-    const contextNodes = collectKiraContextForSources(popoverSources, kiraSession.scope, { ideas, images, palettes, diagrams, placeholders, links })
-      .filter((node) => !kiraSession.removedContextKeys.includes(`${node.kind}:${node.id}`))
-    const route = selectAiProviderForTask('generate_node', aiProviders, aiRoutingMode, selectedAiProviderId, kiraSession.providerOverrideId ?? undefined)
+    const dockSources = kiraSession ? ([kiraSession.source, ...kiraSession.extraSources].filter(Boolean) as Pick<GraphNodeRef, 'kind' | 'id'>[]) : []
+    const contextNodes = kiraSession
+      ? collectKiraContextForSources(dockSources, kiraSession.scope, { ideas, images, palettes, diagrams, placeholders, links })
+        .filter((node) => !kiraSession.removedContextKeys.includes(`${node.kind}:${node.id}`))
+      : []
+    const route = selectAiProviderForTask('generate_node', aiProviders, aiRoutingMode, selectedAiProviderId, kiraSession?.providerOverrideId ?? undefined)
     const routedProvider = route.providerId ? aiProviders.find((candidate) => candidate.id === route.providerId) : undefined
     const suggestions = kiraSuggestions[anchorNode?.kind ?? 'board']
     const contextLines = contextNodes.map((node) => `- ${graphNodeKindLabel(node.kind)}: ${node.title}`).join('\n')
-    const tokenEstimate = estimateKiraTokens(kiraSession.prompt) + contextNodes.length * 8 + estimateKiraTokens(contextLines) + 120
-    const isThinking = kiraSession.status === 'thinking'
-    const statusLine = isThinking
-      ? kiraCopy.loading[0]
-      : kiraSession.status === 'error' && kiraSession.message
-        ? kiraSession.message
-        : anchorNode
-          ? anchorNode.title
-          : 'Whole board'
+    const tokenEstimate = kiraSession
+      ? estimateKiraTokens(kiraSession.prompt) + contextNodes.length * 8 + estimateKiraTokens(contextLines) + 120
+      : 0
+    const isThinking = kiraSession?.status === 'thinking'
+    const isError = kiraSession?.status === 'error'
+    const hasTray = open && (isKiraContextOpen || isKiraSuggestOpen)
+    const placeholder = !routedProvider
+      ? t('kira.placeholderNoProvider', lang)
+      : anchorNode
+        ? t('kira.placeholderNode', lang, { title: anchorNode.title })
+        : t('kira.placeholderBoard', lang)
 
     return (
-      <div className={isThinking ? 'kira-popover is-thinking' : 'kira-popover'} role="dialog" aria-label="Kira">
-        <div className="kira-popover-head">
-          <span className="kira-popover-title">
-            <KiraMark size={14} state={isThinking ? 'thinking' : 'rest'} />
-            {statusLine}
+      <div
+        ref={kiraDockRef}
+        className={[
+          'kira-dock',
+          open ? 'is-open' : '',
+          isThinking ? 'is-thinking' : '',
+          isError ? 'is-error' : '',
+          hasTray ? 'has-tray' : '',
+        ].filter(Boolean).join(' ')}
+        role={open ? 'dialog' : undefined}
+        aria-label="Kira"
+        aria-modal={false}
+      >
+        <div className="kira-dock-row">
+          <button
+            type="button"
+            ref={kiraOrbRef}
+            className="kira-dock-orb"
+            aria-label="Ask Kira"
+            aria-expanded={open}
+            data-tooltip={open ? undefined : 'Kira'}
+            tabIndex={open ? -1 : 0}
+            inert={open || undefined}
+            onClick={() => (kiraSession ? closeKiraSession() : openKiraFromRail())}
+          >
+            <KiraMark size={18} state={isThinking ? 'thinking' : 'rest'} />
+          </button>
+
+          <span className="kira-dock-sigil" aria-hidden="true">
+            <KiraMark size={20} state={isThinking ? 'thinking' : 'rest'} />
           </span>
-          <button type="button" className="icon-button" aria-label="Close Kira" onClick={() => setKiraSession(null)}>
-            <X size={12} />
-          </button>
-        </div>
-        <textarea
-          className="kira-popover-input"
-          rows={2}
-          placeholder={!routedProvider ? kiraCopy.noProvider : aiNodeActionPrompts[kiraSession.action]}
-          value={kiraSession.prompt}
-          onChange={(event) => setKiraSession((current) => current ? { ...current, prompt: event.target.value } : current)}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && !isThinking) {
-              event.preventDefault()
-              void submitKiraSession()
-            }
-          }}
-        />
-        <div className="kira-popover-row">
-          <button
-            type="button"
-            className={isKiraContextOpen ? 'kira-chip-toggle is-open' : 'kira-chip-toggle'}
-            aria-label={`Context (${contextNodes.length} nodes)`}
-            aria-expanded={isKiraContextOpen}
-            onClick={() => { setIsKiraContextOpen((current) => !current); setIsKiraSuggestOpen(false) }}
-          >
-            <Layers size={12} />
-            {contextNodes.length}
-          </button>
-          <button
-            type="button"
-            className={isKiraSuggestOpen ? 'kira-chip-toggle is-open' : 'kira-chip-toggle'}
-            aria-label="Suggestions"
-            aria-expanded={isKiraSuggestOpen}
-            onClick={() => { setIsKiraSuggestOpen((current) => !current); setIsKiraContextOpen(false) }}
-          >
-            <HelpCircle size={12} />
-          </button>
-          <span className="kira-popover-spacer" />
-          <button
-            type="button"
-            className="kira-popover-submit"
-            disabled={isThinking || !kiraSession.prompt.trim()}
-            onClick={() => void submitKiraSession()}
-          >
-            <KiraMark size={13} state={isThinking ? 'thinking' : 'rest'} />
-            {isThinking ? '…' : 'Ask'}
-          </button>
-        </div>
-        {isKiraContextOpen && (
-          <div className="kira-dropdown">
-            <div className="kira-dropdown-head">
-              <select
-                value={kiraSession.scope}
-                onChange={(event) => setKiraSession((current) => current ? { ...current, scope: event.target.value as AiNodeScope, removedContextKeys: [] } : current)}
-              >
-                {(Object.keys(aiNodeScopeLabels) as AiNodeScope[]).map((scope) => (
-                  <option key={scope} value={scope}>{aiNodeScopeLabels[scope]}</option>
-                ))}
-              </select>
-              <span className="kira-dropdown-meta">~{tokenEstimate.toLocaleString()} tokens</span>
-            </div>
-            <div className="kira-chip-row">
-              {contextNodes.map((node) => (
-                <span className="kira-chip" key={`${node.kind}:${node.id}`} title={node.title}>
-                  <span className="kira-chip-kind">{graphNodeKindLabel(node.kind)}</span>
-                  {node.title.length > 20 ? `${node.title.slice(0, 20)}…` : node.title}
-                  <button
-                    type="button"
-                    className="kira-chip-remove"
-                    aria-label={`Remove ${node.title} from context`}
-                    onClick={() => setKiraSession((current) => current ? { ...current, removedContextKeys: [...current.removedContextKeys, `${node.kind}:${node.id}`] } : current)}
-                  >
-                    <X size={10} />
-                  </button>
-                </span>
-              ))}
-            </div>
+
+          <textarea
+            className="kira-dock-input"
+            ref={kiraInputRef}
+            rows={1}
+            placeholder={placeholder}
+            value={kiraSession?.prompt ?? ''}
+            disabled={isThinking}
+            tabIndex={open ? 0 : -1}
+            inert={!open || undefined}
+            onChange={(event) => setKiraSession((current) => current ? { ...current, prompt: event.target.value } : current)}
+            onKeyDown={handleKiraInputKeyDown}
+          />
+
+          <div className="kira-dock-actions" inert={!open || undefined}>
+            <button
+              type="button"
+              className={isKiraContextOpen ? 'kira-dock-pill is-open' : 'kira-dock-pill'}
+              aria-expanded={isKiraContextOpen}
+              aria-label={`Context: ${contextNodes.length} nodes`}
+              onClick={() => { setIsKiraContextOpen((current) => !current); setIsKiraSuggestOpen(false) }}
+            >
+              <Layers size={12} />
+              {contextNodes.length}
+            </button>
+            <button
+              type="button"
+              className={isKiraSuggestOpen ? 'kira-dock-pill is-open' : 'kira-dock-pill'}
+              aria-expanded={isKiraSuggestOpen}
+              aria-label="Suggestions"
+              onClick={() => { setIsKiraSuggestOpen((current) => !current); setIsKiraContextOpen(false) }}
+            >
+              <HelpCircle size={12} />
+            </button>
+            <span className="kira-dock-sep" aria-hidden="true" />
+            <button
+              type="button"
+              className="kira-dock-submit"
+              aria-label="Ask Kira"
+              disabled={isThinking || !kiraSession?.prompt.trim() || !routedProvider}
+              onClick={() => void submitKiraSession()}
+            >
+              {isThinking ? <KiraMark size={13} state="thinking" /> : <ArrowUp size={15} />}
+            </button>
+            <button type="button" className="kira-dock-close" aria-label="Close Kira" onClick={closeKiraSession}>
+              <X size={13} />
+            </button>
           </div>
-        )}
-        {isKiraSuggestOpen && (
-          <div className="kira-dropdown kira-suggestion-list">
-            {suggestions.map((suggestion) => (
-              <button
-                key={suggestion.id}
-                type="button"
-                className="kira-suggestion"
-                onClick={() => {
-                  setKiraSession((current) => current ? { ...current, action: suggestion.action, prompt: suggestion.prompt } : current)
-                  setIsKiraSuggestOpen(false)
-                }}
-              >
-                <span>{suggestion.label}</span>
-                <span className="kira-suggestion-why">{suggestion.why}</span>
-              </button>
-            ))}
-          </div>
-        )}
-        {!routedProvider && (
-          <p className="kira-popover-foot">
-            {kiraCopy.noProvider} <button type="button" className="link-button" onClick={onOpenAiSettings}>Open AI settings →</button>
+        </div>
+
+        {isThinking && <div className="kira-dock-progress" aria-hidden="true" />}
+
+        {isError && kiraSession?.message && (
+          <p className="kira-dock-error" role="alert">
+            <AlertTriangle size={13} />
+            <span>{kiraSession.message}</span>
+            <button type="button" className="kira-dock-retry" onClick={() => void submitKiraSession()}>{t('kira.tryAgain', lang)}</button>
           </p>
         )}
+
+        {open && !routedProvider && (
+          <p className="kira-dock-notice">
+            <span>{kiraCopy.noProvider}</span>
+            <button type="button" className="link-button" onClick={onOpenAiSettings}>{t('kira.openAiSettings', lang)}</button>
+          </p>
+        )}
+
+        <div className="kira-dock-tray">
+          <div className="kira-dock-tray-inner">
+            {isKiraContextOpen && kiraSession && (
+              <>
+                <div className="kira-dock-tray-head">
+                  <select
+                    aria-label="Context scope"
+                    value={kiraSession.scope}
+                    onChange={(event) => setKiraSession((current) => current ? { ...current, scope: event.target.value as AiNodeScope, removedContextKeys: [] } : current)}
+                  >
+                    {(Object.keys(aiNodeScopeLabels) as AiNodeScope[]).map((scope) => (
+                      <option key={scope} value={scope}>{aiNodeScopeLabels[scope]}</option>
+                    ))}
+                  </select>
+                  <span className="kira-dock-tray-meta">{contextNodes.length} nodes · ~{tokenEstimate.toLocaleString()} tokens</span>
+                </div>
+                <div className="kira-chip-row">
+                  {contextNodes.map((node) => (
+                    <span className="kira-chip" key={`${node.kind}:${node.id}`} title={node.title}>
+                      <span className="kira-chip-kind">{graphNodeKindLabel(node.kind)}</span>
+                      {node.title.length > 20 ? `${node.title.slice(0, 20)}…` : node.title}
+                      <button
+                        type="button"
+                        className="kira-chip-remove"
+                        aria-label={`Remove ${node.title} from context`}
+                        onClick={() => setKiraSession((current) => current ? { ...current, removedContextKeys: [...current.removedContextKeys, `${node.kind}:${node.id}`] } : current)}
+                      >
+                        <X size={10} />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              </>
+            )}
+            {isKiraSuggestOpen && (
+              <div className="kira-dock-suggestions">
+                {suggestions.map((suggestion) => (
+                  <button
+                    key={suggestion.id}
+                    type="button"
+                    className="kira-suggestion"
+                    onClick={() => {
+                      setKiraSession((current) => current ? { ...current, action: suggestion.action, prompt: suggestion.prompt } : current)
+                      setIsKiraSuggestOpen(false)
+                      kiraInputRef.current?.focus()
+                    }}
+                  >
+                    <span>{suggestion.label}</span>
+                    <span className="kira-suggestion-why">{suggestion.why}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     )
   }
@@ -8034,8 +8354,9 @@ function GraphCanvas({
   function startPan(event: React.PointerEvent<HTMLDivElement>) {
     const target = event.target instanceof Element ? event.target : null
     const isMiddleButton = event.button === 1
-    if (!isMiddleButton) {
-      if (event.button !== 0 || target?.closest('[data-node-kind][data-node-id], button, input, textarea, select, .canvas-tool-rail, .canvas-view-rail, .canvas-zoom-rail, .graph-tools-drawer, .node-context-menu, .node-arc-menu, .canvas-zero-state, .kira-popover, .canvas-kira-launcher')) return
+    const isSpaceDrag = event.button === 0 && spacePanArmedRef.current
+    if (!isMiddleButton && !isSpaceDrag) {
+      if (event.button !== 0 || target?.closest('[data-node-kind][data-node-id], button, input, textarea, select, .canvas-tool-rail, .canvas-view-rail, .canvas-zoom-rail, .graph-tools-drawer, .node-context-menu, .node-arc-menu, .canvas-zero-state, .kira-dock')) return
       onSelect({ type: 'project' })
       setNodeContextMenu(null)
       setArcMenu(null)
@@ -8075,7 +8396,7 @@ function GraphCanvas({
   }
 
   function handleCanvasWheel(event: React.WheelEvent<HTMLDivElement>) {
-    if (event.target instanceof Element && event.target.closest('input, textarea, select, .graph-tools-drawer, .node-context-menu, .node-arc-menu, .kira-popover')) return
+    if (event.target instanceof Element && event.target.closest('input, textarea, select, .graph-tools-drawer, .node-context-menu, .node-arc-menu, .kira-dock')) return
     event.preventDefault()
     if (event.ctrlKey || event.metaKey) {
       const rect = canvasRef.current?.getBoundingClientRect()
@@ -8109,7 +8430,7 @@ function GraphCanvas({
   return (
     <section className="graph-shell">
       <div
-        className={`${draggingNode ? 'graph-canvas is-dragging-node' : 'graph-canvas'}${resizingNode ? ' is-resizing-node' : ''}${isPanning ? ' is-panning' : ''}${graphMode === 'discover' ? ' is-discovery' : ''}${related.linkIds.size > 0 ? ' has-focus' : ''}`}
+        className={`${draggingNode ? 'graph-canvas is-dragging-node' : 'graph-canvas'}${resizingNode ? ' is-resizing-node' : ''}${isSpacePanArmed ? ' is-space-armed' : ''}${isPanning ? ' is-panning' : ''}${graphMode === 'discover' ? ' is-discovery' : ''}${related.linkIds.size > 0 ? ' has-focus' : ''}`}
         data-graph-cap={graphMetrics.cap}
         data-graph-mode={graphMetrics.mode}
         data-total-nodes={graphMetrics.totalNodes}
@@ -8147,20 +8468,18 @@ function GraphCanvas({
             right. Flex keeps them from ever overlapping at any canvas width. */}
         <div className={kiraSession ? 'canvas-bottom-bar has-kira-open' : 'canvas-bottom-bar'}>
         <div className="canvas-view-rail" aria-label="Canvas view tools">
-          <div className="graph-mode-toggle" aria-label="Canvas mode">
-            {Object.keys(graphModeLabels).map((mode) => (
-              <button
-                key={mode}
-                aria-pressed={graphMode === mode}
-                className={graphMode === mode ? 'is-active' : ''}
-                type="button"
-                title={mode === 'discover' ? 'Suggest weak links without saving them' : 'Move, edit, and link nodes'}
-                onClick={() => setGraphMode(mode as GraphMode)}
-              >
-                {graphModeLabels[mode as GraphMode]}
-              </button>
-            ))}
-          </div>
+          <Segmented
+            className="graph-mode-toggle"
+            ariaLabel="Canvas mode"
+            variant="radio"
+            value={graphMode}
+            onChange={setGraphMode}
+            options={(Object.keys(graphModeLabels) as GraphMode[]).map((mode) => ({
+              value: mode,
+              label: graphModeLabels[mode],
+              title: mode === 'discover' ? 'Suggest weak links without saving them' : 'Move, edit, and link nodes',
+            }))}
+          />
           <button
             aria-expanded={isGraphToolsOpen}
             className={isGraphToolsOpen ? 'canvas-view-rail-trigger is-active' : 'canvas-view-rail-trigger'}
@@ -8178,7 +8497,7 @@ function GraphCanvas({
             <button
               type="button"
               aria-label="Select"
-              data-tooltip="Select"
+              data-tooltip={t('tool.select', lang)}
               className={activeCanvasTool === 'select' ? 'is-active' : ''}
               onClick={() => {
                 onActiveCanvasToolChange('select')
@@ -8186,52 +8505,43 @@ function GraphCanvas({
                 setArcMenu(null)
               }}
             >
-              <img className="tool-icon" src="/tool-icons/select.png" alt="" />
+              <Cursor className="tool-icon" size={19} />
             </button>
           </div>
           <div className="canvas-tool-group" aria-label="Create nodes">
-            <button type="button" aria-label="Add image placeholder" data-tooltip="Image placeholder" onClick={onCreatePlaceholder}>
-              <img className="tool-icon" src="/tool-icons/image-placeholder.png" alt="" />
+            <button type="button" aria-label="Add image placeholder" data-tooltip={t('tool.imagePlaceholder', lang)} onClick={onCreatePlaceholder}>
+              <ImageSquare className="tool-icon" size={19} />
             </button>
-            <button type="button" aria-label="Add palette" data-tooltip="Palette" onClick={onCreatePalette}>
-              <img className="tool-icon" src="/tool-icons/palette.png" alt="" />
+            <button type="button" aria-label="Add palette" data-tooltip={t('tool.palette', lang)} onClick={onCreatePalette}>
+              <PaletteIcon className="tool-icon" size={19} />
             </button>
-            <button type="button" aria-label="Add idea" data-tooltip="Idea" onClick={onCreateIdea}>
-              <img className="tool-icon" src="/tool-icons/idea.png" alt="" />
+            <button type="button" aria-label="Add idea" data-tooltip={t('tool.idea', lang)} onClick={onCreateIdea}>
+              <LightbulbIcon className="tool-icon" size={19} />
             </button>
-            <button type="button" aria-label="Add sticker" data-tooltip="Sticker" onClick={onCreateSticker}>
-              <StickyNote size={16} />
+            <button type="button" aria-label="Add sticker" data-tooltip={t('tool.sticker', lang)} onClick={onCreateSticker}>
+              <NoteIcon className="tool-icon" size={19} />
             </button>
-            <button type="button" aria-label="Add frame" data-tooltip="Frame" onClick={onCreateFrame}>
-              <Frame size={15} />
+            <button type="button" aria-label="Add frame" data-tooltip={t('tool.frame', lang)} onClick={onCreateFrame}>
+              <FrameCorners className="tool-icon" size={19} />
             </button>
           </div>
           <div className="canvas-tool-group" aria-label="Import tools">
             <button
               type="button"
               aria-label="Import Mermaid diagram"
-              data-tooltip="Mermaid diagram"
+              data-tooltip={t('tool.mermaid', lang)}
               onClick={() => {
                 const source = window.prompt('Paste Mermaid graph or flowchart')
                 if (source?.trim()) void onImportMermaid(source)
               }}
             >
-              <img className="tool-icon" src="/tool-icons/mermaid-diagram.png" alt="" />
+              <FlowArrow className="tool-icon" size={19} />
             </button>
           </div>
         </div>
 
         <div className="kira-launcher-wrap">
-          <button
-            type="button"
-            className={kiraSession ? 'canvas-kira-launcher is-active' : 'canvas-kira-launcher'}
-            aria-label="Ask Kira"
-            data-tooltip="Kira"
-            onClick={() => (kiraSession ? setKiraSession(null) : openKiraFromRail())}
-          >
-            <KiraMark size={18} state={kiraSession?.status === 'thinking' ? 'thinking' : 'rest'} />
-          </button>
-          {renderKiraPopover()}
+          {renderKiraDock()}
         </div>
 
         <div className="canvas-zoom-rail" aria-label="Canvas zoom">
@@ -9091,19 +9401,17 @@ function Graph3DView({
           <ZoomOut size={13} />
         </button>
       </div>
-      <div className="graph3d-scope" aria-label="3D graph scope">
-        {(Object.keys(graphScopeLabels) as GraphScope[]).map((scope) => (
-          <button
-            key={scope}
-            className={graphScope3D === scope ? 'is-active' : ''}
-            type="button"
-            aria-pressed={graphScope3D === scope}
-            onClick={() => setGraphScope3D(scope)}
-          >
-            {graphScopeLabels[scope]}
-          </button>
-        ))}
-      </div>
+      <Segmented
+        className="graph3d-scope"
+        ariaLabel="3D graph scope"
+        variant="radio"
+        value={graphScope3D}
+        onChange={setGraphScope3D}
+        options={(Object.keys(graphScopeLabels) as GraphScope[]).map((scope) => ({
+          value: scope,
+          label: graphScopeLabels[scope],
+        }))}
+      />
       <div className="graph3d-legend" aria-label="3D relation legend">
         <button
           className={relationFilter3D === 'all' ? 'is-active' : ''}
@@ -9630,19 +9938,17 @@ function OutlineView({
           <small>{draft ? formatDraftTime(draft.createdAt) : 'Unsaved draft'} · {sections.length} sections · {strongCount} strong · {weakCount} needs work</small>
         </div>
         <div className="outline-tools">
-          <div className="outline-filter" aria-label="Outline filter">
-            {Object.keys(outlineFilterLabels).map((filter) => (
-              <button
-                key={filter}
-                aria-pressed={outlineFilter === filter}
-                className={outlineFilter === filter ? 'is-active' : ''}
-                type="button"
-                onClick={() => setOutlineFilter(filter as OutlineFilter)}
-              >
-                {outlineFilterLabels[filter as OutlineFilter]}
-              </button>
-            ))}
-          </div>
+          <Segmented
+            className="outline-filter"
+            ariaLabel="Outline filter"
+            variant="radio"
+            value={outlineFilter}
+            onChange={setOutlineFilter}
+            options={(Object.keys(outlineFilterLabels) as OutlineFilter[]).map((filter) => ({
+              value: filter,
+              label: outlineFilterLabels[filter],
+            }))}
+          />
           <button className="quiet-button" type="button" onClick={onRebuild}>
             <Bot size={14} />
             Rebuild

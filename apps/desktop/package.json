@@ -13,6 +13,7 @@
   "dependencies": {
     "3d-force-graph": "^1.80.0",
     "@mermaid-js/parser": "^1.1.1",
+    "@phosphor-icons/react": "^2.1.10",
     "@tauri-apps/api": "^2.11.0",
     "@tauri-apps/plugin-dialog": "^2.7.1",
     "@vitejs/plugin-react": "^5.1.1",
@@ -24,8 +25,8 @@
     "pptxgenjs": "^4.0.1",
     "react": "^19.2.1",
     "react-colorful": "^5.7.0",
-    "react-easy-crop": "^6.2.3",
     "react-dom": "^19.2.1",
+    "react-easy-crop": "^6.2.3",
     "react-rnd": "^10.5.3",
     "three": "^0.184.0",
     "typescript": "^5.9.3",
