@@ -1468,107 +1468,6 @@ button {
   color: var(--text-muted);
 }
 
-.onboarding-provider-list,
-.extension-install-list {
-  display: grid;
-  padding: 0 10px;
-  gap: 10px;
-}
-
-.onboarding-provider-card,
-.extension-install-card {
-  display: grid;
-  min-width: 0;
-  padding: 10px;
-  border: 1px solid var(--border-soft);
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--surface-1), transparent 18%);
-  gap: 8px;
-}
-
-.onboarding-provider-card > div:first-child,
-.extension-install-card > div:first-child {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  min-width: 0;
-  gap: 12px;
-}
-
-.onboarding-provider-card strong,
-.extension-install-card strong {
-  color: var(--text-main);
-}
-
-.onboarding-provider-card small,
-.extension-install-card small {
-  color: var(--text-muted);
-  font-weight: 800;
-}
-
-.onboarding-provider-card p,
-.extension-install-card p {
-  margin: 0;
-  color: var(--text-soft);
-  font-size: 0.78rem;
-  line-height: 1.45;
-}
-
-.onboarding-provider-card label {
-  display: grid;
-  gap: 6px;
-}
-
-.onboarding-provider-card label span {
-  color: var(--text-muted);
-  font-size: 0.72rem;
-  font-weight: 800;
-  text-transform: uppercase;
-}
-
-.onboarding-provider-card input {
-  min-width: 0;
-  height: 34px;
-  padding: 0 10px;
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius-2);
-  background: var(--inset-field);
-  color: var(--text-main);
-}
-
-.onboarding-action-row {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.onboarding-start-card {
-  background:
-    radial-gradient(circle at 85% 15%, color-mix(in srgb, var(--accent-cyan), transparent 82%), transparent 34%),
-    color-mix(in srgb, var(--surface-inspector), transparent 14%);
-}
-
-.extension-install-card code {
-  overflow: hidden;
-  padding: 7px 8px;
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius-2);
-  color: var(--text-soft);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.extension-card-actions {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.extension-card-actions .quiet-button {
-  justify-content: center;
-}
-
 @keyframes onboardingBreathe {
   0%,
   100% {
@@ -4552,47 +4451,62 @@ p {
   max-width: 58ch;
 }
 
-.settings-extension-grid {
+.capture-list {
   display: grid;
-  grid-template-columns: repeat(2, minmax(120px, 1fr));
-  gap: var(--space-2);
-}
-
-.settings-extension-card {
-  display: grid;
-  min-width: 0;
-  padding: 10px;
+  overflow: hidden;
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-2);
-  background: var(--inset-field);
-  gap: 8px;
+  background: var(--surface-drawer);
 }
 
-.settings-extension-card > div {
+.capture-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: 10px var(--space-3);
+  border-top: 1px solid var(--border-soft);
+}
+
+.capture-row:first-child {
+  border-top: 0;
+}
+
+.capture-row > div:first-child {
   display: grid;
   min-width: 0;
   gap: 2px;
 }
 
-.settings-extension-card span {
+.capture-row strong {
+  overflow: hidden;
   color: var(--text-main);
-  font-weight: 800;
+  font-size: 0.78rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.settings-extension-card button,
-.settings-extension-grid > button {
-  display: grid;
-  justify-items: start;
-  min-height: 38px;
-}
-
-.settings-extension-grid small,
-.settings-extension-card small {
+.capture-row small {
   overflow: hidden;
   color: var(--text-muted);
   font-size: 0.66rem;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.capture-row[data-status="installed"] small {
+  color: var(--accent-cyan);
+}
+
+.capture-row[data-status="not-detected"] small {
+  color: var(--accent-amber);
+}
+
+.capture-row-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
 }
 
 .settings-section-heading {

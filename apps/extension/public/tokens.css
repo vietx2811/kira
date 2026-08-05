@@ -1,0 +1,29 @@
+/* Shared with apps/desktop/src/styles.css and DESIGN.md. Keep values in sync;
+   this is the extension's own copy since the two bundles ship separately. */
+:root {
+  color-scheme: only dark;
+  --bg-base: #0d0e0d;
+  --surface-1: #151716;
+  --surface-2: #1b1e1c;
+  --surface-inset: #0f1110;
+  --border-soft: rgb(255 255 255 / 0.06);
+  --border-strong: rgb(255 255 255 / 0.13);
+  --text-main: #f1eee7;
+  --text-soft: #b3afa5;
+  --text-muted: #77766d;
+  --accent-cyan: #84cdbc;
+  --accent-strong: #9edccd;
+  --accent-weak: rgb(132 205 188 / 0.28);
+  --accent-faint: rgb(158 220 205 / 0.12);
+  --radius-1: 4px;
+  --radius-2: 6px;
+  --radius-3: 8px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --ease-out-soft: cubic-bezier(0.16, 1, 0.3, 1);
+  --font-sans:
+    Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", ui-sans-serif,
+    sans-serif;
+}

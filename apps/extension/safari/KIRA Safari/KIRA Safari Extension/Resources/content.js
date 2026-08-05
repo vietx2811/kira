@@ -402,7 +402,7 @@ function ensureDropPad() {
       display: grid;
       width: var(--kira-drop-width, min(760px, calc(100vw - 28px)));
       height: var(--kira-drop-height, 430px);
-      color: #181b1a;
+      color: #f1eee7;
       font: 14px/1.35 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       opacity: 0;
       pointer-events: none;
@@ -423,10 +423,10 @@ function ensureDropPad() {
       width: 100%;
       height: 100%;
       padding: 14px;
-      border: 1px solid rgba(0, 0, 0, 0.18);
+      border: 1px solid rgba(255, 255, 255, 0.13);
       border-radius: 13px;
-      background: rgba(249, 249, 247, 0.98);
-      box-shadow: 0 24px 64px rgba(0, 0, 0, 0.34);
+      background: rgba(13, 14, 13, 0.97);
+      box-shadow: 0 24px 64px rgba(0, 0, 0, 0.5);
       backdrop-filter: blur(18px) saturate(1.08);
     }
     #${dropPadId} .kira-capture-layout {
@@ -435,13 +435,13 @@ function ensureDropPad() {
       height: 100%;
     }
     #${dropPadId} [data-drop-target] {
-      border: 1px solid rgba(0, 0, 0, 0.08);
-      background: rgba(255, 255, 255, 0.7);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      background: rgba(21, 23, 22, 0.6);
       transition: background 120ms ease, border-color 120ms ease, transform 120ms ease;
     }
     #${dropPadId} [data-drop-target].is-over {
-      border-color: rgba(58, 121, 106, 0.5);
-      background: rgba(232, 247, 243, 0.9);
+      border-color: rgba(132, 205, 188, 0.55);
+      background: rgba(132, 205, 188, 0.14);
       transform: translateY(-1px);
     }
     #${dropPadId} .kira-capture-undecided {
@@ -451,9 +451,9 @@ function ensureDropPad() {
       gap: 16px;
       margin-right: 14px;
       padding: 28px;
-      border: 1px dashed rgba(0, 0, 0, 0.24);
+      border: 1px dashed rgba(255, 255, 255, 0.16);
       border-radius: 9px;
-      background: #f5f5f3;
+      background: #1b1e1c;
       text-align: center;
     }
     #${dropPadId} .kira-folder-mark {
@@ -461,19 +461,19 @@ function ensureDropPad() {
       width: 142px;
       height: 112px;
       place-items: center;
-      border: 2px solid rgba(24, 27, 26, 0.12);
+      border: 2px solid rgba(255, 255, 255, 0.1);
       border-radius: 18px;
-      background: linear-gradient(180deg, rgba(255,255,255,0.82), rgba(235,236,232,0.78));
-      box-shadow: inset 0 0 0 8px rgba(255,255,255,0.38);
+      background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02));
+      box-shadow: inset 0 0 0 8px rgba(255,255,255,0.05);
     }
     #${dropPadId} .kira-folder-mark span {
       display: grid;
       width: 54px;
       height: 54px;
       place-items: center;
-      border: 1px solid rgba(58, 121, 106, 0.18);
+      border: 1px solid rgba(132, 205, 188, 0.28);
       border-radius: 15px;
-      color: #3a796a;
+      color: #84cdbc;
       font-size: 28px;
       font-weight: 760;
       letter-spacing: 0;
@@ -483,14 +483,14 @@ function ensureDropPad() {
       font-weight: 560;
     }
     #${dropPadId} .kira-capture-undecided span {
-      color: #8a8c89;
+      color: #77766d;
       font-size: 13px;
     }
     #${dropPadId} .kira-capture-main {
       display: grid;
       grid-template-rows: auto minmax(0, 1fr) auto auto;
       min-width: 0;
-      border-left: 1px solid rgba(0, 0, 0, 0.1);
+      border-left: 1px solid rgba(255, 255, 255, 0.06);
     }
     #${dropPadId} .kira-capture-brand {
       display: flex;
@@ -500,13 +500,13 @@ function ensureDropPad() {
       padding: 10px 22px 8px;
     }
     #${dropPadId} .kira-capture-brand strong {
-      color: #3a796a;
+      color: #9edccd;
       font-size: 15px;
       font-weight: 760;
     }
     #${dropPadId} .kira-capture-brand span {
       overflow: hidden;
-      color: #8a8c89;
+      color: #77766d;
       font-size: 12px;
       text-overflow: ellipsis;
       white-space: nowrap;
@@ -528,7 +528,7 @@ function ensureDropPad() {
       text-align: left;
     }
     #${dropPadId} .kira-node-card.is-over {
-      background: rgba(232, 247, 243, 0.9);
+      background: rgba(132, 205, 188, 0.14);
     }
     #${dropPadId} .kira-node-icon {
       display: grid;
@@ -536,7 +536,7 @@ function ensureDropPad() {
       height: 20px;
       flex: 0 0 auto;
       place-items: center;
-      color: #181b1a;
+      color: #f1eee7;
     }
     #${dropPadId} .kira-node-icon::before {
       content: "";
@@ -544,7 +544,7 @@ function ensureDropPad() {
       height: 17px;
       border: 1.5px solid currentColor;
       border-radius: 3px;
-      box-shadow: inset 0 5px 0 rgba(24, 27, 26, 0.04);
+      box-shadow: inset 0 5px 0 rgba(255, 255, 255, 0.05);
     }
     #${dropPadId} .kira-node-text {
       display: grid;
@@ -553,7 +553,7 @@ function ensureDropPad() {
     }
     #${dropPadId} .kira-node-card strong {
       overflow: hidden;
-      color: #181b1a;
+      color: #f1eee7;
       font-size: 14px;
       font-weight: 520;
       text-overflow: ellipsis;
@@ -561,7 +561,7 @@ function ensureDropPad() {
     }
     #${dropPadId} .kira-node-card span {
       overflow: hidden;
-      color: #8a8c89;
+      color: #77766d;
       font-size: 11px;
       text-overflow: ellipsis;
       white-space: nowrap;
@@ -571,7 +571,7 @@ function ensureDropPad() {
       height: 28px;
       object-fit: cover;
       border-radius: 5px;
-      background: rgba(0,0,0,0.08);
+      background: rgba(255,255,255,0.06);
     }
     #${dropPadId} .kira-capture-create {
       display: flex;
@@ -579,12 +579,14 @@ function ensureDropPad() {
       gap: 12px;
       min-height: 68px;
       padding: 12px 22px;
+      border-style: solid;
       border-width: 1px 0 0 0;
+      border-color: rgba(255, 255, 255, 0.06);
       border-radius: 0 0 8px 0;
-      background: #fbfbfa;
+      background: #1b1e1c;
     }
     #${dropPadId} .kira-capture-create span {
-      color: #181b1a;
+      color: #f1eee7;
       font-size: 24px;
       line-height: 1;
     }
@@ -595,17 +597,21 @@ function ensureDropPad() {
       border: 0;
       outline: none;
       background: transparent;
-      color: #181b1a;
+      color: #f1eee7;
       font: inherit;
       font-size: 14px;
+    }
+    #${dropPadId} .kira-capture-create input:focus-visible {
+      outline: 2px solid #84cdbc;
+      outline-offset: 2px;
     }
     #${dropPadId} .kira-capture-combo-list {
       display: none;
       grid-template-columns: 1fr;
       max-height: 124px;
       overflow: auto;
-      border-top: 1px solid rgba(0,0,0,0.08);
-      background: #fbfbfa;
+      border-top: 1px solid rgba(255,255,255,0.06);
+      background: #1b1e1c;
     }
     #${dropPadId}.is-combo-open .kira-capture-combo-list {
       display: grid;
@@ -618,8 +624,8 @@ function ensureDropPad() {
       max-width: 260px;
       padding: 9px 11px;
       border-radius: 10px;
-      background: rgba(13, 15, 14, 0.94);
-      color: #f2f4ef;
+      background: rgba(13, 14, 13, 0.96);
+      color: #f1eee7;
       font: 12px/1.35 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       opacity: 0;
       pointer-events: none;
