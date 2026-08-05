@@ -4499,6 +4499,10 @@ p {
   color: var(--accent-cyan);
 }
 
+.capture-row[data-status="not-detected"] small {
+  color: var(--accent-amber);
+}
+
 .capture-row-actions {
   display: inline-flex;
   align-items: center;

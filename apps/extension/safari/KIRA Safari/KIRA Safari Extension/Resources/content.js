@@ -601,6 +601,10 @@ function ensureDropPad() {
       font: inherit;
       font-size: 14px;
     }
+    #${dropPadId} .kira-capture-create input:focus-visible {
+      outline: 2px solid #84cdbc;
+      outline-offset: 2px;
+    }
     #${dropPadId} .kira-capture-combo-list {
       display: none;
       grid-template-columns: 1fr;
