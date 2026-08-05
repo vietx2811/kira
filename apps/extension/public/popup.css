@@ -1,47 +1,25 @@
-:root {
-  color-scheme: light dark;
-  --bg: rgb(242 242 244 / 0.94);
-  --surface: rgb(255 255 255 / 0.72);
-  --surface-soft: rgb(255 255 255 / 0.52);
-  --text: #1d1d1f;
-  --muted: #6e6e73;
-  --accent: #313133;
-  --border: rgb(29 29 31 / 0.09);
-  font-family:
-    -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue",
-    sans-serif;
-  font-size: 13px;
-  line-height: 1.4;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: rgb(33 33 35 / 0.94);
-    --surface: rgb(255 255 255 / 0.08);
-    --surface-soft: rgb(255 255 255 / 0.055);
-    --text: #f5f5f7;
-    --muted: #a1a1a6;
-    --accent: #f5f5f7;
-    --border: rgb(255 255 255 / 0.1);
-  }
-}
-
 * {
   box-sizing: border-box;
+}
+
+html {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.4;
 }
 
 body {
   width: 372px;
   margin: 0;
-  background: var(--bg);
-  color: var(--text);
+  background: var(--bg-base);
+  color: var(--text-main);
   -webkit-font-smoothing: antialiased;
 }
 
 .popup-shell {
   display: grid;
-  gap: 12px;
-  padding: 14px;
+  gap: var(--space-3);
+  padding: var(--space-4);
 }
 
 header,
@@ -62,7 +40,7 @@ header {
 }
 
 .brand {
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .brand strong {
@@ -75,11 +53,10 @@ header {
   width: 26px;
   height: 26px;
   justify-content: center;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--surface);
-  box-shadow: inset 0 1px rgb(255 255 255 / 0.16);
-  color: var(--text);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-2);
+  background: var(--surface-1);
+  color: var(--text-soft);
 }
 
 .brand-square {
@@ -98,13 +75,13 @@ header {
   top: 3px;
   width: 13px;
   height: 13px;
-  fill: currentColor;
+  fill: var(--accent-cyan);
 }
 
 .brand-mark--large {
   width: 48px;
   height: 48px;
-  border-radius: 14px;
+  border-radius: var(--radius-3);
 }
 
 .brand-mark--large .brand-square {
@@ -125,15 +102,15 @@ header {
 
 header span,
 #status {
-  color: var(--muted);
+  color: var(--text-muted);
 }
 
 .app-unavailable {
   min-height: 152px;
   place-items: center;
   align-content: center;
-  gap: 14px;
-  padding: 24px;
+  gap: var(--space-4);
+  padding: var(--space-4) 24px;
   text-align: center;
 }
 
@@ -143,13 +120,13 @@ header span,
 
 .app-unavailable p {
   max-width: 220px;
-  color: var(--muted);
+  color: var(--text-muted);
   font-size: 0.9rem;
 }
 
 .app-unavailable strong {
-  color: var(--text);
-  font-weight: 620;
+  color: var(--text-main);
+  font-weight: 680;
 }
 
 .is-checking-kira .capture-card,
@@ -167,20 +144,20 @@ header span,
 
 .capture-card {
   min-height: 72px;
-  gap: 10px;
-  padding: 10px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--surface);
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-3);
+  background: var(--surface-1);
 }
 
 .capture-card img {
   width: 56px;
   height: 56px;
   flex: 0 0 auto;
-  border-radius: 6px;
+  border-radius: var(--radius-2);
   object-fit: cover;
-  background: var(--surface-soft);
+  background: var(--surface-inset);
 }
 
 h1,
@@ -191,7 +168,7 @@ p {
 h1 {
   display: -webkit-box;
   overflow: hidden;
-  color: var(--text);
+  color: var(--text-main);
   font-size: 0.95rem;
   font-weight: 680;
   -webkit-box-orient: vertical;
@@ -201,32 +178,33 @@ h1 {
 .capture-card p {
   overflow: hidden;
   margin-top: 3px;
-  color: var(--muted);
+  color: var(--text-muted);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .image-section {
   display: grid;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .section-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  color: var(--muted);
+  color: var(--text-muted);
   font-size: 0.78rem;
 }
 
 .section-row button {
   width: auto;
   height: 24px;
-  padding: 0 8px;
-  border-color: var(--border);
-  background: var(--surface-soft);
-  color: var(--muted);
+  padding: 0 var(--space-2);
+  border: 0;
+  background: rgb(255 255 255 / 0.035);
+  color: var(--text-soft);
   font-size: 0.74rem;
+  font-weight: 500;
 }
 
 .filter-row {
@@ -242,7 +220,7 @@ h1 {
 }
 
 .filter-row label {
-  color: var(--muted);
+  color: var(--text-muted);
   font-size: 0.68rem;
 }
 
@@ -252,14 +230,22 @@ h1 {
   width: 100%;
   height: 28px;
   min-width: 0;
-  padding: 0 8px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--surface);
-  color: var(--text);
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-1);
+  background: var(--surface-inset);
+  color: var(--text-main);
   font: inherit;
   font-size: 0.76rem;
   outline: none;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.filter-row input:focus-visible,
+.filter-row select:focus-visible,
+.categorize-section input:focus-visible {
+  border-color: var(--accent-cyan);
+  box-shadow: 0 0 0 3px var(--accent-faint);
 }
 
 .categorize-section {
@@ -280,8 +266,10 @@ h1 {
   height: 58px;
   overflow: hidden;
   padding: 0;
-  border-color: var(--border);
-  background: var(--surface);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-1);
+  background: var(--surface-inset);
+  transition: border-color 120ms ease;
 }
 
 .image-option::before {
@@ -290,8 +278,8 @@ h1 {
   top: 4px;
   padding: 2px 4px;
   border-radius: 999px;
-  background: rgb(0 0 0 / 0.56);
-  color: rgb(255 255 255 / 0.82);
+  background: rgb(13 14 13 / 0.72);
+  color: var(--text-main);
   content: attr(data-meta);
   font-size: 9px;
 }
@@ -304,7 +292,7 @@ h1 {
 }
 
 .image-option.is-selected {
-  border-color: rgb(132 205 188 / 0.78);
+  border-color: var(--accent-cyan);
 }
 
 .image-option.is-selected::after {
@@ -314,24 +302,34 @@ h1 {
   width: 8px;
   height: 8px;
   border-radius: 999px;
-  background: var(--accent);
+  background: var(--accent-cyan);
   content: "";
 }
 
 button {
   height: 34px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--text);
-  color: var(--bg);
+  border: 1px solid color-mix(in srgb, var(--accent-cyan), transparent 62%);
+  border-radius: var(--radius-2);
+  background: var(--accent-faint);
+  color: var(--accent-strong);
   cursor: pointer;
   font: inherit;
   font-weight: 650;
+  transition: background 120ms ease, border-color 120ms ease, transform 120ms ease;
+}
+
+button:hover:not(:disabled) {
+  background: var(--accent-weak);
+}
+
+button:focus-visible {
+  outline: 2px solid var(--accent-cyan);
+  outline-offset: 1px;
 }
 
 button:disabled {
   cursor: default;
-  opacity: 0.55;
+  opacity: 0.5;
 }
 
 #status {

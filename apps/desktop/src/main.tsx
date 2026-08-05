@@ -6142,29 +6142,33 @@ function SettingsView({
           <article className="settings-panel settings-action-panel">
             <div>
               <h3>Extensions</h3>
-              <p>Install the current bundled capture helper into Chrome/Chromium or Safari.</p>
+              <p>Install the bundled capture helper into Chrome/Chromium or Safari to save images and pages straight into KIRA.</p>
             </div>
-            <div className="settings-extension-grid">
-              {extensionInstallTargets.map((target) => (
-                <div className="settings-extension-card" key={target.id}>
-                  <div>
-                    <span>{target.title}</span>
-                    <small>{extensionStatusForTarget(extensionInstallStatus, target.id).installed ? 'installed' : extensionStatusForTarget(extensionInstallStatus, target.id).detail}</small>
-                  </div>
-                  <button className="quiet-button" type="button" onClick={() => onExtensionAction(target.installActionId)}>
-                    {target.primary}
-                  </button>
-                  <button className="quiet-button" type="button" onClick={() => onExtensionAction(target.settingsActionId)}>
-                    {target.secondary}
-                  </button>
-                </div>
-              ))}
-              <button className="quiet-button" type="button" onClick={onExtensionRefresh}>
-                <span>Refresh</span>
-                <small>Detect installed extensions</small>
-              </button>
-            </div>
+            <button className="icon-button" type="button" onClick={onExtensionRefresh} aria-label="Detect installed extensions" title="Detect installed extensions">
+              <RotateCcw size={15} />
+            </button>
           </article>
+          <div className="capture-list" role="list">
+            {extensionInstallTargets.map((target) => {
+              const status = extensionStatusForTarget(extensionInstallStatus, target.id)
+              return (
+                <div className="capture-row" role="listitem" data-status={status.installed ? 'installed' : 'not-detected'} key={target.id}>
+                  <div>
+                    <strong>{target.title}</strong>
+                    <small>{status.installed ? 'Installed' : status.detail}</small>
+                  </div>
+                  <div className="capture-row-actions">
+                    <button className="quiet-button" type="button" onClick={() => onExtensionAction(target.installActionId)}>
+                      {target.primary}
+                    </button>
+                    <button className="icon-button" type="button" onClick={() => onExtensionAction(target.settingsActionId)} aria-label={target.secondary} title={target.secondary}>
+                      <ExternalLink size={14} />
+                    </button>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
         </section>
         )}
 
