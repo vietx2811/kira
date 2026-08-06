@@ -3139,41 +3139,29 @@ p {
   cursor: pointer;
 }
 
+/* Always WYSIWYG (see NodeRichEditor) — this is the one and only layout, no
+   separate "resting display" vs "editing" state to merge anymore. */
 .idea-node {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  grid-template-rows: auto auto;
+  display: block;
   width: 224px;
   padding: var(--space-3);
+  padding-left: calc(var(--space-3) + 15px);
   border-radius: var(--radius-3);
   background: var(--node-surface);
   color: var(--text-main);
-  gap: 2px var(--space-2);
   text-align: left;
   box-shadow: var(--node-shadow-rest);
   backdrop-filter: blur(12px);
 }
 
 .idea-node--sticker {
-  width: 176px;
-  min-height: 132px;
-  align-content: start;
-  padding: 16px;
+  width: 248px;
   border-color: color-mix(in srgb, var(--accent-amber), transparent 76%);
   border-radius: 3px 12px 12px 12px;
   background:
     linear-gradient(145deg, rgb(255 255 255 / 0.1), transparent 34%),
     color-mix(in srgb, var(--accent-amber), var(--bg-canvas) 72%);
   box-shadow: 0 10px 24px rgb(0 0 0 / 0.16);
-}
-
-.idea-node--sticker small {
-  grid-column: 1 / -1;
-  padding-top: 8px;
-  color: color-mix(in srgb, var(--text-main), transparent 24%);
-  font-size: 0.72rem;
-  line-height: 1.4;
-  white-space: normal;
 }
 
 /* Calm resting state; hover lifts the card without shouting. */
@@ -3186,33 +3174,8 @@ p {
   transform: translate(-50%, -50%) scale(calc(var(--node-scale, 1) + 0.015));
 }
 
-/* Selecting must not resize or relayout the card, or every click shoves the
-   board around. Only editing earns the extra room. */
 .idea-node.is-selected {
   background: var(--node-surface-selected);
-}
-
-.idea-node.is-editing {
-  display: block;
-  width: 248px;
-  padding-left: calc(var(--space-3) + 15px);
-  background: var(--node-surface-selected);
-}
-
-.idea-node strong {
-  overflow-wrap: anywhere;
-  font-size: 0.86rem;
-  font-weight: 680;
-}
-
-.idea-node small {
-  grid-column: 2;
-  color: var(--text-muted);
-  font-size: 0.7rem;
-}
-
-.idea-node.is-editing small {
-  grid-column: auto;
 }
 
 .idea-node-fields {
@@ -3282,23 +3245,14 @@ p {
   pointer-events: none;
 }
 
-.node-meta-line {
-  grid-column: 1;
-  padding-top: 2px;
-}
-
 .idea-status {
+  position: absolute;
+  top: var(--space-3);
+  left: var(--space-3);
   width: 8px;
   height: 8px;
   margin-top: 5px;
   border-radius: 999px;
-}
-
-.idea-node.is-editing .idea-status {
-  position: absolute;
-  top: var(--space-3);
-  left: var(--space-3);
-  margin-top: 5px;
 }
 
 .idea-status--strong {
@@ -3615,13 +3569,11 @@ p {
    simplifies what each node shows instead, the way a map hides street names
    before it shrinks the streets themselves. "out" drops secondary text,
    "far" drops titles too, leaving just image/color/icon content. */
-.graph-canvas[data-zoom-tier="out"] .node-meta-line,
 .graph-canvas[data-zoom-tier="out"] .idea-node small,
 .graph-canvas[data-zoom-tier="out"] .palette-node small,
 .graph-canvas[data-zoom-tier="out"] .diagram-node small,
 .graph-canvas[data-zoom-tier="out"] .node-caption,
 .graph-canvas[data-zoom-tier="out"] .node-palette,
-.graph-canvas[data-zoom-tier="far"] .node-meta-line,
 .graph-canvas[data-zoom-tier="far"] .idea-node small,
 .graph-canvas[data-zoom-tier="far"] .palette-node small,
 .graph-canvas[data-zoom-tier="far"] .diagram-node small,

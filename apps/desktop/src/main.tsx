@@ -844,16 +844,16 @@ function Segmented<T extends string>({
 }
 
 /** Shared inline rich-text editor backing every node's on-canvas caption —
-    one Tiptap instance, markdown in and out via tiptap-markdown. The mark/
-    node set is deliberately tiny (bold, italic, bullet list, link) to keep
-    markdown round-tripping low-risk. Only one instance is ever mounted at a
-    time (see editingNodeField), so its instantiation cost isn't a scaling
-    concern as board size grows. */
+    a Tiptap instance per visible node, markdown in and out via tiptap-markdown.
+    True WYSIWYG: always mounted and editable directly on the node face, no
+    click-to-enter-edit-mode step. The mark/node set is deliberately tiny
+    (bold, italic, bullet list, link) to keep markdown round-tripping
+    low-risk. The format toolbar only renders while this specific editor is
+    focused, so idle nodes on a busy board stay quiet. */
 function NodeRichEditor({
   content,
   placeholder,
   onChange,
-  onBlur,
   onEscape,
   autoFocus,
 }: {
@@ -862,16 +862,14 @@ function NodeRichEditor({
   content: string
   placeholder?: string
   onChange: (markdown: string) => void
-  onBlur: () => void
-  onEscape: () => void
+  onEscape?: () => void
   autoFocus?: boolean
 }): React.ReactElement {
   const onChangeRef = useRef(onChange)
   onChangeRef.current = onChange
-  const onBlurRef = useRef(onBlur)
-  onBlurRef.current = onBlur
   const onEscapeRef = useRef(onEscape)
   onEscapeRef.current = onEscape
+  const [isFocused, setIsFocused] = useState(false)
 
   const editor = useEditor({
     extensions: [
@@ -901,7 +899,8 @@ function NodeRichEditor({
       handleKeyDown: (_view, event) => {
         if (event.key === 'Escape') {
           event.preventDefault()
-          onEscapeRef.current()
+          onEscapeRef.current?.()
+          ;(event.target as HTMLElement).blur?.()
           return true
         }
         return false
@@ -911,7 +910,8 @@ function NodeRichEditor({
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       onChangeRef.current((instance.storage as any).markdown.getMarkdown())
     },
-    onBlur: () => onBlurRef.current(),
+    onFocus: () => setIsFocused(true),
+    onBlur: () => setIsFocused(false),
   })
 
   // Sync an externally-changed `content` prop into the editor, but only when
@@ -928,58 +928,60 @@ function NodeRichEditor({
 
   return (
     <>
-      {/* Always visible while this node is being edited — not gated on a text
-          selection like Tiptap's default BubbleMenu — so formatting is
-          discoverable the moment editing starts, not just after a select.
-          Anchored to the editor's own box (not the canvas), sitting above it
-          with a gap so it never covers the node it's editing. */}
-      <div className="node-rich-editor-toolbar">
-        <button
-          type="button"
-          className={editor.isActive('bold') ? 'is-active' : ''}
-          aria-label="Bold"
-          onMouseDown={(event) => event.preventDefault()}
-          onClick={() => editor.chain().focus().toggleBold().run()}
-        >
-          <TextB size={13} weight="bold" />
-        </button>
-        <button
-          type="button"
-          className={editor.isActive('italic') ? 'is-active' : ''}
-          aria-label="Italic"
-          onMouseDown={(event) => event.preventDefault()}
-          onClick={() => editor.chain().focus().toggleItalic().run()}
-        >
-          <TextItalic size={13} />
-        </button>
-        <button
-          type="button"
-          className={editor.isActive('bulletList') ? 'is-active' : ''}
-          aria-label="Bullet list"
-          onMouseDown={(event) => event.preventDefault()}
-          onClick={() => editor.chain().focus().toggleBulletList().run()}
-        >
-          <ListBullets size={13} />
-        </button>
-        <span className="node-rich-editor-toolbar-divider" />
-        <button
-          type="button"
-          className={editor.isActive('link') ? 'is-active' : ''}
-          aria-label="Link"
-          onMouseDown={(event) => event.preventDefault()}
-          onClick={() => {
-            if (editor.isActive('link')) {
-              editor.chain().focus().unsetLink().run()
-              return
-            }
-            const url = window.prompt('Link URL')
-            if (url) editor.chain().focus().setLink({ href: url }).run()
-          }}
-        >
-          <LinkSimple size={13} />
-        </button>
-      </div>
-      <EditorContent editor={editor} className="node-rich-editor" />
+      {/* Only while THIS node's editor is focused — not gated on a text
+          selection like Tiptap's default BubbleMenu, so formatting is
+          discoverable the moment typing starts. Anchored to the editor's own
+          box (not the canvas), sitting above it with a gap so it never
+          covers the node. */}
+      {isFocused && (
+        <div className="node-rich-editor-toolbar">
+          <button
+            type="button"
+            className={editor.isActive('bold') ? 'is-active' : ''}
+            aria-label="Bold"
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => editor.chain().focus().toggleBold().run()}
+          >
+            <TextB size={13} weight="bold" />
+          </button>
+          <button
+            type="button"
+            className={editor.isActive('italic') ? 'is-active' : ''}
+            aria-label="Italic"
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => editor.chain().focus().toggleItalic().run()}
+          >
+            <TextItalic size={13} />
+          </button>
+          <button
+            type="button"
+            className={editor.isActive('bulletList') ? 'is-active' : ''}
+            aria-label="Bullet list"
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => editor.chain().focus().toggleBulletList().run()}
+          >
+            <ListBullets size={13} />
+          </button>
+          <span className="node-rich-editor-toolbar-divider" />
+          <button
+            type="button"
+            className={editor.isActive('link') ? 'is-active' : ''}
+            aria-label="Link"
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => {
+              if (editor.isActive('link')) {
+                editor.chain().focus().unsetLink().run()
+                return
+              }
+              const url = window.prompt('Link URL')
+              if (url) editor.chain().focus().setLink({ href: url }).run()
+            }}
+          >
+            <LinkSimple size={13} />
+          </button>
+        </div>
+      )}
+      <EditorContent editor={editor} className={isFocused ? 'node-rich-editor is-focused' : 'node-rich-editor'} />
     </>
   )
 }
@@ -7694,10 +7696,6 @@ function GraphCanvas({
   const [detailsPopoverNode, setDetailsPopoverNode] = useState<CanvasNodeSelection | null>(null)
   const [historyPopoverNode, setHistoryPopoverNode] = useState<CanvasNodeSelection | null>(null)
   const [frameDescriptionOpenId, setFrameDescriptionOpenId] = useState<string | null>(null)
-  // There's only one editable field per node now (`content`, via
-  // NodeRichEditor), so unlike the old Idea-only title/body discriminant
-  // this just needs to know which node is being edited.
-  const [editingNodeField, setEditingNodeField] = useState<{ kind: GraphNodeKind; id: string } | null>(null)
   const [editingFrameId, setEditingFrameId] = useState<string | null>(null)
   const draggingFrameRef = useRef<{ id: string; offsetX: number; offsetY: number } | null>(null)
   const resizingFrameRef = useRef<{ id: string; startWidth: number; startHeight: number; startX: number; startY: number } | null>(null)
@@ -7921,11 +7919,6 @@ function GraphCanvas({
     if (!isDevRuntime()) return
     ;(window as KiraWindow).__kiraGraphMetrics = graphMetrics
   }, [graphMetrics])
-
-  useEffect(() => {
-    if (!editingNodeField) return
-    if (selected.type !== editingNodeField.kind || selected.id !== editingNodeField.id) setEditingNodeField(null)
-  }, [editingNodeField, selected])
 
   useEffect(() => {
     setMultiSelectedNodes((current) => current.filter((node) => resolveGraphNodeRef(node.id, ideas, images, palettes, diagrams, placeholders)))
@@ -8529,7 +8522,6 @@ function GraphCanvas({
     if (nodeContextMenu || arcMenu) return null
     if (multiSelectedNodes.length > 0) return null
     if (selected.type !== kind || selected.id !== node.id) return null
-    if (editingNodeField?.kind === kind && editingNodeField.id === node.id) return null
 
     const id = node.id
     const isDetailsOpen = detailsPopoverNode?.kind === kind && detailsPopoverNode.id === id
@@ -8936,20 +8928,6 @@ function GraphCanvas({
         </div>
       </div>
     )
-  }
-
-  function beginNodeEdit(kind: GraphNodeKind, id: string, event: React.SyntheticEvent<HTMLElement>) {
-    event.preventDefault()
-    event.stopPropagation()
-    setEditingNodeField({ kind, id })
-  }
-
-  function handleNodeEditBlur() {
-    setEditingNodeField(null)
-  }
-
-  function handleNodeEditEscape() {
-    setEditingNodeField(null)
   }
 
   function updateZoom(delta: number) {
@@ -9485,8 +9463,6 @@ function GraphCanvas({
 
           {displayView.ideas.map((idea) => {
             const isSelectedIdea = selected.type === 'idea' && selected.id === idea.id
-            const isEditingIdea = editingNodeField?.kind === 'idea' && editingNodeField.id === idea.id
-            const evidenceCount = displayView.links.filter((link) => link.ideaId === idea.id).length
             return (
               <div
                 key={idea.id}
@@ -9494,7 +9470,6 @@ function GraphCanvas({
                   'idea-node',
                   idea.variant === 'sticker' ? 'idea-node--sticker' : '',
                   isSelectedIdea ? 'is-selected' : '',
-                  isEditingIdea ? 'is-editing' : '',
                   isCanvasNodeSelected('idea', idea.id) && multiSelectedNodes.length > 0 ? 'is-multi-selected' : '',
                   related.ideaIds.has(idea.id) ? 'is-related' : '',
                 ].filter(Boolean).join(' ')}
@@ -9508,18 +9483,10 @@ function GraphCanvas({
                   '--node-scale': nodeScale(idea),
                 } as React.CSSProperties}
                 onClick={(event) => selectGraphNode('idea', idea.id, event)}
-                onDoubleClick={(event) => beginNodeEdit('idea', idea.id, event)}
                 onContextMenu={(event) => openNodeContextMenu('idea', idea.id, event)}
                 onKeyDown={(event) => {
                   if (isEditableEventTarget(event.target)) return
-                  // Click selects; Enter is the deliberate step into editing.
-                  if (event.key === 'Enter') {
-                    event.preventDefault()
-                    if (isSelectedIdea) beginNodeEdit('idea', idea.id, event)
-                    else selectGraphNode('idea', idea.id)
-                    return
-                  }
-                  if (event.key === ' ') {
+                  if (event.key === 'Enter' || event.key === ' ') {
                     event.preventDefault()
                     selectGraphNode('idea', idea.id)
                   }
@@ -9549,28 +9516,18 @@ function GraphCanvas({
                 {renderKiraControl('idea', idea.id, idea.title)}
                 {renderDirectLinkHandle('idea', idea, idea.title)}
                 <span className={`idea-status idea-status--${idea.status}`} />
-                {isEditingIdea ? (
-                  // The edit area only exists while editing, so a stray click can
-                  // never land in a text field and the resting card never shifts.
-                  <span className="idea-node-fields" onPointerDown={stopInlineEditEvent} onClick={stopInlineEditEvent}>
-                    <NodeRichEditor
-                      kind="idea"
-                      nodeId={idea.id}
-                      content={idea.content}
-                      placeholder="Note..."
-                      onChange={(markdown) => onIdeaInlineChange(idea.id, { content: markdown })}
-                      onBlur={handleNodeEditBlur}
-                      onEscape={handleNodeEditEscape}
-                      autoFocus
-                    />
-                    <small className="node-meta-line">{idea.status === 'thin' ? 'needs evidence' : `${evidenceCount} evidence`}</small>
-                  </span>
-                ) : (
-                  <>
-                    <strong>{idea.title}</strong>
-                    <small>{idea.variant === 'sticker' ? idea.content : idea.status === 'thin' ? 'needs evidence' : `${evidenceCount} evidence`}</small>
-                  </>
-                )}
+                {/* WYSIWYG: always mounted and directly editable, no click-to-edit
+                    step. stopPropagation keeps clicks in the text from starting a
+                    card drag — dragging happens from the card's own padding. */}
+                <span className="idea-node-fields" onPointerDown={stopInlineEditEvent} onClick={stopInlineEditEvent}>
+                  <NodeRichEditor
+                    kind="idea"
+                    nodeId={idea.id}
+                    content={idea.content}
+                    placeholder="Note..."
+                    onChange={(markdown) => onIdeaInlineChange(idea.id, { content: markdown })}
+                  />
+                </span>
                 {renderResizeHandle('idea', idea)}
                 {renderNodeBelowStack('idea', idea)}
               </div>
@@ -9578,14 +9535,12 @@ function GraphCanvas({
           })}
 
           {displayView.images.map((image) => {
-            const isEditingImage = editingNodeField?.kind === 'image' && editingNodeField.id === image.id
             return (
               <div
                 key={image.id}
                 className={[
                   'image-node',
                   selected.type === 'image' && selected.id === image.id ? 'is-selected' : '',
-                  isEditingImage ? 'is-editing' : '',
                   isCanvasNodeSelected('image', image.id) && multiSelectedNodes.length > 0 ? 'is-multi-selected' : '',
                   related.imageIds.has(image.id) ? 'is-related' : '',
                 ].filter(Boolean).join(' ')}
@@ -9599,17 +9554,10 @@ function GraphCanvas({
                   '--node-scale': nodeScale(image),
                 } as React.CSSProperties}
                 onClick={(event) => selectGraphNode('image', image.id, event)}
-                onDoubleClick={(event) => beginNodeEdit('image', image.id, event)}
                 onContextMenu={(event) => openNodeContextMenu('image', image.id, event)}
                 onKeyDown={(event) => {
                   if (isEditableEventTarget(event.target)) return
-                  if (event.key === 'Enter') {
-                    event.preventDefault()
-                    if (selected.type === 'image' && selected.id === image.id) beginNodeEdit('image', image.id, event)
-                    else selectGraphNode('image', image.id)
-                    return
-                  }
-                  if (event.key === ' ') {
+                  if (event.key === 'Enter' || event.key === ' ') {
                     event.preventDefault()
                     selectGraphNode('image', image.id)
                   }
@@ -9641,23 +9589,15 @@ function GraphCanvas({
                     <i key={`${image.id}-${index}-${color}`} style={{ background: color }} />
                   ))}
                 </span>
-                {isEditingImage ? (
-                  <span className="idea-node-fields" onPointerDown={stopInlineEditEvent} onClick={stopInlineEditEvent}>
-                    <NodeRichEditor
-                      kind="image"
-                      nodeId={image.id}
-                      content={image.content}
-                      placeholder="Caption..."
-                      onChange={(markdown) => onImageInlineChange(image.id, { content: markdown })}
-                      onBlur={handleNodeEditBlur}
-                      onEscape={handleNodeEditEscape}
-                      autoFocus
-                    />
-                  </span>
-                ) : (
-                  // Caption stays out of the way at rest; the board is for looking, not reading.
-                  <span className="node-caption">{image.title}</span>
-                )}
+                <span className="idea-node-fields" onPointerDown={stopInlineEditEvent} onClick={stopInlineEditEvent}>
+                  <NodeRichEditor
+                    kind="image"
+                    nodeId={image.id}
+                    content={image.content}
+                    placeholder="Caption..."
+                    onChange={(markdown) => onImageInlineChange(image.id, { content: markdown })}
+                  />
+                </span>
                 {renderResizeHandle('image', image)}
                 {renderNodeBelowStack('image', image)}
               </div>
@@ -9665,14 +9605,12 @@ function GraphCanvas({
           })}
 
           {palettes.map((palette) => {
-            const isEditingPalette = editingNodeField?.kind === 'palette' && editingNodeField.id === palette.id
             return (
               <div
                 key={palette.id}
                 className={[
                   'palette-node',
                   selected.type === 'palette' && selected.id === palette.id ? 'is-selected' : '',
-                  isEditingPalette ? 'is-editing' : '',
                   isCanvasNodeSelected('palette', palette.id) && multiSelectedNodes.length > 0 ? 'is-multi-selected' : '',
                 ].filter(Boolean).join(' ')}
                 data-node-kind="palette"
@@ -9685,17 +9623,10 @@ function GraphCanvas({
                   '--node-scale': nodeScale(palette),
                 } as React.CSSProperties}
                 onClick={(event) => selectGraphNode('palette', palette.id, event)}
-                onDoubleClick={(event) => beginNodeEdit('palette', palette.id, event)}
                 onContextMenu={(event) => openNodeContextMenu('palette', palette.id, event)}
                 onKeyDown={(event) => {
                   if (isEditableEventTarget(event.target)) return
-                  if (event.key === 'Enter') {
-                    event.preventDefault()
-                    if (selected.type === 'palette' && selected.id === palette.id) beginNodeEdit('palette', palette.id, event)
-                    else selectGraphNode('palette', palette.id)
-                    return
-                  }
-                  if (event.key === ' ') {
+                  if (event.key === 'Enter' || event.key === ' ') {
                     event.preventDefault()
                     selectGraphNode('palette', palette.id)
                   }
@@ -9722,25 +9653,15 @@ function GraphCanvas({
                     <i key={`${palette.id}-${index}-${color}`} style={{ background: color }} />
                   ))}
                 </span>
-                {isEditingPalette ? (
-                  <span className="idea-node-fields" onPointerDown={stopInlineEditEvent} onClick={stopInlineEditEvent}>
-                    <NodeRichEditor
-                      kind="palette"
-                      nodeId={palette.id}
-                      content={palette.content}
-                      placeholder="Note..."
-                      onChange={(markdown) => onPaletteInlineChange(palette.id, { content: markdown })}
-                      onBlur={handleNodeEditBlur}
-                      onEscape={handleNodeEditEscape}
-                      autoFocus
-                    />
-                  </span>
-                ) : (
-                  <>
-                    <strong>{palette.title}</strong>
-                    <small>{palette.algorithm}</small>
-                  </>
-                )}
+                <span className="idea-node-fields" onPointerDown={stopInlineEditEvent} onClick={stopInlineEditEvent}>
+                  <NodeRichEditor
+                    kind="palette"
+                    nodeId={palette.id}
+                    content={palette.content}
+                    placeholder="Note..."
+                    onChange={(markdown) => onPaletteInlineChange(palette.id, { content: markdown })}
+                  />
+                </span>
                 {renderResizeHandle('palette', palette)}
                 {renderNodeBelowStack('palette', palette)}
               </div>
@@ -9748,14 +9669,12 @@ function GraphCanvas({
           })}
 
           {diagrams.map((diagram) => {
-            const isEditingDiagram = editingNodeField?.kind === 'diagram' && editingNodeField.id === diagram.id
             return (
               <div
                 key={diagram.id}
                 className={[
                   'diagram-node',
                   selected.type === 'diagram' && selected.id === diagram.id ? 'is-selected' : '',
-                  isEditingDiagram ? 'is-editing' : '',
                   isCanvasNodeSelected('diagram', diagram.id) && multiSelectedNodes.length > 0 ? 'is-multi-selected' : '',
                 ].filter(Boolean).join(' ')}
                 data-node-kind="diagram"
@@ -9768,17 +9687,10 @@ function GraphCanvas({
                   '--node-scale': nodeScale(diagram),
                 } as React.CSSProperties}
                 onClick={(event) => selectGraphNode('diagram', diagram.id, event)}
-                onDoubleClick={(event) => beginNodeEdit('diagram', diagram.id, event)}
                 onContextMenu={(event) => openNodeContextMenu('diagram', diagram.id, event)}
                 onKeyDown={(event) => {
                   if (isEditableEventTarget(event.target)) return
-                  if (event.key === 'Enter') {
-                    event.preventDefault()
-                    if (selected.type === 'diagram' && selected.id === diagram.id) beginNodeEdit('diagram', diagram.id, event)
-                    else selectGraphNode('diagram', diagram.id)
-                    return
-                  }
-                  if (event.key === ' ') {
+                  if (event.key === 'Enter' || event.key === ' ') {
                     event.preventDefault()
                     selectGraphNode('diagram', diagram.id)
                   }
@@ -9801,25 +9713,15 @@ function GraphCanvas({
                 {renderKiraControl('diagram', diagram.id, diagram.title)}
                 {renderDirectLinkHandle('diagram', diagram, diagram.title)}
                 <FileText size={15} />
-                {isEditingDiagram ? (
-                  <span className="idea-node-fields" onPointerDown={stopInlineEditEvent} onClick={stopInlineEditEvent}>
-                    <NodeRichEditor
-                      kind="diagram"
-                      nodeId={diagram.id}
-                      content={diagram.content}
-                      placeholder="Note..."
-                      onChange={(markdown) => onDiagramInlineChange(diagram.id, { content: markdown })}
-                      onBlur={handleNodeEditBlur}
-                      onEscape={handleNodeEditEscape}
-                      autoFocus
-                    />
-                  </span>
-                ) : (
-                  <>
-                    <strong>{diagram.title}</strong>
-                    <small>{diagram.nodeIds.length} nodes</small>
-                  </>
-                )}
+                <span className="idea-node-fields" onPointerDown={stopInlineEditEvent} onClick={stopInlineEditEvent}>
+                  <NodeRichEditor
+                    kind="diagram"
+                    nodeId={diagram.id}
+                    content={diagram.content}
+                    placeholder="Note..."
+                    onChange={(markdown) => onDiagramInlineChange(diagram.id, { content: markdown })}
+                  />
+                </span>
                 {renderResizeHandle('diagram', diagram)}
                 {renderNodeBelowStack('diagram', diagram)}
               </div>
@@ -9827,14 +9729,12 @@ function GraphCanvas({
           })}
 
           {placeholders.map((placeholder) => {
-            const isEditingPlaceholder = editingNodeField?.kind === 'placeholder' && editingNodeField.id === placeholder.id
             return (
               <div
                 key={placeholder.id}
                 className={[
                   'placeholder-node',
                   selected.type === 'placeholder' && selected.id === placeholder.id ? 'is-selected' : '',
-                  isEditingPlaceholder ? 'is-editing' : '',
                   isCanvasNodeSelected('placeholder', placeholder.id) && multiSelectedNodes.length > 0 ? 'is-multi-selected' : '',
                 ].filter(Boolean).join(' ')}
                 data-node-kind="placeholder"
@@ -9847,17 +9747,10 @@ function GraphCanvas({
                   '--node-scale': nodeScale(placeholder),
                 } as React.CSSProperties}
                 onClick={(event) => selectGraphNode('placeholder', placeholder.id, event)}
-                onDoubleClick={(event) => beginNodeEdit('placeholder', placeholder.id, event)}
                 onContextMenu={(event) => openNodeContextMenu('placeholder', placeholder.id, event)}
                 onKeyDown={(event) => {
                   if (isEditableEventTarget(event.target)) return
-                  if (event.key === 'Enter') {
-                    event.preventDefault()
-                    if (selected.type === 'placeholder' && selected.id === placeholder.id) beginNodeEdit('placeholder', placeholder.id, event)
-                    else selectGraphNode('placeholder', placeholder.id)
-                    return
-                  }
-                  if (event.key === ' ') {
+                  if (event.key === 'Enter' || event.key === ' ') {
                     event.preventDefault()
                     selectGraphNode('placeholder', placeholder.id)
                   }
@@ -9885,22 +9778,15 @@ function GraphCanvas({
                 {renderKiraControl('placeholder', placeholder.id, placeholder.title)}
                 {renderDirectLinkHandle('placeholder', placeholder, placeholder.title)}
                 <ImagePlus size={16} />
-                {isEditingPlaceholder ? (
-                  <span className="idea-node-fields" onPointerDown={stopInlineEditEvent} onClick={stopInlineEditEvent}>
-                    <NodeRichEditor
-                      kind="placeholder"
-                      nodeId={placeholder.id}
-                      content={placeholder.content}
-                      placeholder="Note..."
-                      onChange={(markdown) => onPlaceholderInlineChange(placeholder.id, { content: markdown })}
-                      onBlur={handleNodeEditBlur}
-                      onEscape={handleNodeEditEscape}
-                      autoFocus
-                    />
-                  </span>
-                ) : (
-                  <span>{placeholder.title}</span>
-                )}
+                <span className="idea-node-fields" onPointerDown={stopInlineEditEvent} onClick={stopInlineEditEvent}>
+                  <NodeRichEditor
+                    kind="placeholder"
+                    nodeId={placeholder.id}
+                    content={placeholder.content}
+                    placeholder="Note..."
+                    onChange={(markdown) => onPlaceholderInlineChange(placeholder.id, { content: markdown })}
+                  />
+                </span>
                 {renderResizeHandle('placeholder', placeholder)}
                 {renderNodeBelowStack('placeholder', placeholder)}
               </div>
