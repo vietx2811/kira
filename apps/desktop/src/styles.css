@@ -81,7 +81,7 @@
      already set inline on .workspace by JS and inherit down through the
      canvas tree, so the dock still shrinks correctly when the library or
      inspector drawer is open. */
-  --kira-dock-width: min(640px, calc(100vw - var(--canvas-overlay-left-inset, 0px) - var(--canvas-right-inset, 0px) - 64px));
+  --kira-dock-width: min(440px, calc(100vw - var(--canvas-overlay-left-inset, 0px) - var(--canvas-right-inset, 0px) - 64px));
   --kira-dock-lift: 74px;
   --danger: #d98779;
   --space-1: 4px;
@@ -4173,12 +4173,23 @@ p {
   height: 44px;
   padding: 0;
   gap: 10px;
-  transition: height var(--duration-slow) var(--ease-spring), padding var(--duration-slow) var(--ease-spring);
+  transition: min-height var(--duration-slow) var(--ease-spring), padding var(--duration-slow) var(--ease-spring);
 }
 
 .kira-dock.is-open .kira-dock-row {
-  height: 56px;
-  padding: 0 8px 0 14px;
+  /* min-height + align-items: end, not a fixed height — the textarea
+     grows upward as the user types a multi-line message (see the
+     onChange auto-resize in renderKiraDock) while the action icons stay
+     anchored to the bottom edge, like a normal chat composer. */
+  min-height: 56px;
+  align-items: end;
+  padding: 10px 8px 10px 14px;
+}
+
+.kira-dock.is-open .kira-dock-orb,
+.kira-dock.is-open .kira-dock-sigil,
+.kira-dock.is-open .kira-dock-actions {
+  padding-bottom: 3px;
 }
 
 .kira-dock-sigil {
@@ -4226,13 +4237,13 @@ p {
 }
 
 .kira-dock.is-open .kira-dock-input {
-  /* Not `auto` — a <textarea>'s intrinsic "auto" height resolves via its
-     own rows-based sizing algorithm, not its computed line-height, and
-     inflates to several lines even for a single short line of text. The
-     composer row has a fixed height, so this fixes to one line's worth
-     and scrolls internally (see overflow-y above) if Shift+Enter adds a
-     second line, rather than silently clipping it. */
+  /* Starts at one line's worth; the onChange handler in renderKiraDock
+     measures scrollHeight and sets an inline height on every keystroke, so
+     this class-level value is only the pre-JS/empty-state fallback. Capped
+     at ~6 lines — past that, overflow-y:auto (above) takes over instead of
+     the dock growing indefinitely. */
   height: 1.4em;
+  max-height: 8.4em;
   opacity: 1;
   transition-delay: 120ms;
 }
@@ -4277,6 +4288,83 @@ p {
   width: 1px;
   height: 20px;
   background: var(--separator-hairline);
+}
+
+.kira-dock-attach {
+  position: relative;
+  display: grid;
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  border-radius: 999px;
+  color: var(--text-muted);
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.kira-dock-attach:hover {
+  background: var(--glass-hover);
+  color: var(--text-main);
+}
+
+.kira-dock-attach input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.kira-dock-attachments {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 14px 10px;
+}
+
+.kira-attachment-chip {
+  display: inline-flex;
+  align-items: center;
+  max-width: 160px;
+  height: 26px;
+  padding: 0 6px 0 4px;
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.05);
+  color: var(--text-soft);
+  font-size: 0.68rem;
+  gap: 5px;
+}
+
+.kira-attachment-chip img {
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  object-fit: cover;
+}
+
+.kira-attachment-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kira-attachment-chip button {
+  display: grid;
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  place-items: center;
+  border-radius: 999px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.kira-attachment-chip button:hover {
+  background: var(--glass-hover);
+  color: var(--text-main);
 }
 
 .kira-dock-submit {

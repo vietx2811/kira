@@ -53,6 +53,7 @@ import {
   MoreHorizontal,
   Network,
   Palette,
+  Paperclip,
   Pause,
   Play,
   Plus,
@@ -136,6 +137,8 @@ type AiNodeRequest = {
 
 // One Kira panel session per open/close cycle. `source: null` means "whole
 // board" (opened from the rail launcher with nothing selected).
+type KiraAttachment = { id: string; name: string; dataUrl: string; isImage: boolean }
+
 type KiraSession = {
   origin: 'node' | 'rail'
   source: Pick<GraphNodeRef, 'kind' | 'id'> | null
@@ -143,6 +146,11 @@ type KiraSession = {
   scope: AiNodeScope
   action: AiNodeAction
   prompt: string
+  // Files the user attached from their machine — previewed as thumbnail
+  // chips in the dock. No provider in this app has a vision/file-upload
+  // path yet, so today these fold into the prompt as a plain filename note
+  // (see submitKiraSession) rather than being sent as image data.
+  attachments: KiraAttachment[]
   removedContextKeys: string[]
   providerOverrideId: string | null
   modelOverride: string | null
@@ -7758,6 +7766,7 @@ function GraphCanvas({
       scope,
       action: 'summarize',
       prompt: '',
+      attachments: [],
       removedContextKeys: [],
       providerOverrideId: null,
       modelOverride: null,
@@ -7770,6 +7779,10 @@ function GraphCanvas({
     // The Arrange drawer floats at the same bottom-left corner the dock
     // drifts toward on open — close it so the two surfaces can't collide.
     setIsGraphToolsOpen(false)
+    // The textarea's inline height (set by the auto-grow onChange handler)
+    // outlives a closed session on the same persistent DOM node — reset it
+    // so a fresh session doesn't inherit the previous message's height.
+    if (kiraInputRef.current) kiraInputRef.current.style.height = ''
   }
 
   function openKiraFromNode(kind: GraphNodeKind, id: string) {
@@ -7809,18 +7822,41 @@ function GraphCanvas({
     kiraOrbRef.current?.focus()
   }, [isKiraOpen])
 
+  function addKiraAttachments(files: FileList | File[]) {
+    for (const file of Array.from(files)) {
+      const id = crypto.randomUUID()
+      const reader = new FileReader()
+      reader.onload = () => {
+        if (typeof reader.result !== 'string') return
+        const attachment: KiraAttachment = { id, name: file.name, dataUrl: reader.result, isImage: file.type.startsWith('image/') }
+        setKiraSession((current) => current ? { ...current, attachments: [...current.attachments, attachment] } : current)
+      }
+      reader.readAsDataURL(file)
+    }
+  }
+
+  function removeKiraAttachment(id: string) {
+    setKiraSession((current) => current ? { ...current, attachments: current.attachments.filter((attachment) => attachment.id !== id) } : current)
+  }
+
   async function submitKiraSession() {
     if (!kiraSession) return
     const sources = [kiraSession.source, ...kiraSession.extraSources].filter(Boolean) as Pick<GraphNodeRef, 'kind' | 'id'>[]
     const contextNodes = collectKiraContextForSources(sources, kiraSession.scope, { ideas, images, palettes, diagrams, placeholders, links })
       .filter((node) => !kiraSession.removedContextKeys.includes(`${node.kind}:${node.id}`))
+    // No provider here has a vision/upload path yet — an attached file
+    // becomes a plain filename note rather than image data. Real
+    // multimodal support is a provider-level change, not a dock one.
+    const attachmentNote = kiraSession.attachments.length > 0
+      ? `\n\nAttached: ${kiraSession.attachments.map((attachment) => attachment.name).join(', ')}`
+      : ''
     setKiraSession((current) => current ? { ...current, status: 'thinking', message: null } : current)
     try {
       await onCreateAiNode({
         source: kiraSession.source,
         action: kiraSession.action,
         scope: sources.length > 1 ? 'selected' : kiraSession.scope,
-        prompt: kiraSession.prompt,
+        prompt: kiraSession.prompt + attachmentNote,
         contextNodes,
         providerOverrideId: kiraSession.providerOverrideId,
         modelOverride: kiraSession.modelOverride,
@@ -8919,11 +8955,31 @@ function GraphCanvas({
             disabled={isThinking}
             tabIndex={open ? 0 : -1}
             inert={!open || undefined}
-            onChange={(event) => setKiraSession((current) => current ? { ...current, prompt: event.target.value } : current)}
+            onChange={(event) => {
+              setKiraSession((current) => current ? { ...current, prompt: event.target.value } : current)
+              // Auto-grow up to ~6 lines (see .kira-dock-input max-height),
+              // then the textarea's own overflow-y:auto takes over — a
+              // multi-line message no longer just scrolls invisibly inside
+              // a one-line box.
+              const el = event.currentTarget
+              el.style.height = 'auto'
+              el.style.height = `${el.scrollHeight}px`
+            }}
             onKeyDown={handleKiraInputKeyDown}
           />
 
           <div className="kira-dock-actions" inert={!open || undefined}>
+            <label className="kira-dock-attach" aria-label="Attach file" title="Attach file">
+              <Paperclip size={13} />
+              <input
+                type="file"
+                multiple
+                onChange={(event) => {
+                  if (event.target.files?.length) addKiraAttachments(event.target.files)
+                  event.target.value = ''
+                }}
+              />
+            </label>
             <button
               type="button"
               className={isKiraContextOpen ? 'kira-dock-pill is-open' : 'kira-dock-pill'}
@@ -8958,6 +9014,28 @@ function GraphCanvas({
             </button>
           </div>
         </div>
+
+        {open && kiraSession && kiraSession.attachments.length > 0 && (
+          <div className="kira-dock-attachments" aria-label="Attached files">
+            {kiraSession.attachments.map((attachment) => (
+              <span className="kira-attachment-chip" key={attachment.id} title={attachment.name}>
+                {attachment.isImage ? (
+                  <img src={attachment.dataUrl} alt="" />
+                ) : (
+                  <FileText size={13} />
+                )}
+                <span className="kira-attachment-name">{attachment.name}</span>
+                <button
+                  type="button"
+                  aria-label={`Remove ${attachment.name}`}
+                  onClick={() => removeKiraAttachment(attachment.id)}
+                >
+                  <X size={10} />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
 
         {isThinking && <div className="kira-dock-progress" aria-hidden="true" />}
 
