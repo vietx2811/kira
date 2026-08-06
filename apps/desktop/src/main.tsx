@@ -38,6 +38,7 @@ import {
   FolderOpen,
   Frame,
   GitBranch,
+  GripVertical,
   HelpCircle,
   History,
   Image as ImageIcon,
@@ -251,6 +252,16 @@ type EvidenceImage = {
   // Excludes this node's content from the AI context pipeline
   // (collectKiraContext) without deleting it — see the eye-icon toggle.
   aiExcluded?: boolean
+  // Pins a block to always render on the node face, not just inside the
+  // Details popover — the eye toggle next to each block's heading.
+  // Palette defaults to shown (undefined === true) to preserve the strip's
+  // pre-existing always-on behavior; tags default to hidden.
+  tagsPinned?: boolean
+  palettePinned?: boolean
+  // Display order for the Tags / Palette / Source blocks in the Details
+  // popover — drag-to-reorder writes here. Missing entries render after the
+  // ones listed, in DEFAULT_IMAGE_BLOCK_ORDER's order.
+  blockOrder?: string[]
   width?: number
   height?: number
   sizeBytes?: number
@@ -3392,6 +3403,20 @@ function FileWorkspace({
     setImages((current) => current.map((image) => (image.id === imageId ? { ...image, ...patch, ...derived, updatedAt: nowIso() } : image)))
   }
 
+  // Pin toggles and block reordering are presentation-only — they don't
+  // warrant a version-history entry the way editing content does.
+  function toggleImageTagsPinned(imageId: string) {
+    setImages((current) => current.map((image) => (image.id === imageId ? { ...image, tagsPinned: !(image.tagsPinned ?? false) } : image)))
+  }
+
+  function toggleImagePalettePinned(imageId: string) {
+    setImages((current) => current.map((image) => (image.id === imageId ? { ...image, palettePinned: !(image.palettePinned ?? true) } : image)))
+  }
+
+  function reorderImageBlocks(imageId: string, order: string[]) {
+    setImages((current) => current.map((image) => (image.id === imageId ? { ...image, blockOrder: order } : image)))
+  }
+
   // Non-destructive: only ever touches this rectangle, never the file backing
   // `thumb`/`sourcePath` — "Reset crop" is always a full, lossless undo of it.
   function updateImageCropRect(imageId: string, cropRect: EvidenceImage['cropRect']) {
@@ -5417,6 +5442,9 @@ function FileWorkspace({
                 onRebuildOutline={rebuildOutlineDraft}
                 onIdeaInlineChange={updateIdea}
                 onImageInlineChange={updateImage}
+                onToggleImageTagsPinned={toggleImageTagsPinned}
+                onToggleImagePalettePinned={toggleImagePalettePinned}
+                onReorderImageBlocks={reorderImageBlocks}
                 onPaletteInlineChange={updatePalette}
                 onDiagramInlineChange={updateDiagram}
                 onPlaceholderInlineChange={updatePlaceholder}
@@ -7502,6 +7530,9 @@ function GraphCanvas({
   onRebuildOutline,
   onIdeaInlineChange,
   onImageInlineChange,
+  onToggleImageTagsPinned,
+  onToggleImagePalettePinned,
+  onReorderImageBlocks,
   onPaletteInlineChange,
   onDiagramInlineChange,
   onPlaceholderInlineChange,
@@ -7583,6 +7614,9 @@ function GraphCanvas({
   onRebuildOutline: () => void
   onIdeaInlineChange: (ideaId: string, patch: Partial<Pick<Idea, 'content' | 'notes' | 'sourceUrl'>>) => void
   onImageInlineChange: (imageId: string, patch: Partial<Pick<EvidenceImage, 'content' | 'notes' | 'sourceUrl'>>) => void
+  onToggleImageTagsPinned: (imageId: string) => void
+  onToggleImagePalettePinned: (imageId: string) => void
+  onReorderImageBlocks: (imageId: string, order: string[]) => void
   onPaletteInlineChange: (paletteId: string, patch: Partial<Pick<PaletteNode, 'content' | 'notes' | 'sourceUrl'>>) => void
   onDiagramInlineChange: (diagramId: string, patch: Partial<Pick<DiagramNode, 'content' | 'notes' | 'sourceUrl' | 'source'>>) => void
   onPlaceholderInlineChange: (placeholderId: string, patch: Partial<Pick<PlaceholderNode, 'content' | 'notes' | 'sourceUrl'>>) => void
@@ -7695,6 +7729,9 @@ function GraphCanvas({
   const [nodeContextMenu, setNodeContextMenu] = useState<{ x: number; y: number; nodes: CanvasNodeSelection[] } | null>(null)
   const [detailsPopoverNode, setDetailsPopoverNode] = useState<CanvasNodeSelection | null>(null)
   const [historyPopoverNode, setHistoryPopoverNode] = useState<CanvasNodeSelection | null>(null)
+  // Only one Details popover can be open at a time, so one flat key is
+  // enough to track a drag-to-reorder gesture across its block modules.
+  const [draggedBlockKey, setDraggedBlockKey] = useState<string | null>(null)
   const [frameDescriptionOpenId, setFrameDescriptionOpenId] = useState<string | null>(null)
   const [editingFrameId, setEditingFrameId] = useState<string | null>(null)
   const draggingFrameRef = useRef<{ id: string; offsetX: number; offsetY: number } | null>(null)
@@ -8535,46 +8572,45 @@ function GraphCanvas({
       else onPlaceholderInlineChange(id, patch)
     }
 
+    // Only the image kind has more than one reorderable block (tags,
+    // extracted palette, source) — everything else keeps a single fixed
+    // source-url block, so drag-to-reorder only applies here.
+    const imageOrder = kind === 'image' ? resolveImageBlockOrder(node as EvidenceImage) : []
+    const dragHandleProps = (key: ImageBlockKey): React.HTMLAttributes<HTMLSpanElement> => ({
+      draggable: true,
+      onDragStart: (event) => {
+        setDraggedBlockKey(key)
+        event.dataTransfer.effectAllowed = 'move'
+      },
+      onDragEnd: () => setDraggedBlockKey(null),
+    })
+    const dropTargetProps = (key: ImageBlockKey) => ({
+      onDragOver: (event: React.DragEvent) => event.preventDefault(),
+      onDrop: (event: React.DragEvent) => {
+        event.preventDefault()
+        if (!draggedBlockKey || draggedBlockKey === key) return
+        const from = imageOrder.indexOf(draggedBlockKey as ImageBlockKey)
+        const to = imageOrder.indexOf(key)
+        if (from === -1 || to === -1) return
+        const next = [...imageOrder]
+        next.splice(from, 1)
+        next.splice(to, 0, draggedBlockKey as ImageBlockKey)
+        onReorderImageBlocks(id, next)
+        setDraggedBlockKey(null)
+      },
+    })
+    const sourceUrlField = (
+      <input
+        className="title-input"
+        placeholder="Source URL"
+        value={('sourceUrl' in node ? node.sourceUrl : '') ?? ''}
+        onChange={(event) => inlineChange({ sourceUrl: event.target.value })}
+      />
+    )
+
     return (
       <div className="node-below-stack" onPointerDown={(event) => event.stopPropagation()} onContextMenu={(event) => event.preventDefault()}>
         <div className="node-toolbar">
-          {kind === 'image' && (
-            <>
-              <label className="node-toolbar-file file-action" aria-label="Replace image" title="Replace image">
-                <ImagePlus size={13} />
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={(event) => {
-                    if (event.target.files) onReferenceReplace(id, event.target.files)
-                    event.target.value = ''
-                  }}
-                />
-              </label>
-              <button type="button" aria-label="Find similar" title="Find similar" onClick={() => onReferenceFindSimilar(id)}>
-                <Search size={13} />
-              </button>
-              <button type="button" aria-label="Crop image" title="Crop" onClick={() => onReferenceCrop(id)}>
-                <CropIcon size={13} />
-              </button>
-              <button type="button" aria-label="Extract palette" title="Extract palette" onClick={() => onReferenceConvertToPalette(id)}>
-                <PaletteIcon size={13} />
-              </button>
-            </>
-          )}
-          {kind === 'placeholder' && (
-            <label className="node-toolbar-file file-action" aria-label="Attach image" title="Attach image">
-              <ImagePlus size={13} />
-              <input
-                type="file"
-                accept="image/*"
-                onChange={(event) => {
-                  if (event.target.files) onPlaceholderAttach(id, event.target.files)
-                  event.target.value = ''
-                }}
-              />
-            </label>
-          )}
           <button
             type="button"
             aria-label="Details"
@@ -8583,24 +8619,6 @@ function GraphCanvas({
             onClick={() => setDetailsPopoverNode((current) => current?.kind === kind && current.id === id ? null : { kind, id })}
           >
             <NoteIcon size={13} />
-          </button>
-          <button
-            type="button"
-            aria-label={kind === 'diagram' ? 'Source and history' : 'Version history'}
-            title={kind === 'diagram' ? 'Source and history' : 'Version history'}
-            className={isHistoryOpen ? 'is-active' : ''}
-            onClick={() => setHistoryPopoverNode((current) => current?.kind === kind && current.id === id ? null : { kind, id })}
-          >
-            <History size={13} />
-          </button>
-          <button
-            type="button"
-            aria-label={node.aiExcluded ? 'Excluded from AI — click to include' : 'Included in AI context — click to exclude'}
-            title={node.aiExcluded ? 'Excluded from AI' : 'Included in AI context'}
-            className={node.aiExcluded ? 'is-active' : ''}
-            onClick={() => onToggleAiExcluded(kind, id)}
-          >
-            {node.aiExcluded ? <EyeOff size={13} /> : <Eye size={13} />}
           </button>
           <button type="button" aria-label="Link node" title="Link" onClick={() => beginLinkFromArc({ kind, id })}>
             <Link2 size={13} />
@@ -8617,6 +8635,83 @@ function GraphCanvas({
         </div>
         {isDetailsOpen && (
           <div className="node-details-popover">
+            {/* Every action that used to live on the node face's toolbar —
+                add-new/AI actions plus the kind-specific ones — is
+                consolidated into this single icon row at the top of the
+                popover, so the node face itself stays down to Details/Link/
+                Delete. */}
+            <div className="node-details-actionbar">
+              {kind === 'image' && (
+                <>
+                  <label className="node-toolbar-file file-action" aria-label="Replace image" title="Replace image">
+                    <ImagePlus size={13} />
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={(event) => {
+                        if (event.target.files) onReferenceReplace(id, event.target.files)
+                        event.target.value = ''
+                      }}
+                    />
+                  </label>
+                  <button type="button" aria-label="Find similar" title="Find similar" onClick={() => onReferenceFindSimilar(id)}>
+                    <Search size={13} />
+                  </button>
+                  <button type="button" aria-label="Crop image" title="Crop" onClick={() => onReferenceCrop(id)}>
+                    <CropIcon size={13} />
+                  </button>
+                  <button type="button" aria-label="Extract palette" title="Extract palette" onClick={() => onReferenceConvertToPalette(id)}>
+                    <PaletteIcon size={13} />
+                  </button>
+                </>
+              )}
+              {kind === 'placeholder' && (
+                <label className="node-toolbar-file file-action" aria-label="Attach image" title="Attach image">
+                  <ImagePlus size={13} />
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(event) => {
+                      if (event.target.files) onPlaceholderAttach(id, event.target.files)
+                      event.target.value = ''
+                    }}
+                  />
+                </label>
+              )}
+              {kind === 'palette' && (
+                <>
+                  <button type="button" aria-label="Add color" title="Add color" onClick={() => onPaletteColorAdd(id)}>
+                    <Plus size={13} />
+                  </button>
+                  <button type="button" aria-label="Rebalance palette" title="Rebalance" onClick={() => onPaletteRegenerate(id, 'analogous')}>
+                    <Sparkles size={13} />
+                  </button>
+                </>
+              )}
+              {kind === 'idea' && (
+                <button type="button" aria-label="Create outline" title="Create outline" onClick={onRebuildOutline}>
+                  <Bot size={13} />
+                </button>
+              )}
+              <button
+                type="button"
+                aria-label={kind === 'diagram' ? 'Source and history' : 'Version history'}
+                title={kind === 'diagram' ? 'Source and history' : 'Version history'}
+                className={isHistoryOpen ? 'is-active' : ''}
+                onClick={() => setHistoryPopoverNode((current) => current?.kind === kind && current.id === id ? null : { kind, id })}
+              >
+                <History size={13} />
+              </button>
+              <button
+                type="button"
+                aria-label={node.aiExcluded ? 'Excluded from AI — click to include' : 'Included in AI context — click to exclude'}
+                title={node.aiExcluded ? 'Excluded from AI' : 'Included in AI context'}
+                className={node.aiExcluded ? 'is-active' : ''}
+                onClick={() => onToggleAiExcluded(kind, id)}
+              >
+                {node.aiExcluded ? <EyeOff size={13} /> : <Eye size={13} />}
+              </button>
+            </div>
             {kind === 'palette' && (
               <div className="node-details-section">
                 <HexColorPicker
@@ -8639,50 +8734,7 @@ function GraphCanvas({
                     </div>
                   ))}
                 </div>
-                <div className="node-details-actions">
-                  <button type="button" className="inline-action" onClick={() => onPaletteColorAdd(id)}>
-                    <Plus size={13} />
-                    Add color
-                  </button>
-                  <button type="button" className="inline-action" onClick={() => onPaletteRegenerate(id, 'analogous')}>
-                    <Sparkles size={13} />
-                    Rebalance
-                  </button>
-                </div>
               </div>
-            )}
-            {kind === 'image' && (node as EvidenceImage).palette.length > 0 && (
-              <div className="reference-palette-strip" aria-label="Extracted image colors">
-                {(node as EvidenceImage).palette.slice(0, 7).map((color, index) => (
-                  <button
-                    key={`${id}-palette-${index}-${color}`}
-                    type="button"
-                    className="reference-palette-segment"
-                    title={color}
-                    style={{ background: color }}
-                    onClick={() => void copyColorSet([color])}
-                  >
-                    <code>{color.toUpperCase()}</code>
-                  </button>
-                ))}
-              </div>
-            )}
-            {kind === 'image' && (
-              <TagBlock
-                image={node as EvidenceImage}
-                canRunOcr={isTauriRuntime() && (node as EvidenceImage).thumb.startsWith('data:image/')}
-                canRefineTags={localModelAvailable}
-                isOcrRunning={ocrRunningImageId === id}
-                isRefiningTags={modelRunningImageId === id}
-                ocrStatus={ocrStatusByImageId[id]}
-                modelStatus={modelStatusByImageId[id]}
-                onAcceptSuggestion={(tag) => onAcceptSuggestion(id, tag)}
-                onRejectSuggestion={(tag) => onRejectSuggestion(id, tag)}
-                onAddTag={(tag) => onReferenceTagAdd(id, tag)}
-                onRemoveTag={(tag) => onReferenceTagRemove(id, tag)}
-                onRunOcr={() => onReferenceOcr(id)}
-                onRefineTags={() => onReferenceTagRefine(id)}
-              />
             )}
             <textarea
               className="note-input"
@@ -8690,20 +8742,70 @@ function GraphCanvas({
               value={('notes' in node ? node.notes : '') ?? ''}
               onChange={(event) => inlineChange({ notes: event.target.value })}
             />
-            <div className="source-url-row">
-              <Link2 size={13} />
-              <input
-                className="title-input"
-                placeholder="Source URL"
-                value={('sourceUrl' in node ? node.sourceUrl : '') ?? ''}
-                onChange={(event) => inlineChange({ sourceUrl: event.target.value })}
-              />
-            </div>
-            {kind === 'idea' && (
-              <button className="inline-action" type="button" onClick={onRebuildOutline}>
-                <Bot size={13} />
-                Create outline
-              </button>
+            {kind === 'image' ? (
+              <div className="reorderable-blocks">
+                {imageOrder.map((key) => {
+                  const image = node as EvidenceImage
+                  if (key === 'tags') {
+                    return (
+                      <div key="tags" className={draggedBlockKey === 'tags' ? 'reorderable-block is-dragging' : 'reorderable-block'} {...dropTargetProps('tags')}>
+                        <TagBlock
+                          image={image}
+                          pinned={image.tagsPinned ?? false}
+                          canRunOcr={isTauriRuntime() && image.thumb.startsWith('data:image/')}
+                          canRefineTags={localModelAvailable}
+                          isOcrRunning={ocrRunningImageId === id}
+                          isRefiningTags={modelRunningImageId === id}
+                          ocrStatus={ocrStatusByImageId[id]}
+                          modelStatus={modelStatusByImageId[id]}
+                          onAcceptSuggestion={(tag) => onAcceptSuggestion(id, tag)}
+                          onRejectSuggestion={(tag) => onRejectSuggestion(id, tag)}
+                          onAddTag={(tag) => onReferenceTagAdd(id, tag)}
+                          onRemoveTag={(tag) => onReferenceTagRemove(id, tag)}
+                          onRunOcr={() => onReferenceOcr(id)}
+                          onRefineTags={() => onReferenceTagRefine(id)}
+                          onTogglePinned={() => onToggleImageTagsPinned(id)}
+                          dragHandleProps={dragHandleProps('tags')}
+                        />
+                      </div>
+                    )
+                  }
+                  if (key === 'palette') {
+                    if (image.palette.length === 0) return null
+                    return (
+                      <div key="palette" className={draggedBlockKey === 'palette' ? 'reorderable-block is-dragging' : 'reorderable-block'} {...dropTargetProps('palette')}>
+                        <PaletteBlock
+                          image={image}
+                          pinned={image.palettePinned ?? true}
+                          onTogglePinned={() => onToggleImagePalettePinned(id)}
+                          dragHandleProps={dragHandleProps('palette')}
+                        />
+                      </div>
+                    )
+                  }
+                  return (
+                    <div key="source" className={draggedBlockKey === 'source' ? 'reorderable-block is-dragging' : 'reorderable-block'} {...dropTargetProps('source')}>
+                      <section className="block-module">
+                        <div className="block-module-heading">
+                          <span className="block-module-drag" aria-hidden {...dragHandleProps('source')}>
+                            <GripVertical size={12} />
+                          </span>
+                          <span className="block-module-title">
+                            <Link2 size={14} />
+                            Source
+                          </span>
+                        </div>
+                        <div className="source-url-row">{sourceUrlField}</div>
+                      </section>
+                    </div>
+                  )
+                })}
+              </div>
+            ) : (
+              <div className="source-url-row">
+                <Link2 size={13} />
+                {sourceUrlField}
+              </div>
             )}
             <NodeMetadata node={node} />
           </div>
@@ -9584,11 +9686,20 @@ function GraphCanvas({
                 {renderKiraControl('image', image.id, image.title)}
                 {renderDirectLinkHandle('image', image, image.title)}
                 <ReferenceThumb image={image} />
-                <span className="node-palette">
-                  {image.palette.map((color, index) => (
-                    <i key={`${image.id}-${index}-${color}`} style={{ background: color }} />
-                  ))}
-                </span>
+                {(image.palettePinned ?? true) && image.palette.length > 0 && (
+                  <span className="node-palette">
+                    {image.palette.map((color, index) => (
+                      <i key={`${image.id}-${index}-${color}`} style={{ background: color }} />
+                    ))}
+                  </span>
+                )}
+                {image.tagsPinned && image.tags.length > 0 && (
+                  <span className="node-pinned-tags">
+                    {image.tags.map((tag) => (
+                      <span className="tag-chip" key={tag}>{tag}</span>
+                    ))}
+                  </span>
+                )}
                 <span className="idea-node-fields" onPointerDown={stopInlineEditEvent} onClick={stopInlineEditEvent}>
                   <NodeRichEditor
                     kind="image"
@@ -11890,8 +12001,14 @@ function LinkedList({
   )
 }
 
+// Notion-style inline token/chip input: tags render as pills, "add" is one
+// more pill that swaps itself for a borderless inline text field on click —
+// there is never a separate popup or panel for typing a tag. Escape/blur
+// collapses the field back to a pill; Enter commits and immediately reopens
+// it so multiple tags can be typed back-to-back.
 function TagBlock({
   image,
+  pinned,
   canRunOcr,
   canRefineTags,
   isOcrRunning,
@@ -11904,8 +12021,11 @@ function TagBlock({
   onRemoveTag,
   onRunOcr,
   onRefineTags,
+  onTogglePinned,
+  dragHandleProps,
 }: {
   image: EvidenceImage
+  pinned: boolean
   canRunOcr: boolean
   canRefineTags: boolean
   isOcrRunning: boolean
@@ -11918,20 +12038,30 @@ function TagBlock({
   onRemoveTag: (tag: string) => void
   onRunOcr: () => void
   onRefineTags: () => void
+  onTogglePinned: () => void
+  dragHandleProps?: React.HTMLAttributes<HTMLSpanElement>
 }) {
+  const [isAdding, setIsAdding] = useState(false)
   const [draftTag, setDraftTag] = useState('')
+  const draftRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (isAdding) draftRef.current?.focus()
+  }, [isAdding])
 
   function submitTag() {
     const tag = normalizeTag(draftTag)
-    if (!tag) return
-    onAddTag(tag)
+    if (tag) onAddTag(tag)
     setDraftTag('')
   }
 
   return (
-    <section className="inspector-card">
-      <div className="section-heading tag-heading">
-        <span>
+    <section className="block-module">
+      <div className="block-module-heading">
+        <span className="block-module-drag" aria-hidden {...dragHandleProps}>
+          <GripVertical size={12} />
+        </span>
+        <span className="block-module-title">
           <Tag size={14} />
           Tags
         </span>
@@ -11948,32 +12078,54 @@ function TagBlock({
               {isRefiningTags ? 'Refining' : 'Refine'}
             </button>
           )}
+          <button
+            type="button"
+            className={pinned ? 'section-tool is-active' : 'section-tool'}
+            aria-label={pinned ? 'Always shown on node — click to hide' : 'Hidden on node — click to always show'}
+            title={pinned ? 'Always shown on node' : 'Show on node'}
+            onClick={onTogglePinned}
+          >
+            {pinned ? <Eye size={12} /> : <EyeOff size={12} />}
+          </button>
         </span>
       </div>
       <div className="tag-cloud">
         {image.tags.map((tag) => (
           <span className="tag-chip" key={tag}>
-            <Check size={12} />
             {tag}
             <button type="button" aria-label={`Remove ${tag}`} onClick={() => onRemoveTag(tag)}>
               <X size={11} />
             </button>
           </span>
         ))}
-      </div>
-      <div className="tag-editor">
-        <input
-          aria-label="Add tag"
-          value={draftTag}
-          placeholder="Add tag"
-          onChange={(event) => setDraftTag(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') submitTag()
-          }}
-        />
-        <button type="button" onClick={submitTag}>
-          Add
-        </button>
+        {isAdding ? (
+          <input
+            ref={draftRef}
+            className="tag-chip-input"
+            aria-label="New tag"
+            value={draftTag}
+            size={Math.max(4, draftTag.length + 1)}
+            onChange={(event) => setDraftTag(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault()
+                submitTag()
+              } else if (event.key === 'Escape') {
+                setDraftTag('')
+                setIsAdding(false)
+              }
+            }}
+            onBlur={() => {
+              submitTag()
+              setIsAdding(false)
+            }}
+          />
+        ) : (
+          <button type="button" className="tag-chip tag-chip-add" onClick={() => setIsAdding(true)}>
+            <Plus size={11} />
+            Add
+          </button>
+        )}
       </div>
       {image.suggestions.length > 0 && (
         <div className="suggestion-chips">
@@ -11995,6 +12147,60 @@ function TagBlock({
         </div>
       )}
       {(ocrStatus || modelStatus) && <p className="tag-status">{[ocrStatus, modelStatus].filter(Boolean).join(' · ')}</p>}
+    </section>
+  )
+}
+
+// Sibling to TagBlock: the image's extracted-palette strip as a reorderable,
+// pin-toggleable block. Pinned renders the same swatch strip directly under
+// the thumbnail on the node face, at the thumbnail's own width.
+function PaletteBlock({
+  image,
+  pinned,
+  onTogglePinned,
+  dragHandleProps,
+}: {
+  image: EvidenceImage
+  pinned: boolean
+  onTogglePinned: () => void
+  dragHandleProps?: React.HTMLAttributes<HTMLSpanElement>
+}) {
+  return (
+    <section className="block-module">
+      <div className="block-module-heading">
+        <span className="block-module-drag" aria-hidden {...dragHandleProps}>
+          <GripVertical size={12} />
+        </span>
+        <span className="block-module-title">
+          <PaletteIcon size={14} />
+          Palette
+        </span>
+        <span className="section-tools">
+          <button
+            type="button"
+            className={pinned ? 'section-tool is-active' : 'section-tool'}
+            aria-label={pinned ? 'Always shown on node — click to hide' : 'Hidden on node — click to always show'}
+            title={pinned ? 'Always shown on node' : 'Show on node'}
+            onClick={onTogglePinned}
+          >
+            {pinned ? <Eye size={12} /> : <EyeOff size={12} />}
+          </button>
+        </span>
+      </div>
+      <div className="reference-palette-strip" aria-label="Extracted image colors">
+        {image.palette.slice(0, 7).map((color, index) => (
+          <button
+            key={`${image.id}-palette-${index}-${color}`}
+            type="button"
+            className="reference-palette-segment"
+            title={color}
+            style={{ background: color }}
+            onClick={() => void copyColorSet([color])}
+          >
+            <code>{color.toUpperCase()}</code>
+          </button>
+        ))}
+      </div>
     </section>
   )
 }
@@ -12857,6 +13063,21 @@ function referenceModelContext(image: EvidenceImage) {
 
 function mergeUniqueTags(...groups: string[][]) {
   return [...new Set(groups.flat().map(normalizeTag).filter(Boolean))]
+}
+
+// The three drag-reorderable modules in an image's Details popover. Order is
+// stored per-image (EvidenceImage.blockOrder) — a stored list is trusted
+// as-is for the keys it contains, with any missing key appended in this
+// default order so a newly-populated block (e.g. palette after extraction)
+// still shows up without resetting the user's chosen order.
+const IMAGE_BLOCK_KEYS = ['tags', 'palette', 'source'] as const
+type ImageBlockKey = (typeof IMAGE_BLOCK_KEYS)[number]
+
+function resolveImageBlockOrder(image: EvidenceImage): ImageBlockKey[] {
+  const known = new Set<string>(IMAGE_BLOCK_KEYS)
+  const stored = (image.blockOrder ?? []).filter((key): key is ImageBlockKey => known.has(key))
+  const missing = IMAGE_BLOCK_KEYS.filter((key) => !stored.includes(key))
+  return [...stored, ...missing]
 }
 
 function normalizeTag(value: string) {

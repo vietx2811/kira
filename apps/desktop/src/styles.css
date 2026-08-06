@@ -3760,14 +3760,125 @@ p {
   min-height: 120px;
 }
 
-.node-details-actions {
+.node-details-actionbar {
   display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  margin: -2px -2px 2px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.node-details-actionbar button,
+.node-details-actionbar .file-action {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-1);
+  color: var(--text-soft);
+}
+
+.node-details-actionbar button:hover,
+.node-details-actionbar .file-action:hover {
+  background: var(--glass-hover);
+  color: var(--text-main);
+}
+
+.node-details-actionbar button.is-active {
+  background: var(--glass-active);
+  color: var(--accent-cyan);
+}
+
+.reorderable-blocks {
+  display: grid;
+  gap: 8px;
+}
+
+.reorderable-block {
+  border-radius: var(--radius-1);
+  transition: opacity 150ms;
+}
+
+.reorderable-block.is-dragging {
+  opacity: 0.4;
+}
+
+.block-module {
+  display: grid;
   gap: 6px;
 }
 
-.node-details-actions .inline-action {
-  flex: 1;
-  justify-content: center;
+.block-module-heading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.block-module-drag {
+  display: grid;
+  place-items: center;
+  color: var(--text-muted);
+  cursor: grab;
+}
+
+.block-module-drag:active {
+  cursor: grabbing;
+}
+
+.block-module-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-soft);
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.block-module-title svg {
+  flex-shrink: 0;
+}
+
+.block-module .section-tools {
+  margin-left: auto;
+}
+
+.tag-chip-add {
+  cursor: pointer;
+  background: transparent;
+  border: 1px dashed var(--border-soft);
+  color: var(--text-soft);
+}
+
+.tag-chip-add:hover {
+  border-color: var(--accent-cyan);
+  color: var(--text-main);
+}
+
+.tag-chip-input {
+  min-width: 4ch;
+  border: none;
+  background: transparent;
+  color: var(--text-main);
+  font-size: inherit;
+  font-family: inherit;
+}
+
+.tag-chip-input:focus {
+  outline: none;
+}
+
+.node-pinned-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.node-pinned-tags .tag-chip {
+  pointer-events: none;
 }
 
 .node-toolbar-file {
