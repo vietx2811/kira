@@ -28,6 +28,7 @@ const MIGRATION_REFERENCE_ORIGIN: &str = "005_reference_origin";
 const MIGRATION_TAG_SUGGESTION_META: &str = "006_tag_suggestion_meta";
 const MIGRATION_OUTLINE_DRAFTS: &str = "007_outline_drafts";
 const MIGRATION_GRAPH_V2_FIELDS: &str = "008_graph_v2_fields";
+const MIGRATION_IDEA_CONTENT_FIELD: &str = "009_idea_content_field";
 const CAPTURE_SERVER_ADDR: &str = "127.0.0.1:47653";
 const CAPTURE_EVENT: &str = "kira:capture";
 const EAGLE_WEB_API_ADDR: &str = "127.0.0.1:41595";
@@ -73,7 +74,13 @@ struct ProjectSnapshot {
 struct IdeaRecord {
     id: String,
     title: String,
-    body: String,
+    // Superseded by `content` (markdown) — kept optional, not removed, so
+    // older manifests written before the content-field migration still
+    // deserialize. New writes populate `content`, not `body`.
+    #[serde(default)]
+    body: Option<String>,
+    #[serde(default)]
+    content: Option<String>,
     status: String,
     x: f64,
     y: f64,
@@ -97,6 +104,8 @@ struct IdeaRecord {
 struct ReferenceRecord {
     id: String,
     title: String,
+    #[serde(default)]
+    content: Option<String>,
     source: String,
     #[serde(default, rename = "originApp")]
     origin_app: Option<String>,
@@ -896,6 +905,13 @@ fn migrate(conn: &Connection) -> Result<(), String> {
     add_column_if_missing(conn, "links", "created_at", "TEXT")?;
     add_column_if_missing(conn, "links", "updated_at", "TEXT")?;
     record_migration(conn, MIGRATION_GRAPH_V2_FIELDS)?;
+    // Node content moves from Idea's `body` (title+body were separately
+    // edited) to a single markdown `content` field shared by every node
+    // kind, backing the inline rich-text editor. `body` stays as a nullable
+    // legacy column so older manifests still round-trip.
+    add_column_if_missing(conn, "ideas", "content", "TEXT")?;
+    add_column_if_missing(conn, "reference_assets", "content", "TEXT")?;
+    record_migration(conn, MIGRATION_IDEA_CONTENT_FIELD)?;
     Ok(())
 }
 
@@ -1002,11 +1018,16 @@ fn write_snapshot(
 
     for idea in &snapshot.ideas {
         tx.execute(
-            "INSERT INTO ideas (id, title, body, status, x, y, importance, scale, created_at, added_at, updated_at, source_url, notes) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+            "INSERT INTO ideas (id, title, body, content, status, x, y, importance, scale, created_at, added_at, updated_at, source_url, notes) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
             params![
                 idea.id,
                 idea.title,
-                idea.body,
+                // `ideas.body` stays NOT NULL in the schema (rebuilding the
+                // column constraint is a bigger migration than this needs) —
+                // legacy readers/tools that still expect a string get one;
+                // new writers only ever populate `content`.
+                idea.body.clone().unwrap_or_default(),
+                idea.content,
                 idea.status,
                 idea.x,
                 idea.y,
@@ -1034,10 +1055,11 @@ fn write_snapshot(
         let crop_width = reference.crop_rect.as_ref().map(|rect| rect.width);
         let crop_height = reference.crop_rect.as_ref().map(|rect| rect.height);
         tx.execute(
-            "INSERT INTO reference_assets (id, title, source, origin_app, origin_id, source_path, palette_json, thumb, asset_path, thumb_path, fingerprint, perceptual_hash, x, y, width, height, size_bytes, mime_type, importance, scale, created_at, added_at, updated_at, source_url, notes, crop_x, crop_y, crop_width, crop_height) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29)",
+            "INSERT INTO reference_assets (id, title, content, source, origin_app, origin_id, source_path, palette_json, thumb, asset_path, thumb_path, fingerprint, perceptual_hash, x, y, width, height, size_bytes, mime_type, importance, scale, created_at, added_at, updated_at, source_url, notes, crop_x, crop_y, crop_width, crop_height) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30)",
             params![
                 reference.id,
                 reference.title,
+                reference.content,
                 reference.source,
                 reference.origin_app,
                 reference.origin_id,
@@ -1215,7 +1237,7 @@ fn read_snapshot(conn: &Connection) -> Result<ProjectSnapshot, String> {
 
 fn read_ideas(conn: &Connection) -> Result<Vec<IdeaRecord>, String> {
     let mut statement = conn
-        .prepare("SELECT id, title, body, status, x, y, importance, created_at, added_at, updated_at, source_url, notes, scale FROM ideas ORDER BY rowid")
+        .prepare("SELECT id, title, body, status, x, y, importance, created_at, added_at, updated_at, source_url, notes, scale, content FROM ideas ORDER BY rowid")
         .map_err(|error| error.to_string())?;
     let rows = statement
         .query_map([], |row| {
@@ -1233,6 +1255,7 @@ fn read_ideas(conn: &Connection) -> Result<Vec<IdeaRecord>, String> {
                 source_url: row.get(10)?,
                 notes: row.get(11)?,
                 scale: row.get(12)?,
+                content: row.get(13)?,
             })
         })
         .map_err(|error| error.to_string())?;
@@ -1244,7 +1267,7 @@ fn read_ideas(conn: &Connection) -> Result<Vec<IdeaRecord>, String> {
 fn read_references(conn: &Connection) -> Result<Vec<ReferenceRecord>, String> {
     let mut statement = conn
         .prepare(
-            "SELECT id, title, source, origin_app, origin_id, source_path, palette_json, thumb, asset_path, thumb_path, fingerprint, perceptual_hash, x, y, width, height, size_bytes, mime_type, importance, created_at, added_at, updated_at, source_url, notes, scale, crop_x, crop_y, crop_width, crop_height FROM reference_assets ORDER BY rowid",
+            "SELECT id, title, source, origin_app, origin_id, source_path, palette_json, thumb, asset_path, thumb_path, fingerprint, perceptual_hash, x, y, width, height, size_bytes, mime_type, importance, created_at, added_at, updated_at, source_url, notes, scale, crop_x, crop_y, crop_width, crop_height, content FROM reference_assets ORDER BY rowid",
         )
         .map_err(|error| error.to_string())?;
     let rows = statement
@@ -1289,6 +1312,7 @@ fn read_references(conn: &Connection) -> Result<Vec<ReferenceRecord>, String> {
                 notes: row.get(23)?,
                 scale: row.get(24)?,
                 crop_rect,
+                content: row.get(29)?,
             })
         })
         .map_err(|error| error.to_string())?;
@@ -4011,7 +4035,8 @@ mod tests {
             ideas: vec![IdeaRecord {
                 id: "idea-a".to_string(),
                 title: "Idea A".to_string(),
-                body: "Body".to_string(),
+                body: None,
+                content: Some("Body".to_string()),
                 status: "forming".to_string(),
                 x: 12.0,
                 y: 34.0,
@@ -4026,6 +4051,7 @@ mod tests {
             images: vec![ReferenceRecord {
                 id: "img-a".to_string(),
                 title: "Reference A".to_string(),
+                content: None,
                 source: "reference-a.png".to_string(),
                 origin_app: Some("eagle".to_string()),
                 origin_id: Some("eagle-item-a".to_string()),
@@ -4259,7 +4285,7 @@ mod tests {
                 row.get(0)
             })
             .expect("count migrations");
-        assert_eq!(migration_count, 8);
+        assert_eq!(migration_count, 9);
 
         fs::remove_dir_all(project_dir).expect("remove temp project");
     }
@@ -4929,7 +4955,8 @@ mod tests {
             ideas: vec![IdeaRecord {
                 id: "idea-sqlite".to_string(),
                 title: "SQLite fallback idea".to_string(),
-                body: "Recovered from SQLite.".to_string(),
+                body: None,
+                content: Some("Recovered from SQLite.".to_string()),
                 status: "forming".to_string(),
                 x: 20.0,
                 y: 30.0,
@@ -4992,7 +5019,8 @@ mod tests {
             ideas: vec![IdeaRecord {
                 id: "idea-authoritative".to_string(),
                 title: "SQLite authoritative title".to_string(),
-                body: "The normalized database should win over a stale manifest.".to_string(),
+                body: None,
+                content: Some("The normalized database should win over a stale manifest.".to_string()),
                 status: "strong".to_string(),
                 x: 34.0,
                 y: 44.0,
