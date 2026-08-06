@@ -1930,7 +1930,7 @@ p {
   right: 0;
   left: 0;
   width: 100%;
-  min-height: 86px;
+  min-height: 60px;
   padding: var(--space-2);
   border: 0;
   border-radius: var(--radius-2);
@@ -1941,17 +1941,17 @@ p {
 }
 
 .image-list--relaxed .image-row {
-  min-height: 102px;
-  padding: var(--space-3) var(--space-2);
+  min-height: 74px;
+  padding: var(--space-2);
 }
 
 .image-list--relaxed .image-row > button {
-  grid-template-columns: 86px 1fr;
+  grid-template-columns: 70px 1fr;
 }
 
 .image-list--relaxed .image-row .reference-thumb {
-  width: 86px;
-  height: 70px;
+  width: 70px;
+  height: 54px;
 }
 
 /* Custom checkbox (native <input> hidden, .reference-check draws the box)
@@ -2006,7 +2006,7 @@ p {
 
 .image-row > button {
   display: grid;
-  grid-template-columns: 76px 1fr;
+  grid-template-columns: 56px 1fr;
   align-items: center;
   gap: var(--space-3);
   min-width: 0;
@@ -2055,8 +2055,8 @@ p {
 }
 
 .image-row .reference-thumb {
-  width: 76px;
-  height: 62px;
+  width: 56px;
+  height: 44px;
   border-radius: var(--radius-1);
 }
 
@@ -2147,8 +2147,7 @@ p {
 
 .image-grid-card .image-row-copy {
   display: grid;
-  min-height: 50px;
-  gap: 2px;
+  min-height: 18px;
 }
 
 .library-node-list {
@@ -2207,11 +2206,20 @@ p {
   white-space: nowrap;
 }
 
+/* Title-only by default — the preview line is secondary content, revealed
+   on hover/selection rather than permanently reserving two lines per row
+   (this list isn't virtualized, so the reveal safely reflows the layout
+   instead of fighting fixed-position row math like the image list does). */
 .library-node-row small {
-  display: -webkit-box;
+  display: none;
   color: var(--text-muted);
   font-size: 0.68rem;
   line-height: 1.28;
+}
+
+.library-node-row:hover small,
+.library-node-row.is-selected small {
+  display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
 }
@@ -2220,39 +2228,12 @@ p {
   min-width: 0;
 }
 
-.image-row-copy strong,
-.image-row-copy small {
+.image-row-copy strong {
   display: block;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.image-row-copy strong {
   color: var(--text-main);
   font-size: 0.82rem;
   font-weight: 630;
-}
-
-.image-row-copy small {
-  color: var(--text-muted);
-  font-size: 0.72rem;
-}
-
-.mini-tags {
-  display: flex;
-  gap: 4px;
-  margin-top: 5px;
-}
-
-.mini-tags span {
-  max-width: 76px;
-  overflow: hidden;
-  padding: 2px 5px;
-  border-radius: 999px;
-  background: rgb(255 255 255 / 0.06);
-  color: var(--text-soft);
-  font-size: 0.62rem;
   text-overflow: ellipsis;
   white-space: nowrap;
 }

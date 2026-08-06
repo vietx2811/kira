@@ -1021,14 +1021,16 @@ const outlineReferenceLimit = 6
 const libraryOverscan = 5
 const duplicateCandidateThreshold = 8
 // The rendered row box (.image-row's border-box min-height in styles.css) is
-// 86px compact / 102px relaxed. The virtualized list positions rows every
-// libraryRowHeights[density]px via `transform: translateY(...)`, so the
-// difference below is a deliberate gutter between rows, not slack to trim —
-// keep the two in sync if either the CSS min-height or this gutter changes.
+// 60px compact / 74px relaxed — title-only rows now that source/tags moved
+// to a hover tooltip (see ReferenceCard). The virtualized list positions
+// rows every libraryRowHeights[density]px via `transform: translateY(...)`,
+// so the difference below is a deliberate gutter between rows, not slack to
+// trim — keep the two in sync if either the CSS min-height or this gutter
+// changes.
 const libraryRowGutter = 6
 const libraryRowBoxHeights: Record<LibraryDensity, number> = {
-  compact: 86,
-  relaxed: 102,
+  compact: 60,
+  relaxed: 74,
 }
 const libraryRowHeights: Record<LibraryDensity, number> = {
   compact: libraryRowBoxHeights.compact + libraryRowGutter,
@@ -7002,6 +7004,11 @@ function ReferenceCard({
       <button
         draggable
         type="button"
+        // Image-forward, compact by default: source + tags are still here,
+        // just as a native hover tooltip instead of permanent chrome under
+        // every row — "hidden until requested" without any custom overlay
+        // that would fight the list's virtualized fixed-row-height math.
+        title={[image.source, image.tags.slice(0, 4).join(', ')].filter(Boolean).join(' · ')}
         onClick={() => onSelect(image.id)}
         onDragStart={(event) => {
           event.dataTransfer.setData('application/x-kira-image-id', image.id)
@@ -7011,12 +7018,6 @@ function ReferenceCard({
         <ReferenceThumb image={image} />
         <span className="image-row-copy">
           <strong>{image.title}</strong>
-          <small>{image.source}</small>
-          <span className="mini-tags">
-            {image.tags.slice(0, 2).map((tag) => (
-              <span key={tag}>{tag}</span>
-            ))}
-          </span>
         </span>
       </button>
     </div>
@@ -7422,6 +7423,8 @@ function EvidenceInbox({
             </button>
           ))}
           {visibleIdeas.length === 0 && <div className="empty-state"><strong>No ideas</strong><span>Captured text ideas will appear here.</span></div>}
+          {/* .library-node-row small is hidden by default and revealed on
+              hover/selection in CSS — see .library-node-row small. */}
         </div>
       ) : (
         <div className="library-node-list" role="list" aria-label="Links">
