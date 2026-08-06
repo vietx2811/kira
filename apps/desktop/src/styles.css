@@ -1,3 +1,22 @@
+/* Universal keyboard-focus fallback. Low specificity (a single pseudo-class)
+   so every more specific :focus-visible rule declared later in this file
+   still wins — this only fills the gap for the ~15 controls that reset
+   `outline: none` with nothing to replace it, which today have no visible
+   focus state at all.
+
+   A transparent outline, not `outline: none` — forced-colors mode strips
+   box-shadow entirely (and this box-shadow can also disappear behind
+   overflow clipping, e.g. .kira-dock or a scrolled image grid), so a
+   shadow-only ring can be invisible outright. A transparent outline renders
+   nothing in normal color modes (the box-shadow is what's seen), but the
+   browser substitutes the system high-contrast color for `transparent` in
+   forced-colors mode, so a real focus indicator survives there too. */
+:focus-visible {
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+  box-shadow: var(--focus-ring);
+}
+
 :root {
   color-scheme: only dark;
   --bg-base: #0d0e0d;
@@ -56,6 +75,14 @@
   --kira-halo: color-mix(in srgb, var(--kira-mid), transparent 76%);
   --kira-border: color-mix(in srgb, var(--kira-mid), transparent 64%);
   --kira-text: #e8cfd9;
+  /* Sized off the viewport, not a parent percentage — .kira-dock's
+     containing block is the 44px launcher slot, so `calc(100% - ...)`
+     would resolve against that instead of the window. --canvas-*-inset are
+     already set inline on .workspace by JS and inherit down through the
+     canvas tree, so the dock still shrinks correctly when the library or
+     inspector drawer is open. */
+  --kira-dock-width: min(640px, calc(100vw - var(--canvas-overlay-left-inset, 0px) - var(--canvas-right-inset, 0px) - 64px));
+  --kira-dock-lift: 74px;
   --danger: #d98779;
   --space-1: 4px;
   --space-2: 8px;
@@ -66,6 +93,18 @@
   --radius-1: 4px;
   --radius-2: 6px;
   --radius-3: 8px;
+  --radius-4: 12px;
+  --radius-5: 20px;
+  /* AppKit-keyed type scale — labelFontSize / smallSystemFontSize /
+     systemFontSize / a panel-title step / a view-heading step. Replaces the
+     26 ad-hoc rem sizes that used to run ~78% of native macOS scale. */
+  --text-mini: 10px;
+  --text-small: 11px;
+  --text-body: 13px;
+  --text-title: 15px;
+  --text-large: 20px;
+  --control-h-sm: 26px;
+  --control-h-md: 32px;
   /* Single source of truth for the shell's floating-panel geometry — the
      rail width, the canvas card's inset from the chrome, and its corner
      radius. The tab strip and every drawer/inspector panel key off these
@@ -80,19 +119,34 @@
      handles before this was named. */
   --ease-soft: ease;
   --ease-out-soft: cubic-bezier(0.16, 1, 0.3, 1);
+  /* Names the one overshoot curve that already existed unnamed on the splash
+     symbol — the only spring-like easing in this file. */
+  --ease-spring: cubic-bezier(0.32, 1.28, 0.42, 1);
   --duration-fast: 120ms;
   --duration-base: 160ms;
   --duration-panel: 200ms;
+  --duration-slow: 420ms;
+  --focus-ring: 0 0 0 3px color-mix(in srgb, var(--accent-cyan), transparent 62%);
   --shadow-soft: 0 20px 70px rgb(0 0 0 / 0.28);
   --shell-shadow: inset 0 1px 0 rgb(255 255 255 / 0.08);
   --panel-shadow: 0 20px 70px rgb(0 0 0 / 0.28);
   --edge-shadow: drop-shadow(0 6px 14px rgb(0 0 0 / 0.18));
   --edge-stroke: rgb(255 255 255 / 0.3);
   --edge-stroke-soft: rgb(255 255 255 / 0.12);
+  /* Inter was declared here but never loaded (no @font-face, no bundled
+     font file) — every build already fell back to SF Pro on macOS. Naming
+     the fallback makes that intentional instead of accidental. */
   --font-sans:
-    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    -apple-system, blinkmacsystemfont, ui-sans-serif, system-ui, "Segoe UI",
     sans-serif;
+
   font-family: var(--font-sans);
+  /* Root stays 14px: hundreds of existing rules still size themselves in
+     rem against it, and the new --text-* scale above is absolute px, not
+     rem, specifically so it doesn't compound with whatever root ends up
+     being. Bumping root is a follow-up that requires re-auditing every
+     rem-based rule in this file for overflow at the new size — out of
+     scope for this pass; see the migration note below. */
   font-size: 14px;
   line-height: 1.45;
   background: transparent;
@@ -396,6 +450,24 @@ button {
   background: transparent;
 }
 
+.project-settings-popover {
+  position: absolute;
+  top: 54px;
+  right: calc(var(--canvas-right-inset, 0px) + 12px);
+  z-index: 80;
+  display: grid;
+  gap: 8px;
+  width: 300px;
+  max-height: calc(100vh - 80px);
+  overflow-y: auto;
+  padding: 12px;
+  border: 1px solid var(--border-soft);
+  border-radius: 12px;
+  background: var(--node-surface-selected);
+  backdrop-filter: blur(16px);
+  pointer-events: auto;
+}
+
 .brand-lockup,
 .top-actions,
 .content-toolbar-actions,
@@ -405,7 +477,6 @@ button {
 .quiet-button,
 .primary-button,
 .icon-button,
-.view-tab,
 .tag-chip,
 .suggestion-chips button,
 .suggestion-row button {
@@ -493,6 +564,76 @@ button {
   pointer-events: auto;
 }
 
+/* One shared segmented control (see the Segmented component in main.tsx) for
+   every "pick one of N" picker in the app — view tabs, List/Grid, density,
+   Edit/Discover, outline filter, 3D scope, the language toggle. A sliding
+   thumb (the recognizable macOS segmented-control trait, previously absent
+   everywhere) is positioned purely from --seg-count/--seg-index, so no
+   per-instance width math is needed. */
+.segmented {
+  position: relative;
+  display: inline-flex;
+  padding: 3px;
+  border-radius: var(--radius-2);
+  background: rgb(255 255 255 / 0.026);
+  gap: 2px;
+}
+
+/* The 1/N width math below only holds if every option is exactly 1/N of the
+   track — .segmented-option gives them an equal flex basis for that reason
+   (options used to size to their own label, so the thumb sat visibly off
+   the active option for anything but index 0 on unequal-width sets like the
+   Canvas/3D/Slides/Outline view switcher). The 2px inter-option gap is
+   folded into both the width and the per-step transform. */
+.segmented-thumb {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  z-index: 0;
+  width: calc((100% - 6px - 2px * (var(--seg-count) - 1)) / var(--seg-count));
+  height: calc(100% - 6px);
+  border-radius: var(--radius-1);
+  background: var(--accent-weak);
+  transform: translateX(calc(var(--seg-index) * (100% + 2px)));
+  transition: transform var(--duration-base) var(--ease-spring);
+  pointer-events: none;
+}
+
+.segmented-option {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  flex: 1 1 0;
+  min-width: 0;
+  align-items: center;
+  justify-content: center;
+  height: var(--control-h-sm);
+  padding: 0 var(--space-3);
+  border: 0;
+  border-radius: var(--radius-1);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  gap: var(--space-2);
+  font-size: var(--text-small);
+  white-space: nowrap;
+  transition: color var(--duration-base) var(--ease-soft);
+}
+
+.segmented-option.is-active {
+  color: var(--accent-strong);
+}
+
+.segmented-option:hover:not(.is-active) {
+  color: var(--text-main);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .segmented-thumb {
+    transition: none;
+  }
+}
+
 .top-inspector-button {
   width: 34px;
   border: 1px solid rgb(255 255 255 / 0.055);
@@ -510,31 +651,6 @@ button {
 
 .project-name {
   display: none;
-}
-
-.view-switch {
-  display: flex;
-  justify-self: center;
-  padding: 3px;
-  border: 0;
-  border-radius: var(--radius-2);
-  background: rgb(255 255 255 / 0.026);
-  gap: 2px;
-}
-
-.view-tab {
-  height: 30px;
-  padding: 0 var(--space-3);
-  border-radius: var(--radius-1);
-  background: transparent;
-  color: var(--text-muted);
-  gap: var(--space-2);
-  transition: background var(--duration-base) var(--ease-soft), color var(--duration-base) var(--ease-soft), transform var(--duration-base) var(--ease-out-soft);
-}
-
-.view-tab.is-active {
-  background: var(--accent-weak);
-  color: var(--accent-strong);
 }
 
 .top-actions {
@@ -834,8 +950,7 @@ button {
 
 .icon-button:hover,
 .quiet-button:hover,
-.primary-button:hover,
-.view-tab:hover {
+.primary-button:hover {
   transform: translateY(-1px);
   background: rgb(255 255 255 / 0.07);
   color: var(--text-main);
@@ -1644,7 +1759,7 @@ h1 {
 }
 
 h2 {
-  font-size: 0.9rem;
+  font-size: 0.95rem;
   font-weight: 680;
 }
 
@@ -1657,7 +1772,7 @@ h2 {
 
 h3 {
   margin-bottom: var(--space-2);
-  font-size: 0.95rem;
+  font-size: 0.9rem;
   font-weight: 670;
 }
 
@@ -1689,69 +1804,6 @@ p {
   padding: 0 var(--space-4) var(--space-2);
   color: var(--text-muted);
   font-size: 0.72rem;
-}
-
-.library-panel-tabs {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 6px;
-  padding: 0 var(--space-4) var(--space-2);
-}
-
-.library-panel-tabs button {
-  display: grid;
-  grid-template-columns: 16px minmax(0, 1fr) auto;
-  align-items: center;
-  min-width: 0;
-  height: 32px;
-  padding: 0 8px;
-  border-radius: var(--radius-2);
-  background: rgb(255 255 255 / 0.028);
-  color: var(--text-muted);
-  cursor: pointer;
-  gap: 6px;
-}
-
-.library-panel-tabs button:hover,
-.library-panel-tabs button.is-active {
-  background: var(--accent-faint);
-  color: var(--text-main);
-}
-
-.library-panel-tabs span,
-.library-panel-tabs small {
-  overflow: hidden;
-  font-size: 0.68rem;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.library-panel-tabs small {
-  color: var(--text-muted);
-}
-
-.library-browse-mode {
-  display: inline-flex;
-  padding: 2px;
-  border-radius: var(--radius-2);
-  background: rgb(255 255 255 / 0.035);
-  gap: 2px;
-}
-
-.library-browse-mode button {
-  height: 25px;
-  padding: 0 9px;
-  border-radius: var(--radius-1);
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  font-size: 0.72rem;
-}
-
-.library-browse-mode button:hover,
-.library-browse-mode button.is-active {
-  background: rgb(255 255 255 / 0.085);
-  color: var(--text-main);
 }
 
 .search-field input {
@@ -1852,28 +1904,6 @@ p {
   outline: none;
 }
 
-.density-toggle {
-  display: flex;
-  padding: 2px;
-  border-radius: var(--radius-1);
-  background: rgb(255 255 255 / 0.035);
-}
-
-.density-toggle button {
-  width: 24px;
-  height: 24px;
-  border-radius: 3px;
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  font-size: 0.68rem;
-}
-
-.density-toggle button.is-active {
-  background: rgb(255 255 255 / 0.09);
-  color: var(--text-main);
-}
-
 .image-list {
   display: block;
   flex: 1;
@@ -1924,14 +1954,53 @@ p {
   height: 70px;
 }
 
-.image-row > input {
+/* Custom checkbox (native <input> hidden, .reference-check draws the box)
+   so hover/checked states are consistent and, in the grid, so it can sit on
+   a scrim — a bare native checkbox with only `accent-color` was invisible
+   against light reference images. */
+.reference-check {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+}
+
+.reference-check input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.reference-check span {
+  display: block;
   width: 13px;
   height: 13px;
-  accent-color: var(--accent-cyan);
+  border: 1.5px solid rgb(255 255 255 / 0.35);
+  border-radius: 3px;
+  background: rgb(0 0 0 / 0.2);
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.reference-check input:checked + span {
+  border-color: var(--accent-cyan);
+  background: var(--accent-cyan);
+  box-shadow: inset 0 0 0 2px var(--bg-base);
+}
+
+.reference-check input:focus-visible + span {
+  box-shadow: var(--focus-ring);
+}
+
+.image-row > .reference-check {
   opacity: 0.55;
 }
 
-.image-row > input:checked {
+.image-row > .reference-check:hover,
+.image-row:hover > .reference-check,
+.image-row > .reference-check:has(input:checked) {
   opacity: 1;
 }
 
@@ -1991,12 +2060,26 @@ p {
   border-radius: var(--radius-1);
 }
 
+/* Windowed by row (see gridColumns/gridRowHeight in EvidenceInbox) — the
+   outer element reserves the full scrollable height so the scrollbar stays
+   correct, and the inner grid is translated to the current window's offset,
+   the same two-layer technique .image-list-window/.image-row use for the
+   list, just batched per row instead of per item since a CSS `auto-fill`
+   grid has no single item position to transform. */
+.image-grid-outer {
+  position: relative;
+  min-height: 100%;
+}
+
 .image-grid-window {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(128px, 1fr));
   align-items: start;
   gap: var(--space-3);
-  padding-bottom: var(--space-4);
 }
 
 .image-grid-card {
@@ -2018,14 +2101,24 @@ p {
   background: var(--accent-faint);
 }
 
-.image-grid-card > input {
+.image-grid-card > .reference-check {
   position: absolute;
-  top: 10px;
-  left: 10px;
+  top: 8px;
+  left: 8px;
   z-index: 2;
-  width: 14px;
-  height: 14px;
-  accent-color: var(--accent-cyan);
+  border-radius: 999px;
+  /* A scrim behind the box — without it the checkbox reads fine on a dark
+     photo and disappears entirely on a light one. */
+  background: rgb(0 0 0 / 0.32);
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.image-grid-card:hover > .reference-check,
+.image-grid-card.is-selected > .reference-check,
+.image-grid-card > .reference-check:has(input:checked),
+.image-grid-card > .reference-check:focus-within {
+  opacity: 1;
 }
 
 .image-grid-card > button {
@@ -2336,20 +2429,6 @@ p {
   cursor: pointer;
 }
 
-.link-create-row {
-  display: grid;
-  grid-template-columns: 104px minmax(0, 1fr);
-  align-items: center;
-  gap: var(--space-2);
-  margin-top: var(--space-3);
-}
-
-.link-create-row select {
-  height: 32px;
-  padding: 0 var(--space-2);
-  font-size: 0.72rem;
-}
-
 .section-heading {
   margin-bottom: var(--space-3);
   color: var(--text-soft);
@@ -2497,7 +2576,10 @@ p {
   height: 100%;
   overflow: hidden;
   background: var(--bg-canvas);
-  cursor: grab;
+  /* Default cursor is NOT grab — dragging here only selects/marquees unless
+     space is held (see .is-space-armed) or the middle button is used. A
+     resting grab cursor was promising a drag-to-pan that never happened. */
+  cursor: default;
 }
 
 .graph-canvas::before,
@@ -2534,6 +2616,10 @@ p {
     rgb(0 0 0 / 0.34) 126px,
     transparent 230px
   );
+}
+
+.graph-canvas.is-space-armed {
+  cursor: grab;
 }
 
 .graph-canvas.is-panning {
@@ -2611,12 +2697,35 @@ p {
   white-space: nowrap;
 }
 
+.canvas-frame-fields {
+  display: grid;
+  gap: 3px;
+  width: 180px;
+}
+
 .canvas-frame-title-input {
   width: 140px;
   border: 0;
   background: transparent;
   color: var(--text-main);
   font: inherit;
+  outline: none;
+}
+
+.canvas-frame-fields .canvas-frame-title-input {
+  width: 100%;
+}
+
+.canvas-frame-description-input {
+  width: 100%;
+  min-height: 40px;
+  padding: 0;
+  border: 0;
+  resize: none;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 0.68rem;
   outline: none;
 }
 
@@ -2644,6 +2753,16 @@ p {
 
 .canvas-frame-resize-handle:hover {
   background: var(--glass-active);
+}
+
+/* Anchored near the label (top: -44px) rather than node-below-stack's
+   top:100%-of-card pattern — a frame's own box can be huge, so "below the
+   card" would put the toolbar far from the label the user is looking at. */
+.frame-toolbar {
+  position: absolute;
+  top: -84px;
+  left: 10px;
+  pointer-events: auto;
 }
 
 .canvas-zero-state {
@@ -2895,6 +3014,97 @@ p {
   transform: translate(-50%, -50%) scale(1.18);
 }
 
+.link-popover {
+  position: absolute;
+  z-index: 9;
+  display: grid;
+  gap: 6px;
+  width: 220px;
+  padding: 10px;
+  border: 1px solid var(--border-soft);
+  border-radius: 12px;
+  background: var(--node-surface-selected);
+  backdrop-filter: blur(16px);
+  pointer-events: auto;
+  transform: translate(-50%, calc(-100% - 14px));
+  font-size: 0.78rem;
+}
+
+.link-popover-endpoints {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-soft);
+  font-size: 0.72rem;
+}
+
+.link-popover-endpoints span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.link-popover-endpoints span:first-child {
+  flex: 1;
+  text-align: right;
+}
+
+.link-popover-endpoints span:last-child {
+  flex: 1;
+}
+
+.link-popover-endpoints button {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-soft);
+  cursor: pointer;
+}
+
+.link-popover-endpoints button:hover {
+  background: var(--glass-active);
+  color: var(--text-main);
+}
+
+.link-popover select,
+.link-popover textarea {
+  width: 100%;
+  border: 1px solid var(--border-soft);
+  border-radius: 7px;
+  background: var(--bg-canvas);
+  color: var(--text-main);
+  font: inherit;
+}
+
+.link-popover textarea {
+  min-height: 46px;
+  padding: 6px 8px;
+  resize: vertical;
+}
+
+.link-popover select {
+  padding: 5px 8px;
+}
+
+.link-popover .range-field {
+  display: grid;
+  gap: 3px;
+  color: var(--text-soft);
+  font-size: 0.72rem;
+}
+
+.link-popover .danger-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
 .idea-node,
 .image-node,
 .palette-node,
@@ -3006,70 +3216,70 @@ p {
 }
 
 .idea-node-fields {
+  position: relative;
   display: grid;
   min-width: 0;
   gap: 3px;
 }
 
-.node-title-input,
-.node-note-input,
-.node-title-display,
-.node-note-display {
-  width: 100%;
-  min-width: 0;
+.node-rich-editor-toolbar {
+  position: absolute;
+  z-index: 10;
+  bottom: 100%;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-bottom: 10px;
+  padding: 3px;
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  background: var(--node-surface-selected);
+  backdrop-filter: blur(12px);
+  transform: translateX(-50%);
+  cursor: default;
+}
+
+.node-rich-editor-toolbar button {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  padding: 0;
   border: 0;
-  border-radius: 3px;
-  outline: 0;
+  border-radius: 7px;
   background: transparent;
-  color: var(--text-main);
-  font: inherit;
-}
-
-.node-title-input,
-.node-title-display {
-  min-height: 19px;
-  padding: 0;
-  font-size: 0.86rem;
-  font-weight: 680;
-  line-height: 1.22;
-  text-align: left;
-}
-
-.node-title-display,
-.node-note-display {
-  display: block;
-  cursor: text;
-}
-
-.node-note-input,
-.node-note-display {
-  min-height: 52px;
-  max-height: 58px;
-  overflow: hidden;
-  padding: 0;
   color: var(--text-soft);
-  font-size: 0.72rem;
-  line-height: 1.28;
-  text-align: left;
+  cursor: pointer;
 }
 
-.node-note-input {
-  resize: none;
-  scrollbar-width: none;
+.node-rich-editor-toolbar button:hover {
+  background: var(--glass-active);
+  color: var(--text-main);
 }
 
-.node-note-input::-webkit-scrollbar {
-  display: none;
+.node-rich-editor-toolbar button.is-active {
+  background: var(--glass-active);
+  color: var(--accent-cyan);
 }
 
-.node-title-input:focus,
-.node-note-input:focus,
-.node-title-display:hover,
-.node-note-display:hover,
-.node-title-display:focus-visible,
-.node-note-display:focus-visible {
-  background: var(--glass-hover);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-cyan), transparent 62%);
+.node-rich-editor-toolbar-divider {
+  width: 1px;
+  height: 16px;
+  margin: 0 2px;
+  background: var(--border-soft);
+}
+
+.node-rich-editor-content {
+  outline: none;
+}
+
+.node-rich-editor p.is-editor-empty:first-child::before {
+  float: left;
+  height: 0;
+  color: var(--text-muted);
+  content: attr(data-placeholder);
+  pointer-events: none;
 }
 
 .node-meta-line {
@@ -3504,6 +3714,126 @@ p {
   transform: translate(-62px, -104px);
 }
 
+/* True DOM child of the card (see renderNodeBelowStack) so it's positioned
+   relative to the card's own rendered box — clears variable card heights
+   for free instead of overlapping tall cards the way a canvas-percentage-
+   positioned sibling would. Sits below the card; the format toolbar inside
+   NodeRichEditor is the one that stays above it, while text is being edited. */
+.node-below-stack {
+  position: absolute;
+  z-index: 9;
+  top: 100%;
+  left: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  pointer-events: auto;
+  transform: translateX(-50%);
+}
+
+.node-toolbar {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  background: var(--node-surface-selected);
+  backdrop-filter: blur(12px);
+}
+
+.node-toolbar button {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-soft);
+  cursor: pointer;
+}
+
+.node-toolbar button:hover {
+  background: var(--glass-active);
+  color: var(--text-main);
+}
+
+.node-toolbar button.is-danger:hover {
+  background: color-mix(in srgb, var(--danger), transparent 82%);
+  color: var(--danger);
+}
+
+.node-toolbar button.is-active {
+  background: var(--glass-active);
+  color: var(--accent-cyan);
+}
+
+.node-details-popover {
+  display: grid;
+  gap: 8px;
+  width: 260px;
+  max-height: 360px;
+  overflow-y: auto;
+  padding: 12px;
+  border: 1px solid var(--border-soft);
+  border-radius: 12px;
+  background: var(--node-surface-selected);
+  backdrop-filter: blur(16px);
+  font-size: 0.78rem;
+}
+
+.node-details-section {
+  display: grid;
+  gap: 8px;
+}
+
+.node-history-popover {
+  display: grid;
+  gap: 8px;
+  width: 260px;
+  max-height: 360px;
+  overflow-y: auto;
+  padding: 12px;
+  border: 1px solid var(--border-soft);
+  border-radius: 12px;
+  background: var(--node-surface-selected);
+  backdrop-filter: blur(16px);
+  font-size: 0.78rem;
+}
+
+.node-history-popover .diagram-source-input {
+  min-height: 120px;
+}
+
+.node-details-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.node-details-actions .inline-action {
+  flex: 1;
+  justify-content: center;
+}
+
+.node-toolbar-file {
+  position: relative;
+  display: grid;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  border-radius: 7px;
+  color: var(--text-soft);
+  cursor: pointer;
+}
+
+.node-toolbar-file:hover {
+  background: var(--glass-active);
+  color: var(--text-main);
+}
+
 /* Kira brand mark: a still primary star + a satellite that carries all the
    idle/hover/loading motion (see keyframes below), so the mark reads as a
    glint rather than a pulsing app icon. */
@@ -3566,8 +3896,9 @@ p {
   .kira-mark.is-thinking .kira-mark-satellite,
   .kira-mark.is-thinking .kira-mark-core,
   :is(.idea-node, .image-node, .palette-node, .diagram-node, .placeholder-node).is-selected .node-kira-control:hover,
-  .kira-popover,
-  .kira-popover.is-thinking .kira-popover-head::after {
+  .kira-dock,
+  .kira-dock::before,
+  .kira-dock-progress {
     animation: none !important;
   }
 
@@ -3579,22 +3910,45 @@ p {
     0%, 100% { opacity: 1; }
     50% { opacity: 0.5; }
   }
+
+  /* A zero-duration transition never fires transitionend, which would
+     strand any future logic waiting on the morph finishing. 1ms is
+     effectively instant but still resolves the transition normally. */
+  .kira-dock {
+    transition-duration: 1ms !important;
+  }
 }
 
-/* The Kira launcher lives beside the tool rail, not inside it — icon-only,
-   the same footprint as a rail button, but with a gradient ring so it still
-   reads as a distinct control rather than an 8th identical tool. */
+@property --kira-rim-angle {
+  syntax: "<angle>";
+  initial-value: 0deg;
+  inherits: false;
+}
+
+/* Fixed 44px footprint so the tool rail and zoom rail never shift sideways
+   when the dock inside opens — the dock itself is absolutely positioned
+   and grows out of this slot rather than pushing its neighbours. */
 .kira-launcher-wrap {
   position: relative;
-  display: inline-flex;
-}
-
-.canvas-kira-launcher {
-  display: grid;
-  flex: 0 0 auto;
+  flex: 0 0 44px;
   width: 44px;
   height: 44px;
-  place-items: center;
+}
+
+/* One persistent element that IS the launcher and the composer — no
+   separate popover to cross-fade with. Closed: a 44px circle matching the
+   tool rail's footprint. Open: a wide glass composer that drifts up and
+   toward the canvas centre (--kira-dock-shift, measured in main.tsx) and
+   reads as a distinctly "wetter" material than the rail — see .is-open. */
+.kira-dock {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  z-index: 9;
+  display: grid;
+  overflow: hidden;
+  width: 44px;
+  grid-template-rows: auto 0fr;
   border: 1px solid transparent;
   border-radius: 999px;
   background:
@@ -3606,175 +3960,427 @@ p {
   -webkit-backdrop-filter: blur(24px) saturate(1.35);
   backdrop-filter: blur(24px) saturate(1.35);
   color: var(--text-main);
-  cursor: pointer;
-  transition: transform 140ms cubic-bezier(0.16, 1, 0.3, 1), background 140ms ease;
+  transform: translate(-50%, 0);
+  transition:
+    width var(--duration-slow) var(--ease-spring),
+    border-radius var(--duration-slow) var(--ease-spring),
+    transform var(--duration-slow) var(--ease-spring),
+    grid-template-rows var(--duration-panel) var(--ease-out-soft),
+    background-color var(--duration-base) var(--ease-soft),
+    border-color var(--duration-base) var(--ease-soft);
 }
 
-.canvas-kira-launcher:hover {
-  transform: translateY(-1px);
-}
-
-.canvas-kira-launcher.is-active {
+.kira-dock.is-open {
+  /* No fallback here on purpose: --kira-dock-width is always set on :root
+     (see the tokens above), and a calc(100% - ...) fallback is exactly the
+     bug that token exists to avoid — % resolves against this element's own
+     44px launcher-slot containing block, not the viewport, and would
+     silently collapse the open dock back down to a sliver. */
+  width: var(--kira-dock-width);
+  transform: translate(calc(-50% + var(--kira-dock-shift, 0px)), calc(-1 * var(--kira-dock-lift, 74px)));
+  border-radius: var(--radius-5);
+  cursor: default;
+  will-change: width, transform;
+  /* Layer stack, bottom → top: a specular sheen falling off the top edge,
+     a faint warm→cool wash so the glass is tinted rather than neutral grey,
+     then the base fill — more transparent and more saturated than the
+     tool rail so it reads as a different substance, not just a bigger
+     version of the same panel. */
   background:
-    linear-gradient(var(--kira-tint), var(--kira-tint)) padding-box,
-    var(--kira-sweep) border-box;
-}
-
-/* A small box that opens right above the Kira button — not a side panel.
-   Context and suggestions stay collapsed behind their own toggle (see
-   .kira-dropdown) so the default view is just the anchor line + a text
-   field, matching a compact assistant composer rather than a settings form. */
-.kira-popover {
-  position: absolute;
-  right: 50%;
-  bottom: calc(100% + 10px);
-  z-index: 9;
-  display: grid;
-  width: 320px;
-  padding: 10px;
-  border: 1px solid var(--kira-border);
-  border-radius: var(--radius-3);
-  background: color-mix(in srgb, var(--surface-inspector), transparent 8%);
+    linear-gradient(
+      to bottom,
+      rgb(255 255 255 / 0.075) 0px,
+      rgb(255 255 255 / 0.018) 22px,
+      rgb(255 255 255 / 0) 46px
+    ),
+    linear-gradient(
+      100deg,
+      color-mix(in srgb, var(--kira-warm), transparent 96%) 0%,
+      color-mix(in srgb, var(--kira-mid), transparent 95%) 48%,
+      color-mix(in srgb, var(--kira-cool), transparent 96%) 100%
+    ),
+    linear-gradient(rgb(11 13 12 / 0.78), rgb(11 13 12 / 0.78));
+  -webkit-backdrop-filter: blur(40px) saturate(1.9) brightness(1.06);
+  backdrop-filter: blur(40px) saturate(1.9) brightness(1.06);
   box-shadow:
-    inset 0 1px 0 color-mix(in srgb, var(--text-main), transparent 94%),
-    var(--panel-shadow);
-  -webkit-backdrop-filter: blur(24px) saturate(1.25);
-  backdrop-filter: blur(24px) saturate(1.25);
-  gap: 8px;
-  transform: translateX(50%);
-  transform-origin: bottom center;
-  animation: kira-popover-in 160ms cubic-bezier(0.16, 1, 0.3, 1);
+    inset 0 1px 0 rgb(255 255 255 / 0.14),
+    inset 0 0 0 1px rgb(255 255 255 / 0.045),
+    inset 0 -1px 0 rgb(255 255 255 / 0.03),
+    0 10px 32px -8px color-mix(in srgb, var(--kira-mid), transparent 84%),
+    0 28px 64px -12px rgb(0 0 0 / 0.55),
+    0 4px 12px rgb(0 0 0 / 0.28);
 }
 
-@keyframes kira-popover-in {
-  from { opacity: 0; transform: translateX(50%) translateY(6px) scale(0.97); }
-  to { opacity: 1; transform: translateX(50%) translateY(0) scale(1); }
+.kira-dock.is-open.has-tray {
+  grid-template-rows: auto 1fr;
 }
 
-.kira-popover-head {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+.kira-dock.is-error {
+  border-color: color-mix(in srgb, var(--danger), transparent 62%);
 }
 
-.kira-popover.is-thinking .kira-popover-head::after {
+/* Hologram rim: a conic gradient that circulates around the edge, hollowed
+   to a 1px band. Deliberately restrained — a short arc, low opacity, a slow
+   period — so it reads as a slow travelling glint, not an RGB keyboard.
+   Degrades to a static (non-animating) rim if @property is unsupported. */
+.kira-dock::before {
   position: absolute;
-  right: 0;
-  bottom: -6px;
-  left: 0;
-  height: 2px;
-  background: var(--kira-sweep);
-  background-size: 300% 100%;
-  animation: kira-thinking-bar 1.9s linear infinite;
+  inset: 0;
+  z-index: 0;
+  padding: 1px;
+  border-radius: inherit;
+  background: conic-gradient(
+    from var(--kira-rim-angle),
+    transparent 0%,
+    color-mix(in srgb, var(--kira-warm), transparent 55%) 8%,
+    color-mix(in srgb, var(--kira-mid), transparent 45%) 18%,
+    color-mix(in srgb, var(--kira-cool), transparent 55%) 28%,
+    transparent 42%,
+    transparent 100%
+  );
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
   content: "";
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 260ms var(--ease-soft);
 }
 
-.kira-popover-title {
-  display: inline-flex;
-  overflow: hidden;
-  align-items: center;
+.kira-dock.is-open::before {
+  opacity: 0.42;
+  animation: kira-rim-travel 9s linear infinite;
+}
+
+.kira-dock.is-open.is-thinking::before {
+  opacity: 0.72;
+  animation-duration: 2.4s;
+}
+
+@keyframes kira-rim-travel {
+  to { --kira-rim-angle: 360deg; }
+}
+
+.kira-dock-orb {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.kira-dock:not(.is-open):hover {
+  transform: translate(-50%, -1px);
+}
+
+.kira-dock.is-open .kira-dock-orb {
+  width: 0;
+  min-width: 0;
+  padding: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.kira-dock[data-tooltip]::after,
+.kira-dock-orb[data-tooltip]::after {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 50%;
+  z-index: 20;
+  padding: 5px 7px;
+  border: 1px solid var(--border-soft);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--surface-inspector), transparent 4%);
+  box-shadow: 0 8px 20px rgb(0 0 0 / 0.24);
   color: var(--text-main);
-  font-size: 0.76rem;
-  font-weight: 700;
-  gap: 6px;
-  text-overflow: ellipsis;
+  content: attr(data-tooltip);
+  font-size: 0.66rem;
+  font-weight: 580;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, 4px);
+  transition: opacity 120ms ease, transform 140ms var(--ease-out-soft);
   white-space: nowrap;
 }
 
-.kira-popover-input {
+.kira-dock-orb[data-tooltip]:hover::after,
+.kira-dock-orb[data-tooltip]:focus-visible::after {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+/* Four grid items — orb, sigil, input, actions — so four column tracks are
+   required. Getting this wrong silently wraps the fourth item (actions)
+   onto an implicit second row instead of erroring. */
+.kira-dock-row {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: auto auto 1fr auto;
+  align-items: center;
+  height: 44px;
+  padding: 0;
+  gap: 10px;
+  transition: height var(--duration-slow) var(--ease-spring), padding var(--duration-slow) var(--ease-spring);
+}
+
+.kira-dock.is-open .kira-dock-row {
+  height: 56px;
+  padding: 0 8px 0 14px;
+}
+
+.kira-dock-sigil {
+  display: none;
+  flex: 0 0 auto;
+  align-items: center;
+}
+
+.kira-dock.is-open .kira-dock-sigil {
+  display: inline-flex;
+}
+
+.kira-dock-input {
+  /* Fills its 1fr grid cell — it must NOT be pinned to the dock's full
+     width, or it would demand that width in ADDITION to the sigil and
+     actions columns either side, overflowing the row. */
   width: 100%;
-  padding: 8px;
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius-2);
-  background: var(--surface-inset);
+  min-width: 0;
+  /* The global `textarea { min-height: 92px }` rule further down this file
+     (for the multi-line note/description fields elsewhere) would otherwise
+     floor this single-line composer at 92px regardless of the height set
+     below. */
+  min-height: 0;
+  height: 0;
+  padding: 0;
+  border: 0;
+  background: none;
   color: var(--text-main);
   font: inherit;
+  font-size: 0.95rem;
   line-height: 1.4;
+  opacity: 0;
   resize: none;
+  overflow-x: hidden;
+  overflow-y: auto;
+  transition: opacity 140ms var(--ease-soft);
 }
 
-.kira-popover-row {
-  display: flex;
+.kira-dock-input::placeholder {
+  color: var(--text-muted);
+}
+
+.kira-dock-input:focus {
+  outline: none;
+}
+
+.kira-dock.is-open .kira-dock-input {
+  /* Not `auto` — a <textarea>'s intrinsic "auto" height resolves via its
+     own rows-based sizing algorithm, not its computed line-height, and
+     inflates to several lines even for a single short line of text. The
+     composer row has a fixed height, so this fixes to one line's worth
+     and scrolls internally (see overflow-y above) if Shift+Enter adds a
+     second line, rather than silently clipping it. */
+  height: 1.4em;
+  opacity: 1;
+  transition-delay: 120ms;
+}
+
+.kira-dock-actions {
+  display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 140ms var(--ease-soft);
 }
 
-.kira-popover-spacer {
-  flex: 1;
+.kira-dock.is-open .kira-dock-actions {
+  opacity: 1;
+  pointer-events: auto;
+  transition-delay: 120ms;
 }
 
-.kira-chip-toggle {
+.kira-dock-pill {
   display: inline-flex;
   align-items: center;
   height: 24px;
   padding: 0 8px;
   border: 1px solid var(--border-soft);
   border-radius: 999px;
-  background: var(--surface-inset);
+  background: rgb(255 255 255 / 0.05);
   color: var(--text-soft);
   cursor: pointer;
   font-size: 0.68rem;
   gap: 4px;
 }
 
-.kira-chip-toggle:hover,
-.kira-chip-toggle.is-open {
+.kira-dock-pill:hover,
+.kira-dock-pill.is-open {
   border-color: var(--kira-border);
   background: var(--kira-tint);
   color: var(--text-main);
 }
 
-.kira-popover-submit {
-  display: inline-flex;
-  align-items: center;
-  height: 26px;
-  padding: 0 10px;
+.kira-dock-sep {
+  width: 1px;
+  height: 20px;
+  background: var(--separator-hairline);
+}
+
+.kira-dock-submit {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
   border: 0;
   border-radius: 999px;
   background: var(--kira-sweep);
   color: var(--bg-base);
   cursor: pointer;
-  font-size: 0.72rem;
-  font-weight: 800;
-  gap: 5px;
+  transition: opacity var(--duration-fast) var(--ease-soft), transform var(--duration-fast) var(--ease-out-soft);
 }
 
-.kira-popover-submit:disabled {
+.kira-dock-submit:disabled {
   cursor: not-allowed;
-  opacity: 0.4;
+  opacity: 0.28;
 }
 
-.kira-dropdown {
+.kira-dock-submit:not(:disabled):hover {
+  transform: scale(1.06);
+}
+
+.kira-dock-close {
   display: grid;
-  padding-top: 8px;
-  border-top: 1px solid var(--separator-hairline);
-  gap: 6px;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
 }
 
-.kira-dropdown-head {
+.kira-dock-close:hover {
+  background: var(--glass-hover);
+  color: var(--text-main);
+}
+
+.kira-dock-progress {
+  position: relative;
+  z-index: 1;
+  height: 1px;
+  margin: 0 14px 12px;
+  background: var(--kira-sweep);
+  background-size: 300% 100%;
+  animation: kira-thinking-bar 1.9s linear infinite;
+}
+
+.kira-dock-error {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: flex-start;
+  margin: 0;
+  padding: 0 14px 12px;
+  color: color-mix(in srgb, var(--danger), var(--text-main) 30%);
+  font-size: 0.78rem;
+  gap: 8px;
+  line-height: 1.45;
+}
+
+.kira-dock-error > span {
+  flex: 1;
+  min-width: 0;
+}
+
+.kira-dock-retry {
+  flex: 0 0 auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--kira-mid);
+  cursor: pointer;
+  font: inherit;
+  text-decoration: underline;
+}
+
+.kira-dock-notice {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0;
+  padding: 0 14px 12px;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  gap: 8px;
+}
+
+.kira-dock-notice .link-button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--kira-mid);
+  cursor: pointer;
+  font: inherit;
+  text-decoration: underline;
+  white-space: nowrap;
+}
+
+.kira-dock-tray {
+  position: relative;
+  z-index: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.kira-dock-tray-inner {
+  display: grid;
+  padding: 0 14px 14px;
+  gap: 8px;
+}
+
+.kira-dock-tray-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--separator-hairline);
 }
 
-.kira-dropdown-head select {
+.kira-dock-tray-head select {
   flex: 1;
   height: 26px;
   padding: 0 6px;
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-1);
-  background: var(--surface-inset);
+  background: rgb(255 255 255 / 0.05);
   color: var(--text-soft);
   font-size: 0.7rem;
 }
 
-.kira-dropdown-meta {
+.kira-dock-tray-meta {
   color: var(--text-muted);
   font-size: 0.66rem;
   white-space: nowrap;
+}
+
+.kira-dock-suggestions {
+  display: grid;
+  max-height: 220px;
+  gap: 4px;
+  overflow-y: auto;
 }
 
 .kira-chip-row {
@@ -3820,13 +4426,6 @@ p {
   color: var(--text-main);
 }
 
-.kira-suggestion-list {
-  display: grid;
-  gap: 4px;
-  max-height: 220px;
-  overflow-y: auto;
-}
-
 .kira-suggestion {
   display: grid;
   padding: 6px 8px;
@@ -3848,24 +4447,6 @@ p {
 .kira-suggestion-why {
   color: var(--text-muted);
   font-size: 0.66rem;
-}
-
-.kira-popover-foot {
-  margin: 0;
-  padding-top: 6px;
-  border-top: 1px solid var(--separator-hairline);
-  color: var(--text-muted);
-  font-size: 0.66rem;
-}
-
-.kira-popover-foot .link-button {
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--kira-mid);
-  cursor: pointer;
-  font: inherit;
-  text-decoration: underline;
 }
 
 .idea-node.is-selected,
@@ -4049,17 +4630,12 @@ p {
   color: var(--accent-strong);
 }
 
+/* SF Symbols never scale or glow on hover — only the button's background/
+   color changes (see .canvas-tool-rail button:hover above). The icons are
+   vector now, so hover/active state comes for free via currentColor instead
+   of needing a separate transform+filter treatment. */
 .canvas-tool-rail .tool-icon {
-  width: 27px;
-  height: 27px;
-  object-fit: contain;
-  transition: transform 140ms ease, filter 140ms ease;
-}
-
-.canvas-tool-rail button:hover .tool-icon,
-.canvas-tool-rail button.is-active .tool-icon {
-  transform: scale(1.1);
-  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--accent-strong), transparent 55%));
+  flex: 0 0 auto;
 }
 
 /* Bottom-left: how the board is shown. Bottom-right: where the view is.
@@ -4091,12 +4667,19 @@ p {
   pointer-events: auto;
 }
 
+/* Pulled a few px past their auto-margin resting point, tighter into the
+   canvas corner — the bottom bar's 16px inset already reads as "floating
+   near the edge"; this makes the two corner rails read as grounded there
+   instead of adrift in the gutter. The Kira dock (also in this bar) stays
+   centered and untouched by this. */
 .canvas-view-rail {
   margin-right: auto;
+  margin-left: -6px;
 }
 
 .canvas-zoom-rail {
   margin-left: auto;
+  margin-right: -6px;
 }
 
 .canvas-view-rail,
@@ -4109,7 +4692,10 @@ p {
   border: 1px solid var(--border-soft);
   border-radius: 999px;
   background: var(--glass-inspector);
-  box-shadow: var(--panel-shadow);
+  /* A firmer, bottom-weighted contact shadow (vs. the all-around
+     --panel-shadow) so the pill reads as resting on the canvas floor
+     rather than hovering flat above it. */
+  box-shadow: 0 10px 20px -6px rgb(0 0 0 / 0.45), 0 2px 6px rgb(0 0 0 / 0.3);
   color: var(--text-muted);
   gap: 4px;
   font-size: 0.72rem;
@@ -4118,8 +4704,15 @@ p {
   backdrop-filter: blur(20px) saturate(1.22);
 }
 
+/* Secondary to the view-rail's mode switch and the create-tools rail — this
+   is read-only viewport status, not a primary action cluster, so it carries
+   less visual weight: no border, dimmer fill, smaller text. */
 .canvas-zoom-rail {
   padding-right: 7px;
+  border-color: transparent;
+  background: color-mix(in srgb, var(--glass-inspector), transparent 30%);
+  box-shadow: 0 8px 16px -6px rgb(0 0 0 / 0.35);
+  font-size: 0.68rem;
 }
 
 .canvas-view-rail-trigger {
@@ -4226,28 +4819,6 @@ p {
   font-size: 0.72rem;
 }
 
-.graph-mode-toggle {
-  display: inline-flex;
-  padding: 2px;
-  border-radius: 999px;
-  background: var(--inset-field);
-  gap: 2px;
-}
-
-.graph-mode-toggle button {
-  height: 26px;
-  padding: 0 var(--space-2);
-  border-radius: 999px;
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  font-size: 0.72rem;
-}
-
-.graph-mode-toggle button.is-active {
-  background: var(--glass-active);
-  color: var(--text-main);
-}
 
 .canvas-zoom-rail button {
   display: inline-grid;
@@ -4947,15 +5518,6 @@ p {
   padding-left: var(--space-4);
 }
 
-.palette-inspector-strip {
-  display: grid;
-  overflow: hidden;
-  height: 28px;
-  border-radius: var(--radius-1);
-  grid-auto-flow: column;
-  grid-auto-columns: 1fr;
-}
-
 .reference-palette-card {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -5226,33 +5788,6 @@ p {
   font-size: 0.72rem;
 }
 
-.palette-algorithms {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.palette-algorithms button {
-  min-height: 26px;
-  padding: 0 var(--space-2);
-  border: 0;
-  border-radius: 999px;
-  background: rgb(255 255 255 / 0.065);
-  color: var(--text-soft);
-  cursor: pointer;
-  font-size: 0.68rem;
-}
-
-.diagram-source-preview {
-  overflow: auto;
-  max-height: 220px;
-  margin: 0;
-  color: var(--text-soft);
-  font-size: 0.7rem;
-  line-height: 1.45;
-  white-space: pre-wrap;
-}
-
 .graph3d-stage {
   width: 100%;
   height: 100%;
@@ -5333,27 +5868,9 @@ p {
   position: absolute;
   top: var(--space-4);
   left: var(--space-4);
-  display: inline-flex;
-  padding: 3px;
-  border-radius: 999px;
+  /* Floats directly on the WebGL canvas with no other chrome behind it, so
+     it needs a more opaque tint than the base .segmented track. */
   background: rgb(12 13 12 / 0.64);
-  gap: 2px;
-}
-
-.graph3d-scope button {
-  min-height: 26px;
-  padding: 0 var(--space-2);
-  border-radius: 999px;
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  font-size: 0.68rem;
-}
-
-.graph3d-scope button:hover,
-.graph3d-scope button.is-active {
-  background: var(--accent-faint);
-  color: var(--text-main);
 }
 
 .graph3d-legend button {
@@ -5947,29 +6464,6 @@ p {
   gap: var(--space-2);
 }
 
-.outline-filter {
-  display: inline-flex;
-  padding: 3px;
-  border-radius: 999px;
-  background: rgb(255 255 255 / 0.045);
-  gap: 2px;
-}
-
-.outline-filter button {
-  min-height: 26px;
-  padding: 0 var(--space-2);
-  border-radius: 999px;
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  font-size: 0.72rem;
-}
-
-.outline-filter button:hover,
-.outline-filter button.is-active {
-  background: var(--accent-faint);
-  color: var(--text-main);
-}
 
 .outline-list {
   display: grid;
@@ -6245,9 +6739,7 @@ p {
 }
 
 .inspector-card:first-of-type,
-.inspector-image-shell + .inspector-card,
-.reference-palette-card + .inspector-card,
-.inspector-image + .inspector-card {
+.reference-palette-card + .inspector-card {
   border-top: 0;
 }
 
@@ -6406,75 +6898,9 @@ p {
   color: var(--text-main);
 }
 
-.inspector-image-shell {
-  position: relative;
-  width: calc(100% - 32px);
-  height: 162px;
-  margin: var(--space-4) var(--space-4) 0;
-}
-
-.inspector-image {
-  width: 100%;
-  height: 100%;
-  margin: 0;
-  border: 0;
-  border-radius: var(--radius-2);
-}
-
-.inspector-image-actions {
-  position: absolute;
-  right: 8px;
-  bottom: 8px;
-  left: 8px;
-  display: flex;
-  justify-content: flex-end;
-  gap: 6px;
-  opacity: 0;
-  pointer-events: none;
-  transform: translateY(4px);
-  transition: opacity 140ms ease, transform 140ms ease;
-}
-
-.inspector-image-shell:hover .inspector-image-actions,
-.inspector-image-shell:focus-within .inspector-image-actions {
-  opacity: 1;
-  pointer-events: auto;
-  transform: translateY(0);
-}
-
-.image-edge-action {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  min-width: 0;
-  height: 28px;
-  padding: 0 9px;
-  border: 1px solid rgb(255 255 255 / 0.12);
-  border-radius: 999px;
-  background: rgb(10 11 10 / 0.78);
-  color: var(--text-soft);
-  cursor: pointer;
-  font-size: 0.68rem;
-  gap: 5px;
-  backdrop-filter: blur(12px);
-}
-
-.image-edge-action:hover {
-  border-color: color-mix(in srgb, var(--accent-strong), transparent 64%);
-  background: rgb(15 17 16 / 0.92);
-  color: var(--text-main);
-}
-
 .linked-list {
   display: grid;
   gap: var(--space-2);
-}
-
-.linked-list-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 28px;
-  gap: 5px;
-  align-items: stretch;
 }
 
 .linked-list button {
@@ -6493,20 +6919,6 @@ p {
 
 .linked-list button:hover {
   background: rgb(255 255 255 / 0.04);
-}
-
-.linked-list .linked-list-remove {
-  grid-template-columns: 1fr;
-  width: 28px;
-  min-height: 100%;
-  place-items: center;
-  padding: 0;
-  color: var(--text-muted);
-}
-
-.linked-list .linked-list-remove:hover {
-  background: rgb(244 113 116 / 0.12);
-  color: #ffb8b8;
 }
 
 .linked-list .reference-thumb {
@@ -6558,14 +6970,6 @@ p {
 .linked-list-toggle:hover {
   background: var(--accent-faint);
   color: var(--text-main);
-}
-
-.idea-dot {
-  justify-self: center;
-  width: 11px;
-  height: 11px;
-  border-radius: 50%;
-  background: var(--accent-cyan);
 }
 
 .tag-cloud {
@@ -6624,90 +7028,6 @@ p {
   color: var(--accent-strong);
   cursor: pointer;
   font-size: 0.72rem;
-}
-
-.relation-preview {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-  gap: var(--space-3);
-  align-items: center;
-}
-
-.relation-preview .reference-thumb {
-  width: 72px;
-  height: 58px;
-  border-radius: var(--radius-1);
-}
-
-.relation-arrow {
-  display: grid;
-  width: 28px;
-  height: 28px;
-  place-items: center;
-  border-radius: 999px;
-  background: var(--accent-faint);
-  color: #c7eee5;
-}
-
-.relation-preview strong {
-  font-size: 0.86rem;
-}
-
-.node-link-endpoint {
-  display: grid;
-  min-width: 0;
-  min-height: 58px;
-  align-content: center;
-  padding: var(--space-2);
-  border: 1px solid rgb(255 255 255 / 0.07);
-  border-radius: var(--radius-1);
-  background: rgb(255 255 255 / 0.04);
-  color: var(--text-main);
-  cursor: pointer;
-  text-align: left;
-}
-
-.node-link-endpoint:disabled {
-  cursor: default;
-  opacity: 0.62;
-}
-
-.node-link-endpoint small {
-  color: var(--text-muted);
-  font-size: 0.64rem;
-  text-transform: uppercase;
-}
-
-.node-link-endpoint strong {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.node-kind-dot {
-  justify-self: center;
-  width: 11px;
-  height: 11px;
-  border-radius: 50%;
-  background: var(--accent-cyan);
-}
-
-.node-kind-dot--image {
-  background: #dfae67;
-}
-
-.node-kind-dot--palette {
-  background: #b7a4df;
-}
-
-.node-kind-dot--diagram {
-  background: #8fb9f3;
-}
-
-.node-kind-dot--placeholder,
-.node-kind-dot--unknown {
-  border: 1px dashed rgb(236 233 221 / 0.45);
-  background: transparent;
 }
 
 .graph-shortcuts {
@@ -7368,32 +7688,4 @@ textarea {
   margin: 0;
   font-size: 0.74rem;
   color: var(--text-muted);
-}
-.settings-language__toggle {
-  display: inline-flex;
-  padding: 3px;
-  gap: 3px;
-  border-radius: var(--radius-2);
-  background: var(--surface-inset);
-  width: fit-content;
-}
-.settings-language__toggle button {
-  height: 28px;
-  padding: 0 var(--space-3);
-  border: 0;
-  border-radius: var(--radius-1);
-  background: transparent;
-  color: var(--text-soft);
-  font-size: 0.76rem;
-  cursor: pointer;
-  transition:
-    background 160ms ease,
-    color 160ms ease;
-}
-.settings-language__toggle button:hover {
-  color: var(--text-main);
-}
-.settings-language__toggle button.is-active {
-  background: var(--glass-active);
-  color: var(--accent-strong);
 }

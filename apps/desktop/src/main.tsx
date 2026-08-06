@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { create, useStore } from 'zustand'
 import { temporal } from 'zundo'
@@ -6,8 +6,15 @@ import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { Effect, EffectState, getCurrentWindow } from '@tauri-apps/api/window'
 import { open, save } from '@tauri-apps/plugin-dialog'
+import { useEditor, EditorContent, type Editor } from '@tiptap/react'
+import StarterKit from '@tiptap/starter-kit'
+import TiptapLink from '@tiptap/extension-link'
+import TiptapPlaceholder from '@tiptap/extension-placeholder'
+import { Markdown } from 'tiptap-markdown'
 import {
+  AlertTriangle,
   ArrowDownToLine,
+  ArrowUp,
   ArrowUpFromLine,
   Bot,
   Box,
@@ -63,6 +70,19 @@ import {
   ZoomOut,
   X,
 } from 'lucide-react'
+import {
+  Cursor,
+  FlowArrow,
+  FrameCorners,
+  ImageSquare,
+  Lightbulb as LightbulbIcon,
+  ListBullets,
+  LinkSimple,
+  Note as NoteIcon,
+  Palette as PaletteIcon,
+  TextB,
+  TextItalic,
+} from '@phosphor-icons/react'
 import { HexColorPicker } from 'react-colorful'
 import Cropper, { type Area as CropArea } from 'react-easy-crop'
 import { converter, formatHex } from 'culori'
@@ -122,11 +142,10 @@ type KiraSession = {
   scope: AiNodeScope
   action: AiNodeAction
   prompt: string
-  previousPrompt: string | null
   removedContextKeys: string[]
   providerOverrideId: string | null
   modelOverride: string | null
-  status: 'idle' | 'thinking' | 'refining' | 'error'
+  status: 'idle' | 'thinking' | 'error'
   message: string | null
 }
 
@@ -172,11 +191,7 @@ const kiraSuggestions: Record<GraphNodeKind | 'board', KiraSuggestion[]> = {
 }
 
 const kiraCopy = {
-  emptyBoard: "Nothing selected. I'll read the whole board — or pick a node to narrow me down.",
-  emptyNode: (title: string) => `Working from ${title}. Ask for something, or take a suggestion.`,
-  loading: ['Reading the branch.', 'Looking for the throughline.', 'Holding this against the rest of the board.', 'Nearly there.'],
-  noProvider: "I'm not connected to a model yet. Pick one in Settings and I'll start.",
-  placed: (source: string) => `Placed. It's linked to ${source}.`,
+  loading: 'Reading the branch.',
 }
 
 type PendingDelete =
@@ -191,7 +206,9 @@ type PendingDelete =
 type Idea = {
   id: string
   title: string
-  body: string
+  // Markdown, backing the inline rich-text editor (NodeRichEditor). `title`
+  // is derived from this — see deriveTitleFromContent — never set directly.
+  content: string
   status: 'forming' | 'strong' | 'thin'
   x: number
   y: number
@@ -202,12 +219,18 @@ type Idea = {
   updatedAt?: string
   sourceUrl?: string
   notes?: string
+  // Excludes this node's content from the AI context pipeline
+  // (collectKiraContext) without deleting it — see the eye-icon toggle.
+  aiExcluded?: boolean
   variant?: 'sticker'
 }
 
 type EvidenceImage = {
   id: string
   title: string
+  // Markdown caption, backing the inline rich-text editor (NodeRichEditor).
+  // `title` is derived from this — see deriveTitleFromContent.
+  content: string
   source: string
   originApp?: string
   originId?: string
@@ -225,6 +248,9 @@ type EvidenceImage = {
   updatedAt?: string
   sourceUrl?: string
   notes?: string
+  // Excludes this node's content from the AI context pipeline
+  // (collectKiraContext) without deleting it — see the eye-icon toggle.
+  aiExcluded?: boolean
   width?: number
   height?: number
   sizeBytes?: number
@@ -267,6 +293,7 @@ type GraphNodeRef = {
   title: string
   x: number
   y: number
+  content?: string
 }
 
 type PaletteHarmony = 'complementary' | 'analogous' | 'triadic' | 'split' | 'monochrome' | 'shades'
@@ -274,6 +301,7 @@ type PaletteHarmony = 'complementary' | 'analogous' | 'triadic' | 'split' | 'mon
 type PaletteNode = {
   id: string
   title: string
+  content: string
   colors: string[]
   algorithm: PaletteHarmony | 'manual' | 'image_extract'
   sourceImageId?: string
@@ -286,11 +314,15 @@ type PaletteNode = {
   updatedAt?: string
   sourceUrl?: string
   notes?: string
+  // Excludes this node's content from the AI context pipeline
+  // (collectKiraContext) without deleting it — see the eye-icon toggle.
+  aiExcluded?: boolean
 }
 
 type DiagramNode = {
   id: string
   title: string
+  content: string
   format: 'mermaid'
   source: string
   nodeIds: string[]
@@ -303,11 +335,15 @@ type DiagramNode = {
   updatedAt?: string
   sourceUrl?: string
   notes?: string
+  // Excludes this node's content from the AI context pipeline
+  // (collectKiraContext) without deleting it — see the eye-icon toggle.
+  aiExcluded?: boolean
 }
 
 type PlaceholderNode = {
   id: string
   title: string
+  content: string
   targetKind: 'image'
   x: number
   y: number
@@ -318,6 +354,9 @@ type PlaceholderNode = {
   updatedAt?: string
   sourceUrl?: string
   notes?: string
+  // Excludes this node's content from the AI context pipeline
+  // (collectKiraContext) without deleting it — see the eye-icon toggle.
+  aiExcluded?: boolean
 }
 
 // A named region, not a node — it doesn't join the link graph, importance
@@ -628,6 +667,14 @@ type CanvasHistoryStoreApi = ReturnType<typeof createCanvasHistoryStore>
 // ── Lightweight bilingual i18n (en / vi) ─────────────────────────────────────
 type Lang = 'en' | 'vi'
 
+// Covers the highest-visibility chrome — view switcher, tool rail groups,
+// Kira dock, and the library empty state — on top of the inspector/library
+// panel strings that were already here. Still far from every string in the
+// app; the remaining surfaces (settings body copy, outline, slides, node
+// context menus) stay English-only until a fuller sweep, and now that this
+// dictionary drives more of the chrome, unification bugs like the same
+// concept using different keys in two places will show up as translated in
+// one place and not the other.
 const UI_STRINGS: Record<string, { en: string; vi: string }> = {
   'lang.label': { en: 'Language', vi: 'Ngôn ngữ' },
   'lang.hint': { en: 'Interface language for labels and panels.', vi: 'Ngôn ngữ hiển thị cho nhãn và bảng điều khiển.' },
@@ -638,6 +685,32 @@ const UI_STRINGS: Record<string, { en: string; vi: string }> = {
   'inspector.kind': { en: 'Kind', vi: 'Loại' },
   'inspector.styleNote': { en: 'Style note', vi: 'Ghi chú phong cách' },
   'library.title': { en: 'Library', vi: 'Thư viện' },
+  'view.canvas': { en: 'Canvas', vi: 'Bảng vẽ' },
+  'view.3d': { en: '3D', vi: '3D' },
+  'view.slides': { en: 'Slides', vi: 'Trình chiếu' },
+  'view.outline': { en: 'Outline', vi: 'Dàn ý' },
+  'tool.select': { en: 'Select', vi: 'Chọn' },
+  'tool.imagePlaceholder': { en: 'Image placeholder', vi: 'Ô chờ hình ảnh' },
+  'tool.palette': { en: 'Palette', vi: 'Bảng màu' },
+  'tool.idea': { en: 'Idea', vi: 'Ý tưởng' },
+  'tool.sticker': { en: 'Sticker', vi: 'Ghi chú' },
+  'tool.frame': { en: 'Frame', vi: 'Khung' },
+  'tool.mermaid': { en: 'Mermaid diagram', vi: 'Sơ đồ Mermaid' },
+  'library.browseMode.list': { en: 'List', vi: 'Danh sách' },
+  'library.browseMode.grid': { en: 'Grid', vi: 'Lưới' },
+  'library.density.compact': { en: 'Compact', vi: 'Gọn' },
+  'library.density.relaxed': { en: 'Relaxed', vi: 'Thoải mái' },
+  'library.empty.title': { en: 'No references yet', vi: 'Chưa có tư liệu tham khảo' },
+  'library.empty.body': { en: 'Drag in images, paste a URL, or import a folder to start your moodboard.', vi: 'Kéo thả hình ảnh, dán URL, hoặc nhập một thư mục để bắt đầu moodboard.' },
+  'library.empty.import': { en: 'Import images', vi: 'Nhập hình ảnh' },
+  'kira.askLabel': { en: 'Ask Kira', vi: 'Hỏi Kira' },
+  'kira.placeholderBoard': { en: 'Ask Kira about this board…', vi: 'Hỏi Kira về bảng này…' },
+  'kira.placeholderNode': { en: 'Ask about {title}…', vi: 'Hỏi về {title}…' },
+  'kira.placeholderNoProvider': { en: 'Connect a model to start…', vi: 'Kết nối một mô hình để bắt đầu…' },
+  'kira.tryAgain': { en: 'Try again', vi: 'Thử lại' },
+  'kira.noProvider': { en: "I'm not connected to a model yet. Pick one in Settings and I'll start.", vi: 'Chưa kết nối mô hình nào. Hãy chọn một mô hình trong Cài đặt để bắt đầu.' },
+  'kira.openAiSettings': { en: 'Open AI settings →', vi: 'Mở cài đặt AI →' },
+  'kira.scopeFullBoard': { en: 'Full board', vi: 'Toàn bộ bảng' },
 }
 
 function readStoredLang(): Lang {
@@ -667,6 +740,250 @@ function T({ k }: { k: string }): React.ReactElement {
   return <>{UI_STRINGS[k]?.[lang] ?? k}</>
 }
 
+/** Same lookup as <T>, as a plain string — for aria-label/placeholder/title,
+    which can't take an element. Not reactive on its own; call it from inside
+    a component that already reads useLangStore so the component re-renders
+    on toggle. `vars` fills `{name}` placeholders in the translated string. */
+function t(key: string, lang: Lang, vars?: Record<string, string>): string {
+  const template = UI_STRINGS[key]?.[lang] ?? key
+  if (!vars) return template
+  return template.replace(/\{(\w+)\}/g, (match, name) => vars[name] ?? match)
+}
+
+type SegmentedOption<T extends string> = { value: T; label: React.ReactNode; ariaLabel?: string; title?: string }
+
+/**
+ * One shared segmented control for every "pick one of N" picker in the app —
+ * replaces nine hand-rolled variants (view tabs, List/Grid, density, Edit/
+ * Discover, outline filter, 3D scope, the language toggle, settings nav) that
+ * each reinvented radius, active fill, and transitions differently, and none
+ * of which animated the selection. `variant="tabs"` renders a real
+ * `role="tablist"`/`role="tab"` group (mutually exclusive *views*);
+ * `variant="radio"` renders `role="radiogroup"`/`role="radio"` (mutually
+ * exclusive *settings*) — the app previously used `aria-pressed` toggle-button
+ * semantics for both, which announces "pressed/not pressed" instead of
+ * "2 of 4, selected".
+ */
+function Segmented<T extends string>({
+  options,
+  value,
+  onChange,
+  ariaLabel,
+  variant = 'tabs',
+  className,
+}: {
+  options: SegmentedOption<T>[]
+  value: T
+  onChange: (value: T) => void
+  ariaLabel: string
+  variant?: 'tabs' | 'radio'
+  className?: string
+}): React.ReactElement {
+  const groupRole = variant === 'tabs' ? 'tablist' : 'radiogroup'
+  const itemRole = variant === 'tabs' ? 'tab' : 'radio'
+  const activeIndex = Math.max(0, options.findIndex((option) => option.value === value))
+  const rootRef = useRef<HTMLDivElement | null>(null)
+
+  function focusOption(index: number) {
+    const buttons = rootRef.current?.querySelectorAll<HTMLButtonElement>('.segmented-option')
+    buttons?.[index]?.focus()
+  }
+
+  function handleKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
+    // radiogroup also expects vertical arrows to move the selection, per the
+    // WAI-ARIA radio-group pattern; Home/End are the expected shortcuts for
+    // both variants to jump to the first/last option.
+    let nextIndex: number
+    if (event.key === 'ArrowRight' || (variant === 'radio' && event.key === 'ArrowDown')) {
+      nextIndex = (activeIndex + 1) % options.length
+    } else if (event.key === 'ArrowLeft' || (variant === 'radio' && event.key === 'ArrowUp')) {
+      nextIndex = (activeIndex - 1 + options.length) % options.length
+    } else if (event.key === 'Home') {
+      nextIndex = 0
+    } else if (event.key === 'End') {
+      nextIndex = options.length - 1
+    } else {
+      return
+    }
+    event.preventDefault()
+    onChange(options[nextIndex].value)
+    focusOption(nextIndex)
+  }
+
+  return (
+    <div
+      ref={rootRef}
+      className={className ? `segmented ${className}` : 'segmented'}
+      role={groupRole}
+      aria-label={ariaLabel}
+      style={{ '--seg-count': options.length, '--seg-index': activeIndex } as React.CSSProperties}
+      onKeyDown={handleKeyDown}
+    >
+      <span className="segmented-thumb" aria-hidden="true" />
+      {options.map((option, index) => {
+        const selected = option.value === value
+        return (
+          <button
+            key={option.value}
+            type="button"
+            role={itemRole}
+            className={selected ? 'segmented-option is-active' : 'segmented-option'}
+            aria-label={option.ariaLabel}
+            title={option.title}
+            aria-selected={variant === 'tabs' ? selected : undefined}
+            aria-checked={variant === 'radio' ? selected : undefined}
+            tabIndex={selected ? 0 : -1}
+            onClick={() => onChange(option.value)}
+          >
+            {option.label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+/** Shared inline rich-text editor backing every node's on-canvas caption —
+    one Tiptap instance, markdown in and out via tiptap-markdown. The mark/
+    node set is deliberately tiny (bold, italic, bullet list, link) to keep
+    markdown round-tripping low-risk. Only one instance is ever mounted at a
+    time (see editingNodeField), so its instantiation cost isn't a scaling
+    concern as board size grows. */
+function NodeRichEditor({
+  content,
+  placeholder,
+  onChange,
+  onBlur,
+  onEscape,
+  autoFocus,
+}: {
+  kind: GraphNodeKind
+  nodeId: string
+  content: string
+  placeholder?: string
+  onChange: (markdown: string) => void
+  onBlur: () => void
+  onEscape: () => void
+  autoFocus?: boolean
+}): React.ReactElement {
+  const onChangeRef = useRef(onChange)
+  onChangeRef.current = onChange
+  const onBlurRef = useRef(onBlur)
+  onBlurRef.current = onBlur
+  const onEscapeRef = useRef(onEscape)
+  onEscapeRef.current = onEscape
+
+  const editor = useEditor({
+    extensions: [
+      StarterKit.configure({
+        heading: false,
+        blockquote: false,
+        codeBlock: false,
+        horizontalRule: false,
+        strike: false,
+        code: false,
+        orderedList: false,
+        // The app's own zundo-backed history (createCanvasHistoryStore)
+        // owns undo/redo — a second stack here would fight the first.
+        undoRedo: false,
+        // StarterKit bundles its own Link extension in Tiptap v3; disable it
+        // so the explicit TiptapLink below doesn't register 'link' twice.
+        link: false,
+      }),
+      TiptapLink.configure({ openOnClick: false, autolink: true }),
+      TiptapPlaceholder.configure({ placeholder: placeholder ?? '' }),
+      Markdown.configure({ html: false, tightLists: true, bulletListMarker: '-', linkify: false }),
+    ],
+    content,
+    autofocus: autoFocus ? 'end' : false,
+    editorProps: {
+      attributes: { class: 'node-rich-editor-content' },
+      handleKeyDown: (_view, event) => {
+        if (event.key === 'Escape') {
+          event.preventDefault()
+          onEscapeRef.current()
+          return true
+        }
+        return false
+      },
+    },
+    onUpdate: ({ editor: instance }) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      onChangeRef.current((instance.storage as any).markdown.getMarkdown())
+    },
+    onBlur: () => onBlurRef.current(),
+  })
+
+  // Sync an externally-changed `content` prop into the editor, but only when
+  // it's not the source of the change (guards against clobbering in-progress
+  // typing if e.g. an undo/redo lands while this node is being edited).
+  useEffect(() => {
+    if (!editor || editor.isFocused) return
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const current = (editor.storage as any).markdown.getMarkdown()
+    if (current !== content) editor.commands.setContent(content, { emitUpdate: false })
+  }, [editor, content])
+
+  if (!editor) return <></>
+
+  return (
+    <>
+      {/* Always visible while this node is being edited — not gated on a text
+          selection like Tiptap's default BubbleMenu — so formatting is
+          discoverable the moment editing starts, not just after a select.
+          Anchored to the editor's own box (not the canvas), sitting above it
+          with a gap so it never covers the node it's editing. */}
+      <div className="node-rich-editor-toolbar">
+        <button
+          type="button"
+          className={editor.isActive('bold') ? 'is-active' : ''}
+          aria-label="Bold"
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => editor.chain().focus().toggleBold().run()}
+        >
+          <TextB size={13} weight="bold" />
+        </button>
+        <button
+          type="button"
+          className={editor.isActive('italic') ? 'is-active' : ''}
+          aria-label="Italic"
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => editor.chain().focus().toggleItalic().run()}
+        >
+          <TextItalic size={13} />
+        </button>
+        <button
+          type="button"
+          className={editor.isActive('bulletList') ? 'is-active' : ''}
+          aria-label="Bullet list"
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => editor.chain().focus().toggleBulletList().run()}
+        >
+          <ListBullets size={13} />
+        </button>
+        <span className="node-rich-editor-toolbar-divider" />
+        <button
+          type="button"
+          className={editor.isActive('link') ? 'is-active' : ''}
+          aria-label="Link"
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => {
+            if (editor.isActive('link')) {
+              editor.chain().focus().unsetLink().run()
+              return
+            }
+            const url = window.prompt('Link URL')
+            if (url) editor.chain().focus().setLink({ href: url }).run()
+          }}
+        >
+          <LinkSimple size={13} />
+        </button>
+      </div>
+      <EditorContent editor={editor} className="node-rich-editor" />
+    </>
+  )
+}
+
 const baseStorageKey = 'kira.project.v2'
 // The default tab keeps the legacy unscoped key so existing browser-mode users'
 // saved content still loads after this upgrade. Tabs opened via New/Open always
@@ -690,9 +1007,19 @@ const inspectorLinkedListLimit = 8
 const outlineReferenceLimit = 6
 const libraryOverscan = 5
 const duplicateCandidateThreshold = 8
+// The rendered row box (.image-row's border-box min-height in styles.css) is
+// 86px compact / 102px relaxed. The virtualized list positions rows every
+// libraryRowHeights[density]px via `transform: translateY(...)`, so the
+// difference below is a deliberate gutter between rows, not slack to trim —
+// keep the two in sync if either the CSS min-height or this gutter changes.
+const libraryRowGutter = 6
+const libraryRowBoxHeights: Record<LibraryDensity, number> = {
+  compact: 86,
+  relaxed: 102,
+}
 const libraryRowHeights: Record<LibraryDensity, number> = {
-  compact: 92,
-  relaxed: 108,
+  compact: libraryRowBoxHeights.compact + libraryRowGutter,
+  relaxed: libraryRowBoxHeights.relaxed + libraryRowGutter,
 }
 const libraryGridItemHeight = 184
 
@@ -796,7 +1123,7 @@ const ideasSeed: Idea[] = [
   {
     id: 'idea-ritual-tools',
     title: 'Ritual tools as quiet interfaces',
-    body: 'Objects that invite attention through restraint, texture, and repeated handling.',
+    content: 'Objects that invite attention through restraint, texture, and repeated handling.',
     status: 'strong',
     x: 45,
     y: 33,
@@ -804,7 +1131,7 @@ const ideasSeed: Idea[] = [
   {
     id: 'idea-atmospheric-index',
     title: 'Atmospheric index of memory',
-    body: 'A system where visual fragments behave like evidence around a half-formed thesis.',
+    content: 'A system where visual fragments behave like evidence around a half-formed thesis.',
     status: 'forming',
     x: 67,
     y: 56,
@@ -812,7 +1139,7 @@ const ideasSeed: Idea[] = [
   {
     id: 'idea-material-grammar',
     title: 'Material grammar before style',
-    body: 'The material signal should carry more meaning than decorative composition.',
+    content: 'The material signal should carry more meaning than decorative composition.',
     status: 'thin',
     x: 39,
     y: 70,
@@ -823,6 +1150,7 @@ const imagesSeed: EvidenceImage[] = [
   {
     id: 'img-01',
     title: 'brushed altar object',
+    content: 'brushed altar object',
     source: 'archive.design',
     palette: ['#b8a17f', '#242425', '#6e7768'],
     tags: ['warm metal', 'ritual', 'close crop'],
@@ -835,6 +1163,7 @@ const imagesSeed: EvidenceImage[] = [
   {
     id: 'img-02',
     title: 'soft shadow shelves',
+    content: 'soft shadow shelves',
     source: 'museum.ref',
     palette: ['#c5bbb0', '#383734', '#7a8476'],
     tags: ['soft shadow', 'archive', 'sage'],
@@ -847,6 +1176,7 @@ const imagesSeed: EvidenceImage[] = [
   {
     id: 'img-03',
     title: 'paper field study',
+    content: 'paper field study',
     source: 'fieldnotes.io',
     palette: ['#d7ccb7', '#54514b', '#b17a50'],
     tags: ['paper', 'annotation', 'taxonomy'],
@@ -859,6 +1189,7 @@ const imagesSeed: EvidenceImage[] = [
   {
     id: 'img-04',
     title: 'stone threshold',
+    content: 'stone threshold',
     source: 'architecture.today',
     palette: ['#a7a29a', '#26292b', '#59656a'],
     tags: ['threshold', 'stone', 'monument'],
@@ -871,6 +1202,7 @@ const imagesSeed: EvidenceImage[] = [
   {
     id: 'img-05',
     title: 'instrument detail',
+    content: 'instrument detail',
     source: 'industrial.design',
     palette: ['#c7aa78', '#111214', '#5d6462'],
     tags: ['instrument', 'precision', 'amber'],
@@ -883,6 +1215,7 @@ const imagesSeed: EvidenceImage[] = [
   {
     id: 'img-06',
     title: 'blue archival wall',
+    content: 'blue archival wall',
     source: 'gallery.systems',
     palette: ['#7994a4', '#202833', '#c3c9c7'],
     tags: ['cool wall', 'archive', 'sequence'],
@@ -1535,6 +1868,7 @@ function FileWorkspace({
   onTransfersConsumed: () => void
 }) {
   const initialProject = useMemo(() => initialSnapshot ?? readProjectSnapshot(), [initialSnapshot])
+  const lang = useLangStore((state) => state.lang)
   const [canvasHistoryStore] = useState(createCanvasHistoryStore)
   // Browser-mode (non-Tauri) fallback storage is namespaced per tab so a second
   // open file can't overwrite the first's autosave under the same key.
@@ -1597,6 +1931,7 @@ function FileWorkspace({
   const [settingsFocusNonce, setSettingsFocusNonce] = useState(0)
   const [isOnboardingOpen, setIsOnboardingOpen] = useState(() => !readOnboardingCompleted())
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
+  const [isProjectSettingsOpen, setIsProjectSettingsOpen] = useState(false)
   const [extensionInstallStatus, setExtensionInstallStatus] = useState<ExtensionInstallStatus>(() => defaultExtensionInstallStatus())
   const [modelRunningImageId, setModelRunningImageId] = useState<string | null>(null)
   const [modelStatusByImageId, setModelStatusByImageId] = useState<Record<string, string>>({})
@@ -1604,16 +1939,14 @@ function FileWorkspace({
   const [ideaTitleFocusId, setIdeaTitleFocusId] = useState<string | null>(null)
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null)
   const [isLibraryCollapsed, setIsLibraryCollapsed] = useState(false)
-  const [isInspectorCollapsed, setIsInspectorCollapsed] = useState(false)
   const libraryPanelMountState = usePanelMountState(!isLibraryCollapsed, 200)
-  const inspectorPanelMountState = usePanelMountState(!isInspectorCollapsed, 200)
   const [isVersionHistoryOpen, setIsVersionHistoryOpen] = useState(false)
 
-  useEffect(() => {
-    if (selection.type !== 'project') setIsInspectorCollapsed(false)
-  }, [selection])
-  // Rendered at this top level (not inside Inspector) so the overlay escapes
-  // FloatingPanel's own positioning context when Inspector is undocked.
+  useDismissableLayer(
+    isProjectSettingsOpen,
+    '.project-settings-popover, .top-inspector-button',
+    () => setIsProjectSettingsOpen(false),
+  )
   const [cropTargetImageId, setCropTargetImageId] = useState<string | null>(null)
   const [glassStatus, setGlassStatus] = useState<GlassStatus>(() => (isTauriRuntime() ? 'fallback' : 'browser'))
   const pendingCanvasHistoryCommitRef = useRef(false)
@@ -2040,7 +2373,9 @@ function FileWorkspace({
       renameFirstIdea(title: string) {
         const firstIdea = ideas[0]
         if (!firstIdea) return null
-        updateIdea(firstIdea.id, { title })
+        // Title is derived from content's first line — dev/test helper sets
+        // content directly so the derived title matches what's requested.
+        updateIdea(firstIdea.id, { content: title })
         return { id: firstIdea.id, title }
       },
       ideaTitle(ideaId: string) {
@@ -2439,7 +2774,7 @@ function FileWorkspace({
     const idea: Idea = {
       id: `idea-capture-${Date.now()}`,
       title,
-      body: 'Created from browser capture.',
+      content: 'Created from browser capture.',
       status: 'thin',
       x: clamp(reference.x - 14, 8, 92),
       y: clamp(reference.y, 8, 92),
@@ -3033,22 +3368,26 @@ function FileWorkspace({
     }
   }
 
-  function updateIdea(ideaId: string, patch: Partial<Pick<Idea, 'title' | 'body' | 'sourceUrl' | 'notes'>>) {
+  function updateIdea(ideaId: string, patch: Partial<Pick<Idea, 'content' | 'sourceUrl' | 'notes'>>) {
+    // `title` is no longer settable directly — it's derived from `content`'s
+    // first line (deriveTitleFromContent) whenever content changes.
+    const derived = patch.content !== undefined ? { title: deriveTitleFromContent(patch.content) } : {}
     const before = ideas.find((idea) => idea.id === ideaId)
     if (before) {
-      const after = { ...before, ...patch, updatedAt: nowIso() }
-      recordNodeVersion('idea', before, after, patch.title !== undefined ? 'label_changed' : 'user_edit')
+      const after = { ...before, ...patch, ...derived, updatedAt: nowIso() }
+      recordNodeVersion('idea', before, after, 'user_edit')
     }
-    setIdeas((current) => current.map((idea) => (idea.id === ideaId ? { ...idea, ...patch, updatedAt: nowIso() } : idea)))
+    setIdeas((current) => current.map((idea) => (idea.id === ideaId ? { ...idea, ...patch, ...derived, updatedAt: nowIso() } : idea)))
   }
 
-  function updateImage(imageId: string, patch: Partial<Pick<EvidenceImage, 'title' | 'sourceUrl' | 'notes'>>) {
+  function updateImage(imageId: string, patch: Partial<Pick<EvidenceImage, 'content' | 'sourceUrl' | 'notes'>>) {
+    const derived = patch.content !== undefined ? { title: deriveTitleFromContent(patch.content) } : {}
     const before = images.find((image) => image.id === imageId)
     if (before) {
-      const after = { ...before, ...patch, updatedAt: nowIso() }
-      recordNodeVersion('image', before, after, patch.title !== undefined ? 'label_changed' : 'user_edit')
+      const after = { ...before, ...patch, ...derived, updatedAt: nowIso() }
+      recordNodeVersion('image', before, after, patch.content !== undefined ? 'label_changed' : 'user_edit')
     }
-    setImages((current) => current.map((image) => (image.id === imageId ? { ...image, ...patch, updatedAt: nowIso() } : image)))
+    setImages((current) => current.map((image) => (image.id === imageId ? { ...image, ...patch, ...derived, updatedAt: nowIso() } : image)))
   }
 
   // Non-destructive: only ever touches this rectangle, never the file backing
@@ -3081,31 +3420,45 @@ function FileWorkspace({
     )
   }
 
-  function updatePalette(paletteId: string, patch: Partial<Pick<PaletteNode, 'title' | 'sourceUrl' | 'notes'>>) {
+  function updatePalette(paletteId: string, patch: Partial<Pick<PaletteNode, 'content' | 'sourceUrl' | 'notes'>>) {
+    const derived = patch.content !== undefined ? { title: deriveTitleFromContent(patch.content) } : {}
     const before = palettes.find((palette) => palette.id === paletteId)
     if (before) {
-      const after = { ...before, ...patch, updatedAt: nowIso() }
-      recordNodeVersion('palette', before, after, patch.title !== undefined ? 'label_changed' : 'user_edit')
+      const after = { ...before, ...patch, ...derived, updatedAt: nowIso() }
+      recordNodeVersion('palette', before, after, patch.content !== undefined ? 'label_changed' : 'user_edit')
     }
-    setPalettes((current) => current.map((palette) => (palette.id === paletteId ? { ...palette, ...patch, updatedAt: nowIso() } : palette)))
+    setPalettes((current) => current.map((palette) => (palette.id === paletteId ? { ...palette, ...patch, ...derived, updatedAt: nowIso() } : palette)))
   }
 
-  function updateDiagram(diagramId: string, patch: Partial<Pick<DiagramNode, 'title' | 'sourceUrl' | 'notes' | 'source'>>) {
+  function updateDiagram(diagramId: string, patch: Partial<Pick<DiagramNode, 'content' | 'sourceUrl' | 'notes' | 'source'>>) {
+    const derived = patch.content !== undefined ? { title: deriveTitleFromContent(patch.content) } : {}
     const before = diagrams.find((diagram) => diagram.id === diagramId)
     if (before) {
-      const after = { ...before, ...patch, updatedAt: nowIso() }
-      recordNodeVersion('diagram', before, after, patch.title !== undefined ? 'label_changed' : 'user_edit')
+      const after = { ...before, ...patch, ...derived, updatedAt: nowIso() }
+      recordNodeVersion('diagram', before, after, patch.content !== undefined ? 'label_changed' : 'user_edit')
     }
-    setDiagrams((current) => current.map((diagram) => (diagram.id === diagramId ? { ...diagram, ...patch, updatedAt: nowIso() } : diagram)))
+    setDiagrams((current) => current.map((diagram) => (diagram.id === diagramId ? { ...diagram, ...patch, ...derived, updatedAt: nowIso() } : diagram)))
   }
 
-  function updatePlaceholder(placeholderId: string, patch: Partial<Pick<PlaceholderNode, 'title' | 'sourceUrl' | 'notes'>>) {
+  function updatePlaceholder(placeholderId: string, patch: Partial<Pick<PlaceholderNode, 'content' | 'sourceUrl' | 'notes'>>) {
+    const derived = patch.content !== undefined ? { title: deriveTitleFromContent(patch.content) } : {}
     const before = placeholders.find((placeholder) => placeholder.id === placeholderId)
     if (before) {
-      const after = { ...before, ...patch, updatedAt: nowIso() }
-      recordNodeVersion('placeholder', before, after, patch.title !== undefined ? 'label_changed' : 'user_edit')
+      const after = { ...before, ...patch, ...derived, updatedAt: nowIso() }
+      recordNodeVersion('placeholder', before, after, patch.content !== undefined ? 'label_changed' : 'user_edit')
     }
-    setPlaceholders((current) => current.map((placeholder) => (placeholder.id === placeholderId ? { ...placeholder, ...patch, updatedAt: nowIso() } : placeholder)))
+    setPlaceholders((current) => current.map((placeholder) => (placeholder.id === placeholderId ? { ...placeholder, ...patch, ...derived, updatedAt: nowIso() } : placeholder)))
+  }
+
+  // A visibility flag, not a version-worthy content edit — toggling it never
+  // touches recordNodeVersion, and it's read straight out of collectKiraContext
+  // (see the `!node.aiExcluded` filters there) rather than plumbed separately.
+  function toggleNodeAiExcluded(kind: GraphNodeKind, id: string) {
+    if (kind === 'idea') setIdeas((current) => current.map((node) => (node.id === id ? { ...node, aiExcluded: !node.aiExcluded } : node)))
+    else if (kind === 'image') setImages((current) => current.map((node) => (node.id === id ? { ...node, aiExcluded: !node.aiExcluded } : node)))
+    else if (kind === 'palette') setPalettes((current) => current.map((node) => (node.id === id ? { ...node, aiExcluded: !node.aiExcluded } : node)))
+    else if (kind === 'diagram') setDiagrams((current) => current.map((node) => (node.id === id ? { ...node, aiExcluded: !node.aiExcluded } : node)))
+    else setPlaceholders((current) => current.map((node) => (node.id === id ? { ...node, aiExcluded: !node.aiExcluded } : node)))
   }
 
   function moveGraphNode(kind: GraphNodeKind, id: string, position: Pick<Idea, 'x' | 'y'>) {
@@ -3685,7 +4038,7 @@ function FileWorkspace({
     const idea: Idea = {
       id: `idea-${Date.now()}`,
       title: 'Untitled idea',
-      body: 'Add a working note for this idea.',
+      content: 'Untitled idea',
       status: 'thin',
       x: 58,
       y: 42,
@@ -3706,6 +4059,7 @@ function FileWorkspace({
     const placeholder: PlaceholderNode = {
       id: `placeholder-${Date.now()}`,
       title: 'Image placeholder',
+      content: 'Image placeholder',
       targetKind: 'image',
       x: 62,
       y: 38,
@@ -3750,7 +4104,7 @@ function FileWorkspace({
     const sticker: Idea = {
       id: `sticker-${Date.now()}`,
       title: 'Quick note',
-      body: 'Double-click to write',
+      content: 'Quick note',
       status: 'forming',
       variant: 'sticker',
       x: 54,
@@ -3792,6 +4146,7 @@ function FileWorkspace({
     const palette: PaletteNode = {
       id: `palette-${Date.now()}`,
       title: sourceImage ? `${sourceImage.title} palette` : 'Palette',
+      content: sourceImage ? `${sourceImage.title} palette` : 'Palette',
       colors: sourceImage?.palette?.length ? sourceImage.palette.slice(0, 7) : generatePaletteHarmony(base, 'analogous').slice(0, 7),
       algorithm: sourceImage ? 'image_extract' : 'analogous',
       sourceImageId: sourceImage?.id,
@@ -3840,7 +4195,7 @@ function FileWorkspace({
       const idea: Idea = {
         id: `idea-${Date.now()}`,
         title: 'Linked idea',
-        body: `Derived from ${sourceNode.title}.`,
+        content: `Derived from ${sourceNode.title}.`,
         status: 'thin',
         ...position,
         importance: 1,
@@ -3859,6 +4214,7 @@ function FileWorkspace({
       const placeholder: PlaceholderNode = {
         id: `placeholder-${Date.now()}`,
         title: 'Linked image placeholder',
+        content: 'Linked image placeholder',
         targetKind: 'image',
         ...position,
         importance: 1,
@@ -3878,6 +4234,7 @@ function FileWorkspace({
       const palette: PaletteNode = {
         id: `palette-${Date.now()}`,
         title: sourceImage ? `${sourceImage.title} palette` : 'Linked palette',
+        content: sourceImage ? `${sourceImage.title} palette` : 'Linked palette',
         colors: sourceImage?.palette?.length ? sourceImage.palette.slice(0, 7) : generatePaletteHarmony(base, 'analogous').slice(0, 7),
         algorithm: sourceImage ? 'image_extract' : 'analogous',
         sourceImageId: sourceImage?.id,
@@ -3897,6 +4254,7 @@ function FileWorkspace({
     const diagram: DiagramNode = {
       id: `diagram-${Date.now()}`,
       title: 'Linked diagram',
+      content: 'Linked diagram',
       format: 'mermaid',
       source: `flowchart TD\n  A[${sourceNode.title.replace(/[\[\]]/g, '')}]\n  B[New idea]\n  A --> B`,
       nodeIds: [],
@@ -3931,7 +4289,7 @@ function FileWorkspace({
     const provider = routedProvider && request.modelOverride
       ? { ...routedProvider, model: request.modelOverride }
       : routedProvider
-    const baseNodeLines = baseNodes.map((node) => `- ${graphNodeKindLabel(node.kind)}: ${node.title}`)
+    const baseNodeLines = baseNodes.map((node) => formatKiraContextLine(node))
     const generationPrompt = [
       'You are Kira, a creative workspace assistant. Generate concise, useful content for a new canvas node.',
       `Action: ${aiNodeActionLabels[request.action]}`,
@@ -3982,8 +4340,8 @@ function FileWorkspace({
     const anchor = sourceNode ?? baseNodes[0] ?? { x: 50, y: 50 }
     const idea: Idea = {
       id: `idea-ai-${Date.now()}`,
-      title: `${aiNodeActionLabels[request.action]}: ${sourceNode ? sourceNode.title : 'Whole board'}`.slice(0, 82),
-      body,
+      title: `${aiNodeActionLabels[request.action]}: ${sourceNode ? sourceNode.title : t('kira.scopeFullBoard', lang)}`.slice(0, 82),
+      content: body,
       status: 'forming',
       x: clamp(anchor.x + 14, 8, 92),
       y: clamp(anchor.y + 12, 8, 92),
@@ -4156,7 +4514,7 @@ function FileWorkspace({
     const importedIdeas: Idea[] = parsed.nodes.map((node, index) => ({
       id: `idea-${diagramId}-${node.id}`,
       title: node.label,
-      body: `Imported from Mermaid diagram "${parsed.title}".`,
+      content: `Imported from Mermaid diagram "${parsed.title}".`,
       status: 'forming',
       x: clamp(28 + (index % 4) * 14, 10, 90),
       y: clamp(28 + Math.floor(index / 4) * 14, 10, 90),
@@ -4168,6 +4526,7 @@ function FileWorkspace({
     const diagram: DiagramNode = {
       id: diagramId,
       title: parsed.title,
+      content: parsed.title,
       format: 'mermaid',
       source,
       nodeIds: importedIdeas.map((idea) => idea.id),
@@ -4327,13 +4686,6 @@ function FileWorkspace({
     else if (selection.type === 'placeholder') requestPlaceholderDelete(selection.id)
     else if (selection.type === 'link') requestLinkDelete(selection.id)
     else if (selection.type === 'frame') requestFrameDelete(selection.id)
-  }
-
-  function beginCreateLinkFromNode(source: Pick<GraphNodeRef, 'kind' | 'id'>) {
-    setActiveView('Canvas')
-    setActiveCanvasTool('link')
-    setPendingLinkSource(source)
-    setSelection({ type: source.kind, id: source.id } as Selection)
   }
 
   function duplicateCurrentSelection() {
@@ -4632,36 +4984,6 @@ function FileWorkspace({
     setSelectedReferenceIds(new Set())
   }
 
-  function linkSelectedReferencesToIdea(ideaId: string) {
-    const imageIds = [...selectedReferenceIds]
-    if (imageIds.length === 0) return
-
-    const existingKeys = new Set(links.map((link) => `${link.imageId}:${link.ideaId}`))
-    const created = imageIds
-      .filter((imageId) => !existingKeys.has(`${imageId}:${ideaId}`))
-      .map((imageId, index) => ({
-        id: `link-${Date.now()}-${index}`,
-        imageId,
-        ideaId,
-        relation: linkCreationRelation,
-        note: 'Linked from Library selection.',
-        confidence: 0.56,
-      }))
-    const existing = links.find((link) => imageIds.includes(link.imageId) && link.ideaId === ideaId)
-    const targetLink = created.at(-1) ?? existing
-
-    if (created.length > 0) {
-      setLinks((current) => {
-        const currentKeys = new Set(current.map((link) => `${link.imageId}:${link.ideaId}`))
-        return [...current, ...created.filter((link) => !currentKeys.has(`${link.imageId}:${link.ideaId}`))]
-      })
-    }
-    if (targetLink) {
-      setSelection({ type: 'link', id: targetLink.id })
-    }
-    setSelectedReferenceIds(new Set())
-  }
-
   function snapshotForVersionArchive(label = 'Version') {
     return {
       ...projectSnapshot,
@@ -4888,9 +5210,8 @@ function FileWorkspace({
   // whichever overlay panels are currently open, since the canvas container itself is now always
   // full-window and no longer shrinks to make room for them.
   const canvasLeftInset = 80 + (isLibraryCollapsed ? 0 : libraryDrawerWidth)
-  const canvasRightInset = isInspectorCollapsed ? 0 : 336
   const canvasOverlayLeftInset = isLibraryCollapsed ? 0 : libraryDrawerWidth
-  const canvasOverlayShift = (canvasOverlayLeftInset - canvasRightInset) / 2
+  const canvasOverlayShift = canvasOverlayLeftInset / 2
 
   // Every hook above has already run, so bailing out here costs nothing but
   // still unmounts the heavy tree below (GraphCanvas, the WebGL 3D view,
@@ -4906,17 +5227,24 @@ function FileWorkspace({
         style={{
           '--library-drawer-width': `${libraryDrawerWidth}px`,
           '--canvas-left-inset': `${canvasLeftInset}px`,
-          '--canvas-right-inset': `${canvasRightInset}px`,
           '--canvas-overlay-left-inset': `${canvasOverlayLeftInset}px`,
           '--canvas-overlay-shift': `${canvasOverlayShift}px`,
         } as React.CSSProperties}
       >
         <TopBar
           activeView={activeView}
-          isInspectorCollapsed={isInspectorCollapsed}
+          isProjectSettingsOpen={isProjectSettingsOpen}
           setActiveView={setActiveView}
-          onToggleInspector={() => setIsInspectorCollapsed((current) => !current)}
+          onToggleProjectSettings={() => setIsProjectSettingsOpen((current) => !current)}
         />
+        {isProjectSettingsOpen && (
+          <ProjectSettingsPopover
+            project={projectMetadata}
+            appearance={projectAppearance}
+            onProjectMetadataChange={updateProjectMetadata}
+            onProjectAppearanceChange={updateProjectAppearance}
+          />
+        )}
         <SystemSidebar
           canRedo={canRedoCanvas}
           canUndo={canUndoCanvas}
@@ -5077,10 +5405,43 @@ function FileWorkspace({
                 onFrameMove={moveFrame}
                 onFrameResize={resizeFrame}
                 onFrameRename={(id, title) => updateFrame(id, { title })}
+                onFrameDescriptionChange={(id, description) => updateFrame(id, { description })}
                 onFrameDelete={requestFrameDelete}
                 onImportMermaid={importMermaidDiagram}
                 onLinkCreationRelationChange={setLinkCreationRelation}
+                nodeVersions={nodeVersions}
+                onNodeVersionRestore={restoreNodeVersion}
+                onToggleAiExcluded={toggleNodeAiExcluded}
+                onRebuildOutline={rebuildOutlineDraft}
                 onIdeaInlineChange={updateIdea}
+                onImageInlineChange={updateImage}
+                onPaletteInlineChange={updatePalette}
+                onDiagramInlineChange={updateDiagram}
+                onPlaceholderInlineChange={updatePlaceholder}
+                onReferenceFindSimilar={findSimilarReferences}
+                onReferenceCrop={setCropTargetImageId}
+                onReferenceConvertToPalette={(imageId) => createPaletteNode(images.find((image) => image.id === imageId))}
+                onReferenceReplace={replaceReferenceFromFiles}
+                onPlaceholderAttach={attachPlaceholderImageFromFiles}
+                onAcceptSuggestion={acceptSuggestion}
+                onRejectSuggestion={rejectSuggestion}
+                onReferenceTagAdd={addReferenceTag}
+                onReferenceTagRemove={removeReferenceTag}
+                onReferenceOcr={runReferenceOcr}
+                onReferenceTagRefine={refineReferenceTags}
+                onPaletteColorChange={updatePaletteColor}
+                onPaletteColorAdd={addPaletteColor}
+                onPaletteColorRemove={removePaletteColor}
+                onPaletteRegenerate={regeneratePalette}
+                localModelAvailable={localModelAvailable}
+                modelRunningImageId={modelRunningImageId}
+                modelStatusByImageId={modelStatusByImageId}
+                ocrRunningImageId={ocrRunningImageId}
+                ocrStatusByImageId={ocrStatusByImageId}
+                onRelationChange={updateRelation}
+                onLinkChange={updateLink}
+                onLinkSwap={swapLinkDirection}
+                onLinkDelete={requestLinkDelete}
                 onDroppedReference={handleDroppedReference}
                 onNotice={setLibraryStatus}
                 onNodeMove={moveGraphNode}
@@ -5097,71 +5458,6 @@ function FileWorkspace({
             )}
           </div>
         </section>
-        {inspectorPanelMountState.mounted && <Inspector
-            isCollapsed={!inspectorPanelMountState.entered}
-            selected={selected}
-            images={images}
-            ideas={ideas}
-            palettes={palettes}
-            diagrams={diagrams}
-            placeholders={placeholders}
-            links={links}
-            nodeVersions={nodeVersions}
-            onSelect={setSelection}
-            onAcceptSuggestion={acceptSuggestion}
-            onRejectSuggestion={rejectSuggestion}
-            onRelationChange={updateRelation}
-            onIdeaChange={updateIdea}
-            onImageChange={updateImage}
-            onLinkChange={updateLink}
-            onLinkSwap={swapLinkDirection}
-            onPaletteChange={updatePalette}
-            onDiagramChange={updateDiagram}
-            onPlaceholderChange={updatePlaceholder}
-            onProjectMetadataChange={updateProjectMetadata}
-            onProjectAppearanceChange={updateProjectAppearance}
-            onPaletteColorChange={updatePaletteColor}
-            onPaletteColorAdd={addPaletteColor}
-            onPaletteColorRemove={removePaletteColor}
-            onPaletteRegenerate={regeneratePalette}
-            onReferenceTagAdd={addReferenceTag}
-            onReferenceTagRemove={removeReferenceTag}
-            onIdeaDelete={requestIdeaDelete}
-            onReferenceFindSimilar={findSimilarReferences}
-            onReferenceCrop={setCropTargetImageId}
-            onReferenceConvertToPalette={(imageId) => createPaletteNode(images.find((image) => image.id === imageId))}
-            onImageDelete={requestImageDelete}
-            onPaletteDelete={requestPaletteDelete}
-            onDiagramDelete={requestDiagramDelete}
-            onPlaceholderDelete={requestPlaceholderDelete}
-            onLinkSelectedReferences={linkSelectedReferencesToIdea}
-            onLinkDelete={requestLinkDelete}
-            onFrameRename={(id, title) => updateFrame(id, { title })}
-            onFrameDescriptionChange={(id, description) => updateFrame(id, { description })}
-            onFrameDelete={requestFrameDelete}
-            onNodeVersionRestore={restoreNodeVersion}
-            onBeginLinkFromNode={beginCreateLinkFromNode}
-            onDuplicateSelection={duplicateCurrentSelection}
-            onOpenOutline={() => setActiveView('Outline')}
-            onRebuildOutline={rebuildOutlineDraft}
-            onReferenceOcr={runReferenceOcr}
-            onReferenceTagRefine={refineReferenceTags}
-            onReferenceReplace={replaceReferenceFromFiles}
-            onReferenceReplaceFromImage={replaceReferenceFromExistingImage}
-            onDroppedReference={handleDroppedReference}
-            onPlaceholderAttach={attachPlaceholderImageFromFiles}
-            linkCreationRelation={linkCreationRelation}
-            onLinkCreationRelationChange={setLinkCreationRelation}
-            localModelAvailable={localModelAvailable}
-            modelRunningImageId={modelRunningImageId}
-            modelStatusByImageId={modelStatusByImageId}
-            ocrRunningImageId={ocrRunningImageId}
-            ocrStatusByImageId={ocrStatusByImageId}
-            ideaTitleFocusId={ideaTitleFocusId}
-            onIdeaTitleFocused={() => setIdeaTitleFocusId(null)}
-            selectedReferenceCount={selectedReferenceIds.size}
-            onToggleCollapsed={() => setIsInspectorCollapsed((current) => !current)}
-          />}
       </section>
       <ConfirmDeleteDialog
         pendingDelete={pendingDelete}
@@ -5741,22 +6037,130 @@ function SystemSidebar({
   )
 }
 
+// Anchored under the top bar's own trigger button rather than any node — this
+// is the one settings surface with no canvas card to attach a popover to.
+function ProjectSettingsPopover({
+  project,
+  appearance,
+  onProjectMetadataChange,
+  onProjectAppearanceChange,
+}: {
+  project: ProjectMetadata
+  appearance: ProjectAppearance
+  onProjectMetadataChange: (patch: Partial<ProjectMetadata>) => void
+  onProjectAppearanceChange: (patch: Partial<ProjectAppearance>) => void
+}) {
+  const [isProjectColorOpen, setIsProjectColorOpen] = useState(false)
+  return (
+    <div className="project-settings-popover" onPointerDown={(event) => event.stopPropagation()} onContextMenu={(event) => event.preventDefault()}>
+      <section className="inspector-card project-file-card">
+        <label className="field-label" htmlFor="project-title"><T k="inspector.name" /></label>
+        <input
+          id="project-title"
+          className="title-input"
+          value={project.title}
+          onChange={(event) => onProjectMetadataChange({ title: event.target.value })}
+        />
+        <label className="field-label" htmlFor="project-description"><T k="inspector.description" /></label>
+        <textarea
+          id="project-description"
+          className="note-input"
+          value={project.description}
+          onChange={(event) => onProjectMetadataChange({ description: event.target.value })}
+        />
+        <label className="field-label" htmlFor="project-author"><T k="inspector.author" /></label>
+        <input
+          id="project-author"
+          className="title-input"
+          value={project.author}
+          onChange={(event) => onProjectMetadataChange({ author: event.target.value })}
+        />
+        <label className="field-label" htmlFor="project-kind"><T k="inspector.kind" /></label>
+        <select
+          id="project-kind"
+          className="title-input"
+          value={project.kind}
+          onChange={(event) => onProjectMetadataChange({ kind: event.target.value as ProjectKind })}
+        >
+          <option value="moodboard">Moodboard</option>
+          <option value="ideaboard">Ideaboard</option>
+        </select>
+        <label className="field-label" htmlFor="project-style-note"><T k="inspector.styleNote" /></label>
+        <textarea
+          id="project-style-note"
+          className="note-input"
+          value={project.styleNote}
+          onChange={(event) => onProjectMetadataChange({ styleNote: event.target.value })}
+        />
+      </section>
+
+      <section className="inspector-card project-file-card">
+        <div className="section-heading">
+          <Palette size={14} />
+          Color Scheme
+        </div>
+        <ProjectColorSummary
+          appearance={appearance}
+          isOpen={isProjectColorOpen}
+          onToggle={() => setIsProjectColorOpen((current) => !current)}
+        />
+        <div className={isProjectColorOpen ? 'project-color-editor is-open' : 'project-color-editor'}>
+          <div className="project-color-editor-content">
+            <div className="accent-color-recommendations" aria-label="Accent colors">
+              {projectAccentPresets.filter((preset) => preset.id !== 'custom').map((preset) => (
+                <button
+                  key={preset.id}
+                  type="button"
+                  className={appearance.accentPreset === preset.id ? 'is-active' : ''}
+                  onClick={() => onProjectAppearanceChange({ accentPreset: preset.id })}
+                >
+                  <i style={{ background: preset.color }} />
+                  <span>{preset.label}</span>
+                </button>
+              ))}
+            </div>
+            <HexColorPicker
+              color={appearance.accentColor}
+              onChange={(color) => onProjectAppearanceChange({ accentColor: color })}
+            />
+            <div className="color-inline-row">
+              <input
+                id="project-accent-color"
+                aria-label="Custom accent color"
+                type="color"
+                value={normalizeHexInput(appearance.accentColor)}
+                onChange={(event) => onProjectAppearanceChange({ accentColor: event.target.value })}
+              />
+              <code>Accent {normalizeHexInput(appearance.accentColor).toUpperCase()}</code>
+            </div>
+            <div className="generated-color-row">
+              <span>Generated canvas</span>
+              <code>{normalizeHexInput(appearance.canvasColor).toUpperCase()}</code>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  )
+}
+
 function TopBar({
   activeView,
-  isInspectorCollapsed,
+  isProjectSettingsOpen,
   setActiveView,
-  onToggleInspector,
+  onToggleProjectSettings,
 }: {
   activeView: ActiveView
-  isInspectorCollapsed: boolean
+  isProjectSettingsOpen: boolean
   setActiveView: (view: ActiveView) => void
-  onToggleInspector: () => void
+  onToggleProjectSettings: () => void
 }) {
-  const views: { label: ActiveView; icon: typeof Network }[] = [
-    { label: 'Canvas', icon: Network },
-    { label: '3D', icon: Box },
-    { label: 'Slides', icon: FileText },
-    { label: 'Outline', icon: ListTree },
+  const lang = useLangStore((state) => state.lang)
+  const views: { label: ActiveView; key: string; icon: typeof Network }[] = [
+    { label: 'Canvas', key: 'view.canvas', icon: Network },
+    { label: '3D', key: 'view.3d', icon: Box },
+    { label: 'Slides', key: 'view.slides', icon: FileText },
+    { label: 'Outline', key: 'view.outline', icon: ListTree },
   ]
 
   return (
@@ -5766,30 +6170,38 @@ function TopBar({
       onDoubleClick={toggleWindowMaximizeFromChrome}
       onPointerDown={startWindowDrag}
     >
-      <nav className="view-switch content-view-switch" aria-label="View">
-        {views.map(({ label, icon: Icon }) => (
-          <button
-            key={label}
-            className={activeView === label ? 'view-tab is-active' : 'view-tab'}
-            type="button"
-            aria-pressed={activeView === label}
-            title={label}
-            onClick={() => setActiveView(label)}
-          >
-            <Icon size={14} />
-            <span>{label}</span>
-          </button>
-        ))}
-      </nav>
+      {/* variant="radio", not "tabs": the four views fully unmount when
+          inactive (they're swapped by a ternary in .view-region, not kept in
+          the DOM with `hidden`), so there's no persistent panel to pair via
+          role="tabpanel"/aria-controls the way real ARIA tabs assume. This
+          is an exclusive-choice picker, which radiogroup/radio describes
+          honestly without a panel relationship it can't back up. */}
+      <Segmented
+        className="content-view-switch"
+        ariaLabel="View"
+        variant="radio"
+        value={activeView}
+        onChange={setActiveView}
+        options={views.map(({ label, key, icon: Icon }) => ({
+          value: label,
+          ariaLabel: t(key, lang),
+          label: (
+            <>
+              <Icon size={14} />
+              <span>{t(key, lang)}</span>
+            </>
+          ),
+        }))}
+      />
 
       <div className="content-toolbar-actions">
         <button
-          className={isInspectorCollapsed ? 'icon-button top-inspector-button' : 'icon-button top-inspector-button is-active'}
+          className={isProjectSettingsOpen ? 'icon-button top-inspector-button is-active' : 'icon-button top-inspector-button'}
           type="button"
-          aria-label={isInspectorCollapsed ? 'Open Inspector' : 'Close Inspector'}
-          aria-pressed={!isInspectorCollapsed}
-          title="Inspector"
-          onClick={onToggleInspector}
+          aria-label={isProjectSettingsOpen ? 'Close project settings' : 'Open project settings'}
+          aria-pressed={isProjectSettingsOpen}
+          title="Project settings"
+          onClick={onToggleProjectSettings}
         >
           <SlidersHorizontal size={16} />
         </button>
@@ -6107,14 +6519,16 @@ function SettingsView({
             <section className="settings-panel" aria-label="Language">
               <h3><T k="lang.label" /></h3>
               <p className="settings-language__hint"><T k="lang.hint" /></p>
-              <div className="settings-language__toggle" role="group" aria-label="Language">
-                <button type="button" className={lang === 'en' ? 'is-active' : ''} aria-pressed={lang === 'en'} onClick={() => setLang('en')}>
-                  English
-                </button>
-                <button type="button" className={lang === 'vi' ? 'is-active' : ''} aria-pressed={lang === 'vi'} onClick={() => setLang('vi')}>
-                  Tiếng Việt
-                </button>
-              </div>
+              <Segmented
+                ariaLabel="Language"
+                variant="radio"
+                value={lang}
+                onChange={setLang}
+                options={[
+                  { value: 'en', label: 'English' },
+                  { value: 'vi', label: 'Tiếng Việt' },
+                ]}
+              />
             </section>
 
             <section className="settings-panel" aria-label="Local model">
@@ -6523,6 +6937,62 @@ function startWindowDrag(event: React.PointerEvent<HTMLElement>) {
   void getCurrentWindow().startDragging().catch(() => undefined)
 }
 
+/** Shared markup for one reference in the library — used by both the
+    virtualized list row and the grid tile, which previously duplicated this
+    ~20-line body verbatim. */
+function ReferenceCard({
+  image,
+  variant,
+  isSelected,
+  isChecked,
+  style,
+  onSelect,
+  onToggle,
+}: {
+  image: EvidenceImage
+  variant: 'row' | 'grid'
+  isSelected: boolean
+  isChecked: boolean
+  style?: React.CSSProperties
+  onSelect: (id: string) => void
+  onToggle: (id: string) => void
+}) {
+  const baseClass = variant === 'row' ? 'image-row' : 'image-grid-card'
+  return (
+    <div className={isSelected ? `${baseClass} is-selected` : baseClass} style={style}>
+      <label className="reference-check">
+        <input
+          aria-label={`Select ${image.title}`}
+          checked={isChecked}
+          type="checkbox"
+          onChange={() => onToggle(image.id)}
+        />
+        <span aria-hidden="true" />
+      </label>
+      <button
+        draggable
+        type="button"
+        onClick={() => onSelect(image.id)}
+        onDragStart={(event) => {
+          event.dataTransfer.setData('application/x-kira-image-id', image.id)
+          event.dataTransfer.setData('text/plain', image.id)
+        }}
+      >
+        <ReferenceThumb image={image} />
+        <span className="image-row-copy">
+          <strong>{image.title}</strong>
+          <small>{image.source}</small>
+          <span className="mini-tags">
+            {image.tags.slice(0, 2).map((tag) => (
+              <span key={tag}>{tag}</span>
+            ))}
+          </span>
+        </span>
+      </button>
+    </div>
+  )
+}
+
 function toggleWindowMaximizeFromChrome(event: React.MouseEvent<HTMLElement>) {
   if (!isTauriRuntime()) return
   if (isInteractiveChromeTarget(event.target)) return
@@ -6610,12 +7080,14 @@ function EvidenceInbox({
   onSelectLink: (id: string) => void
   onToggleCollapsed: () => void
 }) {
+  const lang = useLangStore((state) => state.lang)
   const importInput = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
   const [isDraggingFiles, setIsDraggingFiles] = useState(false)
   const [isToolsOpen, setIsToolsOpen] = useState(false)
   const [libraryScrollTop, setLibraryScrollTop] = useState(0)
   const [libraryViewportHeight, setLibraryViewportHeight] = useState(0)
+  const [libraryViewportWidth, setLibraryViewportWidth] = useState(0)
   const unassigned = images.filter((image) => image.suggestions.length > 0)
   const selectedCount = selectedReferenceIds.size
   const panelCounts: Record<LibraryPanelMode, number> = {
@@ -6626,7 +7098,7 @@ function EvidenceInbox({
   const visibleIdeas = useMemo(
     () => ideas.filter((idea) => {
       const query = searchQuery.trim().toLowerCase()
-      return !query || `${idea.title} ${idea.body} ${idea.notes ?? ''}`.toLowerCase().includes(query)
+      return !query || `${idea.title} ${idea.content} ${idea.notes ?? ''}`.toLowerCase().includes(query)
     }),
     [ideas, searchQuery],
   )
@@ -6642,26 +7114,54 @@ function EvidenceInbox({
     }),
     [ideaTitleById, imageTitleById, links, searchQuery],
   )
-  const rowHeight = browseMode === 'grid' ? libraryGridItemHeight : libraryRowHeights[density]
+  const rowHeight = libraryRowHeights[density]
   const totalListHeight = images.length * rowHeight
   const startIndex = Math.max(0, Math.floor(libraryScrollTop / rowHeight) - libraryOverscan)
   const visibleCount = Math.ceil((libraryViewportHeight || 1) / rowHeight) + libraryOverscan * 2
   const endIndex = Math.min(images.length, startIndex + visibleCount)
   const visibleImages = images.slice(startIndex, endIndex)
 
+  // Grid virtualization windows by ROW, not by item — a CSS `auto-fill` grid
+  // has no per-item position to transform individually, so this re-derives
+  // the same column count the CSS's `repeat(auto-fill, minmax(128px, 1fr))`
+  // would produce, then renders (and vertically offsets) only the visible
+  // rows' items, same overscan/scroll-driven approach as the list above.
+  // These four constants are read off styles.css and hand-kept in sync —
+  // change `.image-grid-window`'s gap/minmax or `.image-list--grid`'s
+  // padding (styles.css, near `.image-grid-window`) and update here too, or
+  // the estimated column count drifts from what actually renders.
+  const gridGap = 12 // var(--space-3)
+  const gridItemMinWidth = 128
+  const gridHorizontalPadding = 32 // var(--space-4) * 2, matches .image-list--grid
+  const gridAvailableWidth = Math.max(0, libraryViewportWidth - gridHorizontalPadding)
+  const gridColumns = Math.max(1, Math.floor((gridAvailableWidth + gridGap) / (gridItemMinWidth + gridGap)))
+  const gridRowHeight = libraryGridItemHeight + gridGap
+  const totalGridRows = Math.ceil(images.length / gridColumns)
+  const totalGridHeight = totalGridRows * gridRowHeight
+  const startGridRow = Math.max(0, Math.floor(libraryScrollTop / gridRowHeight) - libraryOverscan)
+  const visibleGridRowCount = Math.ceil((libraryViewportHeight || 1) / gridRowHeight) + libraryOverscan * 2
+  const endGridRow = Math.min(totalGridRows, startGridRow + visibleGridRowCount)
+  const visibleGridImages = images.slice(startGridRow * gridColumns, endGridRow * gridColumns)
+  const gridTranslateY = startGridRow * gridRowHeight
+
   useEffect(() => {
     const element = listRef.current
     if (!element) return
 
-    function updateViewportHeight() {
+    function updateViewportSize() {
       setLibraryViewportHeight(element?.clientHeight ?? 0)
+      setLibraryViewportWidth(element?.clientWidth ?? 0)
     }
 
-    updateViewportHeight()
-    const observer = new ResizeObserver(updateViewportHeight)
+    updateViewportSize()
+    const observer = new ResizeObserver(updateViewportSize)
     observer.observe(element)
     return () => observer.disconnect()
-  }, [])
+    // `.image-list` only renders while panelMode === 'images' (EvidenceInbox
+    // itself stays mounted across panel switches), so listRef.current is a
+    // brand new node each time the user comes back to Images — re-run to
+    // reattach, or the viewport size sticks at 0 and virtualization collapses.
+  }, [panelMode])
 
   useEffect(() => {
     setLibraryScrollTop(0)
@@ -6743,24 +7243,17 @@ function EvidenceInbox({
 
       {panelMode === 'images' && (
       <div className="library-browse-bar" aria-label="Library browse controls">
-        <div className="library-browse-mode" aria-label="Browse mode">
-          <button
-            aria-pressed={browseMode === 'list'}
-            className={browseMode === 'list' ? 'is-active' : ''}
-            type="button"
-            onClick={() => onBrowseModeChange('list')}
-          >
-            List
-          </button>
-          <button
-            aria-pressed={browseMode === 'grid'}
-            className={browseMode === 'grid' ? 'is-active' : ''}
-            type="button"
-            onClick={() => onBrowseModeChange('grid')}
-          >
-            Grid
-          </button>
-        </div>
+        <Segmented
+          className="library-browse-mode"
+          ariaLabel="Browse mode"
+          variant="radio"
+          value={browseMode}
+          onChange={onBrowseModeChange}
+          options={[
+            { value: 'list', label: t('library.browseMode.list', lang) },
+            { value: 'grid', label: t('library.browseMode.grid', lang) },
+          ]}
+        />
         <span>{images.length} visible</span>
       </div>
       )}
@@ -6814,26 +7307,17 @@ function EvidenceInbox({
               <option value="title">Title</option>
               <option value="source">Source</option>
             </select>
-            <div className="density-toggle" aria-label="Density">
-              <button
-                aria-pressed={density === 'compact'}
-                aria-label="Compact density"
-                className={density === 'compact' ? 'is-active' : ''}
-                type="button"
-                onClick={() => onDensityChange('compact')}
-              >
-                C
-              </button>
-              <button
-                aria-pressed={density === 'relaxed'}
-                aria-label="Relaxed density"
-                className={density === 'relaxed' ? 'is-active' : ''}
-                type="button"
-                onClick={() => onDensityChange('relaxed')}
-              >
-                R
-              </button>
-            </div>
+            <Segmented
+              className="density-toggle"
+              ariaLabel="Density"
+              variant="radio"
+              value={density}
+              onChange={onDensityChange}
+              options={[
+                { value: 'compact', label: t('library.density.compact', lang) },
+                { value: 'relaxed', label: t('library.density.relaxed', lang) },
+              ]}
+            />
           </div>
           )}
         </div>
@@ -6842,96 +7326,54 @@ function EvidenceInbox({
       {panelMode === 'images' ? (
         <div
           className={`image-list image-list--${density} image-list--${browseMode}`}
-        data-rendered-count={visibleImages.length}
-        data-total-count={images.length}
-        ref={listRef}
-        onScroll={(event) => setLibraryScrollTop(event.currentTarget.scrollTop)}
-      >
-        {images.length > 0 && browseMode === 'grid' ? (
-          <div className="image-grid-window">
-            {images.map((image) => (
-              <div
-                key={image.id}
-                className={selected.type === 'image' && selected.id === image.id ? 'image-grid-card is-selected' : 'image-grid-card'}
-              >
-                <input
-                  aria-label={`Select ${image.title}`}
-                  checked={selectedReferenceIds.has(image.id)}
-                  type="checkbox"
-                  onChange={() => onToggleReference(image.id)}
-                />
-                <button
-                  draggable
-                  type="button"
-                  onClick={() => onSelect(image.id)}
-                  onDragStart={(event) => {
-                    event.dataTransfer.setData('application/x-kira-image-id', image.id)
-                    event.dataTransfer.setData('text/plain', image.id)
-                  }}
-                >
-                  <ReferenceThumb image={image} />
-                  <span className="image-row-copy">
-                    <strong>{image.title}</strong>
-                    <small>{image.source}</small>
-                    <span className="mini-tags">
-                      {image.tags.slice(0, 2).map((tag) => (
-                        <span key={tag}>{tag}</span>
-                      ))}
-                    </span>
-                  </span>
-                </button>
+          data-rendered-count={browseMode === 'grid' ? visibleGridImages.length : visibleImages.length}
+          data-total-count={images.length}
+          ref={listRef}
+          onScroll={(event) => setLibraryScrollTop(event.currentTarget.scrollTop)}
+        >
+          {images.length > 0 && browseMode === 'grid' ? (
+            <div className="image-grid-outer" style={{ height: totalGridHeight }}>
+              <div className="image-grid-window" style={{ transform: `translateY(${gridTranslateY}px)` }}>
+                {visibleGridImages.map((image) => (
+                  <ReferenceCard
+                    key={image.id}
+                    image={image}
+                    variant="grid"
+                    isSelected={selected.type === 'image' && selected.id === image.id}
+                    isChecked={selectedReferenceIds.has(image.id)}
+                    onSelect={onSelect}
+                    onToggle={onToggleReference}
+                  />
+                ))}
               </div>
-            ))}
-          </div>
-        ) : images.length > 0 ? (
-          <div className="image-list-window" style={{ height: totalListHeight }}>
-            {visibleImages.map((image, visibleIndex) => {
-              const index = startIndex + visibleIndex
-              return (
-            <div
-              key={image.id}
-              className={selected.type === 'image' && selected.id === image.id ? 'image-row is-selected' : 'image-row'}
-              style={{ transform: `translateY(${index * rowHeight}px)` }}
-            >
-              <input
-                aria-label={`Select ${image.title}`}
-                checked={selectedReferenceIds.has(image.id)}
-                type="checkbox"
-                onChange={() => onToggleReference(image.id)}
-              />
-              <button
-                draggable
-                type="button"
-                onClick={() => onSelect(image.id)}
-                onDragStart={(event) => {
-                  event.dataTransfer.setData('application/x-kira-image-id', image.id)
-                  event.dataTransfer.setData('text/plain', image.id)
-                }}
-              >
-                <ReferenceThumb image={image} />
-                <span className="image-row-copy">
-                  <strong>{image.title}</strong>
-                  <small>{image.source}</small>
-                  <span className="mini-tags">
-                    {image.tags.slice(0, 2).map((tag) => (
-                      <span key={tag}>{tag}</span>
-                    ))}
-                  </span>
-                </span>
+            </div>
+          ) : images.length > 0 ? (
+            <div className="image-list-window" style={{ height: totalListHeight }}>
+              {visibleImages.map((image, visibleIndex) => {
+                const index = startIndex + visibleIndex
+                return (
+                  <ReferenceCard
+                    key={image.id}
+                    image={image}
+                    variant="row"
+                    isSelected={selected.type === 'image' && selected.id === image.id}
+                    isChecked={selectedReferenceIds.has(image.id)}
+                    style={{ transform: `translateY(${index * rowHeight}px)` }}
+                    onSelect={onSelect}
+                    onToggle={onToggleReference}
+                  />
+                )
+              })}
+            </div>
+          ) : (
+            <div className="empty-state">
+              <strong><T k="library.empty.title" /></strong>
+              <span><T k="library.empty.body" /></span>
+              <button className="primary-button" type="button" onClick={() => importInput.current?.click()}>
+                <T k="library.empty.import" />
               </button>
             </div>
-              )
-            })}
-          </div>
-        ) : (
-          <div className="empty-state">
-            <strong>No references yet</strong>
-            <span>Drag in images, paste a URL, or import a folder to start your moodboard.</span>
-            <button className="primary-button" type="button" onClick={() => importInput.current?.click()}>
-              Import images
-            </button>
-          </div>
-        )}
+          )}
         </div>
       ) : panelMode === 'ideas' ? (
         <div className="library-node-list" role="list" aria-label="Ideas">
@@ -6945,7 +7387,7 @@ function EvidenceInbox({
               <Lightbulb size={15} />
               <span>
                 <strong>{idea.title}</strong>
-                <small>{idea.status} · {idea.body}</small>
+                <small>{idea.status} · {idea.content}</small>
               </span>
             </button>
           ))}
@@ -7048,10 +7490,43 @@ function GraphCanvas({
   onFrameMove,
   onFrameResize,
   onFrameRename,
+  onFrameDescriptionChange,
   onFrameDelete,
   onImportMermaid,
   onLinkCreationRelationChange,
+  nodeVersions,
+  onNodeVersionRestore,
+  onToggleAiExcluded,
+  onRebuildOutline,
   onIdeaInlineChange,
+  onImageInlineChange,
+  onPaletteInlineChange,
+  onDiagramInlineChange,
+  onPlaceholderInlineChange,
+  onReferenceFindSimilar,
+  onReferenceCrop,
+  onReferenceConvertToPalette,
+  onReferenceReplace,
+  onPlaceholderAttach,
+  onAcceptSuggestion,
+  onRejectSuggestion,
+  onReferenceTagAdd,
+  onReferenceTagRemove,
+  onReferenceOcr,
+  onReferenceTagRefine,
+  onPaletteColorChange,
+  onPaletteColorAdd,
+  onPaletteColorRemove,
+  onPaletteRegenerate,
+  localModelAvailable,
+  modelRunningImageId,
+  modelStatusByImageId,
+  ocrRunningImageId,
+  ocrStatusByImageId,
+  onRelationChange,
+  onLinkChange,
+  onLinkSwap,
+  onLinkDelete,
   onDroppedReference,
   onNotice,
   onNodeMove,
@@ -7096,10 +7571,43 @@ function GraphCanvas({
   onFrameMove: (frameId: string, position: Pick<FrameNode, 'x' | 'y'>) => void
   onFrameResize: (frameId: string, size: Pick<FrameNode, 'width' | 'height'>) => void
   onFrameRename: (frameId: string, title: string) => void
+  onFrameDescriptionChange: (frameId: string, description: string) => void
   onFrameDelete: (frameId: string) => void
   onImportMermaid: (source: string) => void | Promise<void>
   onLinkCreationRelationChange: (relation: Relation) => void
-  onIdeaInlineChange: (ideaId: string, patch: Partial<Pick<Idea, 'title' | 'body' | 'notes'>>) => void
+  nodeVersions: NodeVersionRecord[]
+  onNodeVersionRestore: (versionId: string) => void
+  onToggleAiExcluded: (kind: GraphNodeKind, id: string) => void
+  onRebuildOutline: () => void
+  onIdeaInlineChange: (ideaId: string, patch: Partial<Pick<Idea, 'content' | 'notes' | 'sourceUrl'>>) => void
+  onImageInlineChange: (imageId: string, patch: Partial<Pick<EvidenceImage, 'content' | 'notes' | 'sourceUrl'>>) => void
+  onPaletteInlineChange: (paletteId: string, patch: Partial<Pick<PaletteNode, 'content' | 'notes' | 'sourceUrl'>>) => void
+  onDiagramInlineChange: (diagramId: string, patch: Partial<Pick<DiagramNode, 'content' | 'notes' | 'sourceUrl' | 'source'>>) => void
+  onPlaceholderInlineChange: (placeholderId: string, patch: Partial<Pick<PlaceholderNode, 'content' | 'notes' | 'sourceUrl'>>) => void
+  onReferenceFindSimilar: (imageId: string) => void
+  onReferenceCrop: (imageId: string) => void
+  onReferenceConvertToPalette: (imageId: string) => void
+  onReferenceReplace: (imageId: string, files: FileList | File[]) => void
+  onPlaceholderAttach: (placeholderId: string, files: FileList | File[]) => void
+  onAcceptSuggestion: (imageId: string, tag: string) => void
+  onRejectSuggestion: (imageId: string, tag: string) => void
+  onReferenceTagAdd: (imageId: string, tag: string) => void
+  onReferenceTagRemove: (imageId: string, tag: string) => void
+  onReferenceOcr: (imageId: string) => void
+  onReferenceTagRefine: (imageId: string) => void
+  onPaletteColorChange: (paletteId: string, colorIndex: number, color: string) => void
+  onPaletteColorAdd: (paletteId: string) => void
+  onPaletteColorRemove: (paletteId: string, colorIndex: number) => void
+  onPaletteRegenerate: (paletteId: string, algorithm: PaletteHarmony) => void
+  localModelAvailable: boolean
+  modelRunningImageId: string | null
+  modelStatusByImageId: Record<string, string>
+  ocrRunningImageId: string | null
+  ocrStatusByImageId: Record<string, string>
+  onRelationChange: (linkId: string, relation: Relation) => void
+  onLinkChange: (linkId: string, patch: Partial<Pick<EvidenceLink, 'relation' | 'note' | 'confidence'>>) => void
+  onLinkSwap: (linkId: string) => void
+  onLinkDelete: (linkId: string) => void
   onDroppedReference: (payload: DroppedReferencePayload, target: DroppedReferenceTarget) => void | Promise<void>
   onNotice: (message: string) => void
   onNodeMove: (kind: GraphNodeKind, id: string, position: Pick<Idea, 'x' | 'y'>) => void
@@ -7163,7 +7671,12 @@ function GraphCanvas({
     begun: boolean
   } | null>(null)
   const [resizingNode, setResizingNode] = useState<CanvasNodeSelection | null>(null)
+  const lang = useLangStore((state) => state.lang)
   const panRef = useRef<{ startX: number; startY: number; originX: number; originY: number } | null>(null)
+  // Ref for the synchronous check inside startPan's pointerdown handler; state
+  // exists only so the cursor (.is-space-armed) can react to it.
+  const spacePanArmedRef = useRef(false)
+  const [isSpacePanArmed, setIsSpacePanArmed] = useState(false)
   const linkDragRef = useRef<Pick<GraphNodeRef, 'kind' | 'id'> | null>(null)
   const [linkDragPoint, setLinkDragPoint] = useState<{ x: number; y: number } | null>(null)
   const [graphTransform, setGraphTransform] = useState({ x: 0, y: 0, scale: 1 })
@@ -7178,16 +7691,26 @@ function GraphCanvas({
   const [arcMenu, setArcMenu] = useState<Pick<GraphNodeRef, 'kind' | 'id' | 'x' | 'y'> | null>(null)
   const [multiSelectedNodes, setMultiSelectedNodes] = useState<CanvasNodeSelection[]>([])
   const [nodeContextMenu, setNodeContextMenu] = useState<{ x: number; y: number; nodes: CanvasNodeSelection[] } | null>(null)
-  const [editingIdeaField, setEditingIdeaField] = useState<{ id: string; field: 'title' | 'body' } | null>(null)
+  const [detailsPopoverNode, setDetailsPopoverNode] = useState<CanvasNodeSelection | null>(null)
+  const [historyPopoverNode, setHistoryPopoverNode] = useState<CanvasNodeSelection | null>(null)
+  const [frameDescriptionOpenId, setFrameDescriptionOpenId] = useState<string | null>(null)
+  // There's only one editable field per node now (`content`, via
+  // NodeRichEditor), so unlike the old Idea-only title/body discriminant
+  // this just needs to know which node is being edited.
+  const [editingNodeField, setEditingNodeField] = useState<{ kind: GraphNodeKind; id: string } | null>(null)
   const [editingFrameId, setEditingFrameId] = useState<string | null>(null)
   const draggingFrameRef = useRef<{ id: string; offsetX: number; offsetY: number } | null>(null)
   const resizingFrameRef = useRef<{ id: string; startWidth: number; startHeight: number; startX: number; startY: number } | null>(null)
   const [starterPrompt, setStarterPrompt] = useState('')
   const [kiraSession, setKiraSession] = useState<KiraSession | null>(null)
-  // Kira's context/suggestion detail is collapsed by default — the popover
-  // stays a single small box until the user asks to see more.
+  // Kira's context/suggestion detail is collapsed by default — the dock
+  // stays a single composer line until the user asks to see more.
   const [isKiraContextOpen, setIsKiraContextOpen] = useState(false)
   const [isKiraSuggestOpen, setIsKiraSuggestOpen] = useState(false)
+  const isKiraOpen = Boolean(kiraSession)
+  const kiraDockRef = useRef<HTMLDivElement | null>(null)
+  const kiraOrbRef = useRef<HTMLButtonElement | null>(null)
+  const kiraInputRef = useRef<HTMLTextAreaElement | null>(null)
 
   function openKiraSession(origin: 'node' | 'rail', source: Pick<GraphNodeRef, 'kind' | 'id'> | null, scope: AiNodeScope, extraSources: Pick<GraphNodeRef, 'kind' | 'id'>[] = []) {
     setKiraSession({
@@ -7197,7 +7720,6 @@ function GraphCanvas({
       scope,
       action: 'summarize',
       prompt: '',
-      previousPrompt: null,
       removedContextKeys: [],
       providerOverrideId: null,
       modelOverride: null,
@@ -7207,15 +7729,13 @@ function GraphCanvas({
     setIsKiraContextOpen(false)
     setIsKiraSuggestOpen(false)
     setArcMenu(null)
+    // The Arrange drawer floats at the same bottom-left corner the dock
+    // drifts toward on open — close it so the two surfaces can't collide.
+    setIsGraphToolsOpen(false)
   }
 
   function openKiraFromNode(kind: GraphNodeKind, id: string) {
     openKiraSession('node', { kind, id }, 'downstream_branch')
-  }
-
-  function openKiraFromArc() {
-    if (!arcMenu) return
-    openKiraSession('node', { kind: arcMenu.kind, id: arcMenu.id }, 'downstream_branch')
   }
 
   function openKiraFromRail() {
@@ -7230,6 +7750,26 @@ function GraphCanvas({
     }
     openKiraSession('rail', null, 'full_board')
   }
+
+  const shouldRestoreOrbFocusRef = useRef(false)
+
+  const closeKiraSession = useCallback(() => {
+    setKiraSession(null)
+    setIsKiraContextOpen(false)
+    setIsKiraSuggestOpen(false)
+    // The orb is `inert` while the dock is open, and `inert` elements
+    // refuse `.focus()`. A single requestAnimationFrame isn't ordered
+    // against React's commit — under concurrent rendering it can fire
+    // before the re-render that lifts `inert`. The effect below, keyed on
+    // isKiraOpen, is guaranteed to run after that commit.
+    shouldRestoreOrbFocusRef.current = true
+  }, [])
+
+  useEffect(() => {
+    if (isKiraOpen || !shouldRestoreOrbFocusRef.current) return
+    shouldRestoreOrbFocusRef.current = false
+    kiraOrbRef.current?.focus()
+  }, [isKiraOpen])
 
   async function submitKiraSession() {
     if (!kiraSession) return
@@ -7254,6 +7794,56 @@ function GraphCanvas({
     }
   }
 
+  // Single source of truth for "can the dock submit right now" — the submit
+  // button's `disabled` and the Enter-key shortcut used to carry their own
+  // copies of this check and had drifted apart: Enter didn't verify a
+  // provider was routed or that the prompt was non-empty, so it could
+  // trigger a submit the button itself reported as unavailable.
+  function canSubmitKira(): boolean {
+    if (!kiraSession || kiraSession.status === 'thinking' || !kiraSession.prompt.trim()) return false
+    const route = selectAiProviderForTask('generate_node', aiProviders, aiRoutingMode, selectedAiProviderId, kiraSession.providerOverrideId ?? undefined)
+    return Boolean(route.providerId && aiProviders.some((candidate) => candidate.id === route.providerId))
+  }
+
+  function handleKiraInputKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>) {
+    // Stop canvas shortcuts (e.g. the bare "L" for link mode) from firing
+    // while typing into the dock.
+    event.stopPropagation()
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault()
+      if (canSubmitKira()) void submitKiraSession()
+    }
+  }
+
+  // Measure the horizontal offset from the closed orb's slot to the bottom
+  // bar's centre, and write it before paint so the very first open frame
+  // already drifts the dock toward the canvas centre instead of snapping
+  // there after a flash under the (right-biased) launcher position.
+  useLayoutEffect(() => {
+    if (!isKiraOpen) return
+    const dock = kiraDockRef.current
+    const bar = dock?.closest('.canvas-bottom-bar')
+    if (dock instanceof HTMLElement && bar instanceof HTMLElement) {
+      const dockBox = dock.getBoundingClientRect()
+      const barBox = bar.getBoundingClientRect()
+      const shift = Math.round((barBox.left + barBox.width / 2) - (dockBox.left + dockBox.width / 2))
+      dock.style.setProperty('--kira-dock-shift', `${shift}px`)
+    }
+    // Focus once the content cross-fade has had time to become visible —
+    // focusing an invisible field mid-morph would show no caret at all.
+    const timer = window.setTimeout(() => kiraInputRef.current?.focus(), 180)
+    return () => window.clearTimeout(timer)
+  }, [isKiraOpen])
+
+  // The Kira dock is the only floating canvas layer that doesn't already use
+  // this. Gated off while a tray is open so the capture-phase Escape here
+  // doesn't preempt "Esc closes the tray first" in handleKiraInputKeyDown.
+  useDismissableLayer(
+    isKiraOpen && !isKiraContextOpen && !isKiraSuggestOpen,
+    '.kira-dock',
+    closeKiraSession,
+  )
+
   useDismissableLayer(
     isGraphToolsOpen || Boolean(arcMenu) || Boolean(nodeContextMenu),
     '.node-context-menu, .node-arc-menu, .graph-tools-drawer, [data-menu-trigger="graph-tools"], .node-add-control, .node-kira-control',
@@ -7263,6 +7853,36 @@ function GraphCanvas({
       setNodeContextMenu(null)
     },
   )
+
+  useDismissableLayer(
+    selected.type === 'link',
+    '.link-popover, .edge-joint',
+    () => onSelect({ type: 'project' }),
+  )
+
+  useDismissableLayer(
+    Boolean(detailsPopoverNode),
+    '.node-details-popover, .node-toolbar',
+    () => setDetailsPopoverNode(null),
+  )
+
+  useDismissableLayer(
+    Boolean(historyPopoverNode),
+    '.node-history-popover, .node-toolbar',
+    () => setHistoryPopoverNode(null),
+  )
+
+  useDismissableLayer(
+    Boolean(frameDescriptionOpenId),
+    '.frame-details-popover, .frame-toolbar',
+    () => setFrameDescriptionOpenId(null),
+  )
+
+  useEffect(() => {
+    setDetailsPopoverNode((current) => (current && isNodeSelection(selected) && current.kind === selected.type && current.id === selected.id ? current : null))
+    setHistoryPopoverNode((current) => (current && isNodeSelection(selected) && current.kind === selected.type && current.id === selected.id ? current : null))
+    setFrameDescriptionOpenId((current) => (current && selected.type === 'frame' && selected.id === current ? current : null))
+  }, [selected])
 
   const graphView = useMemo(
     () => filterGraphView(ideas, images, links, selected, graphScope, relationFilter),
@@ -7303,9 +7923,9 @@ function GraphCanvas({
   }, [graphMetrics])
 
   useEffect(() => {
-    if (!editingIdeaField) return
-    if (selected.type !== 'idea' || selected.id !== editingIdeaField.id) setEditingIdeaField(null)
-  }, [editingIdeaField, selected])
+    if (!editingNodeField) return
+    if (selected.type !== editingNodeField.kind || selected.id !== editingNodeField.id) setEditingNodeField(null)
+  }, [editingNodeField, selected])
 
   useEffect(() => {
     setMultiSelectedNodes((current) => current.filter((node) => resolveGraphNodeRef(node.id, ideas, images, palettes, diagrams, placeholders)))
@@ -7356,6 +7976,50 @@ function GraphCanvas({
     window.addEventListener('keydown', handleCanvasKeydown)
     return () => window.removeEventListener('keydown', handleCanvasKeydown)
   }, [multiSelectedNodes, onActiveCanvasToolChange, onDeleteNodes, onPendingLinkSourceChange])
+
+  // Hold-space-to-pan (Figma/Sketch/Illustrator/Miro convention). The cursor
+  // only promises a drag-to-pan while this is armed — see .is-space-armed.
+  useEffect(() => {
+    function blocksSpacePan(target: EventTarget | null) {
+      if (!(target instanceof Element)) return false
+      if (isEditableEventTarget(target)) return true
+      return Boolean(target.closest(
+        'button, [role="button"], input, textarea, select, summary, a[href], [contenteditable]:not([contenteditable="false"])',
+      ))
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.code !== 'Space' || event.repeat) return
+      if (blocksSpacePan(event.target)) return
+      event.preventDefault()
+      spacePanArmedRef.current = true
+      setIsSpacePanArmed(true)
+    }
+
+    function handleKeyUp(event: KeyboardEvent) {
+      if (event.code !== 'Space' || !spacePanArmedRef.current) return
+      spacePanArmedRef.current = false
+      setIsSpacePanArmed(false)
+    }
+
+    function handleBlur() {
+      // Without this, Cmd-Tabbing away mid-hold never delivers the keyup and
+      // the canvas comes back stuck in pan mode.
+      if (!spacePanArmedRef.current) return
+      spacePanArmedRef.current = false
+      setIsSpacePanArmed(false)
+      stopPan()
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    window.addEventListener('keyup', handleKeyUp)
+    window.addEventListener('blur', handleBlur)
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown)
+      window.removeEventListener('keyup', handleKeyUp)
+      window.removeEventListener('blur', handleBlur)
+    }
+  }, [])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -7503,6 +8167,11 @@ function GraphCanvas({
     event: React.PointerEvent<HTMLElement>,
   ) {
     if (event.button === 2) return
+    // Space-armed drags always pan the canvas. startPan takes pointer
+    // capture on the canvas element, which retargets every later pointer
+    // event there — a node drag started here would never see its own
+    // pointerup, leaving draggingNodeRef and .is-dragging-node stuck set.
+    if (event.button === 0 && spacePanArmedRef.current) return
     if (event.shiftKey || event.metaKey || event.ctrlKey) {
       event.preventDefault()
       event.stopPropagation()
@@ -7853,171 +8522,434 @@ function GraphCanvas({
     event.stopPropagation()
   }
 
-  // A small box anchored right above the Kira button — not a full side
-  // panel. Context and suggestions stay collapsed behind their own toggle
-  // so the default view is just "what am I working from" + a text field.
-  function renderKiraPopover() {
-    if (!kiraSession) return null
+  // A true DOM child of the card (unlike the old canvas-percentage-positioned
+  // sibling this replaced), so `top: 100%` below always clears the card's
+  // actual rendered height instead of overlapping it for tall cards.
+  function renderNodeBelowStack(kind: GraphNodeKind, node: Idea | EvidenceImage | PaletteNode | DiagramNode | PlaceholderNode) {
+    if (nodeContextMenu || arcMenu) return null
+    if (multiSelectedNodes.length > 0) return null
+    if (selected.type !== kind || selected.id !== node.id) return null
+    if (editingNodeField?.kind === kind && editingNodeField.id === node.id) return null
 
-    const anchorNode = kiraSession.source
-      ? resolveGraphNodeRef(kiraSession.source.id, ideas, images, palettes, diagrams, placeholders)
-      : null
-    const popoverSources = [kiraSession.source, ...kiraSession.extraSources].filter(Boolean) as Pick<GraphNodeRef, 'kind' | 'id'>[]
-    const contextNodes = collectKiraContextForSources(popoverSources, kiraSession.scope, { ideas, images, palettes, diagrams, placeholders, links })
-      .filter((node) => !kiraSession.removedContextKeys.includes(`${node.kind}:${node.id}`))
-    const route = selectAiProviderForTask('generate_node', aiProviders, aiRoutingMode, selectedAiProviderId, kiraSession.providerOverrideId ?? undefined)
-    const routedProvider = route.providerId ? aiProviders.find((candidate) => candidate.id === route.providerId) : undefined
-    const suggestions = kiraSuggestions[anchorNode?.kind ?? 'board']
-    const contextLines = contextNodes.map((node) => `- ${graphNodeKindLabel(node.kind)}: ${node.title}`).join('\n')
-    const tokenEstimate = estimateKiraTokens(kiraSession.prompt) + contextNodes.length * 8 + estimateKiraTokens(contextLines) + 120
-    const isThinking = kiraSession.status === 'thinking'
-    const statusLine = isThinking
-      ? kiraCopy.loading[0]
-      : kiraSession.status === 'error' && kiraSession.message
-        ? kiraSession.message
-        : anchorNode
-          ? anchorNode.title
-          : 'Whole board'
+    const id = node.id
+    const isDetailsOpen = detailsPopoverNode?.kind === kind && detailsPopoverNode.id === id
+    const isHistoryOpen = historyPopoverNode?.kind === kind && historyPopoverNode.id === id
+    const nodeVersionRecords = nodeVersions.filter((version) => version.nodeId === id && version.nodeKind === kind).slice(0, 8)
+    const inlineChange = (patch: { notes?: string; sourceUrl?: string }) => {
+      if (kind === 'idea') onIdeaInlineChange(id, patch)
+      else if (kind === 'image') onImageInlineChange(id, patch)
+      else if (kind === 'palette') onPaletteInlineChange(id, patch)
+      else if (kind === 'diagram') onDiagramInlineChange(id, patch)
+      else onPlaceholderInlineChange(id, patch)
+    }
 
     return (
-      <div className={isThinking ? 'kira-popover is-thinking' : 'kira-popover'} role="dialog" aria-label="Kira">
-        <div className="kira-popover-head">
-          <span className="kira-popover-title">
-            <KiraMark size={14} state={isThinking ? 'thinking' : 'rest'} />
-            {statusLine}
-          </span>
-          <button type="button" className="icon-button" aria-label="Close Kira" onClick={() => setKiraSession(null)}>
-            <X size={12} />
-          </button>
-        </div>
-        <textarea
-          className="kira-popover-input"
-          rows={2}
-          placeholder={!routedProvider ? kiraCopy.noProvider : aiNodeActionPrompts[kiraSession.action]}
-          value={kiraSession.prompt}
-          onChange={(event) => setKiraSession((current) => current ? { ...current, prompt: event.target.value } : current)}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && !isThinking) {
-              event.preventDefault()
-              void submitKiraSession()
-            }
-          }}
-        />
-        <div className="kira-popover-row">
-          <button
-            type="button"
-            className={isKiraContextOpen ? 'kira-chip-toggle is-open' : 'kira-chip-toggle'}
-            aria-label={`Context (${contextNodes.length} nodes)`}
-            aria-expanded={isKiraContextOpen}
-            onClick={() => { setIsKiraContextOpen((current) => !current); setIsKiraSuggestOpen(false) }}
-          >
-            <Layers size={12} />
-            {contextNodes.length}
-          </button>
-          <button
-            type="button"
-            className={isKiraSuggestOpen ? 'kira-chip-toggle is-open' : 'kira-chip-toggle'}
-            aria-label="Suggestions"
-            aria-expanded={isKiraSuggestOpen}
-            onClick={() => { setIsKiraSuggestOpen((current) => !current); setIsKiraContextOpen(false) }}
-          >
-            <HelpCircle size={12} />
-          </button>
-          <span className="kira-popover-spacer" />
-          <button
-            type="button"
-            className="kira-popover-submit"
-            disabled={isThinking || !kiraSession.prompt.trim()}
-            onClick={() => void submitKiraSession()}
-          >
-            <KiraMark size={13} state={isThinking ? 'thinking' : 'rest'} />
-            {isThinking ? '…' : 'Ask'}
-          </button>
-        </div>
-        {isKiraContextOpen && (
-          <div className="kira-dropdown">
-            <div className="kira-dropdown-head">
-              <select
-                value={kiraSession.scope}
-                onChange={(event) => setKiraSession((current) => current ? { ...current, scope: event.target.value as AiNodeScope, removedContextKeys: [] } : current)}
-              >
-                {(Object.keys(aiNodeScopeLabels) as AiNodeScope[]).map((scope) => (
-                  <option key={scope} value={scope}>{aiNodeScopeLabels[scope]}</option>
-                ))}
-              </select>
-              <span className="kira-dropdown-meta">~{tokenEstimate.toLocaleString()} tokens</span>
-            </div>
-            <div className="kira-chip-row">
-              {contextNodes.map((node) => (
-                <span className="kira-chip" key={`${node.kind}:${node.id}`} title={node.title}>
-                  <span className="kira-chip-kind">{graphNodeKindLabel(node.kind)}</span>
-                  {node.title.length > 20 ? `${node.title.slice(0, 20)}…` : node.title}
-                  <button
-                    type="button"
-                    className="kira-chip-remove"
-                    aria-label={`Remove ${node.title} from context`}
-                    onClick={() => setKiraSession((current) => current ? { ...current, removedContextKeys: [...current.removedContextKeys, `${node.kind}:${node.id}`] } : current)}
-                  >
-                    <X size={10} />
-                  </button>
-                </span>
-              ))}
-            </div>
-          </div>
-        )}
-        {isKiraSuggestOpen && (
-          <div className="kira-dropdown kira-suggestion-list">
-            {suggestions.map((suggestion) => (
-              <button
-                key={suggestion.id}
-                type="button"
-                className="kira-suggestion"
-                onClick={() => {
-                  setKiraSession((current) => current ? { ...current, action: suggestion.action, prompt: suggestion.prompt } : current)
-                  setIsKiraSuggestOpen(false)
-                }}
-              >
-                <span>{suggestion.label}</span>
-                <span className="kira-suggestion-why">{suggestion.why}</span>
+      <div className="node-below-stack" onPointerDown={(event) => event.stopPropagation()} onContextMenu={(event) => event.preventDefault()}>
+        <div className="node-toolbar">
+          {kind === 'image' && (
+            <>
+              <label className="node-toolbar-file file-action" aria-label="Replace image" title="Replace image">
+                <ImagePlus size={13} />
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(event) => {
+                    if (event.target.files) onReferenceReplace(id, event.target.files)
+                    event.target.value = ''
+                  }}
+                />
+              </label>
+              <button type="button" aria-label="Find similar" title="Find similar" onClick={() => onReferenceFindSimilar(id)}>
+                <Search size={13} />
               </button>
-            ))}
+              <button type="button" aria-label="Crop image" title="Crop" onClick={() => onReferenceCrop(id)}>
+                <CropIcon size={13} />
+              </button>
+              <button type="button" aria-label="Extract palette" title="Extract palette" onClick={() => onReferenceConvertToPalette(id)}>
+                <PaletteIcon size={13} />
+              </button>
+            </>
+          )}
+          {kind === 'placeholder' && (
+            <label className="node-toolbar-file file-action" aria-label="Attach image" title="Attach image">
+              <ImagePlus size={13} />
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(event) => {
+                  if (event.target.files) onPlaceholderAttach(id, event.target.files)
+                  event.target.value = ''
+                }}
+              />
+            </label>
+          )}
+          <button
+            type="button"
+            aria-label="Details"
+            title="Notes, source, tags"
+            className={isDetailsOpen ? 'is-active' : ''}
+            onClick={() => setDetailsPopoverNode((current) => current?.kind === kind && current.id === id ? null : { kind, id })}
+          >
+            <NoteIcon size={13} />
+          </button>
+          <button
+            type="button"
+            aria-label={kind === 'diagram' ? 'Source and history' : 'Version history'}
+            title={kind === 'diagram' ? 'Source and history' : 'Version history'}
+            className={isHistoryOpen ? 'is-active' : ''}
+            onClick={() => setHistoryPopoverNode((current) => current?.kind === kind && current.id === id ? null : { kind, id })}
+          >
+            <History size={13} />
+          </button>
+          <button
+            type="button"
+            aria-label={node.aiExcluded ? 'Excluded from AI — click to include' : 'Included in AI context — click to exclude'}
+            title={node.aiExcluded ? 'Excluded from AI' : 'Included in AI context'}
+            className={node.aiExcluded ? 'is-active' : ''}
+            onClick={() => onToggleAiExcluded(kind, id)}
+          >
+            {node.aiExcluded ? <EyeOff size={13} /> : <Eye size={13} />}
+          </button>
+          <button type="button" aria-label="Link node" title="Link" onClick={() => beginLinkFromArc({ kind, id })}>
+            <Link2 size={13} />
+          </button>
+          <button
+            type="button"
+            aria-label="Delete node"
+            title="Delete"
+            className="is-danger"
+            onClick={() => onDeleteNodes([{ kind, id }])}
+          >
+            <Trash2 size={13} />
+          </button>
+        </div>
+        {isDetailsOpen && (
+          <div className="node-details-popover">
+            {kind === 'palette' && (
+              <div className="node-details-section">
+                <HexColorPicker
+                  color={(node as PaletteNode).colors[0] ?? '#84cdbc'}
+                  onChange={(color) => onPaletteColorChange(id, 0, color)}
+                />
+                <div className="palette-color-editor" aria-label="Palette colors">
+                  {(node as PaletteNode).colors.map((color, index) => (
+                    <div key={`${id}-edit-${index}-${color}`} className="palette-color-row">
+                      <input
+                        aria-label={`Palette color ${index + 1}`}
+                        type="color"
+                        value={normalizeHexInput(color)}
+                        onChange={(event) => onPaletteColorChange(id, index, event.target.value)}
+                      />
+                      <code>{normalizeHexInput(color)}</code>
+                      <button type="button" aria-label={`Remove palette color ${index + 1}`} onClick={() => onPaletteColorRemove(id, index)}>
+                        <X size={12} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <div className="node-details-actions">
+                  <button type="button" className="inline-action" onClick={() => onPaletteColorAdd(id)}>
+                    <Plus size={13} />
+                    Add color
+                  </button>
+                  <button type="button" className="inline-action" onClick={() => onPaletteRegenerate(id, 'analogous')}>
+                    <Sparkles size={13} />
+                    Rebalance
+                  </button>
+                </div>
+              </div>
+            )}
+            {kind === 'image' && (node as EvidenceImage).palette.length > 0 && (
+              <div className="reference-palette-strip" aria-label="Extracted image colors">
+                {(node as EvidenceImage).palette.slice(0, 7).map((color, index) => (
+                  <button
+                    key={`${id}-palette-${index}-${color}`}
+                    type="button"
+                    className="reference-palette-segment"
+                    title={color}
+                    style={{ background: color }}
+                    onClick={() => void copyColorSet([color])}
+                  >
+                    <code>{color.toUpperCase()}</code>
+                  </button>
+                ))}
+              </div>
+            )}
+            {kind === 'image' && (
+              <TagBlock
+                image={node as EvidenceImage}
+                canRunOcr={isTauriRuntime() && (node as EvidenceImage).thumb.startsWith('data:image/')}
+                canRefineTags={localModelAvailable}
+                isOcrRunning={ocrRunningImageId === id}
+                isRefiningTags={modelRunningImageId === id}
+                ocrStatus={ocrStatusByImageId[id]}
+                modelStatus={modelStatusByImageId[id]}
+                onAcceptSuggestion={(tag) => onAcceptSuggestion(id, tag)}
+                onRejectSuggestion={(tag) => onRejectSuggestion(id, tag)}
+                onAddTag={(tag) => onReferenceTagAdd(id, tag)}
+                onRemoveTag={(tag) => onReferenceTagRemove(id, tag)}
+                onRunOcr={() => onReferenceOcr(id)}
+                onRefineTags={() => onReferenceTagRefine(id)}
+              />
+            )}
+            <textarea
+              className="note-input"
+              placeholder="Notes..."
+              value={('notes' in node ? node.notes : '') ?? ''}
+              onChange={(event) => inlineChange({ notes: event.target.value })}
+            />
+            <div className="source-url-row">
+              <Link2 size={13} />
+              <input
+                className="title-input"
+                placeholder="Source URL"
+                value={('sourceUrl' in node ? node.sourceUrl : '') ?? ''}
+                onChange={(event) => inlineChange({ sourceUrl: event.target.value })}
+              />
+            </div>
+            {kind === 'idea' && (
+              <button className="inline-action" type="button" onClick={onRebuildOutline}>
+                <Bot size={13} />
+                Create outline
+              </button>
+            )}
+            <NodeMetadata node={node} />
           </div>
         )}
-        {!routedProvider && (
-          <p className="kira-popover-foot">
-            {kiraCopy.noProvider} <button type="button" className="link-button" onClick={onOpenAiSettings}>Open AI settings →</button>
-          </p>
+        {isHistoryOpen && (
+          <div className="node-history-popover">
+            {kind === 'diagram' && (
+              <div className="node-details-section">
+                <label className="field-label" htmlFor={`diagram-source-${id}`}>Source</label>
+                <textarea
+                  id={`diagram-source-${id}`}
+                  className="diagram-source-input"
+                  value={(node as DiagramNode).source}
+                  onChange={(event) => onDiagramInlineChange(id, { source: event.target.value })}
+                />
+              </div>
+            )}
+            <NodeVersionTimeline versions={nodeVersionRecords} onRestore={onNodeVersionRestore} />
+          </div>
         )}
       </div>
     )
   }
 
-  function beginIdeaFieldEdit(ideaId: string, field: 'title' | 'body', event: React.SyntheticEvent<HTMLElement>) {
+  // A small box anchored right above the Kira button — not a full side
+  // panel. Context and suggestions stay collapsed behind their own toggle
+  // so the default view is just "what am I working from" + a text field.
+  function renderKiraDock() {
+    const open = isKiraOpen
+    const anchorNode = kiraSession?.source
+      ? resolveGraphNodeRef(kiraSession.source.id, ideas, images, palettes, diagrams, placeholders)
+      : null
+    const dockSources = kiraSession ? ([kiraSession.source, ...kiraSession.extraSources].filter(Boolean) as Pick<GraphNodeRef, 'kind' | 'id'>[]) : []
+    const contextNodes = kiraSession
+      ? collectKiraContextForSources(dockSources, kiraSession.scope, { ideas, images, palettes, diagrams, placeholders, links })
+        .filter((node) => !kiraSession.removedContextKeys.includes(`${node.kind}:${node.id}`))
+      : []
+    const route = selectAiProviderForTask('generate_node', aiProviders, aiRoutingMode, selectedAiProviderId, kiraSession?.providerOverrideId ?? undefined)
+    const routedProvider = route.providerId ? aiProviders.find((candidate) => candidate.id === route.providerId) : undefined
+    const suggestions = kiraSuggestions[anchorNode?.kind ?? 'board']
+    const contextLines = contextNodes.map((node) => formatKiraContextLine(node)).join('\n')
+    const tokenEstimate = kiraSession
+      ? estimateKiraTokens(kiraSession.prompt) + contextNodes.length * 8 + estimateKiraTokens(contextLines) + 120
+      : 0
+    const isThinking = kiraSession?.status === 'thinking'
+    const isError = kiraSession?.status === 'error'
+    const hasTray = open && (isKiraContextOpen || isKiraSuggestOpen)
+    const placeholder = !routedProvider
+      ? t('kira.placeholderNoProvider', lang)
+      : anchorNode
+        ? t('kira.placeholderNode', lang, { title: anchorNode.title })
+        : t('kira.placeholderBoard', lang)
+
+    return (
+      <div
+        ref={kiraDockRef}
+        className={[
+          'kira-dock',
+          open ? 'is-open' : '',
+          isThinking ? 'is-thinking' : '',
+          isError ? 'is-error' : '',
+          hasTray ? 'has-tray' : '',
+        ].filter(Boolean).join(' ')}
+        role={open ? 'dialog' : undefined}
+        aria-label="Kira"
+        aria-modal={false}
+        onKeyDown={(event) => {
+          // Bound to the whole dock, not just the textarea, so Escape works
+          // from every focusable element inside it — the scope <select>,
+          // context chip remove buttons, and suggestion buttons are all
+          // tabbable, and Escape did nothing from any of them before this.
+          if (event.key !== 'Escape') return
+          event.preventDefault()
+          if (isKiraContextOpen || isKiraSuggestOpen) {
+            setIsKiraContextOpen(false)
+            setIsKiraSuggestOpen(false)
+            kiraInputRef.current?.focus()
+            return
+          }
+          closeKiraSession()
+        }}
+      >
+        <div className="kira-dock-row">
+          <button
+            type="button"
+            ref={kiraOrbRef}
+            className="kira-dock-orb"
+            aria-label={t('kira.askLabel', lang)}
+            aria-expanded={open}
+            data-tooltip={open ? undefined : 'Kira'}
+            tabIndex={open ? -1 : 0}
+            inert={open || undefined}
+            onClick={() => (kiraSession ? closeKiraSession() : openKiraFromRail())}
+          >
+            <KiraMark size={18} state={isThinking ? 'thinking' : 'rest'} />
+          </button>
+
+          <span className="kira-dock-sigil" aria-hidden="true">
+            <KiraMark size={20} state={isThinking ? 'thinking' : 'rest'} />
+          </span>
+
+          <textarea
+            className="kira-dock-input"
+            ref={kiraInputRef}
+            rows={1}
+            placeholder={placeholder}
+            value={kiraSession?.prompt ?? ''}
+            disabled={isThinking}
+            tabIndex={open ? 0 : -1}
+            inert={!open || undefined}
+            onChange={(event) => setKiraSession((current) => current ? { ...current, prompt: event.target.value } : current)}
+            onKeyDown={handleKiraInputKeyDown}
+          />
+
+          <div className="kira-dock-actions" inert={!open || undefined}>
+            <button
+              type="button"
+              className={isKiraContextOpen ? 'kira-dock-pill is-open' : 'kira-dock-pill'}
+              aria-expanded={isKiraContextOpen}
+              aria-label={`Context: ${contextNodes.length} nodes`}
+              onClick={() => { setIsKiraContextOpen((current) => !current); setIsKiraSuggestOpen(false) }}
+            >
+              <Layers size={12} />
+              {contextNodes.length}
+            </button>
+            <button
+              type="button"
+              className={isKiraSuggestOpen ? 'kira-dock-pill is-open' : 'kira-dock-pill'}
+              aria-expanded={isKiraSuggestOpen}
+              aria-label="Suggestions"
+              onClick={() => { setIsKiraSuggestOpen((current) => !current); setIsKiraContextOpen(false) }}
+            >
+              <HelpCircle size={12} />
+            </button>
+            <span className="kira-dock-sep" aria-hidden="true" />
+            <button
+              type="button"
+              className="kira-dock-submit"
+              aria-label={t('kira.askLabel', lang)}
+              disabled={!canSubmitKira()}
+              onClick={() => void submitKiraSession()}
+            >
+              {isThinking ? <KiraMark size={13} state="thinking" /> : <ArrowUp size={15} />}
+            </button>
+            <button type="button" className="kira-dock-close" aria-label="Close Kira" onClick={closeKiraSession}>
+              <X size={13} />
+            </button>
+          </div>
+        </div>
+
+        {isThinking && <div className="kira-dock-progress" aria-hidden="true" />}
+
+        {isError && kiraSession?.message && (
+          <p className="kira-dock-error" role="alert">
+            <AlertTriangle size={13} />
+            <span>{kiraSession.message}</span>
+            <button type="button" className="kira-dock-retry" onClick={() => void submitKiraSession()}>{t('kira.tryAgain', lang)}</button>
+          </p>
+        )}
+
+        {open && !routedProvider && (
+          <p className="kira-dock-notice">
+            <span>{t('kira.noProvider', lang)}</span>
+            <button type="button" className="link-button" onClick={onOpenAiSettings}>{t('kira.openAiSettings', lang)}</button>
+          </p>
+        )}
+
+        <div className="kira-dock-tray">
+          <div className="kira-dock-tray-inner">
+            {isKiraContextOpen && kiraSession && (
+              <>
+                <div className="kira-dock-tray-head">
+                  <select
+                    aria-label="Context scope"
+                    value={kiraSession.scope}
+                    onChange={(event) => setKiraSession((current) => current ? { ...current, scope: event.target.value as AiNodeScope, removedContextKeys: [] } : current)}
+                  >
+                    {(Object.keys(aiNodeScopeLabels) as AiNodeScope[]).map((scope) => (
+                      <option key={scope} value={scope}>{aiNodeScopeLabels[scope]}</option>
+                    ))}
+                  </select>
+                  <span className="kira-dock-tray-meta">{contextNodes.length} nodes · ~{tokenEstimate.toLocaleString()} tokens</span>
+                </div>
+                <div className="kira-chip-row">
+                  {contextNodes.map((node) => (
+                    <span className="kira-chip" key={`${node.kind}:${node.id}`} title={node.title}>
+                      <span className="kira-chip-kind">{graphNodeKindLabel(node.kind)}</span>
+                      {node.title.length > 20 ? `${node.title.slice(0, 20)}…` : node.title}
+                      <button
+                        type="button"
+                        className="kira-chip-remove"
+                        aria-label={`Remove ${node.title} from context`}
+                        onClick={() => setKiraSession((current) => current ? { ...current, removedContextKeys: [...current.removedContextKeys, `${node.kind}:${node.id}`] } : current)}
+                      >
+                        <X size={10} />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              </>
+            )}
+            {isKiraSuggestOpen && (
+              <div className="kira-dock-suggestions">
+                {suggestions.map((suggestion) => (
+                  <button
+                    key={suggestion.id}
+                    type="button"
+                    className="kira-suggestion"
+                    onClick={() => {
+                      setKiraSession((current) => current ? { ...current, action: suggestion.action, prompt: suggestion.prompt } : current)
+                      setIsKiraSuggestOpen(false)
+                      kiraInputRef.current?.focus()
+                    }}
+                  >
+                    <span>{suggestion.label}</span>
+                    <span className="kira-suggestion-why">{suggestion.why}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  function beginNodeEdit(kind: GraphNodeKind, id: string, event: React.SyntheticEvent<HTMLElement>) {
     event.preventDefault()
     event.stopPropagation()
-    setEditingIdeaField({ id: ideaId, field })
+    setEditingNodeField({ kind, id })
   }
 
-  function handleIdeaFieldBlur(event: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>) {
-    // Tabbing between title and note must not drop out of edit mode.
-    const next = event.relatedTarget
-    if (next instanceof Node && event.currentTarget.parentElement?.contains(next)) return
-    setEditingIdeaField(null)
+  function handleNodeEditBlur() {
+    setEditingNodeField(null)
   }
 
-  function handleIdeaFieldKeyDown(event: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>, field: 'title' | 'body') {
-    event.stopPropagation()
-    if (event.key === 'Escape' || ((event.metaKey || event.ctrlKey) && event.key === 'Enter')) {
-      event.preventDefault()
-      setEditingIdeaField(null)
-      return
-    }
-    if (field === 'title' && event.key === 'Enter') {
-      event.preventDefault()
-      setEditingIdeaField((current) => current ? { ...current, field: 'body' } : current)
-      const note = event.currentTarget.parentElement?.querySelector<HTMLTextAreaElement>('.node-note-input')
-      note?.focus()
-    }
+  function handleNodeEditEscape() {
+    setEditingNodeField(null)
   }
 
   function updateZoom(delta: number) {
@@ -8038,8 +8970,9 @@ function GraphCanvas({
   function startPan(event: React.PointerEvent<HTMLDivElement>) {
     const target = event.target instanceof Element ? event.target : null
     const isMiddleButton = event.button === 1
-    if (!isMiddleButton) {
-      if (event.button !== 0 || target?.closest('[data-node-kind][data-node-id], button, input, textarea, select, .canvas-tool-rail, .canvas-view-rail, .canvas-zoom-rail, .graph-tools-drawer, .node-context-menu, .node-arc-menu, .canvas-zero-state, .kira-popover, .canvas-kira-launcher')) return
+    const isSpaceDrag = event.button === 0 && spacePanArmedRef.current
+    if (!isMiddleButton && !isSpaceDrag) {
+      if (event.button !== 0 || target?.closest('[data-node-kind][data-node-id], button, input, textarea, select, .canvas-tool-rail, .canvas-view-rail, .canvas-zoom-rail, .graph-tools-drawer, .node-context-menu, .node-arc-menu, .canvas-zero-state, .kira-dock')) return
       onSelect({ type: 'project' })
       setNodeContextMenu(null)
       setArcMenu(null)
@@ -8079,7 +9012,7 @@ function GraphCanvas({
   }
 
   function handleCanvasWheel(event: React.WheelEvent<HTMLDivElement>) {
-    if (event.target instanceof Element && event.target.closest('input, textarea, select, .graph-tools-drawer, .node-context-menu, .node-arc-menu, .kira-popover')) return
+    if (event.target instanceof Element && event.target.closest('input, textarea, select, .graph-tools-drawer, .node-context-menu, .node-arc-menu, .kira-dock')) return
     event.preventDefault()
     if (event.ctrlKey || event.metaKey) {
       const rect = canvasRef.current?.getBoundingClientRect()
@@ -8113,7 +9046,7 @@ function GraphCanvas({
   return (
     <section className="graph-shell">
       <div
-        className={`${draggingNode ? 'graph-canvas is-dragging-node' : 'graph-canvas'}${resizingNode ? ' is-resizing-node' : ''}${isPanning ? ' is-panning' : ''}${graphMode === 'discover' ? ' is-discovery' : ''}${related.linkIds.size > 0 ? ' has-focus' : ''}`}
+        className={`${draggingNode ? 'graph-canvas is-dragging-node' : 'graph-canvas'}${resizingNode ? ' is-resizing-node' : ''}${isSpacePanArmed ? ' is-space-armed' : ''}${isPanning ? ' is-panning' : ''}${graphMode === 'discover' ? ' is-discovery' : ''}${related.linkIds.size > 0 ? ' has-focus' : ''}`}
         data-graph-cap={graphMetrics.cap}
         data-graph-mode={graphMetrics.mode}
         data-total-nodes={graphMetrics.totalNodes}
@@ -8151,20 +9084,18 @@ function GraphCanvas({
             right. Flex keeps them from ever overlapping at any canvas width. */}
         <div className={kiraSession ? 'canvas-bottom-bar has-kira-open' : 'canvas-bottom-bar'}>
         <div className="canvas-view-rail" aria-label="Canvas view tools">
-          <div className="graph-mode-toggle" aria-label="Canvas mode">
-            {Object.keys(graphModeLabels).map((mode) => (
-              <button
-                key={mode}
-                aria-pressed={graphMode === mode}
-                className={graphMode === mode ? 'is-active' : ''}
-                type="button"
-                title={mode === 'discover' ? 'Suggest weak links without saving them' : 'Move, edit, and link nodes'}
-                onClick={() => setGraphMode(mode as GraphMode)}
-              >
-                {graphModeLabels[mode as GraphMode]}
-              </button>
-            ))}
-          </div>
+          <Segmented
+            className="graph-mode-toggle"
+            ariaLabel="Canvas mode"
+            variant="radio"
+            value={graphMode}
+            onChange={setGraphMode}
+            options={(Object.keys(graphModeLabels) as GraphMode[]).map((mode) => ({
+              value: mode,
+              label: graphModeLabels[mode],
+              title: mode === 'discover' ? 'Suggest weak links without saving them' : 'Move, edit, and link nodes',
+            }))}
+          />
           <button
             aria-expanded={isGraphToolsOpen}
             className={isGraphToolsOpen ? 'canvas-view-rail-trigger is-active' : 'canvas-view-rail-trigger'}
@@ -8181,8 +9112,8 @@ function GraphCanvas({
           <div className="canvas-tool-group" aria-label="Select tools">
             <button
               type="button"
-              aria-label="Select"
-              data-tooltip="Select"
+              aria-label={t('tool.select', lang)}
+              data-tooltip={t('tool.select', lang)}
               className={activeCanvasTool === 'select' ? 'is-active' : ''}
               onClick={() => {
                 onActiveCanvasToolChange('select')
@@ -8190,52 +9121,43 @@ function GraphCanvas({
                 setArcMenu(null)
               }}
             >
-              <img className="tool-icon" src="/tool-icons/select.png" alt="" />
+              <Cursor className="tool-icon" size={19} />
             </button>
           </div>
           <div className="canvas-tool-group" aria-label="Create nodes">
-            <button type="button" aria-label="Add image placeholder" data-tooltip="Image placeholder" onClick={onCreatePlaceholder}>
-              <img className="tool-icon" src="/tool-icons/image-placeholder.png" alt="" />
+            <button type="button" aria-label={t('tool.imagePlaceholder', lang)} data-tooltip={t('tool.imagePlaceholder', lang)} onClick={onCreatePlaceholder}>
+              <ImageSquare className="tool-icon" size={19} />
             </button>
-            <button type="button" aria-label="Add palette" data-tooltip="Palette" onClick={onCreatePalette}>
-              <img className="tool-icon" src="/tool-icons/palette.png" alt="" />
+            <button type="button" aria-label={t('tool.palette', lang)} data-tooltip={t('tool.palette', lang)} onClick={onCreatePalette}>
+              <PaletteIcon className="tool-icon" size={19} />
             </button>
-            <button type="button" aria-label="Add idea" data-tooltip="Idea" onClick={onCreateIdea}>
-              <img className="tool-icon" src="/tool-icons/idea.png" alt="" />
+            <button type="button" aria-label={t('tool.idea', lang)} data-tooltip={t('tool.idea', lang)} onClick={onCreateIdea}>
+              <LightbulbIcon className="tool-icon" size={19} />
             </button>
-            <button type="button" aria-label="Add sticker" data-tooltip="Sticker" onClick={onCreateSticker}>
-              <StickyNote size={16} />
+            <button type="button" aria-label={t('tool.sticker', lang)} data-tooltip={t('tool.sticker', lang)} onClick={onCreateSticker}>
+              <NoteIcon className="tool-icon" size={19} />
             </button>
-            <button type="button" aria-label="Add frame" data-tooltip="Frame" onClick={onCreateFrame}>
-              <Frame size={15} />
+            <button type="button" aria-label={t('tool.frame', lang)} data-tooltip={t('tool.frame', lang)} onClick={onCreateFrame}>
+              <FrameCorners className="tool-icon" size={19} />
             </button>
           </div>
           <div className="canvas-tool-group" aria-label="Import tools">
             <button
               type="button"
-              aria-label="Import Mermaid diagram"
-              data-tooltip="Mermaid diagram"
+              aria-label={t('tool.mermaid', lang)}
+              data-tooltip={t('tool.mermaid', lang)}
               onClick={() => {
                 const source = window.prompt('Paste Mermaid graph or flowchart')
                 if (source?.trim()) void onImportMermaid(source)
               }}
             >
-              <img className="tool-icon" src="/tool-icons/mermaid-diagram.png" alt="" />
+              <FlowArrow className="tool-icon" size={19} />
             </button>
           </div>
         </div>
 
         <div className="kira-launcher-wrap">
-          <button
-            type="button"
-            className={kiraSession ? 'canvas-kira-launcher is-active' : 'canvas-kira-launcher'}
-            aria-label="Ask Kira"
-            data-tooltip="Kira"
-            onClick={() => (kiraSession ? setKiraSession(null) : openKiraFromRail())}
-          >
-            <KiraMark size={18} state={kiraSession?.status === 'thinking' ? 'thinking' : 'rest'} />
-          </button>
-          {renderKiraPopover()}
+          {renderKiraDock()}
         </div>
 
         <div className="canvas-zoom-rail" aria-label="Canvas zoom">
@@ -8330,20 +9252,39 @@ function GraphCanvas({
                 }}
               >
                 {editingFrameId === frame.id ? (
-                  <input
-                    autoFocus
-                    className="canvas-frame-title-input"
-                    aria-label="Frame title"
-                    value={frame.title}
+                  <span
+                    className="canvas-frame-fields"
                     onPointerDown={(event) => event.stopPropagation()}
                     onClick={(event) => event.stopPropagation()}
-                    onBlur={() => setEditingFrameId(null)}
-                    onKeyDown={(event) => {
-                      event.stopPropagation()
-                      if (event.key === 'Enter' || event.key === 'Escape') setEditingFrameId(null)
+                    onBlur={(event) => {
+                      if (event.currentTarget.contains(event.relatedTarget as Node | null)) return
+                      setEditingFrameId(null)
                     }}
-                    onChange={(event) => onFrameRename(frame.id, event.target.value)}
-                  />
+                  >
+                    <input
+                      autoFocus
+                      className="canvas-frame-title-input"
+                      aria-label="Frame title"
+                      value={frame.title}
+                      onKeyDown={(event) => {
+                        event.stopPropagation()
+                        if (event.key === 'Escape') setEditingFrameId(null)
+                        if (event.key === 'Enter') event.currentTarget.blur()
+                      }}
+                      onChange={(event) => onFrameRename(frame.id, event.target.value)}
+                    />
+                    <textarea
+                      className="canvas-frame-description-input"
+                      aria-label="Frame description"
+                      placeholder="Describe this frame"
+                      value={frame.description ?? ''}
+                      onKeyDown={(event) => {
+                        event.stopPropagation()
+                        if (event.key === 'Escape') setEditingFrameId(null)
+                      }}
+                      onChange={(event) => onFrameDescriptionChange(frame.id, event.target.value)}
+                    />
+                  </span>
                 ) : (
                   <>
                     <span className="canvas-frame-title">{frame.title}</span>
@@ -8361,6 +9302,19 @@ function GraphCanvas({
                 onPointerUp={stopFrameResize}
                 onPointerCancel={stopFrameResize}
               />
+              {selected.type === 'frame' && selected.id === frame.id && editingFrameId !== frame.id && (
+                <div className="frame-toolbar node-toolbar" onPointerDown={(event) => event.stopPropagation()}>
+                  <button
+                    type="button"
+                    aria-label="Delete frame"
+                    title="Delete"
+                    className="is-danger"
+                    onClick={() => onFrameDelete(frame.id)}
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </div>
+              )}
             </div>
           ))}
           <svg className="edge-layer" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true" data-edge-render="simplebezier">
@@ -8454,23 +9408,84 @@ function GraphCanvas({
             const relatedLink = related.linkIds.has(link.id)
             const curve = smoothGraphEdge(source, target)
             return (
-              <button
-                key={`${link.id}-joint`}
-                className={active ? 'edge-joint is-active' : relatedLink ? 'edge-joint is-related' : 'edge-joint'}
-                type="button"
-                aria-label={`Select ${link.relation} relation`}
-                style={{
-                  left: `${curve.midX}%`,
-                  top: `${curve.midY}%`,
-                }}
-                onClick={() => onSelect({ type: 'link', id: link.id })}
-              />
+              <React.Fragment key={`${link.id}-joint`}>
+                <button
+                  className={active ? 'edge-joint is-active' : relatedLink ? 'edge-joint is-related' : 'edge-joint'}
+                  type="button"
+                  aria-label={`Select ${link.relation} relation`}
+                  style={{
+                    left: `${curve.midX}%`,
+                    top: `${curve.midY}%`,
+                  }}
+                  onClick={() => onSelect(active ? { type: 'project' } : { type: 'link', id: link.id })}
+                />
+                {active && (
+                  <div
+                    className="link-popover"
+                    style={{ left: `${curve.midX}%`, top: `${curve.midY}%` }}
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onContextMenu={(event) => event.preventDefault()}
+                  >
+                    <div className="link-popover-endpoints">
+                      <span>{source.title}</span>
+                      <Link2 size={12} />
+                      <span>{target.title}</span>
+                      <button type="button" aria-label="Swap direction" title="Swap direction" onClick={() => onLinkSwap(link.id)}>
+                        <GitBranch size={12} />
+                      </button>
+                    </div>
+                    <select
+                      aria-label="Relation type"
+                      value={link.relation}
+                      onChange={(event) => {
+                        const relation = event.target.value as Relation
+                        onRelationChange(link.id, relation)
+                        onLinkChange(link.id, { relation })
+                      }}
+                    >
+                      {Object.keys(relationLabels).map((relation) => (
+                        <option key={relation} value={relation}>
+                          {relationLabels[relation as Relation]}
+                        </option>
+                      ))}
+                    </select>
+                    <textarea
+                      aria-label="Link note"
+                      placeholder="Note..."
+                      value={link.note}
+                      onChange={(event) => onLinkChange(link.id, { note: event.target.value })}
+                    />
+                    <label className="range-field">
+                      <span>Confidence {Math.round(link.confidence * 100)}%</span>
+                      <input
+                        aria-label="Link confidence"
+                        type="range"
+                        min="0"
+                        max="100"
+                        value={Math.round(link.confidence * 100)}
+                        onChange={(event) => onLinkChange(link.id, { confidence: Number(event.currentTarget.value) / 100 })}
+                      />
+                    </label>
+                    <button
+                      className="danger-action"
+                      type="button"
+                      onClick={() => {
+                        onLinkDelete(link.id)
+                        onSelect({ type: 'project' })
+                      }}
+                    >
+                      <Trash2 size={13} />
+                      Remove link
+                    </button>
+                  </div>
+                )}
+              </React.Fragment>
             )
           })}
 
           {displayView.ideas.map((idea) => {
             const isSelectedIdea = selected.type === 'idea' && selected.id === idea.id
-            const isEditingIdea = editingIdeaField?.id === idea.id
+            const isEditingIdea = editingNodeField?.kind === 'idea' && editingNodeField.id === idea.id
             const evidenceCount = displayView.links.filter((link) => link.ideaId === idea.id).length
             return (
               <div
@@ -8493,14 +9508,14 @@ function GraphCanvas({
                   '--node-scale': nodeScale(idea),
                 } as React.CSSProperties}
                 onClick={(event) => selectGraphNode('idea', idea.id, event)}
-                onDoubleClick={(event) => beginIdeaFieldEdit(idea.id, 'title', event)}
+                onDoubleClick={(event) => beginNodeEdit('idea', idea.id, event)}
                 onContextMenu={(event) => openNodeContextMenu('idea', idea.id, event)}
                 onKeyDown={(event) => {
                   if (isEditableEventTarget(event.target)) return
                   // Click selects; Enter is the deliberate step into editing.
                   if (event.key === 'Enter') {
                     event.preventDefault()
-                    if (isSelectedIdea) beginIdeaFieldEdit(idea.id, 'title', event)
+                    if (isSelectedIdea) beginNodeEdit('idea', idea.id, event)
                     else selectGraphNode('idea', idea.id)
                     return
                   }
@@ -8538,223 +9553,359 @@ function GraphCanvas({
                   // The edit area only exists while editing, so a stray click can
                   // never land in a text field and the resting card never shifts.
                   <span className="idea-node-fields" onPointerDown={stopInlineEditEvent} onClick={stopInlineEditEvent}>
-                    <input
-                      autoFocus={editingIdeaField?.field === 'title'}
-                      className="node-title-input"
-                      aria-label="Idea title"
-                      value={idea.title}
-                      onBlur={handleIdeaFieldBlur}
-                      onKeyDown={(event) => handleIdeaFieldKeyDown(event, 'title')}
-                      onChange={(event) => onIdeaInlineChange(idea.id, { title: event.target.value })}
-                    />
-                    <textarea
-                      autoFocus={editingIdeaField?.field === 'body'}
-                      className="node-note-input"
-                      aria-label="Idea note"
+                    <NodeRichEditor
+                      kind="idea"
+                      nodeId={idea.id}
+                      content={idea.content}
                       placeholder="Note..."
-                      value={idea.body}
-                      onBlur={handleIdeaFieldBlur}
-                      onKeyDown={(event) => handleIdeaFieldKeyDown(event, 'body')}
-                      onChange={(event) => onIdeaInlineChange(idea.id, { body: event.target.value })}
+                      onChange={(markdown) => onIdeaInlineChange(idea.id, { content: markdown })}
+                      onBlur={handleNodeEditBlur}
+                      onEscape={handleNodeEditEscape}
+                      autoFocus
                     />
                     <small className="node-meta-line">{idea.status === 'thin' ? 'needs evidence' : `${evidenceCount} evidence`}</small>
                   </span>
                 ) : (
                   <>
                     <strong>{idea.title}</strong>
-                    <small>{idea.variant === 'sticker' ? idea.body : idea.status === 'thin' ? 'needs evidence' : `${evidenceCount} evidence`}</small>
+                    <small>{idea.variant === 'sticker' ? idea.content : idea.status === 'thin' ? 'needs evidence' : `${evidenceCount} evidence`}</small>
                   </>
                 )}
                 {renderResizeHandle('idea', idea)}
+                {renderNodeBelowStack('idea', idea)}
               </div>
             )
           })}
 
-          {displayView.images.map((image) => (
-            <button
-              key={image.id}
-              className={[
-                'image-node',
-                selected.type === 'image' && selected.id === image.id ? 'is-selected' : '',
-                isCanvasNodeSelected('image', image.id) && multiSelectedNodes.length > 0 ? 'is-multi-selected' : '',
-                related.imageIds.has(image.id) ? 'is-related' : '',
-              ].filter(Boolean).join(' ')}
-              data-node-kind="image"
-              data-node-id={image.id}
-              type="button"
-              style={{
-                left: `${image.x}%`,
-                top: `${image.y}%`,
-                '--node-scale': nodeScale(image),
-              } as React.CSSProperties}
-              onClick={(event) => selectGraphNode('image', image.id, event)}
-              onContextMenu={(event) => openNodeContextMenu('image', image.id, event)}
-              onPointerDown={(event) => startNodeDrag('image', image, event)}
-              onPointerMove={(event) => moveNode('image', image.id, event)}
-              onPointerUp={stopNodeDrag}
-              onPointerCancel={stopNodeDrag}
-              onDragOver={handleReferenceDragOver}
-              onDrop={(event) => {
-                handleReferenceDrop(event, { kind: 'image', imageId: image.id })
-              }}
-            >
-              <span
-                className="node-add-control"
+          {displayView.images.map((image) => {
+            const isEditingImage = editingNodeField?.kind === 'image' && editingNodeField.id === image.id
+            return (
+              <div
+                key={image.id}
+                className={[
+                  'image-node',
+                  selected.type === 'image' && selected.id === image.id ? 'is-selected' : '',
+                  isEditingImage ? 'is-editing' : '',
+                  isCanvasNodeSelected('image', image.id) && multiSelectedNodes.length > 0 ? 'is-multi-selected' : '',
+                  related.imageIds.has(image.id) ? 'is-related' : '',
+                ].filter(Boolean).join(' ')}
+                data-node-kind="image"
+                data-node-id={image.id}
                 role="button"
                 tabIndex={0}
-                aria-label={`Open ${image.title} node actions`}
-                onPointerDown={(event) => event.stopPropagation()}
-                onClick={(event) => openArcMenu('image', image, event)}
+                style={{
+                  left: `${image.x}%`,
+                  top: `${image.y}%`,
+                  '--node-scale': nodeScale(image),
+                } as React.CSSProperties}
+                onClick={(event) => selectGraphNode('image', image.id, event)}
+                onDoubleClick={(event) => beginNodeEdit('image', image.id, event)}
+                onContextMenu={(event) => openNodeContextMenu('image', image.id, event)}
+                onKeyDown={(event) => {
+                  if (isEditableEventTarget(event.target)) return
+                  if (event.key === 'Enter') {
+                    event.preventDefault()
+                    if (selected.type === 'image' && selected.id === image.id) beginNodeEdit('image', image.id, event)
+                    else selectGraphNode('image', image.id)
+                    return
+                  }
+                  if (event.key === ' ') {
+                    event.preventDefault()
+                    selectGraphNode('image', image.id)
+                  }
+                }}
+                onPointerDown={(event) => startNodeDrag('image', image, event)}
+                onPointerMove={(event) => moveNode('image', image.id, event)}
+                onPointerUp={stopNodeDrag}
+                onPointerCancel={stopNodeDrag}
+                onDragOver={handleReferenceDragOver}
+                onDrop={(event) => {
+                  handleReferenceDrop(event, { kind: 'image', imageId: image.id })
+                }}
               >
-                <Plus size={11} />
-              </span>
-              {renderKiraControl('image', image.id, image.title)}
-              {renderDirectLinkHandle('image', image, image.title)}
-              <ReferenceThumb image={image} />
-              <span className="node-palette">
-                {image.palette.map((color, index) => (
-                  <i key={`${image.id}-${index}-${color}`} style={{ background: color }} />
-                ))}
-              </span>
-              {/* Caption stays out of the way at rest; the board is for looking, not reading. */}
-              <span className="node-caption">{image.title}</span>
-              {renderResizeHandle('image', image)}
-            </button>
-          ))}
+                <span
+                  className="node-add-control"
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`Open ${image.title} node actions`}
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={(event) => openArcMenu('image', image, event)}
+                >
+                  <Plus size={11} />
+                </span>
+                {renderKiraControl('image', image.id, image.title)}
+                {renderDirectLinkHandle('image', image, image.title)}
+                <ReferenceThumb image={image} />
+                <span className="node-palette">
+                  {image.palette.map((color, index) => (
+                    <i key={`${image.id}-${index}-${color}`} style={{ background: color }} />
+                  ))}
+                </span>
+                {isEditingImage ? (
+                  <span className="idea-node-fields" onPointerDown={stopInlineEditEvent} onClick={stopInlineEditEvent}>
+                    <NodeRichEditor
+                      kind="image"
+                      nodeId={image.id}
+                      content={image.content}
+                      placeholder="Caption..."
+                      onChange={(markdown) => onImageInlineChange(image.id, { content: markdown })}
+                      onBlur={handleNodeEditBlur}
+                      onEscape={handleNodeEditEscape}
+                      autoFocus
+                    />
+                  </span>
+                ) : (
+                  // Caption stays out of the way at rest; the board is for looking, not reading.
+                  <span className="node-caption">{image.title}</span>
+                )}
+                {renderResizeHandle('image', image)}
+                {renderNodeBelowStack('image', image)}
+              </div>
+            )
+          })}
 
-          {palettes.map((palette) => (
-            <button
-              key={palette.id}
-              className={[
-                'palette-node',
-                selected.type === 'palette' && selected.id === palette.id ? 'is-selected' : '',
-                isCanvasNodeSelected('palette', palette.id) && multiSelectedNodes.length > 0 ? 'is-multi-selected' : '',
-              ].filter(Boolean).join(' ')}
-              data-node-kind="palette"
-              data-node-id={palette.id}
-              type="button"
-              style={{
-                left: `${palette.x}%`,
-                top: `${palette.y}%`,
-                '--node-scale': nodeScale(palette),
-              } as React.CSSProperties}
-              onClick={(event) => selectGraphNode('palette', palette.id, event)}
-              onContextMenu={(event) => openNodeContextMenu('palette', palette.id, event)}
-              onPointerDown={(event) => startNodeDrag('palette', palette, event)}
-              onPointerMove={(event) => moveNode('palette', palette.id, event)}
-              onPointerUp={stopNodeDrag}
-              onPointerCancel={stopNodeDrag}
-            >
-              <span
-                className="node-add-control"
+          {palettes.map((palette) => {
+            const isEditingPalette = editingNodeField?.kind === 'palette' && editingNodeField.id === palette.id
+            return (
+              <div
+                key={palette.id}
+                className={[
+                  'palette-node',
+                  selected.type === 'palette' && selected.id === palette.id ? 'is-selected' : '',
+                  isEditingPalette ? 'is-editing' : '',
+                  isCanvasNodeSelected('palette', palette.id) && multiSelectedNodes.length > 0 ? 'is-multi-selected' : '',
+                ].filter(Boolean).join(' ')}
+                data-node-kind="palette"
+                data-node-id={palette.id}
                 role="button"
                 tabIndex={0}
-                aria-label={`Open ${palette.title} node actions`}
-                onPointerDown={(event) => event.stopPropagation()}
-                onClick={(event) => openArcMenu('palette', palette, event)}
+                style={{
+                  left: `${palette.x}%`,
+                  top: `${palette.y}%`,
+                  '--node-scale': nodeScale(palette),
+                } as React.CSSProperties}
+                onClick={(event) => selectGraphNode('palette', palette.id, event)}
+                onDoubleClick={(event) => beginNodeEdit('palette', palette.id, event)}
+                onContextMenu={(event) => openNodeContextMenu('palette', palette.id, event)}
+                onKeyDown={(event) => {
+                  if (isEditableEventTarget(event.target)) return
+                  if (event.key === 'Enter') {
+                    event.preventDefault()
+                    if (selected.type === 'palette' && selected.id === palette.id) beginNodeEdit('palette', palette.id, event)
+                    else selectGraphNode('palette', palette.id)
+                    return
+                  }
+                  if (event.key === ' ') {
+                    event.preventDefault()
+                    selectGraphNode('palette', palette.id)
+                  }
+                }}
+                onPointerDown={(event) => startNodeDrag('palette', palette, event)}
+                onPointerMove={(event) => moveNode('palette', palette.id, event)}
+                onPointerUp={stopNodeDrag}
+                onPointerCancel={stopNodeDrag}
               >
-                <Plus size={11} />
-              </span>
-              {renderKiraControl('palette', palette.id, palette.title)}
-              {renderDirectLinkHandle('palette', palette, palette.title)}
-              <span className="palette-strip">
-                {palette.colors.map((color, index) => (
-                  <i key={`${palette.id}-${index}-${color}`} style={{ background: color }} />
-                ))}
-              </span>
-              <strong>{palette.title}</strong>
-              <small>{palette.algorithm}</small>
-              {renderResizeHandle('palette', palette)}
-            </button>
-          ))}
+                <span
+                  className="node-add-control"
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`Open ${palette.title} node actions`}
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={(event) => openArcMenu('palette', palette, event)}
+                >
+                  <Plus size={11} />
+                </span>
+                {renderKiraControl('palette', palette.id, palette.title)}
+                {renderDirectLinkHandle('palette', palette, palette.title)}
+                <span className="palette-strip">
+                  {palette.colors.map((color, index) => (
+                    <i key={`${palette.id}-${index}-${color}`} style={{ background: color }} />
+                  ))}
+                </span>
+                {isEditingPalette ? (
+                  <span className="idea-node-fields" onPointerDown={stopInlineEditEvent} onClick={stopInlineEditEvent}>
+                    <NodeRichEditor
+                      kind="palette"
+                      nodeId={palette.id}
+                      content={palette.content}
+                      placeholder="Note..."
+                      onChange={(markdown) => onPaletteInlineChange(palette.id, { content: markdown })}
+                      onBlur={handleNodeEditBlur}
+                      onEscape={handleNodeEditEscape}
+                      autoFocus
+                    />
+                  </span>
+                ) : (
+                  <>
+                    <strong>{palette.title}</strong>
+                    <small>{palette.algorithm}</small>
+                  </>
+                )}
+                {renderResizeHandle('palette', palette)}
+                {renderNodeBelowStack('palette', palette)}
+              </div>
+            )
+          })}
 
-          {diagrams.map((diagram) => (
-            <button
-              key={diagram.id}
-              className={[
-                'diagram-node',
-                selected.type === 'diagram' && selected.id === diagram.id ? 'is-selected' : '',
-                isCanvasNodeSelected('diagram', diagram.id) && multiSelectedNodes.length > 0 ? 'is-multi-selected' : '',
-              ].filter(Boolean).join(' ')}
-              data-node-kind="diagram"
-              data-node-id={diagram.id}
-              type="button"
-              style={{
-                left: `${diagram.x}%`,
-                top: `${diagram.y}%`,
-                '--node-scale': nodeScale(diagram),
-              } as React.CSSProperties}
-              onClick={(event) => selectGraphNode('diagram', diagram.id, event)}
-              onContextMenu={(event) => openNodeContextMenu('diagram', diagram.id, event)}
-              onPointerDown={(event) => startNodeDrag('diagram', diagram, event)}
-              onPointerMove={(event) => moveNode('diagram', diagram.id, event)}
-              onPointerUp={stopNodeDrag}
-              onPointerCancel={stopNodeDrag}
-            >
-              <span
-                className="node-add-control"
+          {diagrams.map((diagram) => {
+            const isEditingDiagram = editingNodeField?.kind === 'diagram' && editingNodeField.id === diagram.id
+            return (
+              <div
+                key={diagram.id}
+                className={[
+                  'diagram-node',
+                  selected.type === 'diagram' && selected.id === diagram.id ? 'is-selected' : '',
+                  isEditingDiagram ? 'is-editing' : '',
+                  isCanvasNodeSelected('diagram', diagram.id) && multiSelectedNodes.length > 0 ? 'is-multi-selected' : '',
+                ].filter(Boolean).join(' ')}
+                data-node-kind="diagram"
+                data-node-id={diagram.id}
                 role="button"
                 tabIndex={0}
-                aria-label={`Open ${diagram.title} node actions`}
-                onPointerDown={(event) => event.stopPropagation()}
-                onClick={(event) => openArcMenu('diagram', diagram, event)}
+                style={{
+                  left: `${diagram.x}%`,
+                  top: `${diagram.y}%`,
+                  '--node-scale': nodeScale(diagram),
+                } as React.CSSProperties}
+                onClick={(event) => selectGraphNode('diagram', diagram.id, event)}
+                onDoubleClick={(event) => beginNodeEdit('diagram', diagram.id, event)}
+                onContextMenu={(event) => openNodeContextMenu('diagram', diagram.id, event)}
+                onKeyDown={(event) => {
+                  if (isEditableEventTarget(event.target)) return
+                  if (event.key === 'Enter') {
+                    event.preventDefault()
+                    if (selected.type === 'diagram' && selected.id === diagram.id) beginNodeEdit('diagram', diagram.id, event)
+                    else selectGraphNode('diagram', diagram.id)
+                    return
+                  }
+                  if (event.key === ' ') {
+                    event.preventDefault()
+                    selectGraphNode('diagram', diagram.id)
+                  }
+                }}
+                onPointerDown={(event) => startNodeDrag('diagram', diagram, event)}
+                onPointerMove={(event) => moveNode('diagram', diagram.id, event)}
+                onPointerUp={stopNodeDrag}
+                onPointerCancel={stopNodeDrag}
               >
-                <Plus size={11} />
-              </span>
-              {renderKiraControl('diagram', diagram.id, diagram.title)}
-              {renderDirectLinkHandle('diagram', diagram, diagram.title)}
-              <FileText size={15} />
-              <strong>{diagram.title}</strong>
-              <small>{diagram.nodeIds.length} nodes</small>
-              {renderResizeHandle('diagram', diagram)}
-            </button>
-          ))}
+                <span
+                  className="node-add-control"
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`Open ${diagram.title} node actions`}
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={(event) => openArcMenu('diagram', diagram, event)}
+                >
+                  <Plus size={11} />
+                </span>
+                {renderKiraControl('diagram', diagram.id, diagram.title)}
+                {renderDirectLinkHandle('diagram', diagram, diagram.title)}
+                <FileText size={15} />
+                {isEditingDiagram ? (
+                  <span className="idea-node-fields" onPointerDown={stopInlineEditEvent} onClick={stopInlineEditEvent}>
+                    <NodeRichEditor
+                      kind="diagram"
+                      nodeId={diagram.id}
+                      content={diagram.content}
+                      placeholder="Note..."
+                      onChange={(markdown) => onDiagramInlineChange(diagram.id, { content: markdown })}
+                      onBlur={handleNodeEditBlur}
+                      onEscape={handleNodeEditEscape}
+                      autoFocus
+                    />
+                  </span>
+                ) : (
+                  <>
+                    <strong>{diagram.title}</strong>
+                    <small>{diagram.nodeIds.length} nodes</small>
+                  </>
+                )}
+                {renderResizeHandle('diagram', diagram)}
+                {renderNodeBelowStack('diagram', diagram)}
+              </div>
+            )
+          })}
 
-          {placeholders.map((placeholder) => (
-            <button
-              key={placeholder.id}
-              className={[
-                'placeholder-node',
-                selected.type === 'placeholder' && selected.id === placeholder.id ? 'is-selected' : '',
-                isCanvasNodeSelected('placeholder', placeholder.id) && multiSelectedNodes.length > 0 ? 'is-multi-selected' : '',
-              ].filter(Boolean).join(' ')}
-              data-node-kind="placeholder"
-              data-node-id={placeholder.id}
-              type="button"
-              style={{
-                left: `${placeholder.x}%`,
-                top: `${placeholder.y}%`,
-                '--node-scale': nodeScale(placeholder),
-              } as React.CSSProperties}
-              onClick={(event) => selectGraphNode('placeholder', placeholder.id, event)}
-              onContextMenu={(event) => openNodeContextMenu('placeholder', placeholder.id, event)}
-              onPointerDown={(event) => startNodeDrag('placeholder', placeholder, event)}
-              onPointerMove={(event) => moveNode('placeholder', placeholder.id, event)}
-              onPointerUp={stopNodeDrag}
-              onPointerCancel={stopNodeDrag}
-              onDragOver={handleReferenceDragOver}
-              onDrop={(event) => {
-                const position = dragPercent(event) ?? { x: placeholder.x, y: placeholder.y }
-                handleReferenceDrop(event, { kind: 'placeholder', placeholderId: placeholder.id, position })
-              }}
-            >
-              <span
-                className="node-add-control"
+          {placeholders.map((placeholder) => {
+            const isEditingPlaceholder = editingNodeField?.kind === 'placeholder' && editingNodeField.id === placeholder.id
+            return (
+              <div
+                key={placeholder.id}
+                className={[
+                  'placeholder-node',
+                  selected.type === 'placeholder' && selected.id === placeholder.id ? 'is-selected' : '',
+                  isEditingPlaceholder ? 'is-editing' : '',
+                  isCanvasNodeSelected('placeholder', placeholder.id) && multiSelectedNodes.length > 0 ? 'is-multi-selected' : '',
+                ].filter(Boolean).join(' ')}
+                data-node-kind="placeholder"
+                data-node-id={placeholder.id}
                 role="button"
                 tabIndex={0}
-                aria-label={`Open ${placeholder.title} node actions`}
-                onPointerDown={(event) => event.stopPropagation()}
-                onClick={(event) => openArcMenu('placeholder', placeholder, event)}
+                style={{
+                  left: `${placeholder.x}%`,
+                  top: `${placeholder.y}%`,
+                  '--node-scale': nodeScale(placeholder),
+                } as React.CSSProperties}
+                onClick={(event) => selectGraphNode('placeholder', placeholder.id, event)}
+                onDoubleClick={(event) => beginNodeEdit('placeholder', placeholder.id, event)}
+                onContextMenu={(event) => openNodeContextMenu('placeholder', placeholder.id, event)}
+                onKeyDown={(event) => {
+                  if (isEditableEventTarget(event.target)) return
+                  if (event.key === 'Enter') {
+                    event.preventDefault()
+                    if (selected.type === 'placeholder' && selected.id === placeholder.id) beginNodeEdit('placeholder', placeholder.id, event)
+                    else selectGraphNode('placeholder', placeholder.id)
+                    return
+                  }
+                  if (event.key === ' ') {
+                    event.preventDefault()
+                    selectGraphNode('placeholder', placeholder.id)
+                  }
+                }}
+                onPointerDown={(event) => startNodeDrag('placeholder', placeholder, event)}
+                onPointerMove={(event) => moveNode('placeholder', placeholder.id, event)}
+                onPointerUp={stopNodeDrag}
+                onPointerCancel={stopNodeDrag}
+                onDragOver={handleReferenceDragOver}
+                onDrop={(event) => {
+                  const position = dragPercent(event) ?? { x: placeholder.x, y: placeholder.y }
+                  handleReferenceDrop(event, { kind: 'placeholder', placeholderId: placeholder.id, position })
+                }}
               >
-                <Plus size={11} />
-              </span>
-              {renderKiraControl('placeholder', placeholder.id, placeholder.title)}
-              {renderDirectLinkHandle('placeholder', placeholder, placeholder.title)}
-              <ImagePlus size={16} />
-              <span>{placeholder.title}</span>
-              {renderResizeHandle('placeholder', placeholder)}
-            </button>
-          ))}
+                <span
+                  className="node-add-control"
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`Open ${placeholder.title} node actions`}
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={(event) => openArcMenu('placeholder', placeholder, event)}
+                >
+                  <Plus size={11} />
+                </span>
+                {renderKiraControl('placeholder', placeholder.id, placeholder.title)}
+                {renderDirectLinkHandle('placeholder', placeholder, placeholder.title)}
+                <ImagePlus size={16} />
+                {isEditingPlaceholder ? (
+                  <span className="idea-node-fields" onPointerDown={stopInlineEditEvent} onClick={stopInlineEditEvent}>
+                    <NodeRichEditor
+                      kind="placeholder"
+                      nodeId={placeholder.id}
+                      content={placeholder.content}
+                      placeholder="Note..."
+                      onChange={(markdown) => onPlaceholderInlineChange(placeholder.id, { content: markdown })}
+                      onBlur={handleNodeEditBlur}
+                      onEscape={handleNodeEditEscape}
+                      autoFocus
+                    />
+                  </span>
+                ) : (
+                  <span>{placeholder.title}</span>
+                )}
+                {renderResizeHandle('placeholder', placeholder)}
+                {renderNodeBelowStack('placeholder', placeholder)}
+              </div>
+            )
+          })}
 
           {arcMenu && (
             <div
@@ -8804,6 +9955,32 @@ function GraphCanvas({
                   : `${nodeContextMenu.nodes.length} selected`}
               </strong>
             </div>
+            {nodeContextMenu.nodes.length === 1 && nodeContextMenu.nodes[0].kind === 'image' && (
+              <>
+                <button type="button" role="menuitem" onClick={() => { onReferenceFindSimilar(nodeContextMenu.nodes[0].id); setNodeContextMenu(null) }}>
+                  <Search size={13} />
+                  Find similar
+                </button>
+                <button type="button" role="menuitem" onClick={() => { onReferenceCrop(nodeContextMenu.nodes[0].id); setNodeContextMenu(null) }}>
+                  <CropIcon size={13} />
+                  Crop
+                </button>
+                <button type="button" role="menuitem" onClick={() => { onReferenceConvertToPalette(nodeContextMenu.nodes[0].id); setNodeContextMenu(null) }}>
+                  <PaletteIcon size={13} />
+                  Extract palette
+                </button>
+              </>
+            )}
+            {nodeContextMenu.nodes.length === 1 && (
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => { beginLinkFromArc(nodeContextMenu.nodes[0]); setNodeContextMenu(null) }}
+              >
+                <Link2 size={13} />
+                Link
+              </button>
+            )}
             {nodeContextMenu.nodes.length === 2 && (
               <button type="button" role="menuitem" onClick={linkContextNodes}>
                 <Link2 size={13} />
@@ -8816,6 +9993,7 @@ function GraphCanvas({
             </button>
           </div>
         )}
+
 
         {isGraphToolsOpen && (
           <div className="graph-tools-drawer">
@@ -9095,19 +10273,17 @@ function Graph3DView({
           <ZoomOut size={13} />
         </button>
       </div>
-      <div className="graph3d-scope" aria-label="3D graph scope">
-        {(Object.keys(graphScopeLabels) as GraphScope[]).map((scope) => (
-          <button
-            key={scope}
-            className={graphScope3D === scope ? 'is-active' : ''}
-            type="button"
-            aria-pressed={graphScope3D === scope}
-            onClick={() => setGraphScope3D(scope)}
-          >
-            {graphScopeLabels[scope]}
-          </button>
-        ))}
-      </div>
+      <Segmented
+        className="graph3d-scope"
+        ariaLabel="3D graph scope"
+        variant="radio"
+        value={graphScope3D}
+        onChange={setGraphScope3D}
+        options={(Object.keys(graphScopeLabels) as GraphScope[]).map((scope) => ({
+          value: scope,
+          label: graphScopeLabels[scope],
+        }))}
+      />
       <div className="graph3d-legend" aria-label="3D relation legend">
         <button
           className={relationFilter3D === 'all' ? 'is-active' : ''}
@@ -9634,19 +10810,17 @@ function OutlineView({
           <small>{draft ? formatDraftTime(draft.createdAt) : 'Unsaved draft'} · {sections.length} sections · {strongCount} strong · {weakCount} needs work</small>
         </div>
         <div className="outline-tools">
-          <div className="outline-filter" aria-label="Outline filter">
-            {Object.keys(outlineFilterLabels).map((filter) => (
-              <button
-                key={filter}
-                aria-pressed={outlineFilter === filter}
-                className={outlineFilter === filter ? 'is-active' : ''}
-                type="button"
-                onClick={() => setOutlineFilter(filter as OutlineFilter)}
-              >
-                {outlineFilterLabels[filter as OutlineFilter]}
-              </button>
-            ))}
-          </div>
+          <Segmented
+            className="outline-filter"
+            ariaLabel="Outline filter"
+            variant="radio"
+            value={outlineFilter}
+            onChange={setOutlineFilter}
+            options={(Object.keys(outlineFilterLabels) as OutlineFilter[]).map((filter) => ({
+              value: filter,
+              label: outlineFilterLabels[filter],
+            }))}
+          />
           <button className="quiet-button" type="button" onClick={onRebuild}>
             <Bot size={14} />
             Rebuild
@@ -9855,946 +11029,6 @@ function ReferenceThumb({
         />
       )}
     </span>
-  )
-}
-
-function Inspector({
-  isCollapsed,
-  selected,
-  ideas,
-  images,
-  palettes,
-  diagrams,
-  placeholders,
-  links,
-  nodeVersions,
-  linkCreationRelation,
-  localModelAvailable,
-  modelRunningImageId,
-  modelStatusByImageId,
-  ideaTitleFocusId,
-  selectedReferenceCount,
-  onToggleCollapsed,
-  onSelect,
-  onAcceptSuggestion,
-  onRejectSuggestion,
-  onRelationChange,
-  onIdeaChange,
-  onImageChange,
-  onLinkChange,
-  onLinkSwap,
-  onPaletteChange,
-  onDiagramChange,
-  onPlaceholderChange,
-  onProjectMetadataChange,
-  onProjectAppearanceChange,
-  onPaletteColorChange,
-  onPaletteColorAdd,
-  onPaletteColorRemove,
-  onPaletteRegenerate,
-  onLinkCreationRelationChange,
-  onReferenceTagAdd,
-  onReferenceTagRemove,
-  onReferenceOcr,
-  onReferenceTagRefine,
-  onReferenceReplace,
-  onReferenceReplaceFromImage,
-  onDroppedReference,
-  onPlaceholderAttach,
-  onReferenceFindSimilar,
-  onReferenceCrop,
-  onReferenceConvertToPalette,
-  onIdeaTitleFocused,
-  onIdeaDelete,
-  onImageDelete,
-  onPaletteDelete,
-  onDiagramDelete,
-  onPlaceholderDelete,
-  onLinkSelectedReferences,
-  onLinkDelete,
-  onFrameRename,
-  onFrameDescriptionChange,
-  onFrameDelete,
-  onNodeVersionRestore,
-  onBeginLinkFromNode,
-  onDuplicateSelection,
-  onOpenOutline,
-  onRebuildOutline,
-  ocrRunningImageId,
-  ocrStatusByImageId,
-}: {
-  isCollapsed: boolean
-  selected: ReturnType<typeof resolveSelection>
-  ideas: Idea[]
-  images: EvidenceImage[]
-  palettes: PaletteNode[]
-  diagrams: DiagramNode[]
-  placeholders: PlaceholderNode[]
-  links: EvidenceLink[]
-  nodeVersions: NodeVersionRecord[]
-  linkCreationRelation: Relation
-  localModelAvailable: boolean
-  modelRunningImageId: string | null
-  modelStatusByImageId: Record<string, string>
-  ideaTitleFocusId: string | null
-  ocrRunningImageId: string | null
-  ocrStatusByImageId: Record<string, string>
-  selectedReferenceCount: number
-  onToggleCollapsed: () => void
-  onSelect: (selection: Selection) => void
-  onAcceptSuggestion: (imageId: string, tag: string) => void
-  onRejectSuggestion: (imageId: string, tag: string) => void
-  onRelationChange: (linkId: string, relation: Relation) => void
-  onIdeaChange: (ideaId: string, patch: Partial<Pick<Idea, 'title' | 'body' | 'sourceUrl' | 'notes'>>) => void
-  onImageChange: (imageId: string, patch: Partial<Pick<EvidenceImage, 'title' | 'sourceUrl' | 'notes'>>) => void
-  onLinkChange: (linkId: string, patch: Partial<Pick<EvidenceLink, 'relation' | 'note' | 'confidence'>>) => void
-  onLinkSwap: (linkId: string) => void
-  onPaletteChange: (paletteId: string, patch: Partial<Pick<PaletteNode, 'title' | 'sourceUrl' | 'notes'>>) => void
-  onDiagramChange: (diagramId: string, patch: Partial<Pick<DiagramNode, 'title' | 'sourceUrl' | 'notes' | 'source'>>) => void
-  onPlaceholderChange: (placeholderId: string, patch: Partial<Pick<PlaceholderNode, 'title' | 'sourceUrl' | 'notes'>>) => void
-  onProjectMetadataChange: (patch: Partial<ProjectMetadata>) => void
-  onProjectAppearanceChange: (patch: Partial<ProjectAppearance>) => void
-  onPaletteColorChange: (paletteId: string, colorIndex: number, color: string) => void
-  onPaletteColorAdd: (paletteId: string) => void
-  onPaletteColorRemove: (paletteId: string, colorIndex: number) => void
-  onPaletteRegenerate: (paletteId: string, algorithm: PaletteHarmony) => void
-  onLinkCreationRelationChange: (relation: Relation) => void
-  onReferenceTagAdd: (imageId: string, tag: string) => void
-  onReferenceTagRemove: (imageId: string, tag: string) => void
-  onReferenceOcr: (imageId: string) => void
-  onReferenceTagRefine: (imageId: string) => void
-  onReferenceReplace: (imageId: string, files: FileList | File[]) => void
-  onReferenceReplaceFromImage: (imageId: string, sourceImageId: string) => void
-  onDroppedReference: (payload: DroppedReferencePayload, target: DroppedReferenceTarget) => void | Promise<void>
-  onPlaceholderAttach: (placeholderId: string, files: FileList | File[]) => void
-  onReferenceFindSimilar: (imageId: string) => void
-  onReferenceCrop: (imageId: string) => void
-  onReferenceConvertToPalette: (imageId: string) => void
-  onIdeaTitleFocused: () => void
-  onIdeaDelete: (ideaId: string) => void
-  onImageDelete: (imageId: string) => void
-  onPaletteDelete: (paletteId: string) => void
-  onDiagramDelete: (diagramId: string) => void
-  onPlaceholderDelete: (placeholderId: string) => void
-  onLinkSelectedReferences: (ideaId: string) => void
-  onLinkDelete: (linkId: string) => void
-  onFrameRename: (frameId: string, title: string) => void
-  onFrameDescriptionChange: (frameId: string, description: string) => void
-  onFrameDelete: (frameId: string) => void
-  onNodeVersionRestore: (versionId: string) => void
-  onBeginLinkFromNode: (source: Pick<GraphNodeRef, 'kind' | 'id'>) => void
-  onDuplicateSelection: () => void
-  onOpenOutline: () => void
-  onRebuildOutline: () => void
-}) {
-  const titleInputRef = useRef<HTMLInputElement>(null)
-  const [isInspectorToolsOpen, setIsInspectorToolsOpen] = useState(false)
-  const [isProjectColorOpen, setIsProjectColorOpen] = useState(false)
-  const ideaLinks = selected.kind === 'idea'
-    ? links
-        .filter((link) => link.ideaId === selected.idea.id)
-        .map((link) => ({
-          link,
-          image: images.find((candidate) => candidate.id === link.imageId),
-        }))
-        .filter((entry): entry is { link: EvidenceLink; image: EvidenceImage } => Boolean(entry.image))
-    : []
-  const imageLinks = selected.kind === 'image'
-    ? links
-        .filter((link) => link.imageId === selected.image.id)
-        .map((link) => ({
-          link,
-          idea: ideas.find((candidate) => candidate.id === link.ideaId),
-        }))
-        .filter((entry): entry is { link: EvidenceLink; idea: Idea } => Boolean(entry.idea))
-    : []
-  const selectedNodeRef = selected.kind === 'idea'
-    ? { kind: 'idea' as const, id: selected.idea.id }
-    : selected.kind === 'image'
-      ? { kind: 'image' as const, id: selected.image.id }
-      : selected.kind === 'palette'
-        ? { kind: 'palette' as const, id: selected.palette.id }
-        : selected.kind === 'diagram'
-          ? { kind: 'diagram' as const, id: selected.diagram.id }
-          : selected.kind === 'placeholder'
-            ? { kind: 'placeholder' as const, id: selected.placeholder.id }
-            : null
-  const nodeLinkEntries = selectedNodeRef
-    ? links
-        .filter((link) => {
-          const sourceId = link.sourceNodeId ?? link.imageId
-          const targetId = link.targetNodeId ?? link.ideaId
-          return sourceId === selectedNodeRef.id || targetId === selectedNodeRef.id
-        })
-        .map((link) => ({
-          link,
-          source: resolveGraphNodeRef(link.sourceNodeId ?? link.imageId, ideas, images, palettes, diagrams, placeholders),
-          target: resolveGraphNodeRef(link.targetNodeId ?? link.ideaId, ideas, images, palettes, diagrams, placeholders),
-        }))
-    : []
-  const selectedNodeVersions = selectedNodeRef
-    ? nodeVersions
-        .filter((version) => version.nodeId === selectedNodeRef.id && version.nodeKind === selectedNodeRef.kind)
-        .slice(0, 8)
-    : []
-
-  useEffect(() => {
-    if (selected.kind !== 'idea' || selected.idea.id !== ideaTitleFocusId) return
-    requestAnimationFrame(() => {
-      titleInputRef.current?.focus()
-      titleInputRef.current?.select()
-      onIdeaTitleFocused()
-    })
-  }, [ideaTitleFocusId, onIdeaTitleFocused, selected])
-
-  useDismissableLayer(isInspectorToolsOpen, '.inspector-tools-menu, [data-menu-trigger="inspector-tools"]', () => {
-    setIsInspectorToolsOpen(false)
-  })
-
-  return (
-    <aside className={isCollapsed ? 'inspector panel is-closed' : 'inspector panel'}>
-      <div className="panel-header">
-        <div>
-          <p className="panel-kicker"><T k="inspector.title" /></p>
-          <h2>{selected.heading}</h2>
-        </div>
-        <div className="panel-actions">
-          {selectedNodeRef && (
-            <button className="icon-button" type="button" aria-label="Create link from node" onClick={() => onBeginLinkFromNode(selectedNodeRef)}>
-              <Link2 size={15} />
-            </button>
-          )}
-          <button
-            className={isInspectorToolsOpen ? 'icon-button is-active' : 'icon-button'}
-            type="button"
-            aria-label="More inspector tools"
-            aria-expanded={isInspectorToolsOpen}
-            data-menu-trigger="inspector-tools"
-            onClick={() => setIsInspectorToolsOpen((current) => !current)}
-          >
-            <MoreHorizontal size={15} />
-          </button>
-          {isInspectorToolsOpen && (
-            <div className="panel-popover inspector-tools-menu">
-              {selectedNodeRef && (
-                <button type="button" onClick={onDuplicateSelection}>
-                  <Copy size={14} />
-                  Duplicate
-                </button>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {selected.kind === 'project' && (
-        <>
-          <section className="inspector-card project-file-card">
-            <label className="field-label" htmlFor="project-title"><T k="inspector.name" /></label>
-            <input
-              id="project-title"
-              className="title-input"
-              value={selected.project.title}
-              onChange={(event) => onProjectMetadataChange({ title: event.target.value })}
-            />
-            <label className="field-label" htmlFor="project-description"><T k="inspector.description" /></label>
-            <textarea
-              id="project-description"
-              className="note-input"
-              value={selected.project.description}
-              onChange={(event) => onProjectMetadataChange({ description: event.target.value })}
-            />
-            <label className="field-label" htmlFor="project-author"><T k="inspector.author" /></label>
-            <input
-              id="project-author"
-              className="title-input"
-              value={selected.project.author}
-              onChange={(event) => onProjectMetadataChange({ author: event.target.value })}
-            />
-            <label className="field-label" htmlFor="project-kind"><T k="inspector.kind" /></label>
-            <select
-              id="project-kind"
-              className="title-input"
-              value={selected.project.kind}
-              onChange={(event) => onProjectMetadataChange({ kind: event.target.value as ProjectKind })}
-            >
-              <option value="moodboard">Moodboard</option>
-              <option value="ideaboard">Ideaboard</option>
-            </select>
-            <label className="field-label" htmlFor="project-style-note"><T k="inspector.styleNote" /></label>
-            <textarea
-              id="project-style-note"
-              className="note-input"
-              value={selected.project.styleNote}
-              onChange={(event) => onProjectMetadataChange({ styleNote: event.target.value })}
-            />
-          </section>
-
-          <section className="inspector-card project-file-card">
-            <div className="section-heading">
-              <Palette size={14} />
-              Color Scheme
-            </div>
-            <ProjectColorSummary
-              appearance={selected.appearance}
-              isOpen={isProjectColorOpen}
-              onToggle={() => setIsProjectColorOpen((current) => !current)}
-            />
-            <div className={isProjectColorOpen ? 'project-color-editor is-open' : 'project-color-editor'}>
-              <div className="project-color-editor-content">
-                <div className="accent-color-recommendations" aria-label="Accent colors">
-                  {projectAccentPresets.filter((preset) => preset.id !== 'custom').map((preset) => (
-                    <button
-                      key={preset.id}
-                      type="button"
-                      className={selected.appearance.accentPreset === preset.id ? 'is-active' : ''}
-                      onClick={() => onProjectAppearanceChange({ accentPreset: preset.id })}
-                    >
-                      <i style={{ background: preset.color }} />
-                      <span>{preset.label}</span>
-                    </button>
-                  ))}
-                </div>
-                <HexColorPicker
-                  color={selected.appearance.accentColor}
-                  onChange={(color) => onProjectAppearanceChange({ accentColor: color })}
-                />
-                <div className="color-inline-row">
-                  <input
-                    id="project-accent-color"
-                    aria-label="Custom accent color"
-                    type="color"
-                    value={normalizeHexInput(selected.appearance.accentColor)}
-                    onChange={(event) => onProjectAppearanceChange({ accentColor: event.target.value })}
-                  />
-                  <code>Accent {normalizeHexInput(selected.appearance.accentColor).toUpperCase()}</code>
-                </div>
-                <div className="generated-color-row">
-                  <span>Generated canvas</span>
-                  <code>{normalizeHexInput(selected.appearance.canvasColor).toUpperCase()}</code>
-                </div>
-              </div>
-            </div>
-          </section>
-        </>
-      )}
-
-      {selected.kind === 'idea' && (
-        <>
-          <section className="inspector-card">
-            <div className="section-heading">
-              <Brain size={14} />
-              Idea
-            </div>
-            <input
-              ref={titleInputRef}
-              className="title-input"
-              value={selected.idea.title}
-              onChange={(event) => onIdeaChange(selected.idea.id, { title: event.target.value })}
-            />
-            <textarea
-              className="note-input"
-              value={selected.idea.body}
-              onChange={(event) => onIdeaChange(selected.idea.id, { body: event.target.value })}
-            />
-            <textarea
-              className="note-input"
-              placeholder="Notes..."
-              value={selected.idea.notes ?? ''}
-              onChange={(event) => onIdeaChange(selected.idea.id, { notes: event.target.value })}
-            />
-            <input
-              className="title-input"
-              placeholder="Source URL"
-              value={selected.idea.sourceUrl ?? ''}
-              onChange={(event) => onIdeaChange(selected.idea.id, { sourceUrl: event.target.value })}
-            />
-          </section>
-          <section className="inspector-card">
-            <div className="section-heading">
-              <Link2 size={14} />
-              References
-              <span>{ideaLinks.length}</span>
-            </div>
-            <LinkedList
-              count={ideaLinks.length}
-              emptyLabel="No references"
-              limit={inspectorLinkedListLimit}
-              renderItems={(limit) => ideaLinks.slice(0, limit).map(({ link, image }) => (
-                <button key={link.id} type="button" onClick={() => onSelect({ type: 'link', id: link.id })}>
-                  <ReferenceThumb image={image} />
-                  <span>
-                    <strong>{image.title}</strong>
-                    <small>{link.relation}</small>
-                  </span>
-                </button>
-              ))}
-            />
-            {selectedReferenceCount > 0 && (
-              <div className="link-create-row">
-                <select
-                  aria-label="Link selected relation"
-                  value={linkCreationRelation}
-                  onChange={(event) => onLinkCreationRelationChange(event.target.value as Relation)}
-                >
-                  {Object.keys(relationLabels).map((relation) => (
-                    <option key={relation} value={relation}>
-                      {relationLabels[relation as Relation]}
-                    </option>
-                  ))}
-                </select>
-                <button className="inline-action" type="button" onClick={() => onLinkSelectedReferences(selected.idea.id)}>
-                  <Link2 size={13} />
-                  Link selected ({selectedReferenceCount})
-                </button>
-              </div>
-            )}
-          </section>
-          <button className="primary-button is-wide" type="button" onClick={onRebuildOutline}>
-            <Bot size={15} />
-            Create outline
-          </button>
-          <NodeLinksSection entries={nodeLinkEntries} nodeId={selected.idea.id} onRemove={onLinkDelete} onSelect={onSelect} />
-          <NodeMetadata node={selected.idea} />
-          <NodeVersionTimeline versions={selectedNodeVersions} onRestore={onNodeVersionRestore} />
-          <button className="danger-action" type="button" onClick={() => onIdeaDelete(selected.idea.id)}>
-            Delete idea
-          </button>
-        </>
-      )}
-
-      {selected.kind === 'image' && (
-        <>
-          <div
-            className="inspector-image-shell"
-            onDragOver={(event) => {
-              if (!hasDroppedReferencePayload(event.dataTransfer)) return
-              event.preventDefault()
-              event.dataTransfer.dropEffect = 'copy'
-            }}
-            onDrop={(event) => {
-              const payload = extractDroppedReferencePayload(event.dataTransfer)
-              if (!payload) return
-              event.preventDefault()
-              event.stopPropagation()
-              void onDroppedReference(payload, { kind: 'image', imageId: selected.image.id })
-            }}
-          >
-            <ReferenceThumb image={selected.image} className="inspector-image" />
-            <div className="inspector-image-actions" aria-label="Reference image tools">
-              <label className="image-edge-action file-action">
-                <ImagePlus size={13} />
-                Replace
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={(event) => {
-                    if (event.target.files) onReferenceReplace(selected.image.id, event.target.files)
-                    event.currentTarget.value = ''
-                  }}
-                />
-              </label>
-              <button className="image-edge-action" type="button" onClick={() => onReferenceFindSimilar(selected.image.id)}>
-                <Search size={13} />
-                Similar
-              </button>
-              <button className="image-edge-action" type="button" onClick={() => onReferenceConvertToPalette(selected.image.id)}>
-                <Palette size={13} />
-                Palette
-              </button>
-              <button className="image-edge-action" type="button" onClick={() => onReferenceCrop(selected.image.id)}>
-                <CropIcon size={13} />
-                Crop
-              </button>
-            </div>
-          </div>
-          <section className="reference-palette-card">
-            {selected.image.palette.length > 0 ? (
-              <>
-                <div className="reference-palette-strip" aria-label="Extracted image colors">
-                  {selected.image.palette.slice(0, 7).map((color, index) => (
-                    <button
-                      key={`${selected.image.id}-palette-${index}-${color}`}
-                      type="button"
-                      className="reference-palette-segment"
-                      title={color}
-                      style={{ background: color }}
-                      onClick={() => void navigator.clipboard?.writeText(color)}
-                    >
-                      <code>{color.toUpperCase()}</code>
-                    </button>
-                  ))}
-                </div>
-                <div className="reference-palette-actions">
-                  <button type="button" onClick={() => void copyColorSet(selected.image.palette.slice(0, 7))}>
-                    Copy set
-                  </button>
-                  <button type="button" onClick={() => void copyColorBlockSvg(selected.image.palette.slice(0, 7), selected.image.title)}>
-                    Copy SVG
-                  </button>
-                </div>
-              </>
-            ) : (
-              <p className="empty-copy">No colors extracted yet.</p>
-            )}
-          </section>
-          <section className="inspector-card inspector-lede">
-            <input
-              className="title-input"
-              value={selected.image.title}
-              onChange={(event) => onImageChange(selected.image.id, { title: event.target.value })}
-            />
-            <textarea
-              className="note-input"
-              placeholder="Notes..."
-              value={selected.image.notes ?? ''}
-              onChange={(event) => onImageChange(selected.image.id, { notes: event.target.value })}
-            />
-            <div className="source-url-row">
-              <Link2 size={13} />
-              <input
-                className="title-input"
-                placeholder="Source URL"
-                value={selected.image.sourceUrl ?? ''}
-                onChange={(event) => onImageChange(selected.image.id, { sourceUrl: event.target.value })}
-              />
-              <button
-                type="button"
-                aria-label="Open source URL"
-                disabled={!selected.image.sourceUrl}
-                onClick={() => {
-                  if (selected.image.sourceUrl) window.open(selected.image.sourceUrl, '_blank', 'noopener,noreferrer')
-                }}
-              >
-                <ExternalLink size={13} />
-              </button>
-            </div>
-            <details className="metadata-disclosure">
-              <summary>
-                <Database size={13} />
-                Source
-              </summary>
-              <dl>
-                <div>
-                  <dt>Source</dt>
-                  <dd>{selected.image.source}</dd>
-                </div>
-                {selected.image.originApp && (
-                  <div>
-                    <dt>Origin</dt>
-                    <dd>{selected.image.originApp}</dd>
-                  </div>
-                )}
-                {selected.image.originId && (
-                  <div>
-                    <dt>ID</dt>
-                    <dd>{selected.image.originId}</dd>
-                  </div>
-                )}
-                {selected.image.sourcePath && (
-                  <div>
-                    <dt>Path</dt>
-                    <dd>{selected.image.sourcePath}</dd>
-                  </div>
-                )}
-              </dl>
-            </details>
-          </section>
-          <TagBlock
-            image={selected.image}
-            canRunOcr={isTauriRuntime() && selected.image.thumb.startsWith('data:image/')}
-            canRefineTags={localModelAvailable}
-            isOcrRunning={ocrRunningImageId === selected.image.id}
-            isRefiningTags={modelRunningImageId === selected.image.id}
-            ocrStatus={ocrStatusByImageId[selected.image.id]}
-            modelStatus={modelStatusByImageId[selected.image.id]}
-            onAcceptSuggestion={(tag) => onAcceptSuggestion(selected.image.id, tag)}
-            onRejectSuggestion={(tag) => onRejectSuggestion(selected.image.id, tag)}
-            onAddTag={(tag) => onReferenceTagAdd(selected.image.id, tag)}
-            onRemoveTag={(tag) => onReferenceTagRemove(selected.image.id, tag)}
-            onRunOcr={() => onReferenceOcr(selected.image.id)}
-            onRefineTags={() => onReferenceTagRefine(selected.image.id)}
-          />
-          <section className="inspector-card">
-            <div className="section-heading">
-              <Link2 size={14} />
-              Ideas
-              <span>{imageLinks.length}</span>
-            </div>
-            <LinkedList
-              count={imageLinks.length}
-              emptyLabel="No ideas"
-              limit={inspectorLinkedListLimit}
-              renderItems={(limit) => imageLinks.slice(0, limit).map(({ link, idea }) => (
-                <button key={link.id} type="button" onClick={() => onSelect({ type: 'link', id: link.id })}>
-                  <span className="idea-dot" />
-                  <span>
-                    <strong>{idea.title}</strong>
-                    <small>{link.relation}</small>
-                  </span>
-                </button>
-              ))}
-            />
-          </section>
-          <NodeLinksSection entries={nodeLinkEntries} nodeId={selected.image.id} onRemove={onLinkDelete} onSelect={onSelect} />
-          <NodeMetadata node={selected.image} />
-          <NodeVersionTimeline versions={selectedNodeVersions} onRestore={onNodeVersionRestore} />
-          <button className="danger-action" type="button" onClick={() => onImageDelete(selected.image.id)}>
-            Delete reference
-          </button>
-        </>
-      )}
-
-      {selected.kind === 'link' && (
-        <>
-          <section className="inspector-card">
-            <div className="section-heading">
-              <Link2 size={14} />
-              Link
-            </div>
-            <div className="relation-preview">
-              <button
-                className="node-link-endpoint"
-                type="button"
-                disabled={!selected.source}
-                onClick={() => selected.source && onSelect({ type: selected.source.kind, id: selected.source.id } as Selection)}
-              >
-                <small>{selected.source?.kind ?? 'source'}</small>
-                <strong>{selected.source?.title ?? selected.link.sourceNodeId ?? selected.link.imageId}</strong>
-              </button>
-              <span className="relation-arrow">
-                <Link2 size={13} />
-              </span>
-              <button
-                className="node-link-endpoint"
-                type="button"
-                disabled={!selected.target}
-                onClick={() => selected.target && onSelect({ type: selected.target.kind, id: selected.target.id } as Selection)}
-              >
-                <small>{selected.target?.kind ?? 'target'}</small>
-                <strong>{selected.target?.title ?? selected.link.targetNodeId ?? selected.link.ideaId}</strong>
-              </button>
-            </div>
-            <button className="inline-action" type="button" onClick={() => onLinkSwap(selected.link.id)}>
-              <GitBranch size={13} />
-              Swap direction
-            </button>
-          </section>
-          <section className="inspector-card">
-            <label className="field-label" htmlFor="relation">
-              Relation type
-            </label>
-            <select
-              id="relation"
-              value={selected.link.relation}
-              onChange={(event) => {
-                const relation = event.target.value as Relation
-                onRelationChange(selected.link.id, relation)
-                onLinkChange(selected.link.id, { relation })
-              }}
-            >
-              {Object.keys(relationLabels).map((relation) => (
-                <option key={relation} value={relation}>
-                  {relationLabels[relation as Relation]}
-                </option>
-              ))}
-            </select>
-            <label className="field-label" htmlFor="note">
-              Note
-            </label>
-            <textarea
-              id="note"
-              value={selected.link.note}
-              onChange={(event) => onLinkChange(selected.link.id, { note: event.target.value })}
-            />
-          </section>
-          <details className="inspector-card metadata-disclosure">
-            <summary>
-              <Sparkles size={14} />
-              Confidence
-            </summary>
-            <label className="range-field">
-              <span>Score</span>
-              <input
-                aria-label="Link confidence"
-                type="range"
-                min="0"
-                max="100"
-                value={Math.round(selected.link.confidence * 100)}
-                onInput={(event) => onLinkChange(selected.link.id, { confidence: Number(event.currentTarget.value) / 100 })}
-                onChange={(event) => onLinkChange(selected.link.id, { confidence: Number(event.currentTarget.value) / 100 })}
-              />
-            </label>
-            <div className="confidence-bar">
-              <span style={{ width: `${selected.link.confidence * 100}%` }} />
-            </div>
-            <dl>
-              <div>
-                <dt>Score</dt>
-                <dd>{Math.round(selected.link.confidence * 100)}%</dd>
-              </div>
-              <div>
-                <dt>Signals</dt>
-                <dd>tags, source, proximity</dd>
-              </div>
-            </dl>
-          </details>
-          <button className="danger-action" type="button" onClick={() => onLinkDelete(selected.link.id)}>
-            Remove link
-          </button>
-        </>
-      )}
-
-      {selected.kind === 'palette' && (
-        <>
-          <section className="inspector-card">
-            <div className="section-heading">
-              <Palette size={14} />
-              Palette
-              <span>{palettes.length}</span>
-            </div>
-            <input
-              className="title-input"
-              value={selected.palette.title}
-              onChange={(event) => onPaletteChange(selected.palette.id, { title: event.target.value })}
-            />
-            <div className="palette-inspector-strip">
-              {selected.palette.colors.map((color, index) => (
-                <i key={`${selected.palette.id}-${index}-${color}`} style={{ background: color }} />
-              ))}
-            </div>
-            <textarea
-              className="note-input"
-              placeholder="Notes..."
-              value={selected.palette.notes ?? ''}
-              onChange={(event) => onPaletteChange(selected.palette.id, { notes: event.target.value })}
-            />
-            <input
-              className="title-input"
-              placeholder="Source URL"
-              value={selected.palette.sourceUrl ?? ''}
-              onChange={(event) => onPaletteChange(selected.palette.id, { sourceUrl: event.target.value })}
-            />
-          </section>
-          <section className="inspector-card">
-            <label className="field-label" htmlFor="palette-color">
-              Color
-            </label>
-            <HexColorPicker
-              color={selected.palette.colors[0] ?? '#84cdbc'}
-              onChange={(color) => onPaletteColorChange(selected.palette.id, 0, color)}
-            />
-            <div className="palette-color-editor" aria-label="Palette colors">
-              {selected.palette.colors.map((color, index) => (
-                <div key={`${selected.palette.id}-edit-${index}-${color}`} className="palette-color-row">
-                  <input
-                    aria-label={`Palette color ${index + 1}`}
-                    type="color"
-                    value={normalizeHexInput(color)}
-                    onChange={(event) => onPaletteColorChange(selected.palette.id, index, event.target.value)}
-                  />
-                  <code>{normalizeHexInput(color)}</code>
-                  <button
-                    type="button"
-                    aria-label={`Remove palette color ${index + 1}`}
-                    onClick={() => onPaletteColorRemove(selected.palette.id, index)}
-                    disabled={selected.palette.colors.length <= 1}
-                  >
-                    <X size={12} />
-                  </button>
-                </div>
-              ))}
-              <button className="inline-action" type="button" onClick={() => onPaletteColorAdd(selected.palette.id)}>
-                <Plus size={13} />
-                Add color
-              </button>
-            </div>
-            <div className="palette-algorithms">
-              {(['complementary', 'analogous', 'triadic', 'split', 'monochrome', 'shades'] as PaletteHarmony[]).map((algorithm) => (
-                <button key={algorithm} type="button" onClick={() => onPaletteRegenerate(selected.palette.id, algorithm)}>
-                  {algorithm}
-                </button>
-              ))}
-            </div>
-            <button className="inline-action" type="button" onClick={() => onPaletteRegenerate(selected.palette.id, 'analogous')}>
-              <Sparkles size={13} />
-              Rebalance palette
-            </button>
-          </section>
-          <NodeLinksSection entries={nodeLinkEntries} nodeId={selected.palette.id} onRemove={onLinkDelete} onSelect={onSelect} />
-          <NodeMetadata node={selected.palette} />
-          <NodeVersionTimeline versions={selectedNodeVersions} onRestore={onNodeVersionRestore} />
-          <button className="danger-action" type="button" onClick={() => onPaletteDelete(selected.palette.id)}>
-            Delete palette
-          </button>
-        </>
-      )}
-
-      {selected.kind === 'diagram' && (
-        <>
-          <section className="inspector-card">
-            <div className="section-heading">
-              <FileText size={14} />
-              Diagram
-              <span>{diagrams.length}</span>
-            </div>
-            <input
-              className="title-input"
-              value={selected.diagram.title}
-              onChange={(event) => onDiagramChange(selected.diagram.id, { title: event.target.value })}
-            />
-            <dl>
-              <div>
-                <dt>Format</dt>
-                <dd>{selected.diagram.format}</dd>
-              </div>
-              <div>
-                <dt>Nodes</dt>
-                <dd>{selected.diagram.nodeIds.length}</dd>
-              </div>
-            </dl>
-            <textarea
-              className="note-input"
-              placeholder="Notes..."
-              value={selected.diagram.notes ?? ''}
-              onChange={(event) => onDiagramChange(selected.diagram.id, { notes: event.target.value })}
-            />
-            <input
-              className="title-input"
-              placeholder="Source URL"
-              value={selected.diagram.sourceUrl ?? ''}
-              onChange={(event) => onDiagramChange(selected.diagram.id, { sourceUrl: event.target.value })}
-            />
-          </section>
-          <section className="inspector-card">
-            <label className="field-label" htmlFor="diagram-source">
-              Source
-            </label>
-            <textarea
-              id="diagram-source"
-              className="diagram-source-input"
-              value={selected.diagram.source}
-              onChange={(event) => onDiagramChange(selected.diagram.id, { source: event.target.value })}
-            />
-          </section>
-          <NodeLinksSection entries={nodeLinkEntries} nodeId={selected.diagram.id} onRemove={onLinkDelete} onSelect={onSelect} />
-          <NodeMetadata node={selected.diagram} />
-          <NodeVersionTimeline versions={selectedNodeVersions} onRestore={onNodeVersionRestore} />
-          <button className="danger-action" type="button" onClick={() => onDiagramDelete(selected.diagram.id)}>
-            Delete diagram
-          </button>
-        </>
-      )}
-
-      {selected.kind === 'placeholder' && (
-        <>
-          <section className="inspector-card">
-            <div className="section-heading">
-              <ImagePlus size={14} />
-              Placeholder
-              <span>{placeholders.length}</span>
-            </div>
-            <input
-              className="title-input"
-              value={selected.placeholder.title}
-              onChange={(event) => onPlaceholderChange(selected.placeholder.id, { title: event.target.value })}
-            />
-            <p className="inspector-lede">Drop or import an image later and use this as a planned evidence slot.</p>
-            <label className="inline-action file-action">
-              <ImagePlus size={13} />
-              Attach image
-              <input
-                type="file"
-                accept="image/*"
-                onChange={(event) => {
-                  if (event.target.files) onPlaceholderAttach(selected.placeholder.id, event.target.files)
-                  event.currentTarget.value = ''
-                }}
-              />
-            </label>
-            <textarea
-              className="note-input"
-              placeholder="Notes..."
-              value={selected.placeholder.notes ?? ''}
-              onChange={(event) => onPlaceholderChange(selected.placeholder.id, { notes: event.target.value })}
-            />
-            <input
-              className="title-input"
-              placeholder="Source URL"
-              value={selected.placeholder.sourceUrl ?? ''}
-              onChange={(event) => onPlaceholderChange(selected.placeholder.id, { sourceUrl: event.target.value })}
-            />
-          </section>
-          <NodeLinksSection entries={nodeLinkEntries} nodeId={selected.placeholder.id} onRemove={onLinkDelete} onSelect={onSelect} />
-          <NodeMetadata node={selected.placeholder} />
-          <NodeVersionTimeline versions={selectedNodeVersions} onRestore={onNodeVersionRestore} />
-          <button className="danger-action" type="button" onClick={() => onPlaceholderDelete(selected.placeholder.id)}>
-            Delete placeholder
-          </button>
-        </>
-      )}
-
-      {selected.kind === 'frame' && (
-        <>
-          <section className="inspector-card">
-            <div className="section-heading">
-              <Frame size={14} />
-              Frame
-            </div>
-            <input
-              className="title-input"
-              value={selected.frame.title}
-              onChange={(event) => onFrameRename(selected.frame.id, event.target.value)}
-            />
-            <textarea
-              className="note-input"
-              rows={2}
-              placeholder="Describe this frame"
-              value={selected.frame.description ?? ''}
-              onChange={(event) => onFrameDescriptionChange(selected.frame.id, event.target.value)}
-            />
-            <p className="inspector-lede">
-              {selected.containedImages.length === 0
-                ? 'Empty — drag references inside this region to group them.'
-                : `${selected.containedImages.length} reference${selected.containedImages.length === 1 ? '' : 's'} inside.`}
-            </p>
-          </section>
-          <section className="reference-palette-card">
-            {selected.palette.length > 0 ? (
-              <>
-                <div className="reference-palette-strip" aria-label="Merged colors of references in this frame">
-                  {selected.palette.map((color, index) => (
-                    <button
-                      key={`${selected.frame.id}-palette-${index}-${color}`}
-                      type="button"
-                      className="reference-palette-segment"
-                      title={color}
-                      style={{ background: color }}
-                      onClick={() => void navigator.clipboard?.writeText(color)}
-                    >
-                      <code>{color.toUpperCase()}</code>
-                    </button>
-                  ))}
-                </div>
-                <div className="reference-palette-actions">
-                  <button type="button" onClick={() => void copyColorSet(selected.palette)}>
-                    Copy set
-                  </button>
-                  <button type="button" onClick={() => void copyColorBlockSvg(selected.palette, selected.frame.title)}>
-                    Copy SVG
-                  </button>
-                </div>
-              </>
-            ) : (
-              <p className="empty-copy">No references inside yet — their colors merge here once they are.</p>
-            )}
-          </section>
-          <button className="danger-action" type="button" onClick={() => onFrameDelete(selected.frame.id)}>
-            Delete frame
-          </button>
-        </>
-      )}
-    </aside>
   )
 }
 
@@ -11083,61 +11317,6 @@ function NodeVersionTimeline({
   )
 }
 
-function NodeLinksSection({
-  entries,
-  nodeId,
-  onRemove,
-  onSelect,
-}: {
-  entries: Array<{ link: EvidenceLink; source: GraphNodeRef | null; target: GraphNodeRef | null }>
-  nodeId: string
-  onRemove: (linkId: string) => void
-  onSelect: (selection: Selection) => void
-}) {
-  return (
-    <section className="inspector-card">
-      <div className="section-heading">
-        <Link2 size={14} />
-        Relations
-        <span>{entries.length}</span>
-      </div>
-      <LinkedList
-        count={entries.length}
-        emptyLabel="No relations"
-        limit={inspectorLinkedListLimit}
-        renderItems={(limit) => entries.slice(0, limit).map(({ link, source, target }) => {
-          const isOutgoing = (link.sourceNodeId ?? link.imageId) === nodeId
-          const peer = isOutgoing ? target : source
-          const sourceLabel = source ? graphNodeKindLabel(source.kind) : 'Node'
-          const targetLabel = target ? graphNodeKindLabel(target.kind) : 'Node'
-          return (
-            <div key={link.id} className="linked-list-row">
-              <button type="button" onClick={() => onSelect({ type: 'link', id: link.id })}>
-              <span className={`node-kind-dot node-kind-dot--${peer?.kind ?? 'unknown'}`} />
-              <span>
-                <strong>{peer?.title ?? 'Missing endpoint'}</strong>
-                <small>{sourceLabel} {'->'} {targetLabel} · {relationLabels[link.relation]}</small>
-              </span>
-              </button>
-              <button
-                className="linked-list-remove"
-                type="button"
-                aria-label={`Remove relation to ${peer?.title ?? 'node'}`}
-                onClick={(event) => {
-                  event.stopPropagation()
-                  onRemove(link.id)
-                }}
-              >
-                <X size={12} />
-              </button>
-            </div>
-          )
-        })}
-      />
-    </section>
-  )
-}
-
 function graphNodeKindLabel(kind: GraphNodeKind | 'unknown') {
   if (kind === 'image') return 'Reference'
   if (kind === 'idea') return 'Idea'
@@ -11145,6 +11324,24 @@ function graphNodeKindLabel(kind: GraphNodeKind | 'unknown') {
   if (kind === 'diagram') return 'Diagram'
   if (kind === 'placeholder') return 'Placeholder'
   return 'Node'
+}
+
+// Cheap line-based truncation, not a markdown-to-plaintext render — this text
+// only ever goes into an AI prompt, never the UI, so stripping formatting
+// isn't worth the extra dependency.
+function truncateForPrompt(markdown: string, maxLength: number): string {
+  const trimmed = markdown.trim()
+  if (trimmed.length <= maxLength) return trimmed
+  return `${trimmed.slice(0, maxLength).trimEnd()}…`
+}
+
+// Shared by the AI generation prompt and the Kira dock's live context
+// preview, so both read the exact same context Kira would (title plus a
+// truncated content excerpt when present) rather than two hand-rolled copies
+// that could quietly drift apart.
+function formatKiraContextLine(node: Pick<GraphNodeRef, 'kind' | 'title' | 'content'>): string {
+  const excerpt = node.content ? truncateForPrompt(node.content, 400) : ''
+  return excerpt ? `- ${graphNodeKindLabel(node.kind)}: ${node.title}\n  ${excerpt}` : `- ${graphNodeKindLabel(node.kind)}: ${node.title}`
 }
 
 function nodeSelectionKey(node: Pick<GraphNodeRef, 'kind' | 'id'>) {
@@ -12035,11 +12232,11 @@ function collectKiraContext(
   limit = 12,
 ): GraphNodeRef[] {
   const allNodes: GraphNodeRef[] = [
-    ...graph.ideas.map((idea) => ({ kind: 'idea' as const, id: idea.id, title: idea.title, x: idea.x, y: idea.y })),
-    ...graph.images.map((image) => ({ kind: 'image' as const, id: image.id, title: image.title, x: image.x, y: image.y })),
-    ...graph.palettes.map((palette) => ({ kind: 'palette' as const, id: palette.id, title: palette.title, x: palette.x, y: palette.y })),
-    ...graph.diagrams.map((diagram) => ({ kind: 'diagram' as const, id: diagram.id, title: diagram.title, x: diagram.x, y: diagram.y })),
-    ...graph.placeholders.map((placeholder) => ({ kind: 'placeholder' as const, id: placeholder.id, title: placeholder.title, x: placeholder.x, y: placeholder.y })),
+    ...graph.ideas.filter((idea) => !idea.aiExcluded).map((idea) => ({ kind: 'idea' as const, id: idea.id, title: idea.title, x: idea.x, y: idea.y, content: idea.content })),
+    ...graph.images.filter((image) => !image.aiExcluded).map((image) => ({ kind: 'image' as const, id: image.id, title: image.title, x: image.x, y: image.y, content: image.content })),
+    ...graph.palettes.filter((palette) => !palette.aiExcluded).map((palette) => ({ kind: 'palette' as const, id: palette.id, title: palette.title, x: palette.x, y: palette.y, content: palette.content })),
+    ...graph.diagrams.filter((diagram) => !diagram.aiExcluded).map((diagram) => ({ kind: 'diagram' as const, id: diagram.id, title: diagram.title, x: diagram.x, y: diagram.y, content: diagram.content })),
+    ...graph.placeholders.filter((placeholder) => !placeholder.aiExcluded).map((placeholder) => ({ kind: 'placeholder' as const, id: placeholder.id, title: placeholder.title, x: placeholder.x, y: placeholder.y, content: placeholder.content })),
   ]
   if (!source || scope === 'full_board') {
     const importanceByKey = new Map<string, number>([
@@ -12311,7 +12508,7 @@ function buildDiscoveryGraphView(ideas: Idea[], images: EvidenceImage[], links: 
       .map((link) => images.find((image) => image.id === link.imageId))
       .filter((image): image is EvidenceImage => Boolean(image))
     ideaSignals.set(idea.id, new Set([
-      ...tokenizeSignal(`${idea.title} ${idea.body}`),
+      ...tokenizeSignal(`${idea.title} ${idea.content}`),
       ...linkedImages.flatMap((image) => [...image.tags, ...image.suggestions.map(suggestionLabel)].flatMap(tokenizeSignal)),
     ]))
   })
@@ -12487,6 +12684,7 @@ async function createReferenceFromFile(file: File, index: number): Promise<Evide
   return {
     id: `img-import-${Date.now()}-${index}`,
     title: titleFromFilename(file.name),
+    content: titleFromFilename(file.name),
     source: file.name,
     palette: analysis.palette.length > 0 ? analysis.palette : paletteFromName(file.name),
     tags,
@@ -12519,6 +12717,7 @@ function createReferenceFromUrl(url: URL, index: number): EvidenceImage {
   return {
     id: `img-url-${Date.now()}-${index}`,
     title: titleFromFilename(titleBase),
+    content: titleFromFilename(titleBase),
     source: displayUrl,
     palette: paletteFromName(displayUrl),
     tags: tags.length > 0 ? tags : ['url'],
@@ -12547,6 +12746,7 @@ function createReferenceFromCapture(capture: KiraCapturePayload, index: number):
   return {
     id: `img-browser-${Date.now()}-${index}`,
     title,
+    content: title,
     source: sourceText,
     palette: paletteFromName(`${capture.kind}:${capture.url}`),
     tags: mergeUniqueTags(['browser', capture.kind, ...(capture.tags ?? [])], sourceTags.slice(0, 3)),
@@ -12953,7 +13153,7 @@ function createKiraCaptureContext(
         id: idea.id,
         title: idea.title,
         subtitle: idea.status,
-        snippet: firstNonEmpty([idea.body, idea.notes, idea.sourceUrl]),
+        snippet: firstNonEmpty([idea.content, idea.notes, idea.sourceUrl]),
       })),
       ...images.map((image) => ({
         kind: 'image' as const,
@@ -13050,6 +13250,15 @@ function colorFromHash(seed: number) {
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value))
+}
+
+// A node's title is no longer directly editable — it's the first non-empty
+// line of its markdown `content`, with the most common inline-markdown
+// markers stripped so the derived label doesn't show raw `**`/`#`/`-` syntax.
+function deriveTitleFromContent(markdown: string): string {
+  const firstLine = markdown.split('\n').find((line) => line.trim().length > 0) ?? ''
+  const stripped = firstLine.replace(/^#+\s*|^[-*]\s+|\*\*|\*|`/g, '').trim()
+  return stripped.length > 0 ? stripped.slice(0, 120) : 'Untitled'
 }
 
 function smoothGraphEdge(source: Pick<GraphNodeRef, 'x' | 'y'>, target: Pick<GraphNodeRef, 'x' | 'y'>) {
@@ -13553,7 +13762,7 @@ function buildSlideLayouts(
         idea,
         kicker: slideKicker(idea, references, relationMix),
         title: idea.title,
-        summary: presentationSummary(idea.body, references, relationMix),
+        summary: presentationSummary(idea.content, references, relationMix),
         speakerNote: speakerNoteForSlide(idea, references, relationMix, layoutReason),
         references,
         palettes: relatedPalettes,
@@ -13760,7 +13969,7 @@ function resolveSlideAutoLayout(
   diagrams: DiagramNode[],
 ): { layout: SlideLayout['layout']; reason: string } {
   const referenceCount = references.length
-  const bodyWordCount = countWords(idea.body)
+  const bodyWordCount = countWords(idea.content)
   const supportCount = links.filter((link) => link.relation === 'supports' || link.relation === 'example').length
   const supportRatio = links.length === 0 ? 0 : supportCount / links.length
   const denseEvidence = referenceCount >= 5 || links.length >= 6
@@ -13848,7 +14057,7 @@ function buildOutline(ideas: Idea[], images: EvidenceImage[], links: EvidenceLin
       id: `outline-${idea.id}`,
       idea,
       title: idea.title,
-      summary: `${idea.body} Current references indicate: ${relationText}.`,
+      summary: `${idea.content} Current references indicate: ${relationText}.`,
       references,
       strength: references.length >= 2 ? 'strong' : references.length === 1 ? 'forming' : 'thin',
     }
@@ -13876,7 +14085,7 @@ function outlineSectionsFromDraft(draft: OutlineDraft, ideas: Idea[], images: Ev
     const idea = ideas.find((candidate) => candidate.id === section.ideaId) ?? {
       id: section.ideaId,
       title: section.title,
-      body: '',
+      content: '',
       status: section.strength,
       x: 50,
       y: 50,
@@ -15014,7 +15223,7 @@ function createTemplateIdea(
   return {
     id,
     title,
-    body,
+    content: body,
     status,
     x,
     y,
@@ -15222,7 +15431,7 @@ function createFallbackIdea(): Idea {
   return {
     id: `idea-${Date.now()}`,
     title: 'Untitled idea',
-    body: 'Add a working note for this idea.',
+    content: 'Add a working note for this idea.',
     status: 'thin',
     x: 50,
     y: 46,
@@ -15253,7 +15462,7 @@ function createBenchmarkProjectSnapshot(referenceCount: number): ProjectSnapshot
     return {
       id: `bench-idea-${index}`,
       title: theme[0],
-      body: `Benchmark concept for ${theme.slice(1).join(', ')} references.`,
+      content: `Benchmark concept for ${theme.slice(1).join(', ')} references.`,
       status: index % 3 === 0 ? 'strong' : index % 3 === 1 ? 'forming' : 'thin',
       x: clamp(50 + Math.cos(angle) * 28, 16, 84),
       y: clamp(48 + Math.sin(angle) * 22, 16, 82),
@@ -15269,6 +15478,7 @@ function createBenchmarkProjectSnapshot(referenceCount: number): ProjectSnapshot
     return {
       id: `bench-img-${index}`,
       title,
+      content: title,
       source: index % 5 === 0 ? 'eagle.import' : index % 5 === 1 ? 'browser.capture' : 'local.library',
       originApp: index % 5 === 0 ? 'Eagle' : undefined,
       originId: index % 5 === 0 ? `eagle-${index}` : undefined,
@@ -15433,7 +15643,29 @@ function isProjectSnapshot(value: unknown): value is ProjectSnapshot {
   snapshot.versionState = normalizeVersionState(snapshot.versionState, snapshot.versionHistory)
   snapshot.nodeVersions = normalizeNodeVersions(snapshot.nodeVersions ?? [])
   snapshot.slidesConfig = normalizeSlidesConfig(snapshot.slidesConfig)
+  snapshot.ideas = snapshot.ideas!.map(normalizeIdea)
+  snapshot.images = snapshot.images!.map((raw) => normalizeNodeContent(raw))
+  snapshot.palettes = snapshot.palettes!.map((raw) => normalizeNodeContent(raw))
+  snapshot.diagrams = snapshot.diagrams!.map((raw) => normalizeNodeContent(raw))
+  snapshot.placeholders = snapshot.placeholders!.map((raw) => normalizeNodeContent(raw))
   return true
+}
+
+// Old saved projects wrote a free-text `body` field where `Idea` now expects
+// markdown `content`. Backfill on load, once, without touching `title` — the
+// user's existing title stays exactly as they left it until their next edit
+// starts deriving it from content again (see deriveTitleFromContent).
+function normalizeIdea(raw: Idea | (Omit<Idea, 'content'> & { body?: string })): Idea {
+  if (typeof (raw as Idea).content === 'string') return raw as Idea
+  const { body, ...rest } = raw as Omit<Idea, 'content'> & { body?: string }
+  return { ...rest, content: body ?? '' }
+}
+
+// Image/Palette/Diagram/Placeholder never had a `body` field — old saves
+// simply lack `content`, so it's backfilled straight from `title`.
+function normalizeNodeContent<T extends { title: string; content?: string }>(raw: T): T & { content: string } {
+  if (typeof raw.content === 'string') return raw as T & { content: string }
+  return { ...raw, content: raw.title }
 }
 
 function normalizeProjectMetadata(value: unknown): ProjectMetadata {
@@ -15559,7 +15791,7 @@ function nodeVersionTriggerLabel(trigger: NodeVersionTrigger) {
 }
 
 function isIdeaNode(value: unknown): value is Idea {
-  return Boolean(value && typeof value === 'object' && typeof (value as Partial<Idea>).id === 'string' && typeof (value as Partial<Idea>).title === 'string' && typeof (value as Partial<Idea>).body === 'string')
+  return Boolean(value && typeof value === 'object' && typeof (value as Partial<Idea>).id === 'string' && typeof (value as Partial<Idea>).title === 'string' && typeof (value as Partial<Idea>).content === 'string')
 }
 
 function isImageNode(value: unknown): value is EvidenceImage {
@@ -15911,9 +16143,9 @@ function outlineDraftToMarkdown(draft: OutlineDraft, ideas: Idea[], images: Evid
     lines.push(section.summary)
     lines.push('')
     lines.push(`Strength: ${section.strength}`)
-    if (idea?.body && idea.body !== section.summary) {
+    if (idea?.content && idea.content !== section.summary) {
       lines.push('')
-      lines.push(`Idea note: ${idea.body}`)
+      lines.push(`Idea note: ${idea.content}`)
     }
     lines.push('')
     lines.push('References:')
@@ -15944,8 +16176,8 @@ function outlineDraftToHtml(draft: OutlineDraft, ideas: Idea[], images: Evidence
           const thumb = image?.thumb ? `<img src="${escapeAttribute(image.thumb)}" alt="">` : ''
           return `<li>${thumb}<span>${escapeHtml(image?.title ?? referenceId)}${source}</span></li>`
         }).join('')
-    const ideaNote = idea?.body && idea.body !== section.summary
-      ? `<p class="idea-note">Idea note: ${escapeHtml(idea.body)}</p>`
+    const ideaNote = idea?.content && idea.content !== section.summary
+      ? `<p class="idea-note">Idea note: ${escapeHtml(idea.content)}</p>`
       : ''
 
     return `
