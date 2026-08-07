@@ -7742,6 +7742,19 @@ function GraphCanvas({
   // Only one Details popover can be open at a time, so one flat key is
   // enough to track a drag-to-reorder gesture across its block modules.
   const [draggedBlockKey, setDraggedBlockKey] = useState<string | null>(null)
+  // Which Details-popover sections are collapsed — a session-level UI
+  // preference shared across every node (not per-node state), same as a
+  // sidebar's remembered scroll position. History starts collapsed since
+  // it's the section people open least; everything else starts open.
+  const [collapsedDetailSections, setCollapsedDetailSections] = useState<Set<string>>(() => new Set(['history']))
+  const toggleDetailSection = useCallback((key: string) => {
+    setCollapsedDetailSections((current) => {
+      const next = new Set(current)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }, [])
   const [frameDescriptionOpenId, setFrameDescriptionOpenId] = useState<string | null>(null)
   const [editingFrameId, setEditingFrameId] = useState<string | null>(null)
   const draggingFrameRef = useRef<{ id: string; offsetX: number; offsetY: number } | null>(null)
@@ -8291,6 +8304,17 @@ function GraphCanvas({
     setNodeContextMenu(null)
   }
 
+  // Double-clicking the node's chrome (thumbnail, padding) morphs it
+  // straight into the expanded Details card — the same destination as the
+  // (i) button, just reachable without hunting for a small icon first.
+  // Double-clicking the caption text itself is left alone so the browser's
+  // native double-click-to-select-a-word still works while typing.
+  function handleNodeDoubleClick(kind: GraphNodeKind, id: string, event: React.MouseEvent<HTMLElement>) {
+    if ((event.target as HTMLElement).closest('.node-rich-editor')) return
+    onSelect({ type: kind, id } as Selection)
+    setDetailsPopoverNode({ kind, id })
+  }
+
   function openArcMenu(kind: GraphNodeKind, node: Pick<Idea, 'id' | 'x' | 'y'>, event: React.MouseEvent<HTMLElement>) {
     event.preventDefault()
     event.stopPropagation()
@@ -8638,40 +8662,54 @@ function GraphCanvas({
       />
     )
 
+    const closeDetails = () => setDetailsPopoverNode(null)
+
     return (
-      <div className="node-below-stack" onPointerDown={(event) => event.stopPropagation()} onContextMenu={(event) => event.preventDefault()}>
-        <div className="node-toolbar">
-          <button
-            type="button"
-            aria-label="Details"
-            title="Notes, source, tags, history"
-            className={isDetailsOpen ? 'is-active' : ''}
-            onClick={() => setDetailsPopoverNode((current) => current?.kind === kind && current.id === id ? null : { kind, id })}
-          >
-            <NoteIcon size={13} />
-          </button>
-          {/* Linking already has two other paths — the node's own drag
-              handle (.node-link-handle, direct-manipulation) and the
-              right-click context menu — a third click target here was pure
-              duplication, not a real alternative. */}
-          <button
-            type="button"
-            aria-label="Delete node"
-            title="Delete"
-            className="is-danger"
-            onClick={() => onDeleteNodes([{ kind, id }])}
-          >
-            <Trash2 size={13} />
-          </button>
-        </div>
+      <div
+        className={isDetailsOpen ? 'node-below-stack is-expanded' : 'node-below-stack'}
+        onPointerDown={(event) => event.stopPropagation()}
+        onContextMenu={(event) => event.preventDefault()}
+      >
+        {/* Collapsed: a small pill with just Details + Delete, floating
+            below the node. Expanded: the pill disappears entirely and the
+            card below absorbs both — one floating object instead of a pill
+            stacked on a box, which is what "morphing into a card" means. */}
+        {!isDetailsOpen && (
+          <div className="node-toolbar">
+            <button
+              type="button"
+              aria-label="Details"
+              title="Notes, source, tags, history"
+              onClick={() => setDetailsPopoverNode({ kind, id })}
+            >
+              <NoteIcon size={13} />
+            </button>
+            {/* Linking already has two other paths — the node's own drag
+                handle (.node-link-handle, direct-manipulation) and the
+                right-click context menu — a third click target here was
+                pure duplication, not a real alternative. */}
+            <button
+              type="button"
+              aria-label="Delete node"
+              title="Delete"
+              className="is-danger"
+              onClick={() => onDeleteNodes([{ kind, id }])}
+            >
+              <Trash2 size={13} />
+            </button>
+          </div>
+        )}
         {isDetailsOpen && (
           <div className="node-details-popover">
             {/* Every action that used to live on the node face's toolbar —
                 add-new/AI actions plus the kind-specific ones — is
                 consolidated into this single icon row at the top of the
-                popover, so the node face itself stays down to Details/Link/
-                Delete. */}
+                card, so the node face itself stays down to a single (i)
+                affordance while collapsed. */}
             <div className="node-details-actionbar">
+              <button type="button" aria-label="Collapse details" title="Collapse" className="node-details-collapse" onClick={closeDetails}>
+                <ChevronDown size={13} />
+              </button>
               {kind === 'image' && (
                 <>
                   <label className="node-toolbar-file file-action" aria-label="Replace image" title="Replace image">
@@ -8738,30 +8776,49 @@ function GraphCanvas({
               >
                 {node.aiExcluded ? <EyeOff size={13} /> : <Eye size={13} />}
               </button>
+              <button
+                type="button"
+                aria-label="Delete node"
+                title="Delete"
+                className="is-danger"
+                onClick={() => onDeleteNodes([{ kind, id }])}
+              >
+                <Trash2 size={13} />
+              </button>
             </div>
             {kind === 'palette' && (
-              <div className="node-details-section">
-                <HexColorPicker
-                  color={(node as PaletteNode).colors[0] ?? '#84cdbc'}
-                  onChange={(color) => onPaletteColorChange(id, 0, color)}
+              <section className="block-module">
+                <SectionHeader
+                  icon={<PaletteIcon size={14} />}
+                  title="Colors"
+                  collapsed={collapsedDetailSections.has('colors')}
+                  onToggleCollapsed={() => toggleDetailSection('colors')}
                 />
-                <div className="palette-color-editor" aria-label="Palette colors">
-                  {(node as PaletteNode).colors.map((color, index) => (
-                    <div key={`${id}-edit-${index}-${color}`} className="palette-color-row">
-                      <input
-                        aria-label={`Palette color ${index + 1}`}
-                        type="color"
-                        value={normalizeHexInput(color)}
-                        onChange={(event) => onPaletteColorChange(id, index, event.target.value)}
-                      />
-                      <code>{normalizeHexInput(color)}</code>
-                      <button type="button" aria-label={`Remove palette color ${index + 1}`} onClick={() => onPaletteColorRemove(id, index)}>
-                        <X size={12} />
-                      </button>
+                {!collapsedDetailSections.has('colors') && (
+                  <div className="node-details-section">
+                    <HexColorPicker
+                      color={(node as PaletteNode).colors[0] ?? '#84cdbc'}
+                      onChange={(color) => onPaletteColorChange(id, 0, color)}
+                    />
+                    <div className="palette-color-editor" aria-label="Palette colors">
+                      {(node as PaletteNode).colors.map((color, index) => (
+                        <div key={`${id}-edit-${index}-${color}`} className="palette-color-row">
+                          <input
+                            aria-label={`Palette color ${index + 1}`}
+                            type="color"
+                            value={normalizeHexInput(color)}
+                            onChange={(event) => onPaletteColorChange(id, index, event.target.value)}
+                          />
+                          <code>{normalizeHexInput(color)}</code>
+                          <button type="button" aria-label={`Remove palette color ${index + 1}`} onClick={() => onPaletteColorRemove(id, index)}>
+                            <X size={12} />
+                          </button>
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
-              </div>
+                  </div>
+                )}
+              </section>
             )}
             <textarea
               className="note-input"
@@ -8779,6 +8836,8 @@ function GraphCanvas({
                         <TagBlock
                           image={image}
                           pinned={image.tagsPinned ?? false}
+                          collapsed={collapsedDetailSections.has('tags')}
+                          onToggleCollapsed={() => toggleDetailSection('tags')}
                           canRunOcr={isTauriRuntime() && image.thumb.startsWith('data:image/')}
                           canRefineTags={localModelAvailable}
                           isOcrRunning={ocrRunningImageId === id}
@@ -8804,6 +8863,8 @@ function GraphCanvas({
                         <PaletteBlock
                           image={image}
                           pinned={image.palettePinned ?? true}
+                          collapsed={collapsedDetailSections.has('palette')}
+                          onToggleCollapsed={() => toggleDetailSection('palette')}
                           onTogglePinned={() => onToggleImagePalettePinned(id)}
                           dragHandleProps={dragHandleProps('palette')}
                         />
@@ -8813,55 +8874,62 @@ function GraphCanvas({
                   return (
                     <div key="source" className={draggedBlockKey === 'source' ? 'reorderable-block is-dragging' : 'reorderable-block'} {...dropTargetProps('source')}>
                       <section className="block-module">
-                        <div className="block-module-heading">
-                          <span className="block-module-drag" aria-hidden {...dragHandleProps('source')}>
-                            <GripVertical size={12} />
-                          </span>
-                          <span className="block-module-title">
-                            <Link2 size={14} />
-                            Source
-                          </span>
-                        </div>
-                        <div className="source-url-row">{sourceUrlField}</div>
+                        <SectionHeader
+                          icon={<Link2 size={14} />}
+                          title="Source"
+                          collapsed={collapsedDetailSections.has('source')}
+                          onToggleCollapsed={() => toggleDetailSection('source')}
+                          dragHandleProps={dragHandleProps('source')}
+                        />
+                        {!collapsedDetailSections.has('source') && <div className="source-url-row">{sourceUrlField}</div>}
                       </section>
                     </div>
                   )
                 })}
               </div>
             ) : (
-              <div className="source-url-row">
-                <Link2 size={13} />
-                {sourceUrlField}
-              </div>
+              <section className="block-module">
+                <SectionHeader
+                  icon={<Link2 size={14} />}
+                  title="Source"
+                  collapsed={collapsedDetailSections.has('source')}
+                  onToggleCollapsed={() => toggleDetailSection('source')}
+                />
+                {!collapsedDetailSections.has('source') && <div className="source-url-row">{sourceUrlField}</div>}
+              </section>
             )}
             {kind === 'diagram' && (
               <section className="block-module">
-                <div className="block-module-heading">
-                  <span className="block-module-title">
-                    <FileText size={14} />
-                    Source
-                  </span>
-                </div>
-                <textarea
-                  aria-label="Diagram source"
-                  className="diagram-source-input"
-                  value={(node as DiagramNode).source}
-                  onChange={(event) => onDiagramInlineChange(id, { source: event.target.value })}
+                <SectionHeader
+                  icon={<FileText size={14} />}
+                  title="Diagram source"
+                  collapsed={collapsedDetailSections.has('diagram-source')}
+                  onToggleCollapsed={() => toggleDetailSection('diagram-source')}
                 />
+                {!collapsedDetailSections.has('diagram-source') && (
+                  <textarea
+                    aria-label="Diagram source"
+                    className="diagram-source-input"
+                    value={(node as DiagramNode).source}
+                    onChange={(event) => onDiagramInlineChange(id, { source: event.target.value })}
+                  />
+                )}
               </section>
             )}
             {/* History used to be a second popover behind its own toolbar
                 toggle — one more floating layer to open/close for
                 information that belongs with everything else about this
-                node. It's a section here instead. */}
+                node. It's a section here instead, collapsed by default. */}
             <section className="block-module">
-              <div className="block-module-heading">
-                <span className="block-module-title">
-                  <History size={14} />
-                  History
-                </span>
-              </div>
-              <NodeVersionTimeline versions={nodeVersionRecords} onRestore={onNodeVersionRestore} />
+              <SectionHeader
+                icon={<History size={14} />}
+                title="History"
+                collapsed={collapsedDetailSections.has('history')}
+                onToggleCollapsed={() => toggleDetailSection('history')}
+              />
+              {!collapsedDetailSections.has('history') && (
+                <NodeVersionTimeline versions={nodeVersionRecords} onRestore={onNodeVersionRestore} />
+              )}
             </section>
             <NodeMetadata node={node} />
           </div>
@@ -9667,6 +9735,7 @@ function GraphCanvas({
                   '--node-scale': nodeScale(idea),
                 } as React.CSSProperties}
                 onClick={(event) => selectGraphNode('idea', idea.id, event)}
+                onDoubleClick={(event) => handleNodeDoubleClick('idea', idea.id, event)}
                 onContextMenu={(event) => openNodeContextMenu('idea', idea.id, event)}
                 onKeyDown={(event) => {
                   if (isEditableEventTarget(event.target)) return
@@ -9738,6 +9807,7 @@ function GraphCanvas({
                   '--node-scale': nodeScale(image),
                 } as React.CSSProperties}
                 onClick={(event) => selectGraphNode('image', image.id, event)}
+                onDoubleClick={(event) => handleNodeDoubleClick('image', image.id, event)}
                 onContextMenu={(event) => openNodeContextMenu('image', image.id, event)}
                 onKeyDown={(event) => {
                   if (isEditableEventTarget(event.target)) return
@@ -9816,6 +9886,7 @@ function GraphCanvas({
                   '--node-scale': nodeScale(palette),
                 } as React.CSSProperties}
                 onClick={(event) => selectGraphNode('palette', palette.id, event)}
+                onDoubleClick={(event) => handleNodeDoubleClick('palette', palette.id, event)}
                 onContextMenu={(event) => openNodeContextMenu('palette', palette.id, event)}
                 onKeyDown={(event) => {
                   if (isEditableEventTarget(event.target)) return
@@ -9880,6 +9951,7 @@ function GraphCanvas({
                   '--node-scale': nodeScale(diagram),
                 } as React.CSSProperties}
                 onClick={(event) => selectGraphNode('diagram', diagram.id, event)}
+                onDoubleClick={(event) => handleNodeDoubleClick('diagram', diagram.id, event)}
                 onContextMenu={(event) => openNodeContextMenu('diagram', diagram.id, event)}
                 onKeyDown={(event) => {
                   if (isEditableEventTarget(event.target)) return
@@ -9940,6 +10012,7 @@ function GraphCanvas({
                   '--node-scale': nodeScale(placeholder),
                 } as React.CSSProperties}
                 onClick={(event) => selectGraphNode('placeholder', placeholder.id, event)}
+                onDoubleClick={(event) => handleNodeDoubleClick('placeholder', placeholder.id, event)}
                 onContextMenu={(event) => openNodeContextMenu('placeholder', placeholder.id, event)}
                 onKeyDown={(event) => {
                   if (isEditableEventTarget(event.target)) return
@@ -12085,9 +12158,48 @@ function LinkedList({
 // there is never a separate popup or panel for typing a tag. Escape/blur
 // collapses the field back to a pill; Enter commits and immediately reopens
 // it so multiple tags can be typed back-to-back.
+// Shared header for every collapsible section in the Details card (Tags,
+// Palette, Source, History, the palette-node color editor) — one chevron
+// vocabulary instead of each section inventing its own expand affordance.
+function SectionHeader({
+  icon,
+  title,
+  collapsed,
+  onToggleCollapsed,
+  dragHandleProps,
+  tools,
+}: {
+  icon: React.ReactNode
+  title: string
+  collapsed: boolean
+  onToggleCollapsed: () => void
+  dragHandleProps?: React.HTMLAttributes<HTMLSpanElement>
+  tools?: React.ReactNode
+}) {
+  return (
+    <div className="block-module-heading">
+      {dragHandleProps && (
+        <span className="block-module-drag" aria-hidden {...dragHandleProps}>
+          <GripVertical size={12} />
+        </span>
+      )}
+      <button type="button" className="block-module-toggle" onClick={onToggleCollapsed} aria-expanded={!collapsed}>
+        <ChevronRight size={12} className={collapsed ? 'block-module-chevron' : 'block-module-chevron is-open'} />
+        <span className="block-module-title">
+          {icon}
+          {title}
+        </span>
+      </button>
+      {tools}
+    </div>
+  )
+}
+
 function TagBlock({
   image,
   pinned,
+  collapsed,
+  onToggleCollapsed,
   canRunOcr,
   canRefineTags,
   isOcrRunning,
@@ -12105,6 +12217,8 @@ function TagBlock({
 }: {
   image: EvidenceImage
   pinned: boolean
+  collapsed: boolean
+  onToggleCollapsed: () => void
   canRunOcr: boolean
   canRefineTags: boolean
   isOcrRunning: boolean
@@ -12136,38 +12250,37 @@ function TagBlock({
 
   return (
     <section className="block-module">
-      <div className="block-module-heading">
-        <span className="block-module-drag" aria-hidden {...dragHandleProps}>
-          <GripVertical size={12} />
-        </span>
-        <span className="block-module-title">
-          <Tag size={14} />
-          Tags
-        </span>
-        <span className="section-tools">
-          {canRunOcr && (
-            <button className="section-tool" type="button" disabled={isOcrRunning} onClick={onRunOcr}>
-              <Sparkles size={12} />
-              {isOcrRunning ? 'Reading' : 'OCR'}
+      <SectionHeader
+        icon={<Tag size={14} />}
+        title="Tags"
+        collapsed={collapsed}
+        onToggleCollapsed={onToggleCollapsed}
+        dragHandleProps={dragHandleProps}
+        tools={
+          <span className="section-tools">
+            {canRunOcr && (
+              <button className="section-tool" type="button" disabled={isOcrRunning} onClick={onRunOcr} title="Read text from image (OCR)">
+                <Sparkles size={12} />
+              </button>
+            )}
+            {canRefineTags && (
+              <button className="section-tool" type="button" disabled={isRefiningTags} onClick={onRefineTags} title="Refine tags with AI">
+                <Brain size={12} />
+              </button>
+            )}
+            <button
+              type="button"
+              className={pinned ? 'section-tool is-active' : 'section-tool'}
+              aria-label={pinned ? 'Always shown on node — click to hide' : 'Hidden on node — click to always show'}
+              title={pinned ? 'Always shown on node' : 'Show on node'}
+              onClick={onTogglePinned}
+            >
+              {pinned ? <Eye size={12} /> : <EyeOff size={12} />}
             </button>
-          )}
-          {canRefineTags && (
-            <button className="section-tool" type="button" disabled={isRefiningTags} onClick={onRefineTags}>
-              <Brain size={12} />
-              {isRefiningTags ? 'Refining' : 'Refine'}
-            </button>
-          )}
-          <button
-            type="button"
-            className={pinned ? 'section-tool is-active' : 'section-tool'}
-            aria-label={pinned ? 'Always shown on node — click to hide' : 'Hidden on node — click to always show'}
-            title={pinned ? 'Always shown on node' : 'Show on node'}
-            onClick={onTogglePinned}
-          >
-            {pinned ? <Eye size={12} /> : <EyeOff size={12} />}
-          </button>
-        </span>
-      </div>
+          </span>
+        }
+      />
+      {!collapsed && (
       <div className="tag-cloud">
         {image.tags.map((tag) => (
           <span className="tag-chip" key={tag}>
@@ -12206,7 +12319,8 @@ function TagBlock({
           </button>
         )}
       </div>
-      {image.suggestions.length > 0 && (
+      )}
+      {!collapsed && image.suggestions.length > 0 && (
         <div className="suggestion-block">
           {/* Without this label, a suggestion chip sitting directly under
               the confirmed-tags row reads as just another tag — unclear
@@ -12232,7 +12346,7 @@ function TagBlock({
           </div>
         </div>
       )}
-      {(ocrStatus || modelStatus) && <p className="tag-status">{[ocrStatus, modelStatus].filter(Boolean).join(' · ')}</p>}
+      {!collapsed && (ocrStatus || modelStatus) && <p className="tag-status">{[ocrStatus, modelStatus].filter(Boolean).join(' · ')}</p>}
     </section>
   )
 }
@@ -12243,36 +12357,41 @@ function TagBlock({
 function PaletteBlock({
   image,
   pinned,
+  collapsed,
+  onToggleCollapsed,
   onTogglePinned,
   dragHandleProps,
 }: {
   image: EvidenceImage
   pinned: boolean
+  collapsed: boolean
+  onToggleCollapsed: () => void
   onTogglePinned: () => void
   dragHandleProps?: React.HTMLAttributes<HTMLSpanElement>
 }) {
   return (
     <section className="block-module">
-      <div className="block-module-heading">
-        <span className="block-module-drag" aria-hidden {...dragHandleProps}>
-          <GripVertical size={12} />
-        </span>
-        <span className="block-module-title">
-          <PaletteIcon size={14} />
-          Palette
-        </span>
-        <span className="section-tools">
-          <button
-            type="button"
-            className={pinned ? 'section-tool is-active' : 'section-tool'}
-            aria-label={pinned ? 'Always shown on node — click to hide' : 'Hidden on node — click to always show'}
-            title={pinned ? 'Always shown on node' : 'Show on node'}
-            onClick={onTogglePinned}
-          >
-            {pinned ? <Eye size={12} /> : <EyeOff size={12} />}
-          </button>
-        </span>
-      </div>
+      <SectionHeader
+        icon={<PaletteIcon size={14} />}
+        title="Palette"
+        collapsed={collapsed}
+        onToggleCollapsed={onToggleCollapsed}
+        dragHandleProps={dragHandleProps}
+        tools={
+          <span className="section-tools">
+            <button
+              type="button"
+              className={pinned ? 'section-tool is-active' : 'section-tool'}
+              aria-label={pinned ? 'Always shown on node — click to hide' : 'Hidden on node — click to always show'}
+              title={pinned ? 'Always shown on node' : 'Show on node'}
+              onClick={onTogglePinned}
+            >
+              {pinned ? <Eye size={12} /> : <EyeOff size={12} />}
+            </button>
+          </span>
+        }
+      />
+      {!collapsed && (
       <div className="reference-palette-strip" aria-label="Extracted image colors">
         {image.palette.slice(0, 7).map((color, index) => (
           <button
@@ -12287,6 +12406,7 @@ function PaletteBlock({
           </button>
         ))}
       </div>
+      )}
     </section>
   )
 }

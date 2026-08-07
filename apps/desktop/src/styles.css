@@ -3714,6 +3714,12 @@ p {
   transform: translateX(-50%);
 }
 
+/* Expanded: the card should read as the node's own extension, not a
+   second object floating near it — pull the gap down to a hairline. */
+.node-below-stack.is-expanded {
+  margin-top: 4px;
+}
+
 .node-toolbar {
   display: flex;
   gap: 2px;
@@ -3763,8 +3769,26 @@ p {
   border-radius: 12px;
   background: var(--node-surface-selected);
   backdrop-filter: blur(16px);
+  box-shadow: var(--node-shadow-hover);
   font-size: 0.78rem;
+  /* The node above morphs into this card rather than a second panel
+     appearing beside it — a quick scale+fade from the node's edge sells
+     that as one continuous shape, not two objects. */
+  animation: node-details-morph-in 160ms var(--ease-out-soft);
+  transform-origin: top center;
 }
+
+@keyframes node-details-morph-in {
+  from {
+    opacity: 0;
+    transform: scaleY(0.94) translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
 
 .node-details-section {
   display: grid;
@@ -3835,7 +3859,7 @@ p {
 .block-module-heading {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
 }
 
 .block-module-drag {
@@ -3847,6 +3871,28 @@ p {
 
 .block-module-drag:active {
   cursor: grabbing;
+}
+
+.block-module-toggle {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+  gap: 4px;
+  padding: 2px 0;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.block-module-chevron {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  transition: transform 140ms var(--ease-out-soft);
+}
+
+.block-module-chevron.is-open {
+  transform: rotate(90deg);
 }
 
 .block-module-title {
