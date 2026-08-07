@@ -3771,21 +3771,7 @@ p {
   gap: 8px;
 }
 
-.node-history-popover {
-  display: grid;
-  gap: 8px;
-  width: 260px;
-  max-height: 360px;
-  overflow-y: auto;
-  padding: 12px;
-  border: 1px solid var(--border-soft);
-  border-radius: 12px;
-  background: var(--node-surface-selected);
-  backdrop-filter: blur(16px);
-  font-size: 0.78rem;
-}
-
-.node-history-popover .diagram-source-input {
+.node-details-popover .diagram-source-input {
   min-height: 120px;
 }
 

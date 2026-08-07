@@ -7739,7 +7739,6 @@ function GraphCanvas({
   const [multiSelectedNodes, setMultiSelectedNodes] = useState<CanvasNodeSelection[]>([])
   const [nodeContextMenu, setNodeContextMenu] = useState<{ x: number; y: number; nodes: CanvasNodeSelection[] } | null>(null)
   const [detailsPopoverNode, setDetailsPopoverNode] = useState<CanvasNodeSelection | null>(null)
-  const [historyPopoverNode, setHistoryPopoverNode] = useState<CanvasNodeSelection | null>(null)
   // Only one Details popover can be open at a time, so one flat key is
   // enough to track a drag-to-reorder gesture across its block modules.
   const [draggedBlockKey, setDraggedBlockKey] = useState<string | null>(null)
@@ -7941,12 +7940,6 @@ function GraphCanvas({
   )
 
   useDismissableLayer(
-    Boolean(historyPopoverNode),
-    '.node-history-popover, .node-toolbar',
-    () => setHistoryPopoverNode(null),
-  )
-
-  useDismissableLayer(
     Boolean(frameDescriptionOpenId),
     '.frame-details-popover, .frame-toolbar',
     () => setFrameDescriptionOpenId(null),
@@ -7954,7 +7947,6 @@ function GraphCanvas({
 
   useEffect(() => {
     setDetailsPopoverNode((current) => (current && isNodeSelection(selected) && current.kind === selected.type && current.id === selected.id ? current : null))
-    setHistoryPopoverNode((current) => (current && isNodeSelection(selected) && current.kind === selected.type && current.id === selected.id ? current : null))
     setFrameDescriptionOpenId((current) => (current && selected.type === 'frame' && selected.id === current ? current : null))
   }, [selected])
 
@@ -8601,7 +8593,6 @@ function GraphCanvas({
 
     const id = node.id
     const isDetailsOpen = detailsPopoverNode?.kind === kind && detailsPopoverNode.id === id
-    const isHistoryOpen = historyPopoverNode?.kind === kind && historyPopoverNode.id === id
     const nodeVersionRecords = nodeVersions.filter((version) => version.nodeId === id && version.nodeKind === kind).slice(0, 8)
     const inlineChange = (patch: { notes?: string; sourceUrl?: string }) => {
       if (kind === 'idea') onIdeaInlineChange(id, patch)
@@ -8653,15 +8644,16 @@ function GraphCanvas({
           <button
             type="button"
             aria-label="Details"
-            title="Notes, source, tags"
+            title="Notes, source, tags, history"
             className={isDetailsOpen ? 'is-active' : ''}
             onClick={() => setDetailsPopoverNode((current) => current?.kind === kind && current.id === id ? null : { kind, id })}
           >
             <NoteIcon size={13} />
           </button>
-          <button type="button" aria-label="Link node" title="Link" onClick={() => beginLinkFromArc({ kind, id })}>
-            <Link2 size={13} />
-          </button>
+          {/* Linking already has two other paths — the node's own drag
+              handle (.node-link-handle, direct-manipulation) and the
+              right-click context menu — a third click target here was pure
+              duplication, not a real alternative. */}
           <button
             type="button"
             aria-label="Delete node"
@@ -8732,15 +8724,6 @@ function GraphCanvas({
                   <Bot size={13} />
                 </button>
               )}
-              <button
-                type="button"
-                aria-label={kind === 'diagram' ? 'Source and history' : 'Version history'}
-                title={kind === 'diagram' ? 'Source and history' : 'Version history'}
-                className={isHistoryOpen ? 'is-active' : ''}
-                onClick={() => setHistoryPopoverNode((current) => current?.kind === kind && current.id === id ? null : { kind, id })}
-              >
-                <History size={13} />
-              </button>
               {/* Visually separates "do something to this node" (edit/replace/
                   crop/history — left) from "how it behaves" (AI inclusion —
                   right) so the row doesn't read as one undifferentiated
@@ -8851,23 +8834,36 @@ function GraphCanvas({
                 {sourceUrlField}
               </div>
             )}
-            <NodeMetadata node={node} />
-          </div>
-        )}
-        {isHistoryOpen && (
-          <div className="node-history-popover">
             {kind === 'diagram' && (
-              <div className="node-details-section">
-                <label className="field-label" htmlFor={`diagram-source-${id}`}>Source</label>
+              <section className="block-module">
+                <div className="block-module-heading">
+                  <span className="block-module-title">
+                    <FileText size={14} />
+                    Source
+                  </span>
+                </div>
                 <textarea
-                  id={`diagram-source-${id}`}
+                  aria-label="Diagram source"
                   className="diagram-source-input"
                   value={(node as DiagramNode).source}
                   onChange={(event) => onDiagramInlineChange(id, { source: event.target.value })}
                 />
-              </div>
+              </section>
             )}
-            <NodeVersionTimeline versions={nodeVersionRecords} onRestore={onNodeVersionRestore} />
+            {/* History used to be a second popover behind its own toolbar
+                toggle — one more floating layer to open/close for
+                information that belongs with everything else about this
+                node. It's a section here instead. */}
+            <section className="block-module">
+              <div className="block-module-heading">
+                <span className="block-module-title">
+                  <History size={14} />
+                  History
+                </span>
+              </div>
+              <NodeVersionTimeline versions={nodeVersionRecords} onRestore={onNodeVersionRestore} />
+            </section>
+            <NodeMetadata node={node} />
           </div>
         )}
       </div>
@@ -10014,9 +10010,6 @@ function GraphCanvas({
               </button>
               <button type="button" role="menuitem" aria-label="Create linked diagram" title="Diagram" onClick={() => createLinkedNodeFromArc('diagram')}>
                 <FileText size={13} />
-              </button>
-              <button type="button" role="menuitem" aria-label="Begin link from node" title="Link" onClick={() => beginLinkFromArc(arcMenu)}>
-                <Link2 size={13} />
               </button>
             </div>
           )}
