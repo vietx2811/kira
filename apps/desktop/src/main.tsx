@@ -1008,14 +1008,14 @@ const outlineReferenceLimit = 6
 const libraryOverscan = 5
 const duplicateCandidateThreshold = 8
 // The rendered row box (.image-row's border-box min-height in styles.css) is
-// 86px compact / 102px relaxed. The virtualized list positions rows every
+// 68px compact / 84px relaxed. The virtualized list positions rows every
 // libraryRowHeights[density]px via `transform: translateY(...)`, so the
 // difference below is a deliberate gutter between rows, not slack to trim —
 // keep the two in sync if either the CSS min-height or this gutter changes.
 const libraryRowGutter = 6
 const libraryRowBoxHeights: Record<LibraryDensity, number> = {
-  compact: 86,
-  relaxed: 102,
+  compact: 68,
+  relaxed: 84,
 }
 const libraryRowHeights: Record<LibraryDensity, number> = {
   compact: libraryRowBoxHeights.compact + libraryRowGutter,
@@ -6937,6 +6937,27 @@ function startWindowDrag(event: React.PointerEvent<HTMLElement>) {
   void getCurrentWindow().startDragging().catch(() => undefined)
 }
 
+// A row's second line falls back through source -> dimensions -> relative
+// added-time so every row keeps the same two-line rhythm; without a
+// guaranteed fallback, rows for locally-imported or untagged images render
+// with a blank second line and break the list's scan rhythm.
+function formatReferenceDetail(image: EvidenceImage): string {
+  if (image.source) return image.source
+  if (image.width && image.height) return `${image.width}×${image.height}`
+  const addedAt = image.addedAt ?? image.createdAt
+  if (!addedAt) return 'Untitled source'
+  const elapsedMs = Date.now() - new Date(addedAt).getTime()
+  if (!Number.isFinite(elapsedMs) || elapsedMs < 0) return 'Untitled source'
+  const minutes = Math.floor(elapsedMs / 60_000)
+  if (minutes < 1) return 'Added just now'
+  if (minutes < 60) return `Added ${minutes}m ago`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `Added ${hours}h ago`
+  const days = Math.floor(hours / 24)
+  if (days < 30) return `Added ${days}d ago`
+  return `Added ${new Date(addedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`
+}
+
 /** Shared markup for one reference in the library — used by both the
     virtualized list row and the grid tile, which previously duplicated this
     ~20-line body verbatim. */
@@ -6945,17 +6966,21 @@ function ReferenceCard({
   variant,
   isSelected,
   isChecked,
+  selectedTag,
   style,
   onSelect,
   onToggle,
+  onTagClick,
 }: {
   image: EvidenceImage
   variant: 'row' | 'grid'
   isSelected: boolean
   isChecked: boolean
+  selectedTag: string | null
   style?: React.CSSProperties
   onSelect: (id: string) => void
   onToggle: (id: string) => void
+  onTagClick: (tag: string) => void
 }) {
   const baseClass = variant === 'row' ? 'image-row' : 'image-grid-card'
   return (
@@ -6981,12 +7006,31 @@ function ReferenceCard({
         <ReferenceThumb image={image} />
         <span className="image-row-copy">
           <strong>{image.title}</strong>
-          <small>{image.source}</small>
-          <span className="mini-tags">
-            {image.tags.slice(0, 2).map((tag) => (
-              <span key={tag}>{tag}</span>
-            ))}
-          </span>
+          <small>{formatReferenceDetail(image)}</small>
+          {image.tags.length > 0 && (
+            <span className="mini-tags">
+              {image.tags.slice(0, 2).map((tag) => (
+                <span
+                  key={tag}
+                  className={selectedTag === tag ? 'is-active' : undefined}
+                  role="button"
+                  tabIndex={0}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    onTagClick(tag)
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key !== 'Enter' && event.key !== ' ') return
+                    event.preventDefault()
+                    event.stopPropagation()
+                    onTagClick(tag)
+                  }}
+                >
+                  {tag}
+                </span>
+              ))}
+            </span>
+          )}
         </span>
       </button>
     </div>
@@ -7199,7 +7243,10 @@ function EvidenceInbox({
           <p className="panel-kicker"><T k="library.title" /></p>
           <h2>{panelMode === 'images' ? 'Images' : panelMode === 'ideas' ? 'Ideas' : 'Links'}</h2>
           <span className="panel-meta">
-            {panelCounts[panelMode]} items · {unassigned.length} suggestions
+            {panelCounts[panelMode]} {panelCounts[panelMode] === 1 ? 'item' : 'items'}
+            {panelMode === 'images' && unassigned.length > 0 && (
+              <span className="panel-meta-badge">{unassigned.length} suggested</span>
+            )}
           </span>
         </div>
         <div className="panel-actions">
@@ -7254,7 +7301,20 @@ function EvidenceInbox({
             { value: 'grid', label: t('library.browseMode.grid', lang) },
           ]}
         />
-        <span>{images.length} visible</span>
+        {selectedTag ? (
+          <button
+            className="active-filter-chip"
+            type="button"
+            onClick={() => onSelectedTagChange(selectedTag)}
+          >
+            {selectedTag}
+            <X size={11} />
+          </button>
+        ) : (searchQuery.trim() || totalCount !== images.length) ? (
+          <span>{images.length} of {totalCount}</span>
+        ) : (
+          <span>{images.length} visible</span>
+        )}
       </div>
       )}
 
@@ -7329,7 +7389,26 @@ function EvidenceInbox({
           data-rendered-count={browseMode === 'grid' ? visibleGridImages.length : visibleImages.length}
           data-total-count={images.length}
           ref={listRef}
+          tabIndex={0}
           onScroll={(event) => setLibraryScrollTop(event.currentTarget.scrollTop)}
+          onKeyDown={(event) => {
+            if (browseMode !== 'list' || images.length === 0) return
+            if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return
+            event.preventDefault()
+            const currentIndex = selected.type === 'image' ? images.findIndex((image) => image.id === selected.id) : -1
+            const nextIndex = event.key === 'ArrowDown'
+              ? Math.min(images.length - 1, currentIndex + 1)
+              : Math.max(0, currentIndex - 1)
+            const nextImage = images[nextIndex]
+            if (!nextImage) return
+            onSelect(nextImage.id)
+            const element = listRef.current
+            if (!element) return
+            const rowTop = nextIndex * rowHeight
+            const rowBottom = rowTop + rowHeight
+            if (rowTop < element.scrollTop) element.scrollTo({ top: rowTop })
+            else if (rowBottom > element.scrollTop + element.clientHeight) element.scrollTo({ top: rowBottom - element.clientHeight })
+          }}
         >
           {images.length > 0 && browseMode === 'grid' ? (
             <div className="image-grid-outer" style={{ height: totalGridHeight }}>
@@ -7341,8 +7420,10 @@ function EvidenceInbox({
                     variant="grid"
                     isSelected={selected.type === 'image' && selected.id === image.id}
                     isChecked={selectedReferenceIds.has(image.id)}
+                    selectedTag={selectedTag}
                     onSelect={onSelect}
                     onToggle={onToggleReference}
+                    onTagClick={onSelectedTagChange}
                   />
                 ))}
               </div>
@@ -7358,9 +7439,11 @@ function EvidenceInbox({
                     variant="row"
                     isSelected={selected.type === 'image' && selected.id === image.id}
                     isChecked={selectedReferenceIds.has(image.id)}
+                    selectedTag={selectedTag}
                     style={{ transform: `translateY(${index * rowHeight}px)` }}
                     onSelect={onSelect}
                     onToggle={onToggleReference}
+                    onTagClick={onSelectedTagChange}
                   />
                 )
               })}
