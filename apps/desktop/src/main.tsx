@@ -8741,6 +8741,11 @@ function GraphCanvas({
               >
                 <History size={13} />
               </button>
+              {/* Visually separates "do something to this node" (edit/replace/
+                  crop/history — left) from "how it behaves" (AI inclusion —
+                  right) so the row doesn't read as one undifferentiated
+                  strip of identical icons. */}
+              <span className="node-details-actionbar-sep" aria-hidden="true" />
               <button
                 type="button"
                 aria-label={node.aiExcluded ? 'Excluded from AI — click to include' : 'Included in AI context — click to exclude'}
@@ -12209,7 +12214,13 @@ function TagBlock({
         )}
       </div>
       {image.suggestions.length > 0 && (
-        <div className="suggestion-chips">
+        <div className="suggestion-block">
+          {/* Without this label, a suggestion chip sitting directly under
+              the confirmed-tags row reads as just another tag — unclear
+              it's pending and that clicking its label (not just the X)
+              accepts it. */}
+          <span className="suggestion-label">Suggested tags: click to add</span>
+          <div className="suggestion-chips">
           {image.suggestions.map((suggestion) => {
             const label = suggestionLabel(suggestion)
             return (
@@ -12225,6 +12236,7 @@ function TagBlock({
               </span>
             )
           })}
+          </div>
         </div>
       )}
       {(ocrStatus || modelStatus) && <p className="tag-status">{[ocrStatus, modelStatus].filter(Boolean).join(' · ')}</p>}

@@ -2537,6 +2537,17 @@ p {
   gap: 6px;
 }
 
+.suggestion-block {
+  display: grid;
+  gap: 5px;
+  margin-top: 2px;
+}
+
+.suggestion-label {
+  color: var(--text-muted);
+  font-size: 0.64rem;
+}
+
 .suggestion-row button,
 .suggestion-chip {
   border: 1px solid rgb(223 174 103 / 0.2);
@@ -3780,11 +3791,19 @@ p {
 
 .node-details-actionbar {
   display: flex;
+  align-items: center;
   flex-wrap: wrap;
   gap: 2px;
   margin: -2px -2px 2px;
   padding-bottom: 8px;
   border-bottom: 1px solid var(--border-soft);
+}
+
+.node-details-actionbar-sep {
+  width: 1px;
+  height: 16px;
+  margin: 0 4px 0 auto;
+  background: var(--border-soft);
 }
 
 .node-details-actionbar button,
@@ -7300,7 +7319,11 @@ textarea {
 }
 
 .note-input {
-  min-height: 96px;
+  /* Was 96px — an empty note (the common case right after opening Details)
+     left a large dead gap above Tags/Palette/Source, unbalancing the whole
+     popover. This is enough for ~1.5 lines and grows with real content since
+     only min-height is set; nothing about a populated note shrinks. */
+  min-height: 40px;
   padding: 0;
   border: 0;
   background: transparent;
