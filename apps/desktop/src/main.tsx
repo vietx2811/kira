@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
+import { createPortal } from 'react-dom'
 import { create, useStore } from 'zustand'
 import { temporal } from 'zundo'
 import { invoke } from '@tauri-apps/api/core'
@@ -21,7 +22,6 @@ import {
   Brain,
   Camera,
   Check,
-  ChevronDown,
   ChevronLeft,
   ChevronRight,
   ChevronUp,
@@ -862,19 +862,23 @@ function Segmented<T extends string>({
   )
 }
 
-/** Shared inline rich-text editor backing every node's on-canvas caption —
-    a Tiptap instance per visible node, markdown in and out via tiptap-markdown.
-    True WYSIWYG: always mounted and editable directly on the node face, no
-    click-to-enter-edit-mode step. The mark/node set is deliberately tiny
-    (bold, italic, bullet list, link) to keep markdown round-tripping
-    low-risk. The format toolbar only renders while this specific editor is
-    focused, so idle nodes on a busy board stay quiet. */
+/** Shared rich-text renderer backing every node's caption — a Tiptap
+    instance per visible node, markdown in and out via tiptap-markdown. The
+    canvas face renders it read-only (`editable={false}`): a single click
+    just selects the node, never places a cursor. Double-click (or the (i)
+    button) opens the node's overlay, which mounts a second instance of this
+    same component with `overlayMode` — editable, format toolbar always
+    visible instead of focus-gated, autofocused on open. The mark/node set
+    is deliberately tiny (bold, italic, bullet list, link) to keep markdown
+    round-tripping low-risk. */
 function NodeRichEditor({
   content,
   placeholder,
   onChange,
   onEscape,
   autoFocus,
+  editable = true,
+  overlayMode = false,
 }: {
   kind: GraphNodeKind
   nodeId: string
@@ -883,6 +887,8 @@ function NodeRichEditor({
   onChange: (markdown: string) => void
   onEscape?: () => void
   autoFocus?: boolean
+  editable?: boolean
+  overlayMode?: boolean
 }): React.ReactElement {
   const onChangeRef = useRef(onChange)
   onChangeRef.current = onChange
@@ -912,6 +918,7 @@ function NodeRichEditor({
       Markdown.configure({ html: false, tightLists: true, bulletListMarker: '-', linkify: false }),
     ],
     content,
+    editable,
     autofocus: autoFocus ? 'end' : false,
     editorProps: {
       attributes: { class: 'node-rich-editor-content' },
@@ -943,17 +950,24 @@ function NodeRichEditor({
     if (current !== content) editor.commands.setContent(content, { emitUpdate: false })
   }, [editor, content])
 
+  // editable is fixed at editor creation time in Tiptap — flip it live if
+  // this instance's editability prop ever changes after mount.
+  useEffect(() => {
+    editor?.setEditable(editable)
+  }, [editor, editable])
+
   if (!editor) return <></>
+
+  const showToolbar = overlayMode || isFocused
 
   return (
     <>
-      {/* Only while THIS node's editor is focused — not gated on a text
-          selection like Tiptap's default BubbleMenu, so formatting is
-          discoverable the moment typing starts. Anchored to the editor's own
-          box (not the canvas), sitting above it with a gap so it never
-          covers the node. */}
-      {isFocused && (
-        <div className="node-rich-editor-toolbar">
+      {/* Overlay mode: always visible, since the overlay's whole purpose is
+          editing. Canvas mode: only while THIS node's editor is focused —
+          not gated on a text selection like Tiptap's default BubbleMenu, so
+          formatting is discoverable the moment typing starts. */}
+      {showToolbar && (
+        <div className={overlayMode ? 'node-rich-editor-toolbar is-static' : 'node-rich-editor-toolbar'}>
           <button
             type="button"
             className={editor.isActive('bold') ? 'is-active' : ''}
@@ -1000,7 +1014,15 @@ function NodeRichEditor({
           </button>
         </div>
       )}
-      <EditorContent editor={editor} className={isFocused ? 'node-rich-editor is-focused' : 'node-rich-editor'} />
+      <EditorContent
+        editor={editor}
+        className={[
+          'node-rich-editor',
+          isFocused ? 'is-focused' : '',
+          editable ? '' : 'is-readonly',
+          overlayMode ? 'is-overlay' : '',
+        ].filter(Boolean).join(' ')}
+      />
     </>
   )
 }
@@ -8304,13 +8326,12 @@ function GraphCanvas({
     setNodeContextMenu(null)
   }
 
-  // Double-clicking the node's chrome (thumbnail, padding) morphs it
-  // straight into the expanded Details card — the same destination as the
+  // Double-clicking anywhere on a node — including its caption text, which
+  // is read-only on the canvas face now — opens the node's overlay, the
+  // one place its content is actually editable. Same destination as the
   // (i) button, just reachable without hunting for a small icon first.
-  // Double-clicking the caption text itself is left alone so the browser's
-  // native double-click-to-select-a-word still works while typing.
   function handleNodeDoubleClick(kind: GraphNodeKind, id: string, event: React.MouseEvent<HTMLElement>) {
-    if ((event.target as HTMLElement).closest('.node-rich-editor')) return
+    event.preventDefault()
     onSelect({ type: kind, id } as Selection)
     setDetailsPopoverNode({ kind, id })
   }
@@ -8625,6 +8646,13 @@ function GraphCanvas({
       else if (kind === 'diagram') onDiagramInlineChange(id, patch)
       else onPlaceholderInlineChange(id, patch)
     }
+    const onOverlayContentChange = (markdown: string) => {
+      if (kind === 'idea') onIdeaInlineChange(id, { content: markdown })
+      else if (kind === 'image') onImageInlineChange(id, { content: markdown })
+      else if (kind === 'palette') onPaletteInlineChange(id, { content: markdown })
+      else if (kind === 'diagram') onDiagramInlineChange(id, { content: markdown })
+      else onPlaceholderInlineChange(id, { content: markdown })
+    }
 
     // Only the image kind has more than one reorderable block (tags,
     // extracted palette, source) — everything else keeps a single fixed
@@ -8699,17 +8727,14 @@ function GraphCanvas({
             </button>
           </div>
         )}
-        {isDetailsOpen && (
-          <div className="node-details-popover">
-            {/* Every action that used to live on the node face's toolbar —
-                add-new/AI actions plus the kind-specific ones — is
-                consolidated into this single icon row at the top of the
-                card, so the node face itself stays down to a single (i)
-                affordance while collapsed. */}
-            <div className="node-details-actionbar">
-              <button type="button" aria-label="Collapse details" title="Collapse" className="node-details-collapse" onClick={closeDetails}>
-                <ChevronDown size={13} />
-              </button>
+        {isDetailsOpen && createPortal(
+          <div className="node-overlay-scrim" onClick={closeDetails}>
+            <div className="node-details-popover" onClick={(event) => event.stopPropagation()}>
+              {/* Every action that used to live on the node face's toolbar —
+                  add-new/AI actions plus the kind-specific ones — is
+                  consolidated into this single icon row, so the node face
+                  itself stays down to a single (i) affordance while closed. */}
+              <div className="node-details-actionbar">
               {kind === 'image' && (
                 <>
                   <label className="node-toolbar-file file-action" aria-label="Replace image" title="Replace image">
@@ -8785,7 +8810,20 @@ function GraphCanvas({
               >
                 <Trash2 size={13} />
               </button>
+              <span className="node-details-actionbar-sep" aria-hidden="true" />
+              <button type="button" aria-label="Close" title="Close" className="node-details-close" onClick={closeDetails}>
+                <X size={13} />
+              </button>
             </div>
+            <NodeRichEditor
+              kind={kind}
+              nodeId={id}
+              content={node.content}
+              placeholder="Type something..."
+              overlayMode
+              autoFocus
+              onChange={onOverlayContentChange}
+            />
             {kind === 'palette' && (
               <section className="block-module">
                 <SectionHeader
@@ -8931,8 +8969,10 @@ function GraphCanvas({
                 <NodeVersionTimeline versions={nodeVersionRecords} onRestore={onNodeVersionRestore} />
               )}
             </section>
-            <NodeMetadata node={node} />
-          </div>
+              <NodeMetadata node={node} />
+            </div>
+          </div>,
+          document.body,
         )}
       </div>
     )
@@ -9769,15 +9809,17 @@ function GraphCanvas({
                 {renderKiraControl('idea', idea.id, idea.title)}
                 {renderDirectLinkHandle('idea', idea, idea.title)}
                 <span className={`idea-status idea-status--${idea.status}`} />
-                {/* WYSIWYG: always mounted and directly editable, no click-to-edit
-                    step. stopPropagation keeps clicks in the text from starting a
-                    card drag — dragging happens from the card's own padding. */}
+                {/* Read-only on the canvas face — double-click (or the (i)
+                    button) opens the node's overlay, the only place this
+                    content is actually editable. stopPropagation keeps
+                    clicks in the text from starting a card drag. */}
                 <span className="idea-node-fields" onPointerDown={stopInlineEditEvent} onClick={stopInlineEditEvent}>
                   <NodeRichEditor
                     kind="idea"
                     nodeId={idea.id}
                     content={idea.content}
                     placeholder="Note..."
+                    editable={false}
                     onChange={(markdown) => onIdeaInlineChange(idea.id, { content: markdown })}
                   />
                 </span>
@@ -9858,6 +9900,7 @@ function GraphCanvas({
                     nodeId={image.id}
                     content={image.content}
                     placeholder="Caption..."
+                    editable={false}
                     onChange={(markdown) => onImageInlineChange(image.id, { content: markdown })}
                   />
                 </span>
@@ -9923,6 +9966,7 @@ function GraphCanvas({
                     nodeId={palette.id}
                     content={palette.content}
                     placeholder="Note..."
+                    editable={false}
                     onChange={(markdown) => onPaletteInlineChange(palette.id, { content: markdown })}
                   />
                 </span>
@@ -9984,6 +10028,7 @@ function GraphCanvas({
                     nodeId={diagram.id}
                     content={diagram.content}
                     placeholder="Note..."
+                    editable={false}
                     onChange={(markdown) => onDiagramInlineChange(diagram.id, { content: markdown })}
                   />
                 </span>
@@ -10050,6 +10095,7 @@ function GraphCanvas({
                     nodeId={placeholder.id}
                     content={placeholder.content}
                     placeholder="Note..."
+                    editable={false}
                     onChange={(markdown) => onPlaceholderInlineChange(placeholder.id, { content: markdown })}
                   />
                 </span>

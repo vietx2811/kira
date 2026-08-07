@@ -3255,6 +3255,19 @@ p {
   color: var(--accent-cyan);
 }
 
+/* Overlay mode: an ordinary bar sitting at the top of the editor's own
+   column, not a floating pill anchored above a canvas node. */
+.node-rich-editor-toolbar.is-static {
+  position: static;
+  margin: 0 0 8px;
+  transform: none;
+  border: 0;
+  border-bottom: 1px solid var(--border-soft);
+  border-radius: 0;
+  background: none;
+  backdrop-filter: none;
+}
+
 .node-rich-editor-toolbar-divider {
   width: 1px;
   height: 16px;
@@ -3264,6 +3277,28 @@ p {
 
 .node-rich-editor-content {
   outline: none;
+}
+
+/* Overrides the global :focus-visible ring (top of this file) — Notion
+   shows zero chrome change when you click into a text block, just the
+   caret. A boxed highlight around the paragraph the moment you start
+   typing was the one thing explicitly asked to go. */
+.node-rich-editor-content:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+/* Canvas face, resting state: no cursor, no caret, no edit affordance —
+   editing only happens in the node's overlay (double-click or the (i)
+   button). Text stays selectable for copy. */
+.node-rich-editor.is-readonly .node-rich-editor-content {
+  cursor: default;
+  caret-color: transparent;
+}
+
+.node-rich-editor.is-overlay .node-rich-editor-content {
+  font-size: 0.92rem;
+  line-height: 1.55;
 }
 
 .node-rich-editor p.is-editor-empty:first-child::before {
@@ -3714,10 +3749,16 @@ p {
   transform: translateX(-50%);
 }
 
-/* Expanded: the card should read as the node's own extension, not a
-   second object floating near it — pull the gap down to a hairline. */
+/* Expanded: this stops being a small card anchored under the node and
+   becomes a full-screen overlay — the scrim (.node-overlay-scrim) covers
+   the whole canvas, so position/transform/gap from the collapsed pill
+   state above no longer apply. */
 .node-below-stack.is-expanded {
-  margin-top: 4px;
+  position: static;
+  top: auto;
+  left: auto;
+  margin: 0;
+  transform: none;
 }
 
 .node-toolbar {
@@ -3758,30 +3799,47 @@ p {
   color: var(--accent-cyan);
 }
 
-.node-details-popover {
+/* Full-screen scrim — clicking it (not its child panel, see the
+   stopPropagation on .node-details-popover) closes the overlay, same as
+   Escape. Dims the canvas so the panel reads as the one thing in focus,
+   the way opening a Notion page does. */
+.node-overlay-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
   display: grid;
-  gap: 8px;
-  width: 260px;
-  max-height: 360px;
-  overflow-y: auto;
-  padding: 12px;
-  border: 1px solid var(--border-soft);
-  border-radius: 12px;
-  background: var(--node-surface-selected);
-  backdrop-filter: blur(16px);
-  box-shadow: var(--node-shadow-hover);
-  font-size: 0.78rem;
-  /* The node above morphs into this card rather than a second panel
-     appearing beside it — a quick scale+fade from the node's edge sells
-     that as one continuous shape, not two objects. */
-  animation: node-details-morph-in 160ms var(--ease-out-soft);
-  transform-origin: top center;
+  place-items: center;
+  padding: 5vh 24px;
+  background: rgb(5 6 6 / 0.56);
+  backdrop-filter: blur(3px);
+  animation: node-overlay-scrim-in 160ms var(--ease-out-soft);
 }
 
-@keyframes node-details-morph-in {
+@keyframes node-overlay-scrim-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.node-details-popover {
+  display: grid;
+  gap: 14px;
+  width: min(520px, 100%);
+  max-height: 88vh;
+  overflow-y: auto;
+  padding: 20px 22px;
+  border: 1px solid var(--border-soft);
+  border-radius: 16px;
+  background: var(--node-surface-selected);
+  backdrop-filter: blur(20px);
+  box-shadow: 0 30px 80px rgb(0 0 0 / 0.45);
+  font-size: 0.82rem;
+  animation: node-overlay-panel-in 180ms var(--ease-out-soft);
+}
+
+@keyframes node-overlay-panel-in {
   from {
     opacity: 0;
-    transform: scaleY(0.94) translateY(-4px);
+    transform: scale(0.97) translateY(6px);
   }
   to {
     opacity: 1;
@@ -3880,6 +3938,7 @@ p {
   min-width: 0;
   gap: 4px;
   padding: 2px 0;
+  background: none;
   color: inherit;
   cursor: pointer;
   text-align: left;
