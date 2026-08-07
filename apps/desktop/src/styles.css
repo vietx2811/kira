@@ -1971,12 +1971,13 @@ p {
   display: grid;
   grid-template-columns: 18px 1fr;
   align-items: center;
-  gap: var(--space-2);
+  column-gap: var(--space-2);
+  row-gap: 2px;
   position: absolute;
   right: 0;
   left: 0;
   width: 100%;
-  min-height: 68px;
+  min-height: 86px;
   padding: var(--space-2);
   border: 0;
   border-radius: var(--radius-2);
@@ -1987,7 +1988,7 @@ p {
 }
 
 .image-list--relaxed .image-row {
-  min-height: 84px;
+  min-height: 100px;
   padding: var(--space-2) var(--space-3);
 }
 
@@ -2193,7 +2194,7 @@ p {
 
 .image-grid-card .image-row-copy {
   display: grid;
-  min-height: 50px;
+  min-height: 34px;
   gap: 2px;
 }
 
@@ -2285,16 +2286,30 @@ p {
   font-size: 0.72rem;
 }
 
+/* Sibling of the row/card select button (not nested inside it) — see
+   ReferenceCard in main.tsx: an interactive control inside a <button>
+   breaks the button's accessible activation semantics. */
 .mini-tags {
   display: flex;
   gap: 4px;
   margin-top: 5px;
 }
 
-.mini-tags span {
+.image-row > .mini-tags {
+  grid-column: 2;
+  margin-top: 0;
+}
+
+.image-grid-card > .mini-tags {
+  margin-top: 4px;
+  padding: 0 2px 2px;
+}
+
+.mini-tags button {
   max-width: 76px;
   overflow: hidden;
   padding: 2px 5px;
+  border: 0;
   border-radius: 999px;
   background: rgb(255 255 255 / 0.06);
   color: var(--text-soft);
@@ -2305,14 +2320,14 @@ p {
   transition: background 120ms ease, color 120ms ease;
 }
 
-.mini-tags span:hover,
-.mini-tags span:focus-visible {
+.mini-tags button:hover,
+.mini-tags button:focus-visible {
   background: rgb(255 255 255 / 0.12);
   color: var(--text-main);
   outline: none;
 }
 
-.mini-tags span.is-active {
+.mini-tags button.is-active {
   background: var(--accent-faint);
   color: var(--accent-strong);
 }
