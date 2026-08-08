@@ -81,7 +81,7 @@
      already set inline on .workspace by JS and inherit down through the
      canvas tree, so the dock still shrinks correctly when the library or
      inspector drawer is open. */
-  --kira-dock-width: min(640px, calc(100vw - var(--canvas-overlay-left-inset, 0px) - var(--canvas-right-inset, 0px) - 64px));
+  --kira-dock-width: min(440px, calc(100vw - var(--canvas-overlay-left-inset, 0px) - var(--canvas-right-inset, 0px) - 64px));
   --kira-dock-lift: 74px;
   --danger: #d98779;
   --space-1: 4px;
@@ -155,6 +155,117 @@
 
 * {
   box-sizing: border-box;
+}
+
+/* Scrollbar treatment for every actual scroll container in the app (library
+   list, Details/History overlays, Kira's context tray, canvas overlays,
+   settings panels) — these relied on the OS default until now, which on
+   most platforms means a stark light-grey bar sitting on top of this dark
+   glass UI. Thin, low-contrast, no buttons — present when you need it,
+   otherwise close to invisible, matching the density this app already
+   leans into elsewhere (see Product register: density over decoration).
+   Scoped to the containers below rather than `*`: WebKit/Chromium reserve
+   layout space for a scrollbar's width even on elements that never scroll,
+   so a universal reset can nudge unrelated boxes a few pixels narrower.
+   .file-tab-list is deliberately not in this list — it already hides its
+   scrollbar entirely via its own, more specific rule. Firefox via
+   scrollbar-width/-color on :root (inherited, so no per-selector list
+   needed there); Chromium/the Tauri webview via ::-webkit-scrollbar. */
+/* scrollbar-width/-color are inherited properties in Firefox, so setting
+   them once on :root reaches every scroll container below without
+   repeating the declaration per selector. */
+:root {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(255 255 255 / 0.14) transparent;
+}
+
+.project-settings-popover::-webkit-scrollbar,
+.onboarding-steps::-webkit-scrollbar,
+.image-list::-webkit-scrollbar,
+.library-node-list::-webkit-scrollbar,
+.canvas-zero-state::-webkit-scrollbar,
+.node-details-popover::-webkit-scrollbar,
+.kira-dock-input::-webkit-scrollbar,
+.kira-dock-suggestions::-webkit-scrollbar,
+.settings-scroll::-webkit-scrollbar,
+.slideshow-rail::-webkit-scrollbar,
+.slide-customizer-list::-webkit-scrollbar,
+.outline-list::-webkit-scrollbar,
+.inspector::-webkit-scrollbar,
+.version-list::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+
+.project-settings-popover::-webkit-scrollbar-track,
+.onboarding-steps::-webkit-scrollbar-track,
+.image-list::-webkit-scrollbar-track,
+.library-node-list::-webkit-scrollbar-track,
+.canvas-zero-state::-webkit-scrollbar-track,
+.node-details-popover::-webkit-scrollbar-track,
+.kira-dock-input::-webkit-scrollbar-track,
+.kira-dock-suggestions::-webkit-scrollbar-track,
+.settings-scroll::-webkit-scrollbar-track,
+.slideshow-rail::-webkit-scrollbar-track,
+.slide-customizer-list::-webkit-scrollbar-track,
+.outline-list::-webkit-scrollbar-track,
+.inspector::-webkit-scrollbar-track,
+.version-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.project-settings-popover::-webkit-scrollbar-thumb,
+.onboarding-steps::-webkit-scrollbar-thumb,
+.image-list::-webkit-scrollbar-thumb,
+.library-node-list::-webkit-scrollbar-thumb,
+.canvas-zero-state::-webkit-scrollbar-thumb,
+.node-details-popover::-webkit-scrollbar-thumb,
+.kira-dock-input::-webkit-scrollbar-thumb,
+.kira-dock-suggestions::-webkit-scrollbar-thumb,
+.settings-scroll::-webkit-scrollbar-thumb,
+.slideshow-rail::-webkit-scrollbar-thumb,
+.slide-customizer-list::-webkit-scrollbar-thumb,
+.outline-list::-webkit-scrollbar-thumb,
+.inspector::-webkit-scrollbar-thumb,
+.version-list::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background-color: rgb(255 255 255 / 0.14);
+  background-clip: padding-box;
+}
+
+.project-settings-popover::-webkit-scrollbar-thumb:hover,
+.onboarding-steps::-webkit-scrollbar-thumb:hover,
+.image-list::-webkit-scrollbar-thumb:hover,
+.library-node-list::-webkit-scrollbar-thumb:hover,
+.canvas-zero-state::-webkit-scrollbar-thumb:hover,
+.node-details-popover::-webkit-scrollbar-thumb:hover,
+.kira-dock-input::-webkit-scrollbar-thumb:hover,
+.kira-dock-suggestions::-webkit-scrollbar-thumb:hover,
+.settings-scroll::-webkit-scrollbar-thumb:hover,
+.slideshow-rail::-webkit-scrollbar-thumb:hover,
+.slide-customizer-list::-webkit-scrollbar-thumb:hover,
+.outline-list::-webkit-scrollbar-thumb:hover,
+.inspector::-webkit-scrollbar-thumb:hover,
+.version-list::-webkit-scrollbar-thumb:hover {
+  background-color: rgb(255 255 255 / 0.26);
+}
+
+.project-settings-popover::-webkit-scrollbar-corner,
+.onboarding-steps::-webkit-scrollbar-corner,
+.image-list::-webkit-scrollbar-corner,
+.library-node-list::-webkit-scrollbar-corner,
+.canvas-zero-state::-webkit-scrollbar-corner,
+.node-details-popover::-webkit-scrollbar-corner,
+.kira-dock-input::-webkit-scrollbar-corner,
+.kira-dock-suggestions::-webkit-scrollbar-corner,
+.settings-scroll::-webkit-scrollbar-corner,
+.slideshow-rail::-webkit-scrollbar-corner,
+.slide-customizer-list::-webkit-scrollbar-corner,
+.outline-list::-webkit-scrollbar-corner,
+.inspector::-webkit-scrollbar-corner,
+.version-list::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 body {
@@ -1930,7 +2041,7 @@ p {
   right: 0;
   left: 0;
   width: 100%;
-  min-height: 86px;
+  min-height: 60px;
   padding: var(--space-2);
   border: 0;
   border-radius: var(--radius-2);
@@ -1941,17 +2052,17 @@ p {
 }
 
 .image-list--relaxed .image-row {
-  min-height: 102px;
-  padding: var(--space-3) var(--space-2);
+  min-height: 74px;
+  padding: var(--space-2);
 }
 
 .image-list--relaxed .image-row > button {
-  grid-template-columns: 86px 1fr;
+  grid-template-columns: 70px 1fr;
 }
 
 .image-list--relaxed .image-row .reference-thumb {
-  width: 86px;
-  height: 70px;
+  width: 70px;
+  height: 54px;
 }
 
 /* Custom checkbox (native <input> hidden, .reference-check draws the box)
@@ -2006,7 +2117,7 @@ p {
 
 .image-row > button {
   display: grid;
-  grid-template-columns: 76px 1fr;
+  grid-template-columns: 56px 1fr;
   align-items: center;
   gap: var(--space-3);
   min-width: 0;
@@ -2055,8 +2166,8 @@ p {
 }
 
 .image-row .reference-thumb {
-  width: 76px;
-  height: 62px;
+  width: 56px;
+  height: 44px;
   border-radius: var(--radius-1);
 }
 
@@ -2147,8 +2258,7 @@ p {
 
 .image-grid-card .image-row-copy {
   display: grid;
-  min-height: 50px;
-  gap: 2px;
+  min-height: 18px;
 }
 
 .library-node-list {
@@ -2207,11 +2317,21 @@ p {
   white-space: nowrap;
 }
 
+/* Title-only by default — the preview line is secondary content, revealed
+   on hover/selection rather than permanently reserving two lines per row
+   (this list isn't virtualized, so the reveal safely reflows the layout
+   instead of fighting fixed-position row math like the image list does). */
 .library-node-row small {
-  display: -webkit-box;
+  display: none;
   color: var(--text-muted);
   font-size: 0.68rem;
   line-height: 1.28;
+}
+
+.library-node-row:hover small,
+.library-node-row:focus-visible small,
+.library-node-row.is-selected small {
+  display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
 }
@@ -2220,39 +2340,12 @@ p {
   min-width: 0;
 }
 
-.image-row-copy strong,
-.image-row-copy small {
+.image-row-copy strong {
   display: block;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.image-row-copy strong {
   color: var(--text-main);
   font-size: 0.82rem;
   font-weight: 630;
-}
-
-.image-row-copy small {
-  color: var(--text-muted);
-  font-size: 0.72rem;
-}
-
-.mini-tags {
-  display: flex;
-  gap: 4px;
-  margin-top: 5px;
-}
-
-.mini-tags span {
-  max-width: 76px;
-  overflow: hidden;
-  padding: 2px 5px;
-  border-radius: 999px;
-  background: rgb(255 255 255 / 0.06);
-  color: var(--text-soft);
-  font-size: 0.62rem;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -2517,6 +2610,17 @@ p {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+}
+
+.suggestion-block {
+  display: grid;
+  gap: 5px;
+  margin-top: 2px;
+}
+
+.suggestion-label {
+  color: var(--text-muted);
+  font-size: 0.64rem;
 }
 
 .suggestion-row button,
@@ -3139,41 +3243,29 @@ p {
   cursor: pointer;
 }
 
+/* Always WYSIWYG (see NodeRichEditor) — this is the one and only layout, no
+   separate "resting display" vs "editing" state to merge anymore. */
 .idea-node {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  grid-template-rows: auto auto;
+  display: block;
   width: 224px;
   padding: var(--space-3);
+  padding-left: calc(var(--space-3) + 15px);
   border-radius: var(--radius-3);
   background: var(--node-surface);
   color: var(--text-main);
-  gap: 2px var(--space-2);
   text-align: left;
   box-shadow: var(--node-shadow-rest);
   backdrop-filter: blur(12px);
 }
 
 .idea-node--sticker {
-  width: 176px;
-  min-height: 132px;
-  align-content: start;
-  padding: 16px;
+  width: 248px;
   border-color: color-mix(in srgb, var(--accent-amber), transparent 76%);
   border-radius: 3px 12px 12px 12px;
   background:
     linear-gradient(145deg, rgb(255 255 255 / 0.1), transparent 34%),
     color-mix(in srgb, var(--accent-amber), var(--bg-canvas) 72%);
   box-shadow: 0 10px 24px rgb(0 0 0 / 0.16);
-}
-
-.idea-node--sticker small {
-  grid-column: 1 / -1;
-  padding-top: 8px;
-  color: color-mix(in srgb, var(--text-main), transparent 24%);
-  font-size: 0.72rem;
-  line-height: 1.4;
-  white-space: normal;
 }
 
 /* Calm resting state; hover lifts the card without shouting. */
@@ -3186,33 +3278,8 @@ p {
   transform: translate(-50%, -50%) scale(calc(var(--node-scale, 1) + 0.015));
 }
 
-/* Selecting must not resize or relayout the card, or every click shoves the
-   board around. Only editing earns the extra room. */
 .idea-node.is-selected {
   background: var(--node-surface-selected);
-}
-
-.idea-node.is-editing {
-  display: block;
-  width: 248px;
-  padding-left: calc(var(--space-3) + 15px);
-  background: var(--node-surface-selected);
-}
-
-.idea-node strong {
-  overflow-wrap: anywhere;
-  font-size: 0.86rem;
-  font-weight: 680;
-}
-
-.idea-node small {
-  grid-column: 2;
-  color: var(--text-muted);
-  font-size: 0.7rem;
-}
-
-.idea-node.is-editing small {
-  grid-column: auto;
 }
 
 .idea-node-fields {
@@ -3263,6 +3330,19 @@ p {
   color: var(--accent-cyan);
 }
 
+/* Overlay mode: an ordinary bar sitting at the top of the editor's own
+   column, not a floating pill anchored above a canvas node. */
+.node-rich-editor-toolbar.is-static {
+  position: static;
+  margin: 0 0 8px;
+  transform: none;
+  border: 0;
+  border-bottom: 1px solid var(--border-soft);
+  border-radius: 0;
+  background: none;
+  backdrop-filter: none;
+}
+
 .node-rich-editor-toolbar-divider {
   width: 1px;
   height: 16px;
@@ -3274,6 +3354,28 @@ p {
   outline: none;
 }
 
+/* Overrides the global :focus-visible ring (top of this file) — Notion
+   shows zero chrome change when you click into a text block, just the
+   caret. A boxed highlight around the paragraph the moment you start
+   typing was the one thing explicitly asked to go. */
+.node-rich-editor-content:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+/* Canvas face, resting state: no cursor, no caret, no edit affordance —
+   editing only happens in the node's overlay (double-click or the (i)
+   button). Text stays selectable for copy. */
+.node-rich-editor.is-readonly .node-rich-editor-content {
+  cursor: default;
+  caret-color: transparent;
+}
+
+.node-rich-editor.is-overlay .node-rich-editor-content {
+  font-size: 0.92rem;
+  line-height: 1.55;
+}
+
 .node-rich-editor p.is-editor-empty:first-child::before {
   float: left;
   height: 0;
@@ -3282,23 +3384,14 @@ p {
   pointer-events: none;
 }
 
-.node-meta-line {
-  grid-column: 1;
-  padding-top: 2px;
-}
-
 .idea-status {
+  position: absolute;
+  top: var(--space-3);
+  left: var(--space-3);
   width: 8px;
   height: 8px;
   margin-top: 5px;
   border-radius: 999px;
-}
-
-.idea-node.is-editing .idea-status {
-  position: absolute;
-  top: var(--space-3);
-  left: var(--space-3);
-  margin-top: 5px;
 }
 
 .idea-status--strong {
@@ -3615,13 +3708,11 @@ p {
    simplifies what each node shows instead, the way a map hides street names
    before it shrinks the streets themselves. "out" drops secondary text,
    "far" drops titles too, leaving just image/color/icon content. */
-.graph-canvas[data-zoom-tier="out"] .node-meta-line,
 .graph-canvas[data-zoom-tier="out"] .idea-node small,
 .graph-canvas[data-zoom-tier="out"] .palette-node small,
 .graph-canvas[data-zoom-tier="out"] .diagram-node small,
 .graph-canvas[data-zoom-tier="out"] .node-caption,
 .graph-canvas[data-zoom-tier="out"] .node-palette,
-.graph-canvas[data-zoom-tier="far"] .node-meta-line,
 .graph-canvas[data-zoom-tier="far"] .idea-node small,
 .graph-canvas[data-zoom-tier="far"] .palette-node small,
 .graph-canvas[data-zoom-tier="far"] .diagram-node small,
@@ -3733,6 +3824,18 @@ p {
   transform: translateX(-50%);
 }
 
+/* Expanded: this stops being a small card anchored under the node and
+   becomes a full-screen overlay — the scrim (.node-overlay-scrim) covers
+   the whole canvas, so position/transform/gap from the collapsed pill
+   state above no longer apply. */
+.node-below-stack.is-expanded {
+  position: static;
+  top: auto;
+  left: auto;
+  margin: 0;
+  transform: none;
+}
+
 .node-toolbar {
   display: flex;
   gap: 2px;
@@ -3771,51 +3874,214 @@ p {
   color: var(--accent-cyan);
 }
 
+/* Full-screen scrim — clicking it (not its child panel, see the
+   stopPropagation on .node-details-popover) closes the overlay, same as
+   Escape. Dims the canvas so the panel reads as the one thing in focus,
+   the way opening a Notion page does. */
+.node-overlay-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: 5vh 24px;
+  background: rgb(5 6 6 / 0.56);
+  backdrop-filter: blur(3px);
+  animation: node-overlay-scrim-in 160ms var(--ease-out-soft);
+}
+
+@keyframes node-overlay-scrim-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
 .node-details-popover {
   display: grid;
-  gap: 8px;
-  width: 260px;
-  max-height: 360px;
+  gap: 14px;
+  width: min(520px, 100%);
+  max-height: 88vh;
   overflow-y: auto;
-  padding: 12px;
+  padding: 20px 22px;
   border: 1px solid var(--border-soft);
-  border-radius: 12px;
+  border-radius: 16px;
   background: var(--node-surface-selected);
-  backdrop-filter: blur(16px);
-  font-size: 0.78rem;
+  backdrop-filter: blur(20px);
+  box-shadow: 0 30px 80px rgb(0 0 0 / 0.45);
+  font-size: 0.82rem;
+  animation: node-overlay-panel-in 180ms var(--ease-out-soft);
 }
+
+@keyframes node-overlay-panel-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97) translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
 
 .node-details-section {
   display: grid;
   gap: 8px;
 }
 
-.node-history-popover {
-  display: grid;
-  gap: 8px;
-  width: 260px;
-  max-height: 360px;
-  overflow-y: auto;
-  padding: 12px;
-  border: 1px solid var(--border-soft);
-  border-radius: 12px;
-  background: var(--node-surface-selected);
-  backdrop-filter: blur(16px);
-  font-size: 0.78rem;
-}
-
-.node-history-popover .diagram-source-input {
+.node-details-popover .diagram-source-input {
   min-height: 120px;
 }
 
-.node-details-actions {
+.node-details-actionbar {
   display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2px;
+  margin: -2px -2px 2px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.node-details-actionbar-sep {
+  width: 1px;
+  height: 16px;
+  margin: 0 4px 0 auto;
+  background: var(--border-soft);
+}
+
+.node-details-actionbar button,
+.node-details-actionbar .file-action {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-1);
+  color: var(--text-soft);
+}
+
+.node-details-actionbar button:hover,
+.node-details-actionbar .file-action:hover {
+  background: var(--glass-hover);
+  color: var(--text-main);
+}
+
+.node-details-actionbar button.is-active {
+  background: var(--glass-active);
+  color: var(--accent-cyan);
+}
+
+.reorderable-blocks {
+  display: grid;
+  gap: 8px;
+}
+
+.reorderable-block {
+  border-radius: var(--radius-1);
+  transition: opacity 150ms;
+}
+
+.reorderable-block.is-dragging {
+  opacity: 0.4;
+}
+
+.block-module {
+  display: grid;
   gap: 6px;
 }
 
-.node-details-actions .inline-action {
+.block-module-heading {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.block-module-drag {
+  display: grid;
+  place-items: center;
+  color: var(--text-muted);
+  cursor: grab;
+}
+
+.block-module-drag:active {
+  cursor: grabbing;
+}
+
+.block-module-toggle {
+  display: flex;
+  align-items: center;
   flex: 1;
-  justify-content: center;
+  min-width: 0;
+  gap: 4px;
+  padding: 2px 0;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.block-module-chevron {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  transition: transform 140ms var(--ease-out-soft);
+}
+
+.block-module-chevron.is-open {
+  transform: rotate(90deg);
+}
+
+.block-module-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-soft);
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.block-module-title svg {
+  flex-shrink: 0;
+}
+
+.block-module .section-tools {
+  margin-left: auto;
+}
+
+.tag-chip-add {
+  cursor: pointer;
+  background: transparent;
+  border: 1px dashed var(--border-soft);
+  color: var(--text-soft);
+}
+
+.tag-chip-add:hover {
+  border-color: var(--accent-cyan);
+  color: var(--text-main);
+}
+
+.tag-chip-input {
+  min-width: 4ch;
+  border: none;
+  background: transparent;
+  color: var(--text-main);
+  font-size: inherit;
+  font-family: inherit;
+}
+
+.tag-chip-input:focus {
+  outline: none;
+}
+
+.node-pinned-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.node-pinned-tags .tag-chip {
+  pointer-events: none;
 }
 
 .node-toolbar-file {
@@ -4129,12 +4395,23 @@ p {
   height: 44px;
   padding: 0;
   gap: 10px;
-  transition: height var(--duration-slow) var(--ease-spring), padding var(--duration-slow) var(--ease-spring);
+  transition: min-height var(--duration-slow) var(--ease-spring), padding var(--duration-slow) var(--ease-spring);
 }
 
 .kira-dock.is-open .kira-dock-row {
-  height: 56px;
-  padding: 0 8px 0 14px;
+  /* min-height + align-items: end, not a fixed height — the textarea
+     grows upward as the user types a multi-line message (see the
+     onChange auto-resize in renderKiraDock) while the action icons stay
+     anchored to the bottom edge, like a normal chat composer. */
+  min-height: 56px;
+  align-items: end;
+  padding: 10px 8px 10px 14px;
+}
+
+.kira-dock.is-open .kira-dock-orb,
+.kira-dock.is-open .kira-dock-sigil,
+.kira-dock.is-open .kira-dock-actions {
+  padding-bottom: 3px;
 }
 
 .kira-dock-sigil {
@@ -4182,13 +4459,13 @@ p {
 }
 
 .kira-dock.is-open .kira-dock-input {
-  /* Not `auto` — a <textarea>'s intrinsic "auto" height resolves via its
-     own rows-based sizing algorithm, not its computed line-height, and
-     inflates to several lines even for a single short line of text. The
-     composer row has a fixed height, so this fixes to one line's worth
-     and scrolls internally (see overflow-y above) if Shift+Enter adds a
-     second line, rather than silently clipping it. */
+  /* Starts at one line's worth; the onChange handler in renderKiraDock
+     measures scrollHeight and sets an inline height on every keystroke, so
+     this class-level value is only the pre-JS/empty-state fallback. Capped
+     at ~6 lines — past that, overflow-y:auto (above) takes over instead of
+     the dock growing indefinitely. */
   height: 1.4em;
+  max-height: 8.4em;
   opacity: 1;
   transition-delay: 120ms;
 }
@@ -4233,6 +4510,83 @@ p {
   width: 1px;
   height: 20px;
   background: var(--separator-hairline);
+}
+
+.kira-dock-attach {
+  position: relative;
+  display: grid;
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  border-radius: 999px;
+  color: var(--text-muted);
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.kira-dock-attach:hover {
+  background: var(--glass-hover);
+  color: var(--text-main);
+}
+
+.kira-dock-attach input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.kira-dock-attachments {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 14px 10px;
+}
+
+.kira-attachment-chip {
+  display: inline-flex;
+  align-items: center;
+  max-width: 160px;
+  height: 26px;
+  padding: 0 6px 0 4px;
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.05);
+  color: var(--text-soft);
+  font-size: 0.68rem;
+  gap: 5px;
+}
+
+.kira-attachment-chip img {
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  object-fit: cover;
+}
+
+.kira-attachment-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kira-attachment-chip button {
+  display: grid;
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  place-items: center;
+  border-radius: 999px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.kira-attachment-chip button:hover {
+  background: var(--glass-hover);
+  color: var(--text-main);
 }
 
 .kira-dock-submit {
@@ -7131,7 +7485,11 @@ textarea {
 }
 
 .note-input {
-  min-height: 96px;
+  /* Was 96px — an empty note (the common case right after opening Details)
+     left a large dead gap above Tags/Palette/Source, unbalancing the whole
+     popover. This is enough for ~1.5 lines and grows with real content since
+     only min-height is set; nothing about a populated note shrinks. */
+  min-height: 40px;
   padding: 0;
   border: 0;
   background: transparent;
