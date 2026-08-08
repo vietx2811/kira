@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
+import { createPortal } from 'react-dom'
 import { create, useStore } from 'zustand'
 import { temporal } from 'zundo'
 import { invoke } from '@tauri-apps/api/core'
@@ -21,7 +22,6 @@ import {
   Brain,
   Camera,
   Check,
-  ChevronDown,
   ChevronLeft,
   ChevronRight,
   ChevronUp,
@@ -38,6 +38,7 @@ import {
   FolderOpen,
   Frame,
   GitBranch,
+  GripVertical,
   HelpCircle,
   History,
   Image as ImageIcon,
@@ -52,6 +53,7 @@ import {
   MoreHorizontal,
   Network,
   Palette,
+  Paperclip,
   Pause,
   Play,
   Plus,
@@ -135,6 +137,11 @@ type AiNodeRequest = {
 
 // One Kira panel session per open/close cycle. `source: null` means "whole
 // board" (opened from the rail launcher with nothing selected).
+// previewUrl is an object URL (URL.createObjectURL), not a data: URL — it
+// must be revoked (URL.revokeObjectURL) everywhere an attachment stops being
+// reachable: on removal, on session close, and on successful submit.
+type KiraAttachment = { id: string; name: string; previewUrl: string; isImage: boolean }
+
 type KiraSession = {
   origin: 'node' | 'rail'
   source: Pick<GraphNodeRef, 'kind' | 'id'> | null
@@ -142,6 +149,11 @@ type KiraSession = {
   scope: AiNodeScope
   action: AiNodeAction
   prompt: string
+  // Files the user attached from their machine — previewed as thumbnail
+  // chips in the dock. No provider in this app has a vision/file-upload
+  // path yet, so today these fold into the prompt as a plain filename note
+  // (see submitKiraSession) rather than being sent as image data.
+  attachments: KiraAttachment[]
   removedContextKeys: string[]
   providerOverrideId: string | null
   modelOverride: string | null
@@ -251,6 +263,16 @@ type EvidenceImage = {
   // Excludes this node's content from the AI context pipeline
   // (collectKiraContext) without deleting it — see the eye-icon toggle.
   aiExcluded?: boolean
+  // Pins a block to always render on the node face, not just inside the
+  // Details popover — the eye toggle next to each block's heading.
+  // Palette defaults to shown (undefined === true) to preserve the strip's
+  // pre-existing always-on behavior; tags default to hidden.
+  tagsPinned?: boolean
+  palettePinned?: boolean
+  // Display order for the Tags / Palette / Source blocks in the Details
+  // popover — drag-to-reorder writes here. Missing entries render after the
+  // ones listed, in DEFAULT_IMAGE_BLOCK_ORDER's order.
+  blockOrder?: string[]
   width?: number
   height?: number
   sizeBytes?: number
@@ -855,35 +877,39 @@ function Segmented<T extends string>({
   )
 }
 
-/** Shared inline rich-text editor backing every node's on-canvas caption —
-    one Tiptap instance, markdown in and out via tiptap-markdown. The mark/
-    node set is deliberately tiny (bold, italic, bullet list, link) to keep
-    markdown round-tripping low-risk. Only one instance is ever mounted at a
-    time (see editingNodeField), so its instantiation cost isn't a scaling
-    concern as board size grows. */
+/** Shared rich-text renderer backing every node's caption — a Tiptap
+    instance per visible node, markdown in and out via tiptap-markdown. The
+    canvas face renders it read-only (`editable={false}`): a single click
+    just selects the node, never places a cursor. Double-click (or the (i)
+    button) opens the node's overlay, which mounts a second instance of this
+    same component with `overlayMode` — editable, format toolbar always
+    visible instead of focus-gated, autofocused on open. The mark/node set
+    is deliberately tiny (bold, italic, bullet list, link) to keep markdown
+    round-tripping low-risk. */
 function NodeRichEditor({
   content,
   placeholder,
   onChange,
-  onBlur,
   onEscape,
   autoFocus,
+  editable = true,
+  overlayMode = false,
 }: {
   kind: GraphNodeKind
   nodeId: string
   content: string
   placeholder?: string
   onChange: (markdown: string) => void
-  onBlur: () => void
-  onEscape: () => void
+  onEscape?: () => void
   autoFocus?: boolean
+  editable?: boolean
+  overlayMode?: boolean
 }): React.ReactElement {
   const onChangeRef = useRef(onChange)
   onChangeRef.current = onChange
-  const onBlurRef = useRef(onBlur)
-  onBlurRef.current = onBlur
   const onEscapeRef = useRef(onEscape)
   onEscapeRef.current = onEscape
+  const [isFocused, setIsFocused] = useState(false)
 
   const editor = useEditor({
     extensions: [
@@ -907,13 +933,15 @@ function NodeRichEditor({
       Markdown.configure({ html: false, tightLists: true, bulletListMarker: '-', linkify: false }),
     ],
     content,
+    editable,
     autofocus: autoFocus ? 'end' : false,
     editorProps: {
       attributes: { class: 'node-rich-editor-content' },
       handleKeyDown: (_view, event) => {
         if (event.key === 'Escape') {
           event.preventDefault()
-          onEscapeRef.current()
+          onEscapeRef.current?.()
+          ;(event.target as HTMLElement).blur?.()
           return true
         }
         return false
@@ -923,7 +951,8 @@ function NodeRichEditor({
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       onChangeRef.current((instance.storage as any).markdown.getMarkdown())
     },
-    onBlur: () => onBlurRef.current(),
+    onFocus: () => setIsFocused(true),
+    onBlur: () => setIsFocused(false),
   })
 
   // Sync an externally-changed `content` prop into the editor, but only when
@@ -936,62 +965,79 @@ function NodeRichEditor({
     if (current !== content) editor.commands.setContent(content, { emitUpdate: false })
   }, [editor, content])
 
+  // editable is fixed at editor creation time in Tiptap — flip it live if
+  // this instance's editability prop ever changes after mount.
+  useEffect(() => {
+    editor?.setEditable(editable)
+  }, [editor, editable])
+
   if (!editor) return <></>
+
+  const showToolbar = overlayMode || isFocused
 
   return (
     <>
-      {/* Always visible while this node is being edited — not gated on a text
-          selection like Tiptap's default BubbleMenu — so formatting is
-          discoverable the moment editing starts, not just after a select.
-          Anchored to the editor's own box (not the canvas), sitting above it
-          with a gap so it never covers the node it's editing. */}
-      <div className="node-rich-editor-toolbar">
-        <button
-          type="button"
-          className={editor.isActive('bold') ? 'is-active' : ''}
-          aria-label="Bold"
-          onMouseDown={(event) => event.preventDefault()}
-          onClick={() => editor.chain().focus().toggleBold().run()}
-        >
-          <TextB size={13} weight="bold" />
-        </button>
-        <button
-          type="button"
-          className={editor.isActive('italic') ? 'is-active' : ''}
-          aria-label="Italic"
-          onMouseDown={(event) => event.preventDefault()}
-          onClick={() => editor.chain().focus().toggleItalic().run()}
-        >
-          <TextItalic size={13} />
-        </button>
-        <button
-          type="button"
-          className={editor.isActive('bulletList') ? 'is-active' : ''}
-          aria-label="Bullet list"
-          onMouseDown={(event) => event.preventDefault()}
-          onClick={() => editor.chain().focus().toggleBulletList().run()}
-        >
-          <ListBullets size={13} />
-        </button>
-        <span className="node-rich-editor-toolbar-divider" />
-        <button
-          type="button"
-          className={editor.isActive('link') ? 'is-active' : ''}
-          aria-label="Link"
-          onMouseDown={(event) => event.preventDefault()}
-          onClick={() => {
-            if (editor.isActive('link')) {
-              editor.chain().focus().unsetLink().run()
-              return
-            }
-            const url = window.prompt('Link URL')
-            if (url) editor.chain().focus().setLink({ href: url }).run()
-          }}
-        >
-          <LinkSimple size={13} />
-        </button>
-      </div>
-      <EditorContent editor={editor} className="node-rich-editor" />
+      {/* Overlay mode: always visible, since the overlay's whole purpose is
+          editing. Canvas mode: only while THIS node's editor is focused —
+          not gated on a text selection like Tiptap's default BubbleMenu, so
+          formatting is discoverable the moment typing starts. */}
+      {showToolbar && (
+        <div className={overlayMode ? 'node-rich-editor-toolbar is-static' : 'node-rich-editor-toolbar'}>
+          <button
+            type="button"
+            className={editor.isActive('bold') ? 'is-active' : ''}
+            aria-label="Bold"
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => editor.chain().focus().toggleBold().run()}
+          >
+            <TextB size={13} weight="bold" />
+          </button>
+          <button
+            type="button"
+            className={editor.isActive('italic') ? 'is-active' : ''}
+            aria-label="Italic"
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => editor.chain().focus().toggleItalic().run()}
+          >
+            <TextItalic size={13} />
+          </button>
+          <button
+            type="button"
+            className={editor.isActive('bulletList') ? 'is-active' : ''}
+            aria-label="Bullet list"
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => editor.chain().focus().toggleBulletList().run()}
+          >
+            <ListBullets size={13} />
+          </button>
+          <span className="node-rich-editor-toolbar-divider" />
+          <button
+            type="button"
+            className={editor.isActive('link') ? 'is-active' : ''}
+            aria-label="Link"
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => {
+              if (editor.isActive('link')) {
+                editor.chain().focus().unsetLink().run()
+                return
+              }
+              const url = window.prompt('Link URL')
+              if (url) editor.chain().focus().setLink({ href: url }).run()
+            }}
+          >
+            <LinkSimple size={13} />
+          </button>
+        </div>
+      )}
+      <EditorContent
+        editor={editor}
+        className={[
+          'node-rich-editor',
+          isFocused ? 'is-focused' : '',
+          editable ? '' : 'is-readonly',
+          overlayMode ? 'is-overlay' : '',
+        ].filter(Boolean).join(' ')}
+      />
     </>
   )
 }
@@ -3404,6 +3450,20 @@ function FileWorkspace({
     setImages((current) => current.map((image) => (image.id === imageId ? { ...image, ...patch, ...derived, updatedAt: nowIso() } : image)))
   }
 
+  // Pin toggles and block reordering are presentation-only — they don't
+  // warrant a version-history entry the way editing content does.
+  function toggleImageTagsPinned(imageId: string) {
+    setImages((current) => current.map((image) => (image.id === imageId ? { ...image, tagsPinned: !(image.tagsPinned ?? false) } : image)))
+  }
+
+  function toggleImagePalettePinned(imageId: string) {
+    setImages((current) => current.map((image) => (image.id === imageId ? { ...image, palettePinned: !(image.palettePinned ?? true) } : image)))
+  }
+
+  function reorderImageBlocks(imageId: string, order: string[]) {
+    setImages((current) => current.map((image) => (image.id === imageId ? { ...image, blockOrder: order } : image)))
+  }
+
   // Non-destructive: only ever touches this rectangle, never the file backing
   // `thumb`/`sourcePath` — "Reset crop" is always a full, lossless undo of it.
   function updateImageCropRect(imageId: string, cropRect: EvidenceImage['cropRect']) {
@@ -5429,6 +5489,9 @@ function FileWorkspace({
                 onRebuildOutline={rebuildOutlineDraft}
                 onIdeaInlineChange={updateIdea}
                 onImageInlineChange={updateImage}
+                onToggleImageTagsPinned={toggleImageTagsPinned}
+                onToggleImagePalettePinned={toggleImagePalettePinned}
+                onReorderImageBlocks={reorderImageBlocks}
                 onPaletteInlineChange={updatePalette}
                 onDiagramInlineChange={updateDiagram}
                 onPlaceholderInlineChange={updatePlaceholder}
@@ -7023,6 +7086,9 @@ function ReferenceCard({
       <button
         draggable
         type="button"
+        // Source/first 2 tags are already visible in the row; the native
+        // tooltip is a supplementary escape hatch for the full tag list.
+        title={[image.source, image.tags.slice(0, 4).join(', ')].filter(Boolean).join(' · ')}
         onClick={() => onSelect(image.id)}
         onDragStart={(event) => {
           event.dataTransfer.setData('application/x-kira-image-id', image.id)
@@ -7498,6 +7564,8 @@ function EvidenceInbox({
             </button>
           ))}
           {visibleIdeas.length === 0 && <div className="empty-state"><strong>No ideas</strong><span>Captured text ideas will appear here.</span></div>}
+          {/* .library-node-row small is hidden by default and revealed on
+              hover/selection in CSS — see .library-node-row small. */}
         </div>
       ) : (
         <div className="library-node-list" role="list" aria-label="Links">
@@ -7606,6 +7674,9 @@ function GraphCanvas({
   onRebuildOutline,
   onIdeaInlineChange,
   onImageInlineChange,
+  onToggleImageTagsPinned,
+  onToggleImagePalettePinned,
+  onReorderImageBlocks,
   onPaletteInlineChange,
   onDiagramInlineChange,
   onPlaceholderInlineChange,
@@ -7687,6 +7758,9 @@ function GraphCanvas({
   onRebuildOutline: () => void
   onIdeaInlineChange: (ideaId: string, patch: Partial<Pick<Idea, 'content' | 'notes' | 'sourceUrl'>>) => void
   onImageInlineChange: (imageId: string, patch: Partial<Pick<EvidenceImage, 'content' | 'notes' | 'sourceUrl'>>) => void
+  onToggleImageTagsPinned: (imageId: string) => void
+  onToggleImagePalettePinned: (imageId: string) => void
+  onReorderImageBlocks: (imageId: string, order: string[]) => void
   onPaletteInlineChange: (paletteId: string, patch: Partial<Pick<PaletteNode, 'content' | 'notes' | 'sourceUrl'>>) => void
   onDiagramInlineChange: (diagramId: string, patch: Partial<Pick<DiagramNode, 'content' | 'notes' | 'sourceUrl' | 'source'>>) => void
   onPlaceholderInlineChange: (placeholderId: string, patch: Partial<Pick<PlaceholderNode, 'content' | 'notes' | 'sourceUrl'>>) => void
@@ -7798,12 +7872,34 @@ function GraphCanvas({
   const [multiSelectedNodes, setMultiSelectedNodes] = useState<CanvasNodeSelection[]>([])
   const [nodeContextMenu, setNodeContextMenu] = useState<{ x: number; y: number; nodes: CanvasNodeSelection[] } | null>(null)
   const [detailsPopoverNode, setDetailsPopoverNode] = useState<CanvasNodeSelection | null>(null)
-  const [historyPopoverNode, setHistoryPopoverNode] = useState<CanvasNodeSelection | null>(null)
+  // Whichever element opened the overlay (the toolbar's Details button, or
+  // the node card itself on double-click) — focus returns here when the
+  // overlay closes, so keyboard/screen-reader users land back where they
+  // started instead of at the top of the document. Shared by every close
+  // path (scrim click, X button, Escape/outside-click via
+  // useDismissableLayer) so none of them skip the restore.
+  const detailsTriggerRef = useRef<HTMLElement | null>(null)
+  function closeDetailsPopover() {
+    setDetailsPopoverNode(null)
+    detailsTriggerRef.current?.focus()
+  }
+  // Only one Details popover can be open at a time, so one flat key is
+  // enough to track a drag-to-reorder gesture across its block modules.
+  const [draggedBlockKey, setDraggedBlockKey] = useState<string | null>(null)
+  // Which Details-popover sections are collapsed — a session-level UI
+  // preference shared across every node (not per-node state), same as a
+  // sidebar's remembered scroll position. History starts collapsed since
+  // it's the section people open least; everything else starts open.
+  const [collapsedDetailSections, setCollapsedDetailSections] = useState<Set<string>>(() => new Set(['history']))
+  const toggleDetailSection = useCallback((key: string) => {
+    setCollapsedDetailSections((current) => {
+      const next = new Set(current)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }, [])
   const [frameDescriptionOpenId, setFrameDescriptionOpenId] = useState<string | null>(null)
-  // There's only one editable field per node now (`content`, via
-  // NodeRichEditor), so unlike the old Idea-only title/body discriminant
-  // this just needs to know which node is being edited.
-  const [editingNodeField, setEditingNodeField] = useState<{ kind: GraphNodeKind; id: string } | null>(null)
   const [editingFrameId, setEditingFrameId] = useState<string | null>(null)
   const draggingFrameRef = useRef<{ id: string; offsetX: number; offsetY: number } | null>(null)
   const resizingFrameRef = useRef<{ id: string; startWidth: number; startHeight: number; startX: number; startY: number } | null>(null)
@@ -7817,8 +7913,15 @@ function GraphCanvas({
   const kiraDockRef = useRef<HTMLDivElement | null>(null)
   const kiraOrbRef = useRef<HTMLButtonElement | null>(null)
   const kiraInputRef = useRef<HTMLTextAreaElement | null>(null)
+  // Bumped on every open/close so an in-flight file read (addKiraAttachments)
+  // can tell whether the session it was reading for is still the active one
+  // before it appends its result — otherwise a slow read landing after the
+  // user closed and reopened the dock would attach a stale file to the new
+  // session.
+  const kiraSessionGenerationRef = useRef(0)
 
   function openKiraSession(origin: 'node' | 'rail', source: Pick<GraphNodeRef, 'kind' | 'id'> | null, scope: AiNodeScope, extraSources: Pick<GraphNodeRef, 'kind' | 'id'>[] = []) {
+    kiraSessionGenerationRef.current += 1
     setKiraSession({
       origin,
       source,
@@ -7826,6 +7929,7 @@ function GraphCanvas({
       scope,
       action: 'summarize',
       prompt: '',
+      attachments: [],
       removedContextKeys: [],
       providerOverrideId: null,
       modelOverride: null,
@@ -7838,6 +7942,10 @@ function GraphCanvas({
     // The Arrange drawer floats at the same bottom-left corner the dock
     // drifts toward on open — close it so the two surfaces can't collide.
     setIsGraphToolsOpen(false)
+    // The textarea's inline height (set by the auto-grow onChange handler)
+    // outlives a closed session on the same persistent DOM node — reset it
+    // so a fresh session doesn't inherit the previous message's height.
+    if (kiraInputRef.current) kiraInputRef.current.style.height = ''
   }
 
   function openKiraFromNode(kind: GraphNodeKind, id: string) {
@@ -7860,7 +7968,14 @@ function GraphCanvas({
   const shouldRestoreOrbFocusRef = useRef(false)
 
   const closeKiraSession = useCallback(() => {
-    setKiraSession(null)
+    kiraSessionGenerationRef.current += 1
+    setKiraSession((current) => {
+      // Object URLs are only ever referenced from this session's own
+      // attachment chips — once the session is gone nothing else can revoke
+      // them, so this is the one place that must.
+      current?.attachments.forEach((attachment) => URL.revokeObjectURL(attachment.previewUrl))
+      return null
+    })
     setIsKiraContextOpen(false)
     setIsKiraSuggestOpen(false)
     // The orb is `inert` while the dock is open, and `inert` elements
@@ -7877,22 +7992,68 @@ function GraphCanvas({
     kiraOrbRef.current?.focus()
   }, [isKiraOpen])
 
+  // 25MB per file — attachments aren't sent anywhere today (see the note on
+  // KiraAttachment), just held as object URLs for the chip preview, but an
+  // unbounded read of e.g. a multi-gigabyte video would still peg the main
+  // thread and balloon memory for a preview nobody asked for.
+  const kiraAttachmentMaxBytes = 25 * 1024 * 1024
+
+  function addKiraAttachments(files: FileList | File[]) {
+    const generation = kiraSessionGenerationRef.current
+    for (const file of Array.from(files)) {
+      if (file.size > kiraAttachmentMaxBytes) {
+        setKiraSession((current) => current ? { ...current, status: 'error', message: `${file.name} is over the 25MB attachment limit.` } : current)
+        continue
+      }
+      // Object URLs reference the file in place instead of copying it into a
+      // base64 string in React state (~33% larger, and held for the whole
+      // session) — revoked on removal and on session close/submit, the only
+      // places an attachment stops being reachable.
+      const url = URL.createObjectURL(file)
+      const attachment: KiraAttachment = { id: crypto.randomUUID(), name: file.name, previewUrl: url, isImage: file.type.startsWith('image/') }
+      if (kiraSessionGenerationRef.current !== generation) {
+        // The dock closed or submitted while this loop was still running —
+        // there's no session left to attach to.
+        URL.revokeObjectURL(url)
+        continue
+      }
+      setKiraSession((current) => current ? { ...current, attachments: [...current.attachments, attachment] } : current)
+    }
+  }
+
+  function removeKiraAttachment(id: string) {
+    setKiraSession((current) => {
+      if (!current) return current
+      const removed = current.attachments.find((attachment) => attachment.id === id)
+      if (removed) URL.revokeObjectURL(removed.previewUrl)
+      return { ...current, attachments: current.attachments.filter((attachment) => attachment.id !== id) }
+    })
+  }
+
   async function submitKiraSession() {
     if (!kiraSession) return
     const sources = [kiraSession.source, ...kiraSession.extraSources].filter(Boolean) as Pick<GraphNodeRef, 'kind' | 'id'>[]
     const contextNodes = collectKiraContextForSources(sources, kiraSession.scope, { ideas, images, palettes, diagrams, placeholders, links })
       .filter((node) => !kiraSession.removedContextKeys.includes(`${node.kind}:${node.id}`))
+    // No provider here has a vision/upload path yet — an attached file
+    // becomes a plain filename note rather than image data. Real
+    // multimodal support is a provider-level change, not a dock one.
+    const attachmentNote = kiraSession.attachments.length > 0
+      ? `\n\nAttached: ${kiraSession.attachments.map((attachment) => attachment.name).join(', ')}`
+      : ''
     setKiraSession((current) => current ? { ...current, status: 'thinking', message: null } : current)
     try {
       await onCreateAiNode({
         source: kiraSession.source,
         action: kiraSession.action,
         scope: sources.length > 1 ? 'selected' : kiraSession.scope,
-        prompt: kiraSession.prompt,
+        prompt: kiraSession.prompt + attachmentNote,
         contextNodes,
         providerOverrideId: kiraSession.providerOverrideId,
         modelOverride: kiraSession.modelOverride,
       })
+      kiraSessionGenerationRef.current += 1
+      kiraSession.attachments.forEach((attachment) => URL.revokeObjectURL(attachment.previewUrl))
       setKiraSession(null)
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Kira could not complete that.'
@@ -7969,13 +8130,7 @@ function GraphCanvas({
   useDismissableLayer(
     Boolean(detailsPopoverNode),
     '.node-details-popover, .node-toolbar',
-    () => setDetailsPopoverNode(null),
-  )
-
-  useDismissableLayer(
-    Boolean(historyPopoverNode),
-    '.node-history-popover, .node-toolbar',
-    () => setHistoryPopoverNode(null),
+    closeDetailsPopover,
   )
 
   useDismissableLayer(
@@ -7986,7 +8141,6 @@ function GraphCanvas({
 
   useEffect(() => {
     setDetailsPopoverNode((current) => (current && isNodeSelection(selected) && current.kind === selected.type && current.id === selected.id ? current : null))
-    setHistoryPopoverNode((current) => (current && isNodeSelection(selected) && current.kind === selected.type && current.id === selected.id ? current : null))
     setFrameDescriptionOpenId((current) => (current && selected.type === 'frame' && selected.id === current ? current : null))
   }, [selected])
 
@@ -8027,11 +8181,6 @@ function GraphCanvas({
     if (!isDevRuntime()) return
     ;(window as KiraWindow).__kiraGraphMetrics = graphMetrics
   }, [graphMetrics])
-
-  useEffect(() => {
-    if (!editingNodeField) return
-    if (selected.type !== editingNodeField.kind || selected.id !== editingNodeField.id) setEditingNodeField(null)
-  }, [editingNodeField, selected])
 
   useEffect(() => {
     setMultiSelectedNodes((current) => current.filter((node) => resolveGraphNodeRef(node.id, ideas, images, palettes, diagrams, placeholders)))
@@ -8336,6 +8485,17 @@ function GraphCanvas({
     setNodeContextMenu(null)
   }
 
+  // Double-clicking anywhere on a node — including its caption text, which
+  // is read-only on the canvas face now — opens the node's overlay, the
+  // one place its content is actually editable. Same destination as the
+  // (i) button, just reachable without hunting for a small icon first.
+  function handleNodeDoubleClick(kind: GraphNodeKind, id: string, event: React.MouseEvent<HTMLElement>) {
+    event.preventDefault()
+    detailsTriggerRef.current = event.currentTarget
+    onSelect({ type: kind, id } as Selection)
+    setDetailsPopoverNode({ kind, id })
+  }
+
   function openArcMenu(kind: GraphNodeKind, node: Pick<Idea, 'id' | 'x' | 'y'>, event: React.MouseEvent<HTMLElement>) {
     event.preventDefault()
     event.stopPropagation()
@@ -8635,11 +8795,9 @@ function GraphCanvas({
     if (nodeContextMenu || arcMenu) return null
     if (multiSelectedNodes.length > 0) return null
     if (selected.type !== kind || selected.id !== node.id) return null
-    if (editingNodeField?.kind === kind && editingNodeField.id === node.id) return null
 
     const id = node.id
     const isDetailsOpen = detailsPopoverNode?.kind === kind && detailsPopoverNode.id === id
-    const isHistoryOpen = historyPopoverNode?.kind === kind && historyPopoverNode.id === id
     const nodeVersionRecords = nodeVersions.filter((version) => version.nodeId === id && version.nodeKind === kind).slice(0, 8)
     const inlineChange = (patch: { notes?: string; sourceUrl?: string }) => {
       if (kind === 'idea') onIdeaInlineChange(id, patch)
@@ -8648,155 +8806,226 @@ function GraphCanvas({
       else if (kind === 'diagram') onDiagramInlineChange(id, patch)
       else onPlaceholderInlineChange(id, patch)
     }
+    const onOverlayContentChange = (markdown: string) => {
+      if (kind === 'idea') onIdeaInlineChange(id, { content: markdown })
+      else if (kind === 'image') onImageInlineChange(id, { content: markdown })
+      else if (kind === 'palette') onPaletteInlineChange(id, { content: markdown })
+      else if (kind === 'diagram') onDiagramInlineChange(id, { content: markdown })
+      else onPlaceholderInlineChange(id, { content: markdown })
+    }
+
+    // Only the image kind has more than one reorderable block (tags,
+    // extracted palette, source) — everything else keeps a single fixed
+    // source-url block, so drag-to-reorder only applies here.
+    const imageOrder = kind === 'image' ? resolveImageBlockOrder(node as EvidenceImage) : []
+    const dragHandleProps = (key: ImageBlockKey): React.HTMLAttributes<HTMLSpanElement> => ({
+      draggable: true,
+      onDragStart: (event) => {
+        setDraggedBlockKey(key)
+        event.dataTransfer.effectAllowed = 'move'
+      },
+      onDragEnd: () => setDraggedBlockKey(null),
+    })
+    const dropTargetProps = (key: ImageBlockKey) => ({
+      onDragOver: (event: React.DragEvent) => event.preventDefault(),
+      onDrop: (event: React.DragEvent) => {
+        event.preventDefault()
+        if (!draggedBlockKey || draggedBlockKey === key) return
+        const from = imageOrder.indexOf(draggedBlockKey as ImageBlockKey)
+        const to = imageOrder.indexOf(key)
+        if (from === -1 || to === -1) return
+        const next = [...imageOrder]
+        next.splice(from, 1)
+        next.splice(to, 0, draggedBlockKey as ImageBlockKey)
+        onReorderImageBlocks(id, next)
+        setDraggedBlockKey(null)
+      },
+    })
+    const sourceUrlField = (
+      <input
+        className="title-input"
+        placeholder="Source URL"
+        value={('sourceUrl' in node ? node.sourceUrl : '') ?? ''}
+        onChange={(event) => inlineChange({ sourceUrl: event.target.value })}
+      />
+    )
+
+    const closeDetails = closeDetailsPopover
 
     return (
-      <div className="node-below-stack" onPointerDown={(event) => event.stopPropagation()} onContextMenu={(event) => event.preventDefault()}>
-        <div className="node-toolbar">
-          {kind === 'image' && (
-            <>
-              <label className="node-toolbar-file file-action" aria-label="Replace image" title="Replace image">
-                <ImagePlus size={13} />
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={(event) => {
-                    if (event.target.files) onReferenceReplace(id, event.target.files)
-                    event.target.value = ''
-                  }}
-                />
-              </label>
-              <button type="button" aria-label="Find similar" title="Find similar" onClick={() => onReferenceFindSimilar(id)}>
-                <Search size={13} />
-              </button>
-              <button type="button" aria-label="Crop image" title="Crop" onClick={() => onReferenceCrop(id)}>
-                <CropIcon size={13} />
-              </button>
-              <button type="button" aria-label="Extract palette" title="Extract palette" onClick={() => onReferenceConvertToPalette(id)}>
-                <PaletteIcon size={13} />
-              </button>
-            </>
-          )}
-          {kind === 'placeholder' && (
-            <label className="node-toolbar-file file-action" aria-label="Attach image" title="Attach image">
-              <ImagePlus size={13} />
-              <input
-                type="file"
-                accept="image/*"
-                onChange={(event) => {
-                  if (event.target.files) onPlaceholderAttach(id, event.target.files)
-                  event.target.value = ''
-                }}
-              />
-            </label>
-          )}
-          <button
-            type="button"
-            aria-label="Details"
-            title="Notes, source, tags"
-            className={isDetailsOpen ? 'is-active' : ''}
-            onClick={() => setDetailsPopoverNode((current) => current?.kind === kind && current.id === id ? null : { kind, id })}
-          >
-            <NoteIcon size={13} />
-          </button>
-          <button
-            type="button"
-            aria-label={kind === 'diagram' ? 'Source and history' : 'Version history'}
-            title={kind === 'diagram' ? 'Source and history' : 'Version history'}
-            className={isHistoryOpen ? 'is-active' : ''}
-            onClick={() => setHistoryPopoverNode((current) => current?.kind === kind && current.id === id ? null : { kind, id })}
-          >
-            <History size={13} />
-          </button>
-          <button
-            type="button"
-            aria-label={node.aiExcluded ? 'Excluded from AI — click to include' : 'Included in AI context — click to exclude'}
-            title={node.aiExcluded ? 'Excluded from AI' : 'Included in AI context'}
-            className={node.aiExcluded ? 'is-active' : ''}
-            onClick={() => onToggleAiExcluded(kind, id)}
-          >
-            {node.aiExcluded ? <EyeOff size={13} /> : <Eye size={13} />}
-          </button>
-          <button type="button" aria-label="Link node" title="Link" onClick={() => beginLinkFromArc({ kind, id })}>
-            <Link2 size={13} />
-          </button>
-          <button
-            type="button"
-            aria-label="Delete node"
-            title="Delete"
-            className="is-danger"
-            onClick={() => onDeleteNodes([{ kind, id }])}
-          >
-            <Trash2 size={13} />
-          </button>
-        </div>
-        {isDetailsOpen && (
-          <div className="node-details-popover">
-            {kind === 'palette' && (
-              <div className="node-details-section">
-                <HexColorPicker
-                  color={(node as PaletteNode).colors[0] ?? '#84cdbc'}
-                  onChange={(color) => onPaletteColorChange(id, 0, color)}
-                />
-                <div className="palette-color-editor" aria-label="Palette colors">
-                  {(node as PaletteNode).colors.map((color, index) => (
-                    <div key={`${id}-edit-${index}-${color}`} className="palette-color-row">
-                      <input
-                        aria-label={`Palette color ${index + 1}`}
-                        type="color"
-                        value={normalizeHexInput(color)}
-                        onChange={(event) => onPaletteColorChange(id, index, event.target.value)}
-                      />
-                      <code>{normalizeHexInput(color)}</code>
-                      <button type="button" aria-label={`Remove palette color ${index + 1}`} onClick={() => onPaletteColorRemove(id, index)}>
-                        <X size={12} />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-                <div className="node-details-actions">
-                  <button type="button" className="inline-action" onClick={() => onPaletteColorAdd(id)}>
+      <div
+        className={isDetailsOpen ? 'node-below-stack is-expanded' : 'node-below-stack'}
+        onPointerDown={(event) => event.stopPropagation()}
+        onContextMenu={(event) => event.preventDefault()}
+      >
+        {/* Collapsed: a small pill with just Details + Delete, floating
+            below the node. Expanded: the pill disappears entirely and the
+            card below absorbs both — one floating object instead of a pill
+            stacked on a box, which is what "morphing into a card" means. */}
+        {!isDetailsOpen && (
+          <div className="node-toolbar">
+            <button
+              type="button"
+              aria-label="Details"
+              title="Notes, source, tags, history"
+              onClick={(event) => {
+                detailsTriggerRef.current = event.currentTarget
+                setDetailsPopoverNode({ kind, id })
+              }}
+            >
+              <NoteIcon size={13} />
+            </button>
+            {/* Linking already has two other paths — the node's own drag
+                handle (.node-link-handle, direct-manipulation) and the
+                right-click context menu — a third click target here was
+                pure duplication, not a real alternative. */}
+            <button
+              type="button"
+              aria-label="Delete node"
+              title="Delete"
+              className="is-danger"
+              onClick={() => onDeleteNodes([{ kind, id }])}
+            >
+              <Trash2 size={13} />
+            </button>
+          </div>
+        )}
+        {isDetailsOpen && createPortal(
+          <div className="node-overlay-scrim" onClick={closeDetails}>
+            <div
+              className="node-details-popover"
+              role="dialog"
+              aria-modal="true"
+              aria-label={`${node.title || graphNodeKindLabel(kind)} details`}
+              onClick={(event) => event.stopPropagation()}
+            >
+              {/* Every action that used to live on the node face's toolbar —
+                  add-new/AI actions plus the kind-specific ones — is
+                  consolidated into this single icon row, so the node face
+                  itself stays down to a single (i) affordance while closed. */}
+              <div className="node-details-actionbar">
+              {kind === 'image' && (
+                <>
+                  <label className="node-toolbar-file file-action" aria-label="Replace image" title="Replace image">
+                    <ImagePlus size={13} />
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={(event) => {
+                        if (event.target.files) onReferenceReplace(id, event.target.files)
+                        event.target.value = ''
+                      }}
+                    />
+                  </label>
+                  <button type="button" aria-label="Find similar" title="Find similar" onClick={() => onReferenceFindSimilar(id)}>
+                    <Search size={13} />
+                  </button>
+                  <button type="button" aria-label="Crop image" title="Crop" onClick={() => onReferenceCrop(id)}>
+                    <CropIcon size={13} />
+                  </button>
+                  <button type="button" aria-label="Extract palette" title="Extract palette" onClick={() => onReferenceConvertToPalette(id)}>
+                    <PaletteIcon size={13} />
+                  </button>
+                </>
+              )}
+              {kind === 'placeholder' && (
+                <label className="node-toolbar-file file-action" aria-label="Attach image" title="Attach image">
+                  <ImagePlus size={13} />
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(event) => {
+                      if (event.target.files) onPlaceholderAttach(id, event.target.files)
+                      event.target.value = ''
+                    }}
+                  />
+                </label>
+              )}
+              {kind === 'palette' && (
+                <>
+                  <button type="button" aria-label="Add color" title="Add color" onClick={() => onPaletteColorAdd(id)}>
                     <Plus size={13} />
-                    Add color
                   </button>
-                  <button type="button" className="inline-action" onClick={() => onPaletteRegenerate(id, 'analogous')}>
+                  <button type="button" aria-label="Rebalance palette" title="Rebalance" onClick={() => onPaletteRegenerate(id, 'analogous')}>
                     <Sparkles size={13} />
-                    Rebalance
                   </button>
-                </div>
-              </div>
-            )}
-            {kind === 'image' && (node as EvidenceImage).palette.length > 0 && (
-              <div className="reference-palette-strip" aria-label="Extracted image colors">
-                {(node as EvidenceImage).palette.slice(0, 7).map((color, index) => (
-                  <button
-                    key={`${id}-palette-${index}-${color}`}
-                    type="button"
-                    className="reference-palette-segment"
-                    title={color}
-                    style={{ background: color }}
-                    onClick={() => void copyColorSet([color])}
-                  >
-                    <code>{color.toUpperCase()}</code>
-                  </button>
-                ))}
-              </div>
-            )}
-            {kind === 'image' && (
-              <TagBlock
-                image={node as EvidenceImage}
-                canRunOcr={isTauriRuntime() && (node as EvidenceImage).thumb.startsWith('data:image/')}
-                canRefineTags={localModelAvailable}
-                isOcrRunning={ocrRunningImageId === id}
-                isRefiningTags={modelRunningImageId === id}
-                ocrStatus={ocrStatusByImageId[id]}
-                modelStatus={modelStatusByImageId[id]}
-                onAcceptSuggestion={(tag) => onAcceptSuggestion(id, tag)}
-                onRejectSuggestion={(tag) => onRejectSuggestion(id, tag)}
-                onAddTag={(tag) => onReferenceTagAdd(id, tag)}
-                onRemoveTag={(tag) => onReferenceTagRemove(id, tag)}
-                onRunOcr={() => onReferenceOcr(id)}
-                onRefineTags={() => onReferenceTagRefine(id)}
-              />
+                </>
+              )}
+              {kind === 'idea' && (
+                <button type="button" aria-label="Create outline" title="Create outline" onClick={onRebuildOutline}>
+                  <Bot size={13} />
+                </button>
+              )}
+              {/* Visually separates "do something to this node" (edit/replace/
+                  crop/history — left) from "how it behaves" (AI inclusion —
+                  right) so the row doesn't read as one undifferentiated
+                  strip of identical icons. */}
+              <span className="node-details-actionbar-sep" aria-hidden="true" />
+              <button
+                type="button"
+                aria-label={node.aiExcluded ? 'Excluded from AI — click to include' : 'Included in AI context — click to exclude'}
+                title={node.aiExcluded ? 'Excluded from AI' : 'Included in AI context'}
+                className={node.aiExcluded ? 'is-active' : ''}
+                onClick={() => onToggleAiExcluded(kind, id)}
+              >
+                {node.aiExcluded ? <EyeOff size={13} /> : <Eye size={13} />}
+              </button>
+              <button
+                type="button"
+                aria-label="Delete node"
+                title="Delete"
+                className="is-danger"
+                onClick={() => onDeleteNodes([{ kind, id }])}
+              >
+                <Trash2 size={13} />
+              </button>
+              <span className="node-details-actionbar-sep" aria-hidden="true" />
+              <button type="button" aria-label="Close" title="Close" className="node-details-close" onClick={closeDetails}>
+                <X size={13} />
+              </button>
+            </div>
+            <NodeRichEditor
+              kind={kind}
+              nodeId={id}
+              content={node.content}
+              placeholder="Type something..."
+              overlayMode
+              autoFocus
+              onChange={onOverlayContentChange}
+            />
+            {kind === 'palette' && (
+              <section className="block-module">
+                <SectionHeader
+                  icon={<PaletteIcon size={14} />}
+                  title="Colors"
+                  collapsed={collapsedDetailSections.has('colors')}
+                  onToggleCollapsed={() => toggleDetailSection('colors')}
+                />
+                {!collapsedDetailSections.has('colors') && (
+                  <div className="node-details-section">
+                    <HexColorPicker
+                      color={(node as PaletteNode).colors[0] ?? '#84cdbc'}
+                      onChange={(color) => onPaletteColorChange(id, 0, color)}
+                    />
+                    <div className="palette-color-editor" aria-label="Palette colors">
+                      {(node as PaletteNode).colors.map((color, index) => (
+                        <div key={`${id}-edit-${index}-${color}`} className="palette-color-row">
+                          <input
+                            aria-label={`Palette color ${index + 1}`}
+                            type="color"
+                            value={normalizeHexInput(color)}
+                            onChange={(event) => onPaletteColorChange(id, index, event.target.value)}
+                          />
+                          <code>{normalizeHexInput(color)}</code>
+                          <button type="button" aria-label={`Remove palette color ${index + 1}`} onClick={() => onPaletteColorRemove(id, index)}>
+                            <X size={12} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </section>
             )}
             <textarea
               className="note-input"
@@ -8804,39 +9033,115 @@ function GraphCanvas({
               value={('notes' in node ? node.notes : '') ?? ''}
               onChange={(event) => inlineChange({ notes: event.target.value })}
             />
-            <div className="source-url-row">
-              <Link2 size={13} />
-              <input
-                className="title-input"
-                placeholder="Source URL"
-                value={('sourceUrl' in node ? node.sourceUrl : '') ?? ''}
-                onChange={(event) => inlineChange({ sourceUrl: event.target.value })}
-              />
-            </div>
-            {kind === 'idea' && (
-              <button className="inline-action" type="button" onClick={onRebuildOutline}>
-                <Bot size={13} />
-                Create outline
-              </button>
-            )}
-            <NodeMetadata node={node} />
-          </div>
-        )}
-        {isHistoryOpen && (
-          <div className="node-history-popover">
-            {kind === 'diagram' && (
-              <div className="node-details-section">
-                <label className="field-label" htmlFor={`diagram-source-${id}`}>Source</label>
-                <textarea
-                  id={`diagram-source-${id}`}
-                  className="diagram-source-input"
-                  value={(node as DiagramNode).source}
-                  onChange={(event) => onDiagramInlineChange(id, { source: event.target.value })}
-                />
+            {kind === 'image' ? (
+              <div className="reorderable-blocks">
+                {imageOrder.map((key) => {
+                  const image = node as EvidenceImage
+                  if (key === 'tags') {
+                    return (
+                      <div key="tags" className={draggedBlockKey === 'tags' ? 'reorderable-block is-dragging' : 'reorderable-block'} {...dropTargetProps('tags')}>
+                        <TagBlock
+                          image={image}
+                          pinned={image.tagsPinned ?? false}
+                          collapsed={collapsedDetailSections.has('tags')}
+                          onToggleCollapsed={() => toggleDetailSection('tags')}
+                          canRunOcr={isTauriRuntime() && image.thumb.startsWith('data:image/')}
+                          canRefineTags={localModelAvailable}
+                          isOcrRunning={ocrRunningImageId === id}
+                          isRefiningTags={modelRunningImageId === id}
+                          ocrStatus={ocrStatusByImageId[id]}
+                          modelStatus={modelStatusByImageId[id]}
+                          onAcceptSuggestion={(tag) => onAcceptSuggestion(id, tag)}
+                          onRejectSuggestion={(tag) => onRejectSuggestion(id, tag)}
+                          onAddTag={(tag) => onReferenceTagAdd(id, tag)}
+                          onRemoveTag={(tag) => onReferenceTagRemove(id, tag)}
+                          onRunOcr={() => onReferenceOcr(id)}
+                          onRefineTags={() => onReferenceTagRefine(id)}
+                          onTogglePinned={() => onToggleImageTagsPinned(id)}
+                          dragHandleProps={dragHandleProps('tags')}
+                        />
+                      </div>
+                    )
+                  }
+                  if (key === 'palette') {
+                    if (image.palette.length === 0) return null
+                    return (
+                      <div key="palette" className={draggedBlockKey === 'palette' ? 'reorderable-block is-dragging' : 'reorderable-block'} {...dropTargetProps('palette')}>
+                        <PaletteBlock
+                          image={image}
+                          pinned={image.palettePinned ?? true}
+                          collapsed={collapsedDetailSections.has('palette')}
+                          onToggleCollapsed={() => toggleDetailSection('palette')}
+                          onTogglePinned={() => onToggleImagePalettePinned(id)}
+                          dragHandleProps={dragHandleProps('palette')}
+                        />
+                      </div>
+                    )
+                  }
+                  return (
+                    <div key="source" className={draggedBlockKey === 'source' ? 'reorderable-block is-dragging' : 'reorderable-block'} {...dropTargetProps('source')}>
+                      <section className="block-module">
+                        <SectionHeader
+                          icon={<Link2 size={14} />}
+                          title="Source"
+                          collapsed={collapsedDetailSections.has('source')}
+                          onToggleCollapsed={() => toggleDetailSection('source')}
+                          dragHandleProps={dragHandleProps('source')}
+                        />
+                        {!collapsedDetailSections.has('source') && <div className="source-url-row">{sourceUrlField}</div>}
+                      </section>
+                    </div>
+                  )
+                })}
               </div>
+            ) : (
+              <section className="block-module">
+                <SectionHeader
+                  icon={<Link2 size={14} />}
+                  title="Source"
+                  collapsed={collapsedDetailSections.has('source')}
+                  onToggleCollapsed={() => toggleDetailSection('source')}
+                />
+                {!collapsedDetailSections.has('source') && <div className="source-url-row">{sourceUrlField}</div>}
+              </section>
             )}
-            <NodeVersionTimeline versions={nodeVersionRecords} onRestore={onNodeVersionRestore} />
-          </div>
+            {kind === 'diagram' && (
+              <section className="block-module">
+                <SectionHeader
+                  icon={<FileText size={14} />}
+                  title="Diagram source"
+                  collapsed={collapsedDetailSections.has('diagram-source')}
+                  onToggleCollapsed={() => toggleDetailSection('diagram-source')}
+                />
+                {!collapsedDetailSections.has('diagram-source') && (
+                  <textarea
+                    aria-label="Diagram source"
+                    className="diagram-source-input"
+                    value={(node as DiagramNode).source}
+                    onChange={(event) => onDiagramInlineChange(id, { source: event.target.value })}
+                  />
+                )}
+              </section>
+            )}
+            {/* History used to be a second popover behind its own toolbar
+                toggle — one more floating layer to open/close for
+                information that belongs with everything else about this
+                node. It's a section here instead, collapsed by default. */}
+            <section className="block-module">
+              <SectionHeader
+                icon={<History size={14} />}
+                title="History"
+                collapsed={collapsedDetailSections.has('history')}
+                onToggleCollapsed={() => toggleDetailSection('history')}
+              />
+              {!collapsedDetailSections.has('history') && (
+                <NodeVersionTimeline versions={nodeVersionRecords} onRestore={onNodeVersionRestore} />
+              )}
+            </section>
+              <NodeMetadata node={node} />
+            </div>
+          </div>,
+          document.body,
         )}
       </div>
     )
@@ -8928,11 +9233,31 @@ function GraphCanvas({
             disabled={isThinking}
             tabIndex={open ? 0 : -1}
             inert={!open || undefined}
-            onChange={(event) => setKiraSession((current) => current ? { ...current, prompt: event.target.value } : current)}
+            onChange={(event) => {
+              setKiraSession((current) => current ? { ...current, prompt: event.target.value } : current)
+              // Auto-grow up to ~6 lines (see .kira-dock-input max-height),
+              // then the textarea's own overflow-y:auto takes over — a
+              // multi-line message no longer just scrolls invisibly inside
+              // a one-line box.
+              const el = event.currentTarget
+              el.style.height = 'auto'
+              el.style.height = `${el.scrollHeight}px`
+            }}
             onKeyDown={handleKiraInputKeyDown}
           />
 
           <div className="kira-dock-actions" inert={!open || undefined}>
+            <label className="kira-dock-attach" aria-label="Attach file" title="Attach file">
+              <Paperclip size={13} />
+              <input
+                type="file"
+                multiple
+                onChange={(event) => {
+                  if (event.target.files?.length) addKiraAttachments(event.target.files)
+                  event.target.value = ''
+                }}
+              />
+            </label>
             <button
               type="button"
               className={isKiraContextOpen ? 'kira-dock-pill is-open' : 'kira-dock-pill'}
@@ -8967,6 +9292,28 @@ function GraphCanvas({
             </button>
           </div>
         </div>
+
+        {open && kiraSession && kiraSession.attachments.length > 0 && (
+          <div className="kira-dock-attachments" aria-label="Attached files">
+            {kiraSession.attachments.map((attachment) => (
+              <span className="kira-attachment-chip" key={attachment.id} title={attachment.name}>
+                {attachment.isImage ? (
+                  <img src={attachment.previewUrl} alt="" />
+                ) : (
+                  <FileText size={13} />
+                )}
+                <span className="kira-attachment-name">{attachment.name}</span>
+                <button
+                  type="button"
+                  aria-label={`Remove ${attachment.name}`}
+                  onClick={() => removeKiraAttachment(attachment.id)}
+                >
+                  <X size={10} />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
 
         {isThinking && <div className="kira-dock-progress" aria-hidden="true" />}
 
@@ -9042,20 +9389,6 @@ function GraphCanvas({
         </div>
       </div>
     )
-  }
-
-  function beginNodeEdit(kind: GraphNodeKind, id: string, event: React.SyntheticEvent<HTMLElement>) {
-    event.preventDefault()
-    event.stopPropagation()
-    setEditingNodeField({ kind, id })
-  }
-
-  function handleNodeEditBlur() {
-    setEditingNodeField(null)
-  }
-
-  function handleNodeEditEscape() {
-    setEditingNodeField(null)
   }
 
   function updateZoom(delta: number) {
@@ -9591,8 +9924,6 @@ function GraphCanvas({
 
           {displayView.ideas.map((idea) => {
             const isSelectedIdea = selected.type === 'idea' && selected.id === idea.id
-            const isEditingIdea = editingNodeField?.kind === 'idea' && editingNodeField.id === idea.id
-            const evidenceCount = displayView.links.filter((link) => link.ideaId === idea.id).length
             return (
               <div
                 key={idea.id}
@@ -9600,7 +9931,6 @@ function GraphCanvas({
                   'idea-node',
                   idea.variant === 'sticker' ? 'idea-node--sticker' : '',
                   isSelectedIdea ? 'is-selected' : '',
-                  isEditingIdea ? 'is-editing' : '',
                   isCanvasNodeSelected('idea', idea.id) && multiSelectedNodes.length > 0 ? 'is-multi-selected' : '',
                   related.ideaIds.has(idea.id) ? 'is-related' : '',
                 ].filter(Boolean).join(' ')}
@@ -9614,18 +9944,11 @@ function GraphCanvas({
                   '--node-scale': nodeScale(idea),
                 } as React.CSSProperties}
                 onClick={(event) => selectGraphNode('idea', idea.id, event)}
-                onDoubleClick={(event) => beginNodeEdit('idea', idea.id, event)}
+                onDoubleClick={(event) => handleNodeDoubleClick('idea', idea.id, event)}
                 onContextMenu={(event) => openNodeContextMenu('idea', idea.id, event)}
                 onKeyDown={(event) => {
                   if (isEditableEventTarget(event.target)) return
-                  // Click selects; Enter is the deliberate step into editing.
-                  if (event.key === 'Enter') {
-                    event.preventDefault()
-                    if (isSelectedIdea) beginNodeEdit('idea', idea.id, event)
-                    else selectGraphNode('idea', idea.id)
-                    return
-                  }
-                  if (event.key === ' ') {
+                  if (event.key === 'Enter' || event.key === ' ') {
                     event.preventDefault()
                     selectGraphNode('idea', idea.id)
                   }
@@ -9655,28 +9978,24 @@ function GraphCanvas({
                 {renderKiraControl('idea', idea.id, idea.title)}
                 {renderDirectLinkHandle('idea', idea, idea.title)}
                 <span className={`idea-status idea-status--${idea.status}`} />
-                {isEditingIdea ? (
-                  // The edit area only exists while editing, so a stray click can
-                  // never land in a text field and the resting card never shifts.
-                  <span className="idea-node-fields" onPointerDown={stopInlineEditEvent} onClick={stopInlineEditEvent}>
-                    <NodeRichEditor
-                      kind="idea"
-                      nodeId={idea.id}
-                      content={idea.content}
-                      placeholder="Note..."
-                      onChange={(markdown) => onIdeaInlineChange(idea.id, { content: markdown })}
-                      onBlur={handleNodeEditBlur}
-                      onEscape={handleNodeEditEscape}
-                      autoFocus
-                    />
-                    <small className="node-meta-line">{idea.status === 'thin' ? 'needs evidence' : `${evidenceCount} evidence`}</small>
-                  </span>
-                ) : (
-                  <>
-                    <strong>{idea.title}</strong>
-                    <small>{idea.variant === 'sticker' ? idea.content : idea.status === 'thin' ? 'needs evidence' : `${evidenceCount} evidence`}</small>
-                  </>
-                )}
+                {/* Read-only on the canvas face — double-click (or the (i)
+                    button) opens the node's overlay, the only place this
+                    content is actually editable. Pointerdown is NOT stopped
+                    here (unlike when this span held a live editor): the face
+                    is inert now, so a drag starting on the caption should
+                    reach the card's own onPointerDown/startNodeDrag same as
+                    a drag starting on its padding. Only click is stopped, so
+                    a click on the text doesn't re-fire card selection. */}
+                <span className="idea-node-fields" onClick={stopInlineEditEvent}>
+                  <NodeRichEditor
+                    kind="idea"
+                    nodeId={idea.id}
+                    content={idea.content}
+                    placeholder="Note..."
+                    editable={false}
+                    onChange={(markdown) => onIdeaInlineChange(idea.id, { content: markdown })}
+                  />
+                </span>
                 {renderResizeHandle('idea', idea)}
                 {renderNodeBelowStack('idea', idea)}
               </div>
@@ -9684,14 +10003,12 @@ function GraphCanvas({
           })}
 
           {displayView.images.map((image) => {
-            const isEditingImage = editingNodeField?.kind === 'image' && editingNodeField.id === image.id
             return (
               <div
                 key={image.id}
                 className={[
                   'image-node',
                   selected.type === 'image' && selected.id === image.id ? 'is-selected' : '',
-                  isEditingImage ? 'is-editing' : '',
                   isCanvasNodeSelected('image', image.id) && multiSelectedNodes.length > 0 ? 'is-multi-selected' : '',
                   related.imageIds.has(image.id) ? 'is-related' : '',
                 ].filter(Boolean).join(' ')}
@@ -9705,17 +10022,11 @@ function GraphCanvas({
                   '--node-scale': nodeScale(image),
                 } as React.CSSProperties}
                 onClick={(event) => selectGraphNode('image', image.id, event)}
-                onDoubleClick={(event) => beginNodeEdit('image', image.id, event)}
+                onDoubleClick={(event) => handleNodeDoubleClick('image', image.id, event)}
                 onContextMenu={(event) => openNodeContextMenu('image', image.id, event)}
                 onKeyDown={(event) => {
                   if (isEditableEventTarget(event.target)) return
-                  if (event.key === 'Enter') {
-                    event.preventDefault()
-                    if (selected.type === 'image' && selected.id === image.id) beginNodeEdit('image', image.id, event)
-                    else selectGraphNode('image', image.id)
-                    return
-                  }
-                  if (event.key === ' ') {
+                  if (event.key === 'Enter' || event.key === ' ') {
                     event.preventDefault()
                     selectGraphNode('image', image.id)
                   }
@@ -9742,28 +10053,30 @@ function GraphCanvas({
                 {renderKiraControl('image', image.id, image.title)}
                 {renderDirectLinkHandle('image', image, image.title)}
                 <ReferenceThumb image={image} />
-                <span className="node-palette">
-                  {image.palette.map((color, index) => (
-                    <i key={`${image.id}-${index}-${color}`} style={{ background: color }} />
-                  ))}
-                </span>
-                {isEditingImage ? (
-                  <span className="idea-node-fields" onPointerDown={stopInlineEditEvent} onClick={stopInlineEditEvent}>
-                    <NodeRichEditor
-                      kind="image"
-                      nodeId={image.id}
-                      content={image.content}
-                      placeholder="Caption..."
-                      onChange={(markdown) => onImageInlineChange(image.id, { content: markdown })}
-                      onBlur={handleNodeEditBlur}
-                      onEscape={handleNodeEditEscape}
-                      autoFocus
-                    />
+                {(image.palettePinned ?? true) && image.palette.length > 0 && (
+                  <span className="node-palette">
+                    {image.palette.map((color, index) => (
+                      <i key={`${image.id}-${index}-${color}`} style={{ background: color }} />
+                    ))}
                   </span>
-                ) : (
-                  // Caption stays out of the way at rest; the board is for looking, not reading.
-                  <span className="node-caption">{image.title}</span>
                 )}
+                {image.tagsPinned && image.tags.length > 0 && (
+                  <span className="node-pinned-tags">
+                    {image.tags.map((tag) => (
+                      <span className="tag-chip" key={tag}>{tag}</span>
+                    ))}
+                  </span>
+                )}
+                <span className="idea-node-fields" onClick={stopInlineEditEvent}>
+                  <NodeRichEditor
+                    kind="image"
+                    nodeId={image.id}
+                    content={image.content}
+                    placeholder="Caption..."
+                    editable={false}
+                    onChange={(markdown) => onImageInlineChange(image.id, { content: markdown })}
+                  />
+                </span>
                 {renderResizeHandle('image', image)}
                 {renderNodeBelowStack('image', image)}
               </div>
@@ -9771,14 +10084,12 @@ function GraphCanvas({
           })}
 
           {palettes.map((palette) => {
-            const isEditingPalette = editingNodeField?.kind === 'palette' && editingNodeField.id === palette.id
             return (
               <div
                 key={palette.id}
                 className={[
                   'palette-node',
                   selected.type === 'palette' && selected.id === palette.id ? 'is-selected' : '',
-                  isEditingPalette ? 'is-editing' : '',
                   isCanvasNodeSelected('palette', palette.id) && multiSelectedNodes.length > 0 ? 'is-multi-selected' : '',
                 ].filter(Boolean).join(' ')}
                 data-node-kind="palette"
@@ -9791,17 +10102,11 @@ function GraphCanvas({
                   '--node-scale': nodeScale(palette),
                 } as React.CSSProperties}
                 onClick={(event) => selectGraphNode('palette', palette.id, event)}
-                onDoubleClick={(event) => beginNodeEdit('palette', palette.id, event)}
+                onDoubleClick={(event) => handleNodeDoubleClick('palette', palette.id, event)}
                 onContextMenu={(event) => openNodeContextMenu('palette', palette.id, event)}
                 onKeyDown={(event) => {
                   if (isEditableEventTarget(event.target)) return
-                  if (event.key === 'Enter') {
-                    event.preventDefault()
-                    if (selected.type === 'palette' && selected.id === palette.id) beginNodeEdit('palette', palette.id, event)
-                    else selectGraphNode('palette', palette.id)
-                    return
-                  }
-                  if (event.key === ' ') {
+                  if (event.key === 'Enter' || event.key === ' ') {
                     event.preventDefault()
                     selectGraphNode('palette', palette.id)
                   }
@@ -9828,25 +10133,16 @@ function GraphCanvas({
                     <i key={`${palette.id}-${index}-${color}`} style={{ background: color }} />
                   ))}
                 </span>
-                {isEditingPalette ? (
-                  <span className="idea-node-fields" onPointerDown={stopInlineEditEvent} onClick={stopInlineEditEvent}>
-                    <NodeRichEditor
-                      kind="palette"
-                      nodeId={palette.id}
-                      content={palette.content}
-                      placeholder="Note..."
-                      onChange={(markdown) => onPaletteInlineChange(palette.id, { content: markdown })}
-                      onBlur={handleNodeEditBlur}
-                      onEscape={handleNodeEditEscape}
-                      autoFocus
-                    />
-                  </span>
-                ) : (
-                  <>
-                    <strong>{palette.title}</strong>
-                    <small>{palette.algorithm}</small>
-                  </>
-                )}
+                <span className="idea-node-fields" onClick={stopInlineEditEvent}>
+                  <NodeRichEditor
+                    kind="palette"
+                    nodeId={palette.id}
+                    content={palette.content}
+                    placeholder="Note..."
+                    editable={false}
+                    onChange={(markdown) => onPaletteInlineChange(palette.id, { content: markdown })}
+                  />
+                </span>
                 {renderResizeHandle('palette', palette)}
                 {renderNodeBelowStack('palette', palette)}
               </div>
@@ -9854,14 +10150,12 @@ function GraphCanvas({
           })}
 
           {diagrams.map((diagram) => {
-            const isEditingDiagram = editingNodeField?.kind === 'diagram' && editingNodeField.id === diagram.id
             return (
               <div
                 key={diagram.id}
                 className={[
                   'diagram-node',
                   selected.type === 'diagram' && selected.id === diagram.id ? 'is-selected' : '',
-                  isEditingDiagram ? 'is-editing' : '',
                   isCanvasNodeSelected('diagram', diagram.id) && multiSelectedNodes.length > 0 ? 'is-multi-selected' : '',
                 ].filter(Boolean).join(' ')}
                 data-node-kind="diagram"
@@ -9874,17 +10168,11 @@ function GraphCanvas({
                   '--node-scale': nodeScale(diagram),
                 } as React.CSSProperties}
                 onClick={(event) => selectGraphNode('diagram', diagram.id, event)}
-                onDoubleClick={(event) => beginNodeEdit('diagram', diagram.id, event)}
+                onDoubleClick={(event) => handleNodeDoubleClick('diagram', diagram.id, event)}
                 onContextMenu={(event) => openNodeContextMenu('diagram', diagram.id, event)}
                 onKeyDown={(event) => {
                   if (isEditableEventTarget(event.target)) return
-                  if (event.key === 'Enter') {
-                    event.preventDefault()
-                    if (selected.type === 'diagram' && selected.id === diagram.id) beginNodeEdit('diagram', diagram.id, event)
-                    else selectGraphNode('diagram', diagram.id)
-                    return
-                  }
-                  if (event.key === ' ') {
+                  if (event.key === 'Enter' || event.key === ' ') {
                     event.preventDefault()
                     selectGraphNode('diagram', diagram.id)
                   }
@@ -9907,25 +10195,16 @@ function GraphCanvas({
                 {renderKiraControl('diagram', diagram.id, diagram.title)}
                 {renderDirectLinkHandle('diagram', diagram, diagram.title)}
                 <FileText size={15} />
-                {isEditingDiagram ? (
-                  <span className="idea-node-fields" onPointerDown={stopInlineEditEvent} onClick={stopInlineEditEvent}>
-                    <NodeRichEditor
-                      kind="diagram"
-                      nodeId={diagram.id}
-                      content={diagram.content}
-                      placeholder="Note..."
-                      onChange={(markdown) => onDiagramInlineChange(diagram.id, { content: markdown })}
-                      onBlur={handleNodeEditBlur}
-                      onEscape={handleNodeEditEscape}
-                      autoFocus
-                    />
-                  </span>
-                ) : (
-                  <>
-                    <strong>{diagram.title}</strong>
-                    <small>{diagram.nodeIds.length} nodes</small>
-                  </>
-                )}
+                <span className="idea-node-fields" onClick={stopInlineEditEvent}>
+                  <NodeRichEditor
+                    kind="diagram"
+                    nodeId={diagram.id}
+                    content={diagram.content}
+                    placeholder="Note..."
+                    editable={false}
+                    onChange={(markdown) => onDiagramInlineChange(diagram.id, { content: markdown })}
+                  />
+                </span>
                 {renderResizeHandle('diagram', diagram)}
                 {renderNodeBelowStack('diagram', diagram)}
               </div>
@@ -9933,14 +10212,12 @@ function GraphCanvas({
           })}
 
           {placeholders.map((placeholder) => {
-            const isEditingPlaceholder = editingNodeField?.kind === 'placeholder' && editingNodeField.id === placeholder.id
             return (
               <div
                 key={placeholder.id}
                 className={[
                   'placeholder-node',
                   selected.type === 'placeholder' && selected.id === placeholder.id ? 'is-selected' : '',
-                  isEditingPlaceholder ? 'is-editing' : '',
                   isCanvasNodeSelected('placeholder', placeholder.id) && multiSelectedNodes.length > 0 ? 'is-multi-selected' : '',
                 ].filter(Boolean).join(' ')}
                 data-node-kind="placeholder"
@@ -9953,17 +10230,11 @@ function GraphCanvas({
                   '--node-scale': nodeScale(placeholder),
                 } as React.CSSProperties}
                 onClick={(event) => selectGraphNode('placeholder', placeholder.id, event)}
-                onDoubleClick={(event) => beginNodeEdit('placeholder', placeholder.id, event)}
+                onDoubleClick={(event) => handleNodeDoubleClick('placeholder', placeholder.id, event)}
                 onContextMenu={(event) => openNodeContextMenu('placeholder', placeholder.id, event)}
                 onKeyDown={(event) => {
                   if (isEditableEventTarget(event.target)) return
-                  if (event.key === 'Enter') {
-                    event.preventDefault()
-                    if (selected.type === 'placeholder' && selected.id === placeholder.id) beginNodeEdit('placeholder', placeholder.id, event)
-                    else selectGraphNode('placeholder', placeholder.id)
-                    return
-                  }
-                  if (event.key === ' ') {
+                  if (event.key === 'Enter' || event.key === ' ') {
                     event.preventDefault()
                     selectGraphNode('placeholder', placeholder.id)
                   }
@@ -9991,22 +10262,16 @@ function GraphCanvas({
                 {renderKiraControl('placeholder', placeholder.id, placeholder.title)}
                 {renderDirectLinkHandle('placeholder', placeholder, placeholder.title)}
                 <ImagePlus size={16} />
-                {isEditingPlaceholder ? (
-                  <span className="idea-node-fields" onPointerDown={stopInlineEditEvent} onClick={stopInlineEditEvent}>
-                    <NodeRichEditor
-                      kind="placeholder"
-                      nodeId={placeholder.id}
-                      content={placeholder.content}
-                      placeholder="Note..."
-                      onChange={(markdown) => onPlaceholderInlineChange(placeholder.id, { content: markdown })}
-                      onBlur={handleNodeEditBlur}
-                      onEscape={handleNodeEditEscape}
-                      autoFocus
-                    />
-                  </span>
-                ) : (
-                  <span>{placeholder.title}</span>
-                )}
+                <span className="idea-node-fields" onClick={stopInlineEditEvent}>
+                  <NodeRichEditor
+                    kind="placeholder"
+                    nodeId={placeholder.id}
+                    content={placeholder.content}
+                    placeholder="Note..."
+                    editable={false}
+                    onChange={(markdown) => onPlaceholderInlineChange(placeholder.id, { content: markdown })}
+                  />
+                </span>
                 {renderResizeHandle('placeholder', placeholder)}
                 {renderNodeBelowStack('placeholder', placeholder)}
               </div>
@@ -10037,9 +10302,6 @@ function GraphCanvas({
               </button>
               <button type="button" role="menuitem" aria-label="Create linked diagram" title="Diagram" onClick={() => createLinkedNodeFromArc('diagram')}>
                 <FileText size={13} />
-              </button>
-              <button type="button" role="menuitem" aria-label="Begin link from node" title="Link" onClick={() => beginLinkFromArc(arcMenu)}>
-                <Link2 size={13} />
               </button>
             </div>
           )}
@@ -12110,8 +12372,53 @@ function LinkedList({
   )
 }
 
+// Notion-style inline token/chip input: tags render as pills, "add" is one
+// more pill that swaps itself for a borderless inline text field on click —
+// there is never a separate popup or panel for typing a tag. Escape/blur
+// collapses the field back to a pill; Enter commits and immediately reopens
+// it so multiple tags can be typed back-to-back.
+// Shared header for every collapsible section in the Details card (Tags,
+// Palette, Source, History, the palette-node color editor) — one chevron
+// vocabulary instead of each section inventing its own expand affordance.
+function SectionHeader({
+  icon,
+  title,
+  collapsed,
+  onToggleCollapsed,
+  dragHandleProps,
+  tools,
+}: {
+  icon: React.ReactNode
+  title: string
+  collapsed: boolean
+  onToggleCollapsed: () => void
+  dragHandleProps?: React.HTMLAttributes<HTMLSpanElement>
+  tools?: React.ReactNode
+}) {
+  return (
+    <div className="block-module-heading">
+      {dragHandleProps && (
+        <span className="block-module-drag" aria-hidden {...dragHandleProps}>
+          <GripVertical size={12} />
+        </span>
+      )}
+      <button type="button" className="block-module-toggle" onClick={onToggleCollapsed} aria-expanded={!collapsed}>
+        <ChevronRight size={12} className={collapsed ? 'block-module-chevron' : 'block-module-chevron is-open'} />
+        <span className="block-module-title">
+          {icon}
+          {title}
+        </span>
+      </button>
+      {tools}
+    </div>
+  )
+}
+
 function TagBlock({
   image,
+  pinned,
+  collapsed,
+  onToggleCollapsed,
   canRunOcr,
   canRefineTags,
   isOcrRunning,
@@ -12124,8 +12431,13 @@ function TagBlock({
   onRemoveTag,
   onRunOcr,
   onRefineTags,
+  onTogglePinned,
+  dragHandleProps,
 }: {
   image: EvidenceImage
+  pinned: boolean
+  collapsed: boolean
+  onToggleCollapsed: () => void
   canRunOcr: boolean
   canRefineTags: boolean
   isOcrRunning: boolean
@@ -12138,65 +12450,103 @@ function TagBlock({
   onRemoveTag: (tag: string) => void
   onRunOcr: () => void
   onRefineTags: () => void
+  onTogglePinned: () => void
+  dragHandleProps?: React.HTMLAttributes<HTMLSpanElement>
 }) {
+  const [isAdding, setIsAdding] = useState(false)
   const [draftTag, setDraftTag] = useState('')
+  const draftRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (isAdding) draftRef.current?.focus()
+  }, [isAdding])
 
   function submitTag() {
     const tag = normalizeTag(draftTag)
-    if (!tag) return
-    onAddTag(tag)
+    if (tag) onAddTag(tag)
     setDraftTag('')
   }
 
   return (
-    <section className="inspector-card">
-      <div className="section-heading tag-heading">
-        <span>
-          <Tag size={14} />
-          Tags
-        </span>
-        <span className="section-tools">
-          {canRunOcr && (
-            <button className="section-tool" type="button" disabled={isOcrRunning} onClick={onRunOcr}>
-              <Sparkles size={12} />
-              {isOcrRunning ? 'Reading' : 'OCR'}
+    <section className="block-module">
+      <SectionHeader
+        icon={<Tag size={14} />}
+        title="Tags"
+        collapsed={collapsed}
+        onToggleCollapsed={onToggleCollapsed}
+        dragHandleProps={dragHandleProps}
+        tools={
+          <span className="section-tools">
+            {canRunOcr && (
+              <button className="section-tool" type="button" disabled={isOcrRunning} onClick={onRunOcr} title="Read text from image (OCR)">
+                <Sparkles size={12} />
+              </button>
+            )}
+            {canRefineTags && (
+              <button className="section-tool" type="button" disabled={isRefiningTags} onClick={onRefineTags} title="Refine tags with AI">
+                <Brain size={12} />
+              </button>
+            )}
+            <button
+              type="button"
+              className={pinned ? 'section-tool is-active' : 'section-tool'}
+              aria-label={pinned ? 'Always shown on node — click to hide' : 'Hidden on node — click to always show'}
+              title={pinned ? 'Always shown on node' : 'Show on node'}
+              onClick={onTogglePinned}
+            >
+              {pinned ? <Eye size={12} /> : <EyeOff size={12} />}
             </button>
-          )}
-          {canRefineTags && (
-            <button className="section-tool" type="button" disabled={isRefiningTags} onClick={onRefineTags}>
-              <Brain size={12} />
-              {isRefiningTags ? 'Refining' : 'Refine'}
-            </button>
-          )}
-        </span>
-      </div>
+          </span>
+        }
+      />
+      {!collapsed && (
       <div className="tag-cloud">
         {image.tags.map((tag) => (
           <span className="tag-chip" key={tag}>
-            <Check size={12} />
             {tag}
             <button type="button" aria-label={`Remove ${tag}`} onClick={() => onRemoveTag(tag)}>
               <X size={11} />
             </button>
           </span>
         ))}
+        {isAdding ? (
+          <input
+            ref={draftRef}
+            className="tag-chip-input"
+            aria-label="New tag"
+            value={draftTag}
+            size={Math.max(4, draftTag.length + 1)}
+            onChange={(event) => setDraftTag(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault()
+                submitTag()
+              } else if (event.key === 'Escape') {
+                setDraftTag('')
+                setIsAdding(false)
+              }
+            }}
+            onBlur={() => {
+              submitTag()
+              setIsAdding(false)
+            }}
+          />
+        ) : (
+          <button type="button" className="tag-chip tag-chip-add" onClick={() => setIsAdding(true)}>
+            <Plus size={11} />
+            Add
+          </button>
+        )}
       </div>
-      <div className="tag-editor">
-        <input
-          aria-label="Add tag"
-          value={draftTag}
-          placeholder="Add tag"
-          onChange={(event) => setDraftTag(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') submitTag()
-          }}
-        />
-        <button type="button" onClick={submitTag}>
-          Add
-        </button>
-      </div>
-      {image.suggestions.length > 0 && (
-        <div className="suggestion-chips">
+      )}
+      {!collapsed && image.suggestions.length > 0 && (
+        <div className="suggestion-block">
+          {/* Without this label, a suggestion chip sitting directly under
+              the confirmed-tags row reads as just another tag — unclear
+              it's pending and that clicking its label (not just the X)
+              accepts it. */}
+          <span className="suggestion-label">Suggested tags: click to add</span>
+          <div className="suggestion-chips">
           {image.suggestions.map((suggestion) => {
             const label = suggestionLabel(suggestion)
             return (
@@ -12212,9 +12562,70 @@ function TagBlock({
               </span>
             )
           })}
+          </div>
         </div>
       )}
-      {(ocrStatus || modelStatus) && <p className="tag-status">{[ocrStatus, modelStatus].filter(Boolean).join(' · ')}</p>}
+      {!collapsed && (ocrStatus || modelStatus) && <p className="tag-status">{[ocrStatus, modelStatus].filter(Boolean).join(' · ')}</p>}
+    </section>
+  )
+}
+
+// Sibling to TagBlock: the image's extracted-palette strip as a reorderable,
+// pin-toggleable block. Pinned renders the same swatch strip directly under
+// the thumbnail on the node face, at the thumbnail's own width.
+function PaletteBlock({
+  image,
+  pinned,
+  collapsed,
+  onToggleCollapsed,
+  onTogglePinned,
+  dragHandleProps,
+}: {
+  image: EvidenceImage
+  pinned: boolean
+  collapsed: boolean
+  onToggleCollapsed: () => void
+  onTogglePinned: () => void
+  dragHandleProps?: React.HTMLAttributes<HTMLSpanElement>
+}) {
+  return (
+    <section className="block-module">
+      <SectionHeader
+        icon={<PaletteIcon size={14} />}
+        title="Palette"
+        collapsed={collapsed}
+        onToggleCollapsed={onToggleCollapsed}
+        dragHandleProps={dragHandleProps}
+        tools={
+          <span className="section-tools">
+            <button
+              type="button"
+              className={pinned ? 'section-tool is-active' : 'section-tool'}
+              aria-label={pinned ? 'Always shown on node — click to hide' : 'Hidden on node — click to always show'}
+              title={pinned ? 'Always shown on node' : 'Show on node'}
+              onClick={onTogglePinned}
+            >
+              {pinned ? <Eye size={12} /> : <EyeOff size={12} />}
+            </button>
+          </span>
+        }
+      />
+      {!collapsed && (
+      <div className="reference-palette-strip" aria-label="Extracted image colors">
+        {image.palette.slice(0, 7).map((color, index) => (
+          <button
+            key={`${image.id}-palette-${index}-${color}`}
+            type="button"
+            className="reference-palette-segment"
+            title={color}
+            style={{ background: color }}
+            onClick={() => void copyColorSet([color])}
+          >
+            <code>{color.toUpperCase()}</code>
+          </button>
+        ))}
+      </div>
+      )}
     </section>
   )
 }
@@ -13077,6 +13488,24 @@ function referenceModelContext(image: EvidenceImage) {
 
 function mergeUniqueTags(...groups: string[][]) {
   return [...new Set(groups.flat().map(normalizeTag).filter(Boolean))]
+}
+
+// The three drag-reorderable modules in an image's Details popover. Order is
+// stored per-image (EvidenceImage.blockOrder) — a stored list is trusted
+// as-is for the keys it contains, with any missing key appended in this
+// default order so a newly-populated block (e.g. palette after extraction)
+// still shows up without resetting the user's chosen order.
+const IMAGE_BLOCK_KEYS = ['tags', 'palette', 'source'] as const
+type ImageBlockKey = (typeof IMAGE_BLOCK_KEYS)[number]
+
+function resolveImageBlockOrder(image: EvidenceImage): ImageBlockKey[] {
+  const known = new Set<string>(IMAGE_BLOCK_KEYS)
+  // A persisted blockOrder that repeats a key (shouldn't happen via the
+  // drag-reorder UI, but nothing stops a hand-edited or merged project file
+  // from having one) would otherwise produce duplicate React keys below.
+  const stored = [...new Set((image.blockOrder ?? []).filter((key): key is ImageBlockKey => known.has(key)))]
+  const missing = IMAGE_BLOCK_KEYS.filter((key) => !stored.includes(key))
+  return [...stored, ...missing]
 }
 
 function normalizeTag(value: string) {
