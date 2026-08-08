@@ -157,40 +157,114 @@
   box-sizing: border-box;
 }
 
-/* App-wide scrollbar treatment — every scrollable panel (library list,
-   Details/History popovers, Kira's context tray, canvas overlays) relied on
-   the OS default until now, which on most platforms means a stark light-grey
-   bar sitting on top of this dark glass UI. Thin, low-contrast, no buttons —
-   present when you need it, otherwise close to invisible, matching the
-   density this app already leans into elsewhere (see Product register:
-   density over decoration). Firefox via scrollbar-width/-color, everything
-   Chromium-based (including the Tauri webview) via ::-webkit-scrollbar. */
-* {
+/* Scrollbar treatment for every actual scroll container in the app (library
+   list, Details/History overlays, Kira's context tray, canvas overlays,
+   settings panels) — these relied on the OS default until now, which on
+   most platforms means a stark light-grey bar sitting on top of this dark
+   glass UI. Thin, low-contrast, no buttons — present when you need it,
+   otherwise close to invisible, matching the density this app already
+   leans into elsewhere (see Product register: density over decoration).
+   Scoped to the containers below rather than `*`: WebKit/Chromium reserve
+   layout space for a scrollbar's width even on elements that never scroll,
+   so a universal reset can nudge unrelated boxes a few pixels narrower.
+   .file-tab-list is deliberately not in this list — it already hides its
+   scrollbar entirely via its own, more specific rule. Firefox via
+   scrollbar-width/-color on :root (inherited, so no per-selector list
+   needed there); Chromium/the Tauri webview via ::-webkit-scrollbar. */
+/* scrollbar-width/-color are inherited properties in Firefox, so setting
+   them once on :root reaches every scroll container below without
+   repeating the declaration per selector. */
+:root {
   scrollbar-width: thin;
   scrollbar-color: rgb(255 255 255 / 0.14) transparent;
 }
 
-*::-webkit-scrollbar {
+.project-settings-popover::-webkit-scrollbar,
+.onboarding-steps::-webkit-scrollbar,
+.image-list::-webkit-scrollbar,
+.library-node-list::-webkit-scrollbar,
+.canvas-zero-state::-webkit-scrollbar,
+.node-details-popover::-webkit-scrollbar,
+.kira-dock-input::-webkit-scrollbar,
+.kira-dock-suggestions::-webkit-scrollbar,
+.settings-scroll::-webkit-scrollbar,
+.slideshow-rail::-webkit-scrollbar,
+.slide-customizer-list::-webkit-scrollbar,
+.outline-list::-webkit-scrollbar,
+.inspector::-webkit-scrollbar,
+.version-list::-webkit-scrollbar {
   width: 9px;
   height: 9px;
 }
 
-*::-webkit-scrollbar-track {
+.project-settings-popover::-webkit-scrollbar-track,
+.onboarding-steps::-webkit-scrollbar-track,
+.image-list::-webkit-scrollbar-track,
+.library-node-list::-webkit-scrollbar-track,
+.canvas-zero-state::-webkit-scrollbar-track,
+.node-details-popover::-webkit-scrollbar-track,
+.kira-dock-input::-webkit-scrollbar-track,
+.kira-dock-suggestions::-webkit-scrollbar-track,
+.settings-scroll::-webkit-scrollbar-track,
+.slideshow-rail::-webkit-scrollbar-track,
+.slide-customizer-list::-webkit-scrollbar-track,
+.outline-list::-webkit-scrollbar-track,
+.inspector::-webkit-scrollbar-track,
+.version-list::-webkit-scrollbar-track {
   background: transparent;
 }
 
-*::-webkit-scrollbar-thumb {
+.project-settings-popover::-webkit-scrollbar-thumb,
+.onboarding-steps::-webkit-scrollbar-thumb,
+.image-list::-webkit-scrollbar-thumb,
+.library-node-list::-webkit-scrollbar-thumb,
+.canvas-zero-state::-webkit-scrollbar-thumb,
+.node-details-popover::-webkit-scrollbar-thumb,
+.kira-dock-input::-webkit-scrollbar-thumb,
+.kira-dock-suggestions::-webkit-scrollbar-thumb,
+.settings-scroll::-webkit-scrollbar-thumb,
+.slideshow-rail::-webkit-scrollbar-thumb,
+.slide-customizer-list::-webkit-scrollbar-thumb,
+.outline-list::-webkit-scrollbar-thumb,
+.inspector::-webkit-scrollbar-thumb,
+.version-list::-webkit-scrollbar-thumb {
   border: 2px solid transparent;
   border-radius: 999px;
   background-color: rgb(255 255 255 / 0.14);
   background-clip: padding-box;
 }
 
-*::-webkit-scrollbar-thumb:hover {
+.project-settings-popover::-webkit-scrollbar-thumb:hover,
+.onboarding-steps::-webkit-scrollbar-thumb:hover,
+.image-list::-webkit-scrollbar-thumb:hover,
+.library-node-list::-webkit-scrollbar-thumb:hover,
+.canvas-zero-state::-webkit-scrollbar-thumb:hover,
+.node-details-popover::-webkit-scrollbar-thumb:hover,
+.kira-dock-input::-webkit-scrollbar-thumb:hover,
+.kira-dock-suggestions::-webkit-scrollbar-thumb:hover,
+.settings-scroll::-webkit-scrollbar-thumb:hover,
+.slideshow-rail::-webkit-scrollbar-thumb:hover,
+.slide-customizer-list::-webkit-scrollbar-thumb:hover,
+.outline-list::-webkit-scrollbar-thumb:hover,
+.inspector::-webkit-scrollbar-thumb:hover,
+.version-list::-webkit-scrollbar-thumb:hover {
   background-color: rgb(255 255 255 / 0.26);
 }
 
-*::-webkit-scrollbar-corner {
+.project-settings-popover::-webkit-scrollbar-corner,
+.onboarding-steps::-webkit-scrollbar-corner,
+.image-list::-webkit-scrollbar-corner,
+.library-node-list::-webkit-scrollbar-corner,
+.canvas-zero-state::-webkit-scrollbar-corner,
+.node-details-popover::-webkit-scrollbar-corner,
+.kira-dock-input::-webkit-scrollbar-corner,
+.kira-dock-suggestions::-webkit-scrollbar-corner,
+.settings-scroll::-webkit-scrollbar-corner,
+.slideshow-rail::-webkit-scrollbar-corner,
+.slide-customizer-list::-webkit-scrollbar-corner,
+.outline-list::-webkit-scrollbar-corner,
+.inspector::-webkit-scrollbar-corner,
+.version-list::-webkit-scrollbar-corner {
   background: transparent;
 }
 
@@ -2255,6 +2329,7 @@ p {
 }
 
 .library-node-row:hover small,
+.library-node-row:focus-visible small,
 .library-node-row.is-selected small {
   display: -webkit-box;
   -webkit-box-orient: vertical;

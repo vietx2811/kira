@@ -137,7 +137,10 @@ type AiNodeRequest = {
 
 // One Kira panel session per open/close cycle. `source: null` means "whole
 // board" (opened from the rail launcher with nothing selected).
-type KiraAttachment = { id: string; name: string; dataUrl: string; isImage: boolean }
+// previewUrl is an object URL (URL.createObjectURL), not a data: URL — it
+// must be revoked (URL.revokeObjectURL) everywhere an attachment stops being
+// reachable: on removal, on session close, and on successful submit.
+type KiraAttachment = { id: string; name: string; previewUrl: string; isImage: boolean }
 
 type KiraSession = {
   origin: 'node' | 'rail'
@@ -7761,6 +7764,17 @@ function GraphCanvas({
   const [multiSelectedNodes, setMultiSelectedNodes] = useState<CanvasNodeSelection[]>([])
   const [nodeContextMenu, setNodeContextMenu] = useState<{ x: number; y: number; nodes: CanvasNodeSelection[] } | null>(null)
   const [detailsPopoverNode, setDetailsPopoverNode] = useState<CanvasNodeSelection | null>(null)
+  // Whichever element opened the overlay (the toolbar's Details button, or
+  // the node card itself on double-click) — focus returns here when the
+  // overlay closes, so keyboard/screen-reader users land back where they
+  // started instead of at the top of the document. Shared by every close
+  // path (scrim click, X button, Escape/outside-click via
+  // useDismissableLayer) so none of them skip the restore.
+  const detailsTriggerRef = useRef<HTMLElement | null>(null)
+  function closeDetailsPopover() {
+    setDetailsPopoverNode(null)
+    detailsTriggerRef.current?.focus()
+  }
   // Only one Details popover can be open at a time, so one flat key is
   // enough to track a drag-to-reorder gesture across its block modules.
   const [draggedBlockKey, setDraggedBlockKey] = useState<string | null>(null)
@@ -7791,8 +7805,15 @@ function GraphCanvas({
   const kiraDockRef = useRef<HTMLDivElement | null>(null)
   const kiraOrbRef = useRef<HTMLButtonElement | null>(null)
   const kiraInputRef = useRef<HTMLTextAreaElement | null>(null)
+  // Bumped on every open/close so an in-flight file read (addKiraAttachments)
+  // can tell whether the session it was reading for is still the active one
+  // before it appends its result — otherwise a slow read landing after the
+  // user closed and reopened the dock would attach a stale file to the new
+  // session.
+  const kiraSessionGenerationRef = useRef(0)
 
   function openKiraSession(origin: 'node' | 'rail', source: Pick<GraphNodeRef, 'kind' | 'id'> | null, scope: AiNodeScope, extraSources: Pick<GraphNodeRef, 'kind' | 'id'>[] = []) {
+    kiraSessionGenerationRef.current += 1
     setKiraSession({
       origin,
       source,
@@ -7839,7 +7860,14 @@ function GraphCanvas({
   const shouldRestoreOrbFocusRef = useRef(false)
 
   const closeKiraSession = useCallback(() => {
-    setKiraSession(null)
+    kiraSessionGenerationRef.current += 1
+    setKiraSession((current) => {
+      // Object URLs are only ever referenced from this session's own
+      // attachment chips — once the session is gone nothing else can revoke
+      // them, so this is the one place that must.
+      current?.attachments.forEach((attachment) => URL.revokeObjectURL(attachment.previewUrl))
+      return null
+    })
     setIsKiraContextOpen(false)
     setIsKiraSuggestOpen(false)
     // The orb is `inert` while the dock is open, and `inert` elements
@@ -7856,21 +7884,42 @@ function GraphCanvas({
     kiraOrbRef.current?.focus()
   }, [isKiraOpen])
 
+  // 25MB per file — attachments aren't sent anywhere today (see the note on
+  // KiraAttachment), just held as object URLs for the chip preview, but an
+  // unbounded read of e.g. a multi-gigabyte video would still peg the main
+  // thread and balloon memory for a preview nobody asked for.
+  const kiraAttachmentMaxBytes = 25 * 1024 * 1024
+
   function addKiraAttachments(files: FileList | File[]) {
+    const generation = kiraSessionGenerationRef.current
     for (const file of Array.from(files)) {
-      const id = crypto.randomUUID()
-      const reader = new FileReader()
-      reader.onload = () => {
-        if (typeof reader.result !== 'string') return
-        const attachment: KiraAttachment = { id, name: file.name, dataUrl: reader.result, isImage: file.type.startsWith('image/') }
-        setKiraSession((current) => current ? { ...current, attachments: [...current.attachments, attachment] } : current)
+      if (file.size > kiraAttachmentMaxBytes) {
+        setKiraSession((current) => current ? { ...current, status: 'error', message: `${file.name} is over the 25MB attachment limit.` } : current)
+        continue
       }
-      reader.readAsDataURL(file)
+      // Object URLs reference the file in place instead of copying it into a
+      // base64 string in React state (~33% larger, and held for the whole
+      // session) — revoked on removal and on session close/submit, the only
+      // places an attachment stops being reachable.
+      const url = URL.createObjectURL(file)
+      const attachment: KiraAttachment = { id: crypto.randomUUID(), name: file.name, previewUrl: url, isImage: file.type.startsWith('image/') }
+      if (kiraSessionGenerationRef.current !== generation) {
+        // The dock closed or submitted while this loop was still running —
+        // there's no session left to attach to.
+        URL.revokeObjectURL(url)
+        continue
+      }
+      setKiraSession((current) => current ? { ...current, attachments: [...current.attachments, attachment] } : current)
     }
   }
 
   function removeKiraAttachment(id: string) {
-    setKiraSession((current) => current ? { ...current, attachments: current.attachments.filter((attachment) => attachment.id !== id) } : current)
+    setKiraSession((current) => {
+      if (!current) return current
+      const removed = current.attachments.find((attachment) => attachment.id === id)
+      if (removed) URL.revokeObjectURL(removed.previewUrl)
+      return { ...current, attachments: current.attachments.filter((attachment) => attachment.id !== id) }
+    })
   }
 
   async function submitKiraSession() {
@@ -7895,6 +7944,8 @@ function GraphCanvas({
         providerOverrideId: kiraSession.providerOverrideId,
         modelOverride: kiraSession.modelOverride,
       })
+      kiraSessionGenerationRef.current += 1
+      kiraSession.attachments.forEach((attachment) => URL.revokeObjectURL(attachment.previewUrl))
       setKiraSession(null)
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Kira could not complete that.'
@@ -7971,7 +8022,7 @@ function GraphCanvas({
   useDismissableLayer(
     Boolean(detailsPopoverNode),
     '.node-details-popover, .node-toolbar',
-    () => setDetailsPopoverNode(null),
+    closeDetailsPopover,
   )
 
   useDismissableLayer(
@@ -8332,6 +8383,7 @@ function GraphCanvas({
   // (i) button, just reachable without hunting for a small icon first.
   function handleNodeDoubleClick(kind: GraphNodeKind, id: string, event: React.MouseEvent<HTMLElement>) {
     event.preventDefault()
+    detailsTriggerRef.current = event.currentTarget
     onSelect({ type: kind, id } as Selection)
     setDetailsPopoverNode({ kind, id })
   }
@@ -8690,7 +8742,7 @@ function GraphCanvas({
       />
     )
 
-    const closeDetails = () => setDetailsPopoverNode(null)
+    const closeDetails = closeDetailsPopover
 
     return (
       <div
@@ -8708,7 +8760,10 @@ function GraphCanvas({
               type="button"
               aria-label="Details"
               title="Notes, source, tags, history"
-              onClick={() => setDetailsPopoverNode({ kind, id })}
+              onClick={(event) => {
+                detailsTriggerRef.current = event.currentTarget
+                setDetailsPopoverNode({ kind, id })
+              }}
             >
               <NoteIcon size={13} />
             </button>
@@ -8729,7 +8784,13 @@ function GraphCanvas({
         )}
         {isDetailsOpen && createPortal(
           <div className="node-overlay-scrim" onClick={closeDetails}>
-            <div className="node-details-popover" onClick={(event) => event.stopPropagation()}>
+            <div
+              className="node-details-popover"
+              role="dialog"
+              aria-modal="true"
+              aria-label={`${node.title || graphNodeKindLabel(kind)} details`}
+              onClick={(event) => event.stopPropagation()}
+            >
               {/* Every action that used to live on the node face's toolbar —
                   add-new/AI actions plus the kind-specific ones — is
                   consolidated into this single icon row, so the node face
@@ -9129,7 +9190,7 @@ function GraphCanvas({
             {kiraSession.attachments.map((attachment) => (
               <span className="kira-attachment-chip" key={attachment.id} title={attachment.name}>
                 {attachment.isImage ? (
-                  <img src={attachment.dataUrl} alt="" />
+                  <img src={attachment.previewUrl} alt="" />
                 ) : (
                   <FileText size={13} />
                 )}
@@ -9811,9 +9872,13 @@ function GraphCanvas({
                 <span className={`idea-status idea-status--${idea.status}`} />
                 {/* Read-only on the canvas face — double-click (or the (i)
                     button) opens the node's overlay, the only place this
-                    content is actually editable. stopPropagation keeps
-                    clicks in the text from starting a card drag. */}
-                <span className="idea-node-fields" onPointerDown={stopInlineEditEvent} onClick={stopInlineEditEvent}>
+                    content is actually editable. Pointerdown is NOT stopped
+                    here (unlike when this span held a live editor): the face
+                    is inert now, so a drag starting on the caption should
+                    reach the card's own onPointerDown/startNodeDrag same as
+                    a drag starting on its padding. Only click is stopped, so
+                    a click on the text doesn't re-fire card selection. */}
+                <span className="idea-node-fields" onClick={stopInlineEditEvent}>
                   <NodeRichEditor
                     kind="idea"
                     nodeId={idea.id}
@@ -9894,7 +9959,7 @@ function GraphCanvas({
                     ))}
                   </span>
                 )}
-                <span className="idea-node-fields" onPointerDown={stopInlineEditEvent} onClick={stopInlineEditEvent}>
+                <span className="idea-node-fields" onClick={stopInlineEditEvent}>
                   <NodeRichEditor
                     kind="image"
                     nodeId={image.id}
@@ -9960,7 +10025,7 @@ function GraphCanvas({
                     <i key={`${palette.id}-${index}-${color}`} style={{ background: color }} />
                   ))}
                 </span>
-                <span className="idea-node-fields" onPointerDown={stopInlineEditEvent} onClick={stopInlineEditEvent}>
+                <span className="idea-node-fields" onClick={stopInlineEditEvent}>
                   <NodeRichEditor
                     kind="palette"
                     nodeId={palette.id}
@@ -10022,7 +10087,7 @@ function GraphCanvas({
                 {renderKiraControl('diagram', diagram.id, diagram.title)}
                 {renderDirectLinkHandle('diagram', diagram, diagram.title)}
                 <FileText size={15} />
-                <span className="idea-node-fields" onPointerDown={stopInlineEditEvent} onClick={stopInlineEditEvent}>
+                <span className="idea-node-fields" onClick={stopInlineEditEvent}>
                   <NodeRichEditor
                     kind="diagram"
                     nodeId={diagram.id}
@@ -10089,7 +10154,7 @@ function GraphCanvas({
                 {renderKiraControl('placeholder', placeholder.id, placeholder.title)}
                 {renderDirectLinkHandle('placeholder', placeholder, placeholder.title)}
                 <ImagePlus size={16} />
-                <span className="idea-node-fields" onPointerDown={stopInlineEditEvent} onClick={stopInlineEditEvent}>
+                <span className="idea-node-fields" onClick={stopInlineEditEvent}>
                   <NodeRichEditor
                     kind="placeholder"
                     nodeId={placeholder.id}
@@ -13327,7 +13392,10 @@ type ImageBlockKey = (typeof IMAGE_BLOCK_KEYS)[number]
 
 function resolveImageBlockOrder(image: EvidenceImage): ImageBlockKey[] {
   const known = new Set<string>(IMAGE_BLOCK_KEYS)
-  const stored = (image.blockOrder ?? []).filter((key): key is ImageBlockKey => known.has(key))
+  // A persisted blockOrder that repeats a key (shouldn't happen via the
+  // drag-reorder UI, but nothing stops a hand-edited or merged project file
+  // from having one) would otherwise produce duplicate React keys below.
+  const stored = [...new Set((image.blockOrder ?? []).filter((key): key is ImageBlockKey => known.has(key)))]
   const missing = IMAGE_BLOCK_KEYS.filter((key) => !stored.includes(key))
   return [...stored, ...missing]
 }
