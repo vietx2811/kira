@@ -733,6 +733,18 @@ const UI_STRINGS: Record<string, { en: string; vi: string }> = {
   'kira.noProvider': { en: "I'm not connected to a model yet. Pick one in Settings and I'll start.", vi: 'Chưa kết nối mô hình nào. Hãy chọn một mô hình trong Cài đặt để bắt đầu.' },
   'kira.openAiSettings': { en: 'Open AI settings →', vi: 'Mở cài đặt AI →' },
   'kira.scopeFullBoard': { en: 'Full board', vi: 'Toàn bộ bảng' },
+  'library.meta.item': { en: '{count} item', vi: '{count} mục' },
+  'library.meta.items': { en: '{count} items', vi: '{count} mục' },
+  'library.meta.suggested': { en: '{count} suggested', vi: '{count} gợi ý' },
+  'library.meta.visible': { en: '{count} visible', vi: '{count} hiện' },
+  'library.meta.filteredCount': { en: '{visible} of {total}', vi: '{visible}/{total}' },
+  'library.detail.untitled': { en: 'Untitled source', vi: 'Không rõ nguồn' },
+  'library.detail.addedJustNow': { en: 'Added just now', vi: 'Vừa thêm' },
+  'library.detail.addedMinutes': { en: 'Added {count}m ago', vi: 'Thêm {count} phút trước' },
+  'library.detail.addedHours': { en: 'Added {count}h ago', vi: 'Thêm {count} giờ trước' },
+  'library.detail.addedDays': { en: 'Added {count}d ago', vi: 'Thêm {count} ngày trước' },
+  'library.detail.addedOn': { en: 'Added {date}', vi: 'Thêm {date}' },
+  'library.filter.remove': { en: 'Remove {tag} filter', vi: 'Xóa bộ lọc {tag}' },
 }
 
 function readStoredLang(): Lang {
@@ -1053,17 +1065,17 @@ const inspectorLinkedListLimit = 8
 const outlineReferenceLimit = 6
 const libraryOverscan = 5
 const duplicateCandidateThreshold = 8
-// The rendered row box (.image-row's border-box min-height in styles.css) is
-// 60px compact / 74px relaxed — title-only rows now that source/tags moved
-// to a hover tooltip (see ReferenceCard). The virtualized list positions
-// rows every libraryRowHeights[density]px via `transform: translateY(...)`,
-// so the difference below is a deliberate gutter between rows, not slack to
-// trim — keep the two in sync if either the CSS min-height or this gutter
-// changes.
+// The rendered row box (measured .image-row height, tags row included) is
+// ~86px compact / ~100px relaxed — taller than the CSS min-height because
+// the two-row layout (thumb+copy, then tags) grows past it. The virtualized
+// list positions rows every libraryRowHeights[density]px via `transform:
+// translateY(...)`, so these must stay >= the tallest actual row or rows
+// will visually overlap; the remaining difference below is a deliberate
+// gutter between rows, not slack to trim.
 const libraryRowGutter = 6
 const libraryRowBoxHeights: Record<LibraryDensity, number> = {
-  compact: 60,
-  relaxed: 74,
+  compact: 86,
+  relaxed: 100,
 }
 const libraryRowHeights: Record<LibraryDensity, number> = {
   compact: libraryRowBoxHeights.compact + libraryRowGutter,
@@ -7002,29 +7014,66 @@ function startWindowDrag(event: React.PointerEvent<HTMLElement>) {
   void getCurrentWindow().startDragging().catch(() => undefined)
 }
 
+// A row's second line falls back through source -> dimensions -> relative
+// added-time so every row keeps the same two-line rhythm; without a
+// guaranteed fallback, rows for locally-imported or untagged images render
+// with a blank second line and break the list's scan rhythm.
+function formatReferenceDetail(image: EvidenceImage, lang: Lang): string {
+  if (image.source) return image.source
+  if (image.width && image.height) return `${image.width}×${image.height}`
+  const addedAt = image.addedAt ?? image.createdAt
+  if (!addedAt) return t('library.detail.untitled', lang)
+  const elapsedMs = Date.now() - new Date(addedAt).getTime()
+  if (!Number.isFinite(elapsedMs) || elapsedMs < 0) return t('library.detail.untitled', lang)
+  const minutes = Math.floor(elapsedMs / 60_000)
+  if (minutes < 1) return t('library.detail.addedJustNow', lang)
+  if (minutes < 60) return t('library.detail.addedMinutes', lang, { count: String(minutes) })
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return t('library.detail.addedHours', lang, { count: String(hours) })
+  const days = Math.floor(hours / 24)
+  if (days < 30) return t('library.detail.addedDays', lang, { count: String(days) })
+  const date = new Date(addedAt).toLocaleDateString(lang === 'vi' ? 'vi-VN' : 'en-US', { month: 'short', day: 'numeric' })
+  return t('library.detail.addedOn', lang, { date })
+}
+
 /** Shared markup for one reference in the library — used by both the
     virtualized list row and the grid tile, which previously duplicated this
-    ~20-line body verbatim. */
+    ~20-line body verbatim. Tags render as a sibling of the select button
+    (not nested inside it) — they're independently interactive filters, and
+    an interactive control inside a `<button>` breaks its accessible
+    activation semantics. */
 function ReferenceCard({
   image,
   variant,
   isSelected,
   isChecked,
+  selectedTag,
+  lang,
   style,
   onSelect,
   onToggle,
+  onTagClick,
 }: {
   image: EvidenceImage
   variant: 'row' | 'grid'
   isSelected: boolean
   isChecked: boolean
+  selectedTag: string | null
+  lang: Lang
   style?: React.CSSProperties
   onSelect: (id: string) => void
   onToggle: (id: string) => void
+  onTagClick: (tag: string) => void
 }) {
   const baseClass = variant === 'row' ? 'image-row' : 'image-grid-card'
   return (
-    <div className={isSelected ? `${baseClass} is-selected` : baseClass} style={style}>
+    <div
+      className={isSelected ? `${baseClass} is-selected` : baseClass}
+      id={`library-reference-${image.id}`}
+      role="option"
+      aria-selected={isSelected}
+      style={style}
+    >
       <label className="reference-check">
         <input
           aria-label={`Select ${image.title}`}
@@ -7037,10 +7086,8 @@ function ReferenceCard({
       <button
         draggable
         type="button"
-        // Image-forward, compact by default: source + tags are still here,
-        // just as a native hover tooltip instead of permanent chrome under
-        // every row — "hidden until requested" without any custom overlay
-        // that would fight the list's virtualized fixed-row-height math.
+        // Source/first 2 tags are already visible in the row; the native
+        // tooltip is a supplementary escape hatch for the full tag list.
         title={[image.source, image.tags.slice(0, 4).join(', ')].filter(Boolean).join(' · ')}
         onClick={() => onSelect(image.id)}
         onDragStart={(event) => {
@@ -7051,8 +7098,24 @@ function ReferenceCard({
         <ReferenceThumb image={image} />
         <span className="image-row-copy">
           <strong>{image.title}</strong>
+          <small>{formatReferenceDetail(image, lang)}</small>
         </span>
       </button>
+      {image.tags.length > 0 && (
+        <span className="mini-tags">
+          {image.tags.slice(0, 2).map((tag) => (
+            <button
+              key={tag}
+              className={selectedTag === tag ? 'is-active' : undefined}
+              type="button"
+              aria-pressed={selectedTag === tag}
+              onClick={() => onTagClick(tag)}
+            >
+              {tag}
+            </button>
+          ))}
+        </span>
+      )}
     </div>
   )
 }
@@ -7263,7 +7326,10 @@ function EvidenceInbox({
           <p className="panel-kicker"><T k="library.title" /></p>
           <h2>{panelMode === 'images' ? 'Images' : panelMode === 'ideas' ? 'Ideas' : 'Links'}</h2>
           <span className="panel-meta">
-            {panelCounts[panelMode]} items · {unassigned.length} suggestions
+            {t(panelCounts[panelMode] === 1 ? 'library.meta.item' : 'library.meta.items', lang, { count: String(panelCounts[panelMode]) })}
+            {panelMode === 'images' && unassigned.length > 0 && (
+              <span className="panel-meta-badge">{t('library.meta.suggested', lang, { count: String(unassigned.length) })}</span>
+            )}
           </span>
         </div>
         <div className="panel-actions">
@@ -7318,7 +7384,21 @@ function EvidenceInbox({
             { value: 'grid', label: t('library.browseMode.grid', lang) },
           ]}
         />
-        <span>{images.length} visible</span>
+        {selectedTag ? (
+          <button
+            className="active-filter-chip"
+            type="button"
+            aria-label={t('library.filter.remove', lang, { tag: selectedTag })}
+            onClick={() => onSelectedTagChange(selectedTag)}
+          >
+            <span>{selectedTag}</span>
+            <X size={11} aria-hidden="true" />
+          </button>
+        ) : (searchQuery.trim() || totalCount !== images.length) ? (
+          <span>{t('library.meta.filteredCount', lang, { visible: String(images.length), total: String(totalCount) })}</span>
+        ) : (
+          <span>{t('library.meta.visible', lang, { count: String(images.length) })}</span>
+        )}
       </div>
       )}
 
@@ -7393,7 +7473,29 @@ function EvidenceInbox({
           data-rendered-count={browseMode === 'grid' ? visibleGridImages.length : visibleImages.length}
           data-total-count={images.length}
           ref={listRef}
+          role="listbox"
+          aria-label="Reference images"
+          aria-activedescendant={selected.type === 'image' ? `library-reference-${selected.id}` : undefined}
+          tabIndex={0}
           onScroll={(event) => setLibraryScrollTop(event.currentTarget.scrollTop)}
+          onKeyDown={(event) => {
+            if (browseMode !== 'list' || images.length === 0) return
+            if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return
+            event.preventDefault()
+            const currentIndex = selected.type === 'image' ? images.findIndex((image) => image.id === selected.id) : -1
+            const nextIndex = event.key === 'ArrowDown'
+              ? Math.min(images.length - 1, currentIndex + 1)
+              : Math.max(0, currentIndex - 1)
+            const nextImage = images[nextIndex]
+            if (!nextImage) return
+            onSelect(nextImage.id)
+            const element = listRef.current
+            if (!element) return
+            const rowTop = nextIndex * rowHeight
+            const rowBottom = rowTop + rowHeight
+            if (rowTop < element.scrollTop) element.scrollTo({ top: rowTop })
+            else if (rowBottom > element.scrollTop + element.clientHeight) element.scrollTo({ top: rowBottom - element.clientHeight })
+          }}
         >
           {images.length > 0 && browseMode === 'grid' ? (
             <div className="image-grid-outer" style={{ height: totalGridHeight }}>
@@ -7405,8 +7507,11 @@ function EvidenceInbox({
                     variant="grid"
                     isSelected={selected.type === 'image' && selected.id === image.id}
                     isChecked={selectedReferenceIds.has(image.id)}
+                    selectedTag={selectedTag}
+                    lang={lang}
                     onSelect={onSelect}
                     onToggle={onToggleReference}
+                    onTagClick={onSelectedTagChange}
                   />
                 ))}
               </div>
@@ -7422,9 +7527,12 @@ function EvidenceInbox({
                     variant="row"
                     isSelected={selected.type === 'image' && selected.id === image.id}
                     isChecked={selectedReferenceIds.has(image.id)}
+                    selectedTag={selectedTag}
+                    lang={lang}
                     style={{ transform: `translateY(${index * rowHeight}px)` }}
                     onSelect={onSelect}
                     onToggle={onToggleReference}
+                    onTagClick={onSelectedTagChange}
                   />
                 )
               })}
