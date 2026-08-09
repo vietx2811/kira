@@ -1875,10 +1875,21 @@ h2 {
 }
 
 .panel-meta {
-  display: block;
-  margin-top: 3px;
+  display: flex;
+  align-items: center;
+  margin-top: 4px;
   color: var(--text-muted);
+  gap: 6px;
   font-size: 0.72rem;
+}
+
+.panel-meta-badge {
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--accent-faint);
+  color: var(--accent-strong);
+  font-size: 0.64rem;
+  font-weight: 700;
 }
 
 h3 {
@@ -1915,6 +1926,36 @@ p {
   padding: 0 var(--space-4) var(--space-2);
   color: var(--text-muted);
   font-size: 0.72rem;
+}
+
+.active-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  max-width: 140px;
+  padding: 3px 6px 3px 9px;
+  border-radius: 999px;
+  background: var(--accent-faint);
+  color: var(--accent-strong);
+  cursor: pointer;
+  gap: 4px;
+  font-size: 0.68rem;
+  font-weight: 620;
+}
+
+.active-filter-chip span,
+.active-filter-chip {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.active-filter-chip svg {
+  flex: none;
+  opacity: 0.75;
+}
+
+.active-filter-chip:hover svg {
+  opacity: 1;
 }
 
 .search-field input {
@@ -2023,6 +2064,11 @@ p {
   padding: var(--space-2) var(--space-3) var(--space-3);
 }
 
+.image-list:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-cyan), transparent 60%);
+}
+
 .image-list--grid {
   padding: var(--space-2) var(--space-4) var(--space-4);
 }
@@ -2036,12 +2082,13 @@ p {
   display: grid;
   grid-template-columns: 18px 1fr;
   align-items: center;
-  gap: var(--space-2);
+  column-gap: var(--space-2);
+  row-gap: 2px;
   position: absolute;
   right: 0;
   left: 0;
   width: 100%;
-  min-height: 60px;
+  min-height: 86px;
   padding: var(--space-2);
   border: 0;
   border-radius: var(--radius-2);
@@ -2052,17 +2099,17 @@ p {
 }
 
 .image-list--relaxed .image-row {
-  min-height: 74px;
-  padding: var(--space-2);
+  min-height: 100px;
+  padding: var(--space-2) var(--space-3);
 }
 
 .image-list--relaxed .image-row > button {
-  grid-template-columns: 70px 1fr;
+  grid-template-columns: 72px 1fr;
 }
 
 .image-list--relaxed .image-row .reference-thumb {
-  width: 70px;
-  height: 54px;
+  width: 72px;
+  height: 58px;
 }
 
 /* Custom checkbox (native <input> hidden, .reference-check draws the box)
@@ -2117,7 +2164,7 @@ p {
 
 .image-row > button {
   display: grid;
-  grid-template-columns: 56px 1fr;
+  grid-template-columns: 60px 1fr;
   align-items: center;
   gap: var(--space-3);
   min-width: 0;
@@ -2166,8 +2213,8 @@ p {
 }
 
 .image-row .reference-thumb {
-  width: 56px;
-  height: 44px;
+  width: 60px;
+  height: 48px;
   border-radius: var(--radius-1);
 }
 
@@ -2258,7 +2305,8 @@ p {
 
 .image-grid-card .image-row-copy {
   display: grid;
-  min-height: 18px;
+  min-height: 34px;
+  gap: 2px;
 }
 
 .library-node-list {
@@ -2340,14 +2388,69 @@ p {
   min-width: 0;
 }
 
-.image-row-copy strong {
+.image-row-copy strong,
+.image-row-copy small {
   display: block;
   overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.image-row-copy strong {
   color: var(--text-main);
   font-size: 0.82rem;
   font-weight: 630;
+}
+
+.image-row-copy small {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+}
+
+/* Sibling of the row/card select button (not nested inside it) — see
+   ReferenceCard in main.tsx: an interactive control inside a <button>
+   breaks the button's accessible activation semantics. */
+.mini-tags {
+  display: flex;
+  gap: 4px;
+  margin-top: 5px;
+}
+
+.image-row > .mini-tags {
+  grid-column: 2;
+  margin-top: 0;
+}
+
+.image-grid-card > .mini-tags {
+  margin-top: 4px;
+  padding: 0 2px 2px;
+}
+
+.mini-tags button {
+  max-width: 76px;
+  overflow: hidden;
+  padding: 2px 5px;
+  border: 0;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.06);
+  color: var(--text-soft);
+  cursor: pointer;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-size: 0.62rem;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.mini-tags button:hover,
+.mini-tags button:focus-visible {
+  background: rgb(255 255 255 / 0.12);
+  color: var(--text-main);
+  outline: none;
+}
+
+.mini-tags button.is-active {
+  background: var(--accent-faint);
+  color: var(--accent-strong);
 }
 
 .inbox-footer-action {
