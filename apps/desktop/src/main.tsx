@@ -7757,7 +7757,7 @@ function EvidenceInbox({
     listRef.current?.scrollTo({ top: 0 })
   }, [browseMode, density, searchQuery, selectedTag, sortMode])
 
-  useDismissableLayer(isToolsOpen, '.library-drawer, [data-menu-trigger="library-tools"]', () => setIsToolsOpen(false))
+  useDismissableLayer(isToolsOpen, '.library-drawer-panel, [data-menu-trigger="library-tools"]', () => setIsToolsOpen(false))
 
   return (
     <aside
