@@ -37,10 +37,10 @@ fi
 
 if [[ "$IDENTITY" == "-" ]]; then
   SIGN_ARGS=(--force --sign -)
-  echo "Đang ký ad-hoc KIRA 1.0.1 cho máy hiện tại…"
+  echo "Đang ký ad-hoc KIRA 1.1.0 cho máy hiện tại…"
 else
   SIGN_ARGS=(--force --sign "$IDENTITY" --options runtime --timestamp)
-  echo "Đang ký KIRA 1.0.1 bằng: $IDENTITY"
+  echo "Đang ký KIRA 1.1.0 bằng: $IDENTITY"
 fi
 
 while IFS= read -r -d '' executable; do
