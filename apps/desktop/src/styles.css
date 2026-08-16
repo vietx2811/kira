@@ -2693,6 +2693,24 @@ p {
   font-size: 0.72rem;
 }
 
+.tag-status.is-error {
+  color: color-mix(in srgb, var(--danger), var(--text-main) 30%);
+}
+
+/* Generic in-progress indicator for AI calls outside the Kira dock (OCR,
+   tag refine, provider test/model-list) — reuses the codex-spin keyframe
+   so every "AI is working" spinner in the app looks the same. */
+.ai-inline-spinner {
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  border-radius: 999px;
+  border: 2px solid color-mix(in srgb, var(--accent-strong), transparent 65%);
+  border-top-color: var(--accent-strong);
+  animation: codex-spin 600ms linear infinite;
+  flex: none;
+}
+
 .suggestion-row {
   display: grid;
   gap: var(--space-2);
@@ -3322,7 +3340,7 @@ p {
   border: 1px solid var(--node-border);
   cursor: grab;
   touch-action: none;
-  transform: translate(-50%, -50%) scale(var(--node-scale, 1));
+  transform: translate(-50%, -50%) scale(var(--node-scale, 1)) rotate(var(--sticker-rotation, 0deg));
   transition:
     border-color 160ms ease,
     box-shadow 160ms ease,
@@ -3371,14 +3389,23 @@ p {
   box-shadow: 0 10px 24px rgb(0 0 0 / 0.16);
 }
 
+/* Sticky-note metaphor (§2.4): a hand-placed note gets a hand-written feel.
+   System handwriting fonts only, per the product register's "system fonts
+   are legitimate" guidance — no web font fetch. */
+.idea-node--sticker .node-rich-editor-content {
+  font-family: "Bradley Hand", "Segoe Print", "Noteworthy", cursive;
+  font-size: 0.92rem;
+}
+
 /* Calm resting state; hover lifts the card without shouting. */
 .idea-node:hover:not(.is-selected),
+.image-node:hover:not(.is-selected),
 .palette-node:hover:not(.is-selected),
 .diagram-node:hover:not(.is-selected),
 .placeholder-node:hover:not(.is-selected) {
   border-color: var(--border-strong);
   box-shadow: var(--node-shadow-hover);
-  transform: translate(-50%, -50%) scale(calc(var(--node-scale, 1) + 0.015));
+  transform: translate(-50%, -50%) scale(calc(var(--node-scale, 1) + 0.015)) rotate(var(--sticker-rotation, 0deg));
 }
 
 .idea-node.is-selected {
@@ -3511,14 +3538,19 @@ p {
 
 /* Width is the only fixed dimension; height follows the reference's real ratio
    so a poster stays a poster instead of being cropped to a uniform box. */
+/* Polaroid/corkboard framing (§2.4 of DESIGN.md): a real photo card, not a
+   bare thumbnail. The extra bottom padding is the classic polaroid mat that
+   the always-visible caption (.idea-node-fields below) sits inside. */
 .image-node {
   display: grid;
   width: 104px;
   height: auto;
-  padding: 1px;
-  border-color: transparent;
+  padding: 6px 6px 9px;
+  border-color: color-mix(in srgb, var(--text-main), transparent 84%);
   border-radius: var(--radius-2);
-  background: transparent;
+  background: color-mix(in srgb, var(--text-main), var(--bg-canvas) 90%);
+  box-shadow: var(--node-shadow-rest);
+  gap: 6px;
 }
 
 .image-node .reference-thumb img {
@@ -3526,6 +3558,7 @@ p {
 }
 
 .image-node .reference-thumb {
+  border-radius: var(--radius-1);
   background: transparent;
 }
 
@@ -4039,8 +4072,15 @@ p {
 .node-details-actionbar-sep {
   width: 1px;
   height: 16px;
-  margin: 0 4px 0 auto;
+  /* A touch more breathing room than a plain 4px gap so the three action
+     clusters (image ops / AI-context+delete / close) read as groups at a
+     glance — hairline, not a boxed pill, per DESIGN.md's divider convention. */
+  margin: 0 6px 0 auto;
   background: var(--border-soft);
+}
+
+.node-details-actionbar-sep + * {
+  margin-left: 2px;
 }
 
 .node-details-actionbar button,
@@ -4774,6 +4814,37 @@ p {
   gap: 8px;
 }
 
+.kira-dock-provider {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  margin: 0;
+  padding: 0 14px 8px;
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  gap: 6px;
+}
+
+.kira-dock-provider-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  flex: none;
+  background: var(--accent-strong);
+  opacity: 0.55;
+}
+
+.kira-dock-provider-dot.is-busy {
+  opacity: 1;
+  animation: kira-dock-provider-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes kira-dock-provider-pulse {
+  0%, 100% { opacity: 0.45; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.25); }
+}
+
 .kira-dock-notice .link-button {
   padding: 0;
   border: 0;
@@ -5043,6 +5114,48 @@ p {
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
+  transition: color 160ms ease, background 160ms ease, transform 160ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 160ms ease;
+}
+
+.canvas-tool-rail button:hover,
+.canvas-tool-rail button:focus-visible {
+  background: rgb(255 255 255 / 0.05);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 10px rgb(0 0 0 / 0.22);
+}
+
+/* Expressive icon tinting (§2.4 of DESIGN.md): the create-node cluster gets a
+   light color identity per node kind, reusing the existing accent tokens
+   rather than inventing new ones. --accent-cyan stays reserved for the
+   is-active tool state, so these lean on the secondary accents. */
+.canvas-tool-rail button[data-tool-kind] .tool-icon {
+  transition: color 160ms ease, filter 160ms ease;
+}
+
+.canvas-tool-rail button[data-tool-kind="idea"] .tool-icon {
+  color: color-mix(in srgb, var(--accent-amber), var(--text-soft) 30%);
+}
+
+.canvas-tool-rail button[data-tool-kind="sticker"] .tool-icon {
+  color: color-mix(in srgb, var(--accent-amber), var(--text-soft) 55%);
+}
+
+.canvas-tool-rail button[data-tool-kind="palette"] .tool-icon {
+  color: color-mix(in srgb, var(--accent-violet), var(--text-soft) 25%);
+}
+
+.canvas-tool-rail button[data-tool-kind="diagram"] .tool-icon {
+  color: color-mix(in srgb, var(--accent-sage), var(--text-soft) 25%);
+}
+
+.canvas-tool-rail button[data-tool-kind="image"] .tool-icon,
+.canvas-tool-rail button[data-tool-kind="frame"] .tool-icon {
+  color: color-mix(in srgb, var(--accent-cyan), var(--text-soft) 55%);
+}
+
+.canvas-tool-rail button[data-tool-kind]:hover .tool-icon,
+.canvas-tool-rail button[data-tool-kind]:focus-visible .tool-icon {
+  filter: drop-shadow(0 1px 4px rgb(0 0 0 / 0.4));
 }
 
 .canvas-tool-rail button[data-tooltip]::after {
@@ -5400,6 +5513,11 @@ p {
   background: var(--glass-hover);
   color: var(--text-soft);
   font-size: 0.72rem;
+}
+
+.settings-status.is-error {
+  background: color-mix(in srgb, var(--danger), transparent 85%);
+  color: color-mix(in srgb, var(--danger), var(--text-main) 30%);
 }
 
 .settings-control-strip {
@@ -5793,6 +5911,21 @@ p {
   color: var(--accent-amber);
   cursor: pointer;
   font-size: 0.7rem;
+}
+
+.provider-task-groups {
+  display: grid;
+  gap: 10px;
+}
+
+.provider-task-group-label {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--text-muted);
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
 }
 
 .provider-task-matrix {

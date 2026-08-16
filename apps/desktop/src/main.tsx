@@ -1504,6 +1504,17 @@ const aiTaskLabels: Record<AiTaskKind, string> = {
   summarize_diagram: 'Summarize diagram',
 }
 
+// Grouped for the provider capability picker so 8 flat checkboxes read as
+// two clusters instead of one dense row (DESIGN.md §2.1 — group before you
+// dump everything at one altitude).
+const aiTaskGroups: { label: string; tasks: AiTaskKind[] }[] = [
+  { label: 'Tagging', tasks: ['tag_reference', 'classify_reference', 'find_similar'] },
+  {
+    label: 'Canvas generation',
+    tasks: ['generate_palette', 'rebalance_palette', 'generate_outline', 'generate_node', 'summarize_diagram'],
+  },
+]
+
 const aiProviderTypeLabels: Record<AiProviderType, string> = {
   apple_foundation: 'Apple Foundation Models',
   openai: 'OpenAI',
@@ -6010,7 +6021,7 @@ function OnboardingOverlay({
               <Sparkles size={15} aria-hidden="true" />
               <span className="onboarding-link-text">
                 <strong>Capture from browser</strong>
-                <small>Save images, links, and text from the web</small>
+                <small>Drag images straight from any page into a node</small>
               </span>
               <ChevronRight size={15} aria-hidden="true" />
             </button>
@@ -6413,6 +6424,14 @@ function ClaudeCodeStatus({ provider }: { provider: AiProviderProfile }) {
   )
 }
 
+// aiSettingsStatus is a free-text line shared by secret save/delete, provider
+// test, and model-list calls — this keyword sniff is how the status pill
+// tells a failure apart from a routine result without each call site having
+// to also thread a separate ok/error flag through.
+function isLikelySettingsError(status: string): boolean {
+  return /fail|error|not signed in/i.test(status)
+}
+
 function SettingsView({
   providers,
   taskRoutes,
@@ -6457,8 +6476,8 @@ function SettingsView({
   onProviderDelete: (providerId: string) => void
   onProviderSecretSave: (providerId: string, secret: string) => void
   onProviderSecretDelete: (providerId: string) => void
-  onProviderTest: (providerId: string) => void
-  onProviderModelsList: (providerId: string) => void
+  onProviderTest: (providerId: string) => void | Promise<void>
+  onProviderModelsList: (providerId: string) => void | Promise<void>
   onProviderTaskToggle: (providerId: string, task: AiTaskKind) => void
   onRoutingModeChange: (mode: AiRoutingMode) => void
   onSelectedProviderChange: (providerId: string) => void
@@ -6481,6 +6500,26 @@ function SettingsView({
   const [codexLoginEvent, setCodexLoginEvent] = useState<CodexLoginEvent | null>(null)
   const [codexLoginSlow, setCodexLoginSlow] = useState(false)
   const codexAutoOpenedUrlRef = useRef<string | null>(null)
+  // onProviderTest/onProviderModelsList are async under the hood (native IPC
+  // calls) but were previously fired with no feedback at all — not even a
+  // disabled button — so a double-click could fire the same probe twice.
+  const [providerBusy, setProviderBusy] = useState<{ id: string; action: 'test' | 'models' } | null>(null)
+  async function handleProviderTest(providerId: string) {
+    setProviderBusy({ id: providerId, action: 'test' })
+    try {
+      await onProviderTest(providerId)
+    } finally {
+      setProviderBusy((current) => (current?.id === providerId && current.action === 'test' ? null : current))
+    }
+  }
+  async function handleProviderModelsList(providerId: string) {
+    setProviderBusy({ id: providerId, action: 'models' })
+    try {
+      await onProviderModelsList(providerId)
+    } finally {
+      setProviderBusy((current) => (current?.id === providerId && current.action === 'models' ? null : current))
+    }
+  }
 
   const activeProviderType = activeProvider?.type
   const activeProviderId_ = activeProvider?.id
@@ -6532,7 +6571,6 @@ function SettingsView({
     }
   }
   const [providerTypeDraft, setProviderTypeDraft] = useState<Exclude<AiProviderType, 'apple_foundation'>>(addableProviderTypes[0])
-  const taskKeys = Object.keys(aiTaskLabels) as AiTaskKind[]
   const connectedProviderCount = providers.filter((provider) => provider.status === 'connected').length
   const storedSecretCount = providers.filter((provider) => provider.secretRef).length
   const billingSeparatedCount = remoteProviders.filter((provider) => provider.status === 'billing_separate').length
@@ -6554,8 +6592,8 @@ function SettingsView({
 
   const settingsSections = [
     { id: 'general' as const, label: 'General' },
-    { id: 'ai' as const, label: 'AI Providers' },
     { id: 'capture' as const, label: 'Capture' },
+    { id: 'ai' as const, label: 'AI Providers' },
     { id: 'advanced' as const, label: 'Advanced' },
   ]
 
@@ -6598,7 +6636,7 @@ function SettingsView({
         <div className="settings-header">
           <h2>{settingsSections.find((section) => section.id === activeSettingsTab)?.label}</h2>
           <div className="settings-header-actions">
-            <span className="settings-status">{status}</span>
+            <span className={['settings-status', isLikelySettingsError(status) ? 'is-error' : ''].filter(Boolean).join(' ')}>{status}</span>
             <button className="icon-button" type="button" aria-label="Close settings" onClick={onClose}>
               <X size={15} />
             </button>
@@ -6678,7 +6716,7 @@ function SettingsView({
           <article className="settings-panel settings-action-panel">
             <div>
               <h3>Extensions</h3>
-              <p>Install the bundled capture helper into Chrome/Chromium or Safari to save images and pages straight into KIRA.</p>
+              <p>The fastest way material enters a project: drag an image off any page straight into a node, no upload step. Install the bundled helper into Chrome/Chromium or Safari to turn it on.</p>
             </div>
             <button className="icon-button" type="button" onClick={onExtensionRefresh} aria-label="Detect installed extensions" title="Detect installed extensions">
               <RotateCcw size={15} />
@@ -6935,7 +6973,7 @@ function SettingsView({
                   {activeProvider.authMode !== 'local' && activeProvider.type !== 'codex' && activeProvider.type !== 'claude_code' && (
                     <>
                       <button
-                        className="quiet-button provider-test-button"
+                        className={activeProvider.secretRef ? 'quiet-button provider-test-button' : 'primary-button provider-test-button'}
                         type="button"
                         onClick={() => {
                           onProviderSecretSave(activeProvider.id, secretDrafts[activeProvider.id] ?? '')
@@ -6944,15 +6982,37 @@ function SettingsView({
                       >
                         Save key
                       </button>
-                      <button className="quiet-button provider-test-button" type="button" onClick={() => onProviderSecretDelete(activeProvider.id)}>
-                        Remove key
-                      </button>
+                      {activeProvider.secretRef && (
+                        <button className="quiet-button provider-test-button" type="button" onClick={() => onProviderSecretDelete(activeProvider.id)}>
+                          Remove key
+                        </button>
+                      )}
                     </>
                   )}
-                  <button className="quiet-button provider-test-button" type="button" onClick={() => onProviderTest(activeProvider.id)}>
+                  <button
+                    className={
+                      activeProvider.secretRef && activeProvider.authMode !== 'local'
+                        ? 'primary-button provider-test-button'
+                        : 'quiet-button provider-test-button'
+                    }
+                    type="button"
+                    disabled={providerBusy?.id === activeProvider.id}
+                    onClick={() => void handleProviderTest(activeProvider.id)}
+                  >
+                    {providerBusy?.id === activeProvider.id && providerBusy.action === 'test' && (
+                      <span className="ai-inline-spinner" aria-hidden="true" />
+                    )}
                     Test
                   </button>
-                  <button className="quiet-button provider-test-button" type="button" onClick={() => onProviderModelsList(activeProvider.id)}>
+                  <button
+                    className="quiet-button provider-test-button"
+                    type="button"
+                    disabled={providerBusy?.id === activeProvider.id}
+                    onClick={() => void handleProviderModelsList(activeProvider.id)}
+                  >
+                    {providerBusy?.id === activeProvider.id && providerBusy.action === 'models' && (
+                      <span className="ai-inline-spinner" aria-hidden="true" />
+                    )}
                     Models
                   </button>
                   {activeProvider.authMode !== 'local' && (
@@ -6962,16 +7022,23 @@ function SettingsView({
                   )}
                 </div>
 
-                <div className="provider-task-matrix" aria-label="Default tasks for active provider">
-                  {taskKeys.map((task) => (
-                    <label key={task} className="provider-task-toggle">
-                      <input
-                        type="checkbox"
-                        checked={activeProvider.defaultFor.includes(task)}
-                        onChange={() => onProviderTaskToggle(activeProvider.id, task)}
-                      />
-                      <span>{aiTaskLabels[task]}</span>
-                    </label>
+                <div className="provider-task-groups" aria-label="Default tasks for active provider">
+                  {aiTaskGroups.map((group) => (
+                    <div className="provider-task-group" key={group.label}>
+                      <span className="provider-task-group-label">{group.label}</span>
+                      <div className="provider-task-matrix">
+                        {group.tasks.map((task) => (
+                          <label key={task} className="provider-task-toggle">
+                            <input
+                              type="checkbox"
+                              checked={activeProvider.defaultFor.includes(task)}
+                              onChange={() => onProviderTaskToggle(activeProvider.id, task)}
+                            />
+                            <span>{aiTaskLabels[task]}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
                   ))}
                 </div>
 
@@ -9345,6 +9412,13 @@ function GraphCanvas({
           </div>
         )}
 
+        {open && routedProvider && (
+          <p className="kira-dock-provider" aria-live="polite">
+            <span className={isThinking ? 'kira-dock-provider-dot is-busy' : 'kira-dock-provider-dot'} aria-hidden="true" />
+            {isThinking ? `${routedProvider.name} is generating…` : routedProvider.name}
+          </p>
+        )}
+
         {isThinking && <div className="kira-dock-progress" aria-hidden="true" />}
 
         {isError && kiraSession?.message && (
@@ -9594,19 +9668,19 @@ function GraphCanvas({
             </button>
           </div>
           <div className="canvas-tool-group" aria-label="Create nodes">
-            <button type="button" aria-label={t('tool.imagePlaceholder', lang)} data-tooltip={t('tool.imagePlaceholder', lang)} onClick={onCreatePlaceholder}>
+            <button type="button" aria-label={t('tool.imagePlaceholder', lang)} data-tooltip={t('tool.imagePlaceholder', lang)} data-tool-kind="image" onClick={onCreatePlaceholder}>
               <ImageSquare className="tool-icon" size={19} />
             </button>
-            <button type="button" aria-label={t('tool.palette', lang)} data-tooltip={t('tool.palette', lang)} onClick={onCreatePalette}>
+            <button type="button" aria-label={t('tool.palette', lang)} data-tooltip={t('tool.palette', lang)} data-tool-kind="palette" onClick={onCreatePalette}>
               <PaletteIcon className="tool-icon" size={19} />
             </button>
-            <button type="button" aria-label={t('tool.idea', lang)} data-tooltip={t('tool.idea', lang)} onClick={onCreateIdea}>
+            <button type="button" aria-label={t('tool.idea', lang)} data-tooltip={t('tool.idea', lang)} data-tool-kind="idea" onClick={onCreateIdea}>
               <LightbulbIcon className="tool-icon" size={19} />
             </button>
-            <button type="button" aria-label={t('tool.sticker', lang)} data-tooltip={t('tool.sticker', lang)} onClick={onCreateSticker}>
+            <button type="button" aria-label={t('tool.sticker', lang)} data-tooltip={t('tool.sticker', lang)} data-tool-kind="sticker" onClick={onCreateSticker}>
               <NoteIcon className="tool-icon" size={19} />
             </button>
-            <button type="button" aria-label={t('tool.frame', lang)} data-tooltip={t('tool.frame', lang)} onClick={onCreateFrame}>
+            <button type="button" aria-label={t('tool.frame', lang)} data-tooltip={t('tool.frame', lang)} data-tool-kind="frame" onClick={onCreateFrame}>
               <FrameCorners className="tool-icon" size={19} />
             </button>
           </div>
@@ -9615,6 +9689,7 @@ function GraphCanvas({
               type="button"
               aria-label={t('tool.mermaid', lang)}
               data-tooltip={t('tool.mermaid', lang)}
+              data-tool-kind="diagram"
               onClick={() => {
                 const source = window.prompt('Paste Mermaid graph or flowchart')
                 if (source?.trim()) void onImportMermaid(source)
@@ -9972,6 +10047,7 @@ function GraphCanvas({
                   left: `${idea.x}%`,
                   top: `${idea.y}%`,
                   '--node-scale': nodeScale(idea),
+                  ...(idea.variant === 'sticker' ? { '--sticker-rotation': `${stickerRotationDeg(idea.id)}deg` } : {}),
                 } as React.CSSProperties}
                 onClick={(event) => selectGraphNode('idea', idea.id, event)}
                 onDoubleClick={(event) => handleNodeDoubleClick('idea', idea.id, event)}
@@ -12522,6 +12598,20 @@ function SectionHeader({
   )
 }
 
+// Local OCR/tag-refine status strings are free text, not a tagged union, so
+// failure is detected by matching the known failure copy those two callers
+// set — used to give the shared status line an error treatment instead of
+// blending in with the neutral "3 suggestions" case.
+const AI_STATUS_ERROR_STRINGS = new Set([
+  'OCR failed',
+  'Refine failed',
+  'Local model unavailable',
+  'OCR unavailable for this reference',
+])
+function isAiStatusError(status: string): boolean {
+  return AI_STATUS_ERROR_STRINGS.has(status)
+}
+
 function TagBlock({
   image,
   pinned,
@@ -12586,13 +12676,13 @@ function TagBlock({
         tools={
           <span className="section-tools">
             {canRunOcr && (
-              <button className="section-tool" type="button" disabled={isOcrRunning} onClick={onRunOcr} title="Read text from image (OCR)">
-                <Sparkles size={12} />
+              <button className="section-tool" type="button" disabled={isOcrRunning} onClick={onRunOcr} title={isOcrRunning ? 'Reading text…' : 'Read text from image (OCR)'}>
+                {isOcrRunning ? <span className="ai-inline-spinner" aria-hidden="true" /> : <Sparkles size={12} />}
               </button>
             )}
             {canRefineTags && (
-              <button className="section-tool" type="button" disabled={isRefiningTags} onClick={onRefineTags} title="Refine tags with AI">
-                <Brain size={12} />
+              <button className="section-tool" type="button" disabled={isRefiningTags} onClick={onRefineTags} title={isRefiningTags ? 'Refining tags…' : 'Refine tags with AI'}>
+                {isRefiningTags ? <span className="ai-inline-spinner" aria-hidden="true" /> : <Brain size={12} />}
               </button>
             )}
             <button
@@ -12673,7 +12763,14 @@ function TagBlock({
           </div>
         </div>
       )}
-      {!collapsed && (ocrStatus || modelStatus) && <p className="tag-status">{[ocrStatus, modelStatus].filter(Boolean).join(' · ')}</p>}
+      {!collapsed && (ocrStatus || modelStatus) && (
+        <p className={[
+          'tag-status',
+          [ocrStatus, modelStatus].some((value) => value && isAiStatusError(value)) ? 'is-error' : '',
+        ].filter(Boolean).join(' ')}>
+          {[ocrStatus, modelStatus].filter(Boolean).join(' · ')}
+        </p>
+      )}
     </section>
   )
 }
@@ -14904,6 +15001,25 @@ function normalizeNodeScale(value: number) {
 
 function nodeScale(node: { importance?: number; scale?: number }, densityScale = 1) {
   return Number((effectiveNodeScale(node) * densityScale).toFixed(3))
+}
+
+// Deterministic per-node tilt for the sticky-note metaphor (DESIGN.md §2.4) —
+// same id always tilts the same way, and different notes land at different
+// angles instead of all leaning identically.
+function stickerRotationDeg(id: string) {
+  let hash = 0
+  for (let i = 0; i < id.length; i += 1) {
+    hash = (hash * 31 + id.charCodeAt(i)) | 0
+  }
+  // IDs are `sticker-${Date.now()}`, which only differ in their last few
+  // digits when created moments apart — a plain polynomial hash leaves those
+  // outputs clustered together, so run one avalanche mix (murmur-style
+  // finalizer) before reading the result out.
+  hash ^= hash >>> 16
+  hash = Math.imul(hash, 0x45d9f3b)
+  hash ^= hash >>> 16
+  const unit = (hash >>> 0) % 1000 / 1000 // 0..1
+  return Number((unit * 5 - 2.5).toFixed(2)) // -2.5deg..2.5deg
 }
 
 // Reference nodes render at their real aspect ratio instead of a fixed crop box.
