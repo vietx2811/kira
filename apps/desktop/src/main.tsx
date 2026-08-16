@@ -79,10 +79,13 @@ import {
   ImageSquare,
   Lightbulb as LightbulbIcon,
   ListBullets,
+  ListNumbers,
   LinkSimple,
   Note as NoteIcon,
   Palette as PaletteIcon,
+  Quotes,
   TextB,
+  TextH,
   TextItalic,
 } from '@phosphor-icons/react'
 import { HexColorPicker } from 'react-colorful'
@@ -914,13 +917,17 @@ function NodeRichEditor({
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
-        heading: false,
-        blockquote: false,
+        // Notion-style typing: "# " / "> " / "1. " convert live as you type,
+        // same as the already-enabled "- " for bullets. Levels capped at 3 —
+        // these blocks live in small cards/an overlay panel, H4-H6 would
+        // just be noise.
+        heading: { levels: [1, 2, 3] },
+        blockquote: {},
         codeBlock: false,
         horizontalRule: false,
         strike: false,
         code: false,
-        orderedList: false,
+        orderedList: {},
         // The app's own zundo-backed history (createCanvasHistoryStore)
         // owns undo/redo — a second stack here would fight the first.
         undoRedo: false,
@@ -1003,12 +1010,50 @@ function NodeRichEditor({
           </button>
           <button
             type="button"
+            className={editor.isActive('heading') ? 'is-active' : ''}
+            aria-label="Heading"
+            title="Heading (cycles H1 → H2 → H3 → off)"
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => {
+              const nextLevel = editor.isActive('heading', { level: 1 })
+                ? 2
+                : editor.isActive('heading', { level: 2 })
+                  ? 3
+                  : editor.isActive('heading', { level: 3 })
+                    ? null
+                    : 1
+              if (nextLevel) editor.chain().focus().setHeading({ level: nextLevel as 1 | 2 | 3 }).run()
+              else editor.chain().focus().setParagraph().run()
+            }}
+          >
+            <TextH size={13} />
+          </button>
+          <button
+            type="button"
             className={editor.isActive('bulletList') ? 'is-active' : ''}
             aria-label="Bullet list"
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => editor.chain().focus().toggleBulletList().run()}
           >
             <ListBullets size={13} />
+          </button>
+          <button
+            type="button"
+            className={editor.isActive('orderedList') ? 'is-active' : ''}
+            aria-label="Numbered list"
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => editor.chain().focus().toggleOrderedList().run()}
+          >
+            <ListNumbers size={13} />
+          </button>
+          <button
+            type="button"
+            className={editor.isActive('blockquote') ? 'is-active' : ''}
+            aria-label="Quote"
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => editor.chain().focus().toggleBlockquote().run()}
+          >
+            <Quotes size={13} />
           </button>
           <span className="node-rich-editor-toolbar-divider" />
           <button
@@ -9003,26 +9048,11 @@ function GraphCanvas({
                 />
                 {!collapsedDetailSections.has('colors') && (
                   <div className="node-details-section">
-                    <HexColorPicker
-                      color={(node as PaletteNode).colors[0] ?? '#84cdbc'}
-                      onChange={(color) => onPaletteColorChange(id, 0, color)}
+                    <PaletteColorEditor
+                      colors={(node as PaletteNode).colors}
+                      onColorChange={(index, color) => onPaletteColorChange(id, index, color)}
+                      onColorRemove={(index) => onPaletteColorRemove(id, index)}
                     />
-                    <div className="palette-color-editor" aria-label="Palette colors">
-                      {(node as PaletteNode).colors.map((color, index) => (
-                        <div key={`${id}-edit-${index}-${color}`} className="palette-color-row">
-                          <input
-                            aria-label={`Palette color ${index + 1}`}
-                            type="color"
-                            value={normalizeHexInput(color)}
-                            onChange={(event) => onPaletteColorChange(id, index, event.target.value)}
-                          />
-                          <code>{normalizeHexInput(color)}</code>
-                          <button type="button" aria-label={`Remove palette color ${index + 1}`} onClick={() => onPaletteColorRemove(id, index)}>
-                            <X size={12} />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
                   </div>
                 )}
               </section>
@@ -10128,11 +10158,7 @@ function GraphCanvas({
                 </span>
                 {renderKiraControl('palette', palette.id, palette.title)}
                 {renderDirectLinkHandle('palette', palette, palette.title)}
-                <span className="palette-strip">
-                  {palette.colors.map((color, index) => (
-                    <i key={`${palette.id}-${index}-${color}`} style={{ background: color }} />
-                  ))}
-                </span>
+                <PaletteColorStrip colors={palette.colors} />
                 <span className="idea-node-fields" onClick={stopInlineEditEvent}>
                   <NodeRichEditor
                     kind="palette"
@@ -12377,6 +12403,88 @@ function LinkedList({
 // there is never a separate popup or panel for typing a tag. Escape/blur
 // collapses the field back to a pill; Enter commits and immediately reopens
 // it so multiple tags can be typed back-to-back.
+// The one "show a set of colors" pattern in the app: a full-width row of
+// large blocks, hex on hover. Non-interactive (no onSelect) for read-only
+// display (palette node headline, image's extracted-colors block);
+// interactive (onSelect) as PaletteColorEditor's selection strip below.
+function PaletteColorStrip({
+  colors,
+  selectedIndex,
+  onSelect,
+}: {
+  colors: string[]
+  selectedIndex?: number
+  onSelect?: (index: number) => void
+}) {
+  if (colors.length === 0) return null
+  return (
+    <div className="palette-color-strip" aria-label="Color palette">
+      {colors.map((color, index) =>
+        onSelect ? (
+          <button
+            key={`${index}-${color}`}
+            type="button"
+            className={`palette-color-segment${index === selectedIndex ? ' is-selected' : ''}`}
+            style={{ background: color }}
+            title={color.toUpperCase()}
+            onClick={() => onSelect(index)}
+          >
+            <code>{color.toUpperCase()}</code>
+          </button>
+        ) : (
+          <i key={`${index}-${color}`} className="palette-color-segment" style={{ background: color }} title={color.toUpperCase()} />
+        ),
+      )}
+    </div>
+  )
+}
+
+// Strip (selects which swatch) + HexColorPicker (edits the selected swatch)
+// + a compact hex list (click a row to select it, remove per color) — one
+// editor for a `colors: string[]` list. Replaces a HexColorPicker that
+// could only ever edit colors[0] plus a native <input type="color"> per
+// row that duplicated it with a second, disconnected way to do the same
+// thing — one clear way to pick a color instead of two competing ones.
+function PaletteColorEditor({
+  colors,
+  onColorChange,
+  onColorRemove,
+}: {
+  colors: string[]
+  onColorChange: (index: number, color: string) => void
+  onColorRemove: (index: number) => void
+}) {
+  const [selectedIndex, setSelectedIndex] = useState(0)
+  const activeIndex = Math.min(selectedIndex, Math.max(colors.length - 1, 0))
+  return (
+    <>
+      <PaletteColorStrip colors={colors} selectedIndex={activeIndex} onSelect={setSelectedIndex} />
+      <HexColorPicker color={colors[activeIndex] ?? '#84cdbc'} onChange={(color) => onColorChange(activeIndex, color)} />
+      <div className="palette-color-editor" aria-label="Palette colors">
+        {colors.map((color, index) => (
+          <div
+            key={`${index}-${color}`}
+            className={`palette-color-row${index === activeIndex ? ' is-active' : ''}`}
+            onClick={() => setSelectedIndex(index)}
+          >
+            <code>{normalizeHexInput(color)}</code>
+            <button
+              type="button"
+              aria-label={`Remove palette color ${index + 1}`}
+              onClick={(event) => {
+                event.stopPropagation()
+                onColorRemove(index)
+              }}
+            >
+              <X size={12} />
+            </button>
+          </div>
+        ))}
+      </div>
+    </>
+  )
+}
+
 // Shared header for every collapsible section in the Details card (Tags,
 // Palette, Source, History, the palette-node color editor) — one chevron
 // vocabulary instead of each section inventing its own expand affordance.
@@ -12611,12 +12719,12 @@ function PaletteBlock({
         }
       />
       {!collapsed && (
-      <div className="reference-palette-strip" aria-label="Extracted image colors">
+      <div className="palette-color-strip" aria-label="Extracted image colors">
         {image.palette.slice(0, 7).map((color, index) => (
           <button
             key={`${image.id}-palette-${index}-${color}`}
             type="button"
-            className="reference-palette-segment"
+            className="palette-color-segment"
             title={color}
             style={{ background: color }}
             onClick={() => void copyColorSet([color])}
@@ -13792,7 +13900,7 @@ function clamp(value: number, min: number, max: number) {
 // markers stripped so the derived label doesn't show raw `**`/`#`/`-` syntax.
 function deriveTitleFromContent(markdown: string): string {
   const firstLine = markdown.split('\n').find((line) => line.trim().length > 0) ?? ''
-  const stripped = firstLine.replace(/^#+\s*|^[-*]\s+|\*\*|\*|`/g, '').trim()
+  const stripped = firstLine.replace(/^#+\s*|^>\s*|^\d+\.\s+|^[-*]\s+|\*\*|\*|`/g, '').trim()
   return stripped.length > 0 ? stripped.slice(0, 120) : 'Untitled'
 }
 
