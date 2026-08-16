@@ -351,6 +351,14 @@ struct AiGenerationRequest {
     prompt: String,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AiVisionGenerationRequest {
+    provider: AiProviderTestRequest,
+    prompt: String,
+    image_data_url: String,
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct AiGenerationResult {
@@ -525,6 +533,12 @@ fn list_ai_models(provider: AiProviderTestRequest) -> Result<AiModelListResult, 
 fn generate_ai_text(request: AiGenerationRequest) -> Result<AiGenerationResult, String> {
     let provider_id = validate_provider_id(&request.provider.provider_id)?;
     generate_ai_text_native(&provider_id, &request.provider, &request.prompt)
+}
+
+#[tauri::command]
+fn generate_ai_vision(request: AiVisionGenerationRequest) -> Result<AiGenerationResult, String> {
+    let provider_id = validate_provider_id(&request.provider.provider_id)?;
+    generate_ai_vision_native(&provider_id, &request.provider, &request.prompt, &request.image_data_url)
 }
 
 #[tauri::command]
@@ -2848,6 +2862,240 @@ fn generate_ollama_text(provider: &AiProviderTestRequest, prompt: &str) -> Resul
         .ok_or_else(|| "Ollama returned no content".to_string())
 }
 
+// Splits a "data:<mime>;base64,<payload>" string (the shape every reference
+// thumbnail is already stored as on the frontend) into its mime type and raw
+// base64 payload — Anthropic/Gemini/Ollama's vision APIs all want those
+// passed separately, unlike OpenAI's which takes the whole data URL as-is.
+fn split_data_url(data_url: &str) -> Result<(String, String), String> {
+    let without_prefix = data_url
+        .strip_prefix("data:")
+        .ok_or_else(|| "Image is not a data URL".to_string())?;
+    without_prefix
+        .split_once(";base64,")
+        .map(|(mime_type, data)| (mime_type.to_string(), data.to_string()))
+        .ok_or_else(|| "Image data URL is not base64-encoded".to_string())
+}
+
+fn generate_ai_vision_native(
+    provider_id: &str,
+    provider: &AiProviderTestRequest,
+    prompt: &str,
+    image_data_url: &str,
+) -> Result<AiGenerationResult, String> {
+    let clean_prompt = prompt.trim();
+    if clean_prompt.is_empty() {
+        return Err("Prompt is empty".to_string());
+    }
+    if image_data_url.trim().is_empty() {
+        return Err("Image is empty".to_string());
+    }
+
+    let content = match provider.provider_type.as_str() {
+        "apple_foundation" => {
+            return Err("Vision generation is not supported for Apple Foundation Models — use on-device OCR instead".to_string());
+        }
+        "codex" => {
+            return Err("Vision generation is not supported for the Codex CLI provider yet".to_string());
+        }
+        "claude_code" => {
+            return Err("Vision generation is not supported for the Claude Code CLI provider yet".to_string());
+        }
+        "ollama" => generate_ollama_vision(provider, clean_prompt, image_data_url)?,
+        "anthropic" => {
+            let secret = read_secret_from_keychain(provider_id)?;
+            generate_anthropic_vision(provider, &secret, clean_prompt, image_data_url)?
+        }
+        "gemini" => {
+            let secret = read_secret_from_keychain(provider_id)?;
+            generate_gemini_vision(provider, &secret, clean_prompt, image_data_url)?
+        }
+        "openai" | "openrouter" | "lm_studio" | "custom_openai_compatible" => {
+            let secret = if provider.provider_type == "lm_studio" {
+                read_secret_from_keychain(provider_id).ok()
+            } else {
+                Some(read_secret_from_keychain(provider_id)?)
+            };
+            generate_openai_compatible_vision(provider, secret.as_deref(), clean_prompt, image_data_url)?
+        }
+        _ if provider.auth_mode == "openai_compatible" => {
+            let secret = read_secret_from_keychain(provider_id).ok();
+            generate_openai_compatible_vision(provider, secret.as_deref(), clean_prompt, image_data_url)?
+        }
+        _ => return Err("Provider vision generation is not supported yet".to_string()),
+    };
+
+    Ok(AiGenerationResult {
+        status: "generated".to_string(),
+        content,
+    })
+}
+
+fn generate_openai_compatible_vision(
+    provider: &AiProviderTestRequest,
+    secret: Option<&str>,
+    prompt: &str,
+    image_data_url: &str,
+) -> Result<String, String> {
+    let url = format!("{}/chat/completions", normalized_openai_chat_base_url(provider)?);
+    let mut request = generation_http_client().post(url);
+    if let Some(secret) = secret.filter(|secret| !secret.trim().is_empty()) {
+        request = request.bearer_auth(secret);
+    }
+    let model = generation_model(provider, "gpt-4.1-mini");
+    let response = request
+        .json(&serde_json::json!({
+            "model": model,
+            "temperature": 0.2,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "You extract text and suggest tags from creative reference images for KIRA."
+                },
+                {
+                    "role": "user",
+                    "content": [
+                        { "type": "text", "text": prompt },
+                        { "type": "image_url", "image_url": { "url": image_data_url } }
+                    ]
+                }
+            ]
+        }))
+        .send()
+        .map_err(|error| format!("AI vision generation failed: {error}"))?;
+    let value = response_json(response, "AI vision generation")?;
+    value
+        .get("choices")
+        .and_then(serde_json::Value::as_array)
+        .and_then(|choices| choices.first())
+        .and_then(|choice| choice.get("message"))
+        .and_then(|message| message.get("content"))
+        .and_then(serde_json::Value::as_str)
+        .map(|content| content.trim().to_string())
+        .filter(|content| !content.is_empty())
+        .ok_or_else(|| "AI vision generation returned no content".to_string())
+}
+
+fn generate_anthropic_vision(
+    provider: &AiProviderTestRequest,
+    secret: &str,
+    prompt: &str,
+    image_data_url: &str,
+) -> Result<String, String> {
+    let (media_type, data) = split_data_url(image_data_url)?;
+    let url = format!("{}/v1/messages", normalized_provider_base_url(provider)?);
+    let response = generation_http_client()
+        .post(url)
+        .header("x-api-key", secret)
+        .header("anthropic-version", "2023-06-01")
+        .json(&serde_json::json!({
+            "model": generation_model(provider, "claude-3-5-sonnet-latest"),
+            "max_tokens": 900,
+            "temperature": 0.2,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        { "type": "text", "text": prompt },
+                        { "type": "image", "source": { "type": "base64", "media_type": media_type, "data": data } }
+                    ]
+                }
+            ]
+        }))
+        .send()
+        .map_err(|error| format!("Anthropic vision generation failed: {error}"))?;
+    let value = response_json(response, "Anthropic vision generation")?;
+    value
+        .get("content")
+        .and_then(serde_json::Value::as_array)
+        .map(|blocks| {
+            blocks
+                .iter()
+                .filter_map(|block| block.get("text").and_then(serde_json::Value::as_str))
+                .collect::<Vec<_>>()
+                .join("\n")
+        })
+        .map(|content| content.trim().to_string())
+        .filter(|content| !content.is_empty())
+        .ok_or_else(|| "Anthropic vision returned no content".to_string())
+}
+
+fn generate_gemini_vision(
+    provider: &AiProviderTestRequest,
+    secret: &str,
+    prompt: &str,
+    image_data_url: &str,
+) -> Result<String, String> {
+    let (mime_type, data) = split_data_url(image_data_url)?;
+    let url = format!(
+        "{}/v1beta/models/{}:generateContent?key={}",
+        normalized_provider_base_url(provider)?,
+        generation_model(provider, "gemini-1.5-pro"),
+        secret
+    );
+    let response = generation_http_client()
+        .post(url)
+        .json(&serde_json::json!({
+            "contents": [
+                {
+                    "parts": [
+                        { "text": prompt },
+                        { "inlineData": { "mimeType": mime_type, "data": data } }
+                    ]
+                }
+            ],
+            "generationConfig": {
+                "temperature": 0.2,
+                "maxOutputTokens": 900
+            }
+        }))
+        .send()
+        .map_err(|error| format!("Gemini vision generation failed: {error}"))?;
+    let value = response_json(response, "Gemini vision generation")?;
+    value
+        .get("candidates")
+        .and_then(serde_json::Value::as_array)
+        .and_then(|candidates| candidates.first())
+        .and_then(|candidate| candidate.get("content"))
+        .and_then(|content| content.get("parts"))
+        .and_then(serde_json::Value::as_array)
+        .map(|parts| {
+            parts
+                .iter()
+                .filter_map(|part| part.get("text").and_then(serde_json::Value::as_str))
+                .collect::<Vec<_>>()
+                .join("\n")
+        })
+        .map(|content| content.trim().to_string())
+        .filter(|content| !content.is_empty())
+        .ok_or_else(|| "Gemini vision returned no content".to_string())
+}
+
+fn generate_ollama_vision(
+    provider: &AiProviderTestRequest,
+    prompt: &str,
+    image_data_url: &str,
+) -> Result<String, String> {
+    let (_, data) = split_data_url(image_data_url)?;
+    let url = format!("{}/api/generate", normalized_ollama_base_url(provider)?);
+    let response = generation_http_client()
+        .post(url)
+        .json(&serde_json::json!({
+            "model": generation_model(provider, "llava"),
+            "prompt": prompt,
+            "images": [data],
+            "stream": false,
+        }))
+        .send()
+        .map_err(|error| format!("Ollama vision generation failed: {error}"))?;
+    let value = response_json(response, "Ollama vision generation")?;
+    value
+        .get("response")
+        .and_then(serde_json::Value::as_str)
+        .map(|content| content.trim().to_string())
+        .filter(|content| !content.is_empty())
+        .ok_or_else(|| "Ollama vision returned no content".to_string())
+}
+
 fn can_connect_local_base_url(base_url: &str) -> bool {
     let trimmed = base_url.trim();
     let without_scheme = trimmed
@@ -3993,6 +4241,7 @@ pub fn run() {
             test_ai_provider,
             list_ai_models,
             generate_ai_text,
+            generate_ai_vision,
             get_extension_install_status,
             open_extension_install_target,
             export_outline_markdown,
@@ -4012,6 +4261,21 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn image_data_url_splitter_returns_mime_and_payload() {
+        let (mime_type, payload) = split_data_url("data:image/png;base64,aGVsbG8=")
+            .expect("split valid image data URL");
+
+        assert_eq!(mime_type, "image/png");
+        assert_eq!(payload, "aGVsbG8=");
+    }
+
+    #[test]
+    fn image_data_url_splitter_rejects_non_base64_input() {
+        assert!(split_data_url("https://example.com/image.png").is_err());
+        assert!(split_data_url("data:image/png,not-base64").is_err());
+    }
 
     #[test]
     fn sqlite_snapshot_roundtrip_preserves_graph_data_and_assets() {

@@ -2411,7 +2411,12 @@ p {
    ReferenceCard in main.tsx: an interactive control inside a <button>
    breaks the button's accessible activation semantics. */
 .mini-tags {
+  position: relative;
   display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: center;
+  overflow: clip;
   gap: 4px;
   margin-top: 5px;
 }
@@ -2426,7 +2431,10 @@ p {
   padding: 0 2px 2px;
 }
 
-.mini-tags button {
+.mini-tag-chip,
+.mini-tags-more {
+  display: inline-block;
+  flex: 0 0 auto;
   max-width: 76px;
   overflow: hidden;
   padding: 2px 5px;
@@ -2438,19 +2446,88 @@ p {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 0.62rem;
+  line-height: normal;
+}
+
+.mini-tag-chip,
+button.mini-tags-more {
+  cursor: pointer;
   transition: background 120ms ease, color 120ms ease;
 }
 
-.mini-tags button:hover,
-.mini-tags button:focus-visible {
+.mini-tag-chip:hover,
+.mini-tag-chip:focus-visible,
+button.mini-tags-more:hover,
+button.mini-tags-more:focus-visible {
   background: rgb(255 255 255 / 0.12);
   color: var(--text-main);
-  outline: none;
 }
 
-.mini-tags button.is-active {
+.mini-tag-chip:focus-visible,
+button.mini-tags-more:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.mini-tag-chip.is-active {
   background: var(--accent-faint);
   color: var(--accent-strong);
+}
+
+.mini-tags-more {
+  border: 1px solid rgb(255 255 255 / 0.08);
+  background: rgb(255 255 255 / 0.035);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.mini-tags-measure {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: flex;
+  width: max-content;
+  visibility: hidden;
+  gap: inherit;
+  pointer-events: none;
+}
+
+.mini-tags-popover {
+  position: fixed;
+  inset: auto;
+  display: none;
+  width: max-content;
+  max-width: min(240px, calc(100vw - 16px));
+  max-height: min(240px, calc(100vh - 16px));
+  overflow: auto;
+  padding: 8px;
+  border: 1px solid var(--glass-border-strong);
+  border-radius: var(--radius-2);
+  background: var(--glass-strong);
+  color: var(--text-main);
+  box-shadow: var(--shadow-soft);
+}
+
+.mini-tags-popover:popover-open {
+  display: grid;
+  gap: 6px;
+}
+
+.mini-tags-popover > strong {
+  color: var(--text-muted);
+  font-size: 0.68rem;
+  font-weight: 600;
+}
+
+.mini-tags-popover-list {
+  display: flex;
+  max-width: 224px;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.mini-tags-popover-list .mini-tag-chip {
+  max-width: 160px;
 }
 
 .inbox-footer-action {
