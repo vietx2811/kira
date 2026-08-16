@@ -3585,15 +3585,6 @@ p {
   font-size: 0.66rem;
 }
 
-.palette-strip {
-  display: grid;
-  overflow: hidden;
-  height: 16px;
-  border-radius: 999px;
-  grid-auto-flow: column;
-  grid-auto-columns: 1fr;
-}
-
 .diagram-node {
   grid-template-columns: auto 1fr;
   grid-template-rows: auto auto;
@@ -5984,7 +5975,15 @@ p {
   gap: 8px;
 }
 
-.reference-palette-strip {
+/* The one "show a set of colors" pattern in the app: a full-width row of
+   large blocks, hex on hover. Used at rest (palette node headline, image's
+   extracted-colors block — both read-only, rendered as <i>) and
+   interactively (PaletteColorEditor's selection strip, rendered as
+   <button>, adds .is-selected) — one visual language everywhere a color
+   set is shown, instead of the two separate treatments (.palette-strip's
+   plain 16px bars, this strip's 22px hover-tooltip segments) that used to
+   exist side by side. */
+.palette-color-strip {
   display: flex;
   overflow: visible;
   height: 22px;
@@ -5995,29 +5994,40 @@ p {
     0 10px 28px rgb(0 0 0 / 0.14);
 }
 
-.reference-palette-segment {
+.palette-color-segment {
   position: relative;
   flex: 1 1 0;
   min-width: 0;
+  padding: 0;
   border: 0;
   border-left: 1px solid rgb(0 0 0 / 0.18);
+  background: none;
   cursor: pointer;
 }
 
-.reference-palette-segment:first-child {
+i.palette-color-segment {
+  cursor: default;
+}
+
+.palette-color-segment:first-child {
   border-left: 0;
   border-radius: 999px 0 0 999px;
 }
 
-.reference-palette-segment:last-child {
+.palette-color-segment:last-child {
   border-radius: 0 999px 999px 0;
 }
 
-.reference-palette-segment:only-child {
+.palette-color-segment:only-child {
   border-radius: 999px;
 }
 
-.reference-palette-segment code {
+.palette-color-segment.is-selected {
+  z-index: 1;
+  box-shadow: inset 0 0 0 2px var(--accent-cyan);
+}
+
+.palette-color-segment code {
   position: absolute;
   right: 50%;
   bottom: calc(100% + 7px);
@@ -6034,8 +6044,8 @@ p {
   white-space: nowrap;
 }
 
-.reference-palette-segment:hover code,
-.reference-palette-segment:focus-visible code {
+button.palette-color-segment:hover code,
+button.palette-color-segment:focus-visible code {
   opacity: 1;
   transform: translate(50%, 0);
 }
@@ -7615,18 +7625,21 @@ textarea {
 
 .palette-color-row {
   display: grid;
-  grid-template-columns: 34px minmax(0, 1fr) 28px;
+  grid-template-columns: minmax(0, 1fr) 28px;
   align-items: center;
   gap: 7px;
+  padding: 3px 4px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 120ms ease;
 }
 
-.palette-color-row input {
-  width: 34px;
-  height: 26px;
-  padding: 0;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
+.palette-color-row:hover {
+  background: rgb(255 255 255 / 0.035);
+}
+
+.palette-color-row.is-active {
+  background: var(--accent-faint);
 }
 
 .palette-color-row code {
@@ -7634,6 +7647,10 @@ textarea {
   color: var(--text-soft);
   font-size: 0.68rem;
   text-overflow: ellipsis;
+}
+
+.palette-color-row.is-active code {
+  color: var(--accent-strong);
 }
 
 .palette-color-row button {
