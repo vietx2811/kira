@@ -2037,6 +2037,9 @@ function FileWorkspace({
   const [pendingLinkSource, setPendingLinkSource] = useState<Pick<GraphNodeRef, 'kind' | 'id'> | null>(null)
   const [ocrRunningImageId, setOcrRunningImageId] = useState<string | null>(null)
   const [ocrStatusByImageId, setOcrStatusByImageId] = useState<Record<string, string>>({})
+  const [paletteRegeneratingId, setPaletteRegeneratingId] = useState<string | null>(null)
+  const [isRebuildingOutline, setIsRebuildingOutline] = useState(false)
+  const [findSimilarRunningId, setFindSimilarRunningId] = useState<string | null>(null)
   const [localModelAvailable, setLocalModelAvailable] = useState(false)
   const [localModelStatus, setLocalModelStatus] = useState('Not checked')
   const [aiProviders, setAiProviders] = useState<AiProviderProfile[]>(withDefaultAiProviders(initialProject.aiSettings.providers))
@@ -4098,24 +4101,58 @@ function FileWorkspace({
     setOcrRunningImageId(imageId)
     setOcrStatusByImageId((current) => ({ ...current, [imageId]: 'Reading text' }))
 
-    try {
-      const result = await runNativeAppleVisionOcr(image.thumb)
-      if (!result || result.suggestions.length === 0) {
-        setOcrStatusByImageId((current) => ({ ...current, [imageId]: 'No text found' }))
-        return
-      }
-
+    const applySuggestions = (labels: string[], source: string, confidence: number) => {
       setImages((current) =>
         current.map((candidate) => {
           if (candidate.id !== imageId) return candidate
           const accepted = new Set(candidate.tags.map(normalizeTag))
-          const suggestions = mergeSuggestionRecords(candidate.suggestions, result.suggestions, 'ocr', 0.72).filter(
+          const suggestions = mergeSuggestionRecords(candidate.suggestions, labels, source, confidence).filter(
             (suggestion) => !accepted.has(suggestionLabel(suggestion)),
           )
           return { ...candidate, suggestions }
         }),
       )
-      setOcrStatusByImageId((current) => ({ ...current, [imageId]: `${result.suggestions.length} suggestion${result.suggestions.length === 1 ? '' : 's'}` }))
+      setOcrStatusByImageId((current) => ({ ...current, [imageId]: `${labels.length} suggestion${labels.length === 1 ? '' : 's'}` }))
+    }
+
+    // The on-device Apple Vision OCR call — kept as its own step so a remote
+    // vision provider that errors or returns something unparsable can drop
+    // back to it instead of surfacing a hard failure for what used to be a
+    // working local feature.
+    const runLocalFallback = async () => {
+      const result = await runNativeAppleVisionOcr(image.thumb)
+      if (!result || result.suggestions.length === 0) {
+        setOcrStatusByImageId((current) => ({ ...current, [imageId]: 'No text found' }))
+        return
+      }
+      applySuggestions(result.suggestions, 'ocr', 0.72)
+    }
+
+    try {
+      const route = selectAiProviderForTask('tag_reference', aiProviders, aiRoutingMode, selectedAiProviderId)
+      const provider = route.providerId ? aiProviders.find((candidate) => candidate.id === route.providerId) : undefined
+
+      if (!provider || provider.type === 'apple_foundation') {
+        await runLocalFallback()
+        return
+      }
+
+      const prompt = [
+        'Read any visible text in this image and suggest short tags describing what it shows.',
+        'Return only a JSON array of strings — extracted words/phrases and suggested tags combined — no explanation, no markdown fence.',
+      ].join('\n')
+
+      try {
+        const result = await generateNativeAiVision(provider, image.thumb, prompt)
+        const labels = parseAiJson<string[]>(result.content)?.filter((label) => typeof label === 'string' && label.trim())
+        if (!labels || labels.length === 0) {
+          await runLocalFallback()
+          return
+        }
+        applySuggestions(labels, provider.id, 0.72)
+      } catch {
+        await runLocalFallback()
+      }
     } catch {
       setOcrStatusByImageId((current) => ({ ...current, [imageId]: 'OCR failed' }))
     } finally {
@@ -4132,7 +4169,25 @@ function FileWorkspace({
     setModelRunningImageId(imageId)
     setModelStatusByImageId((current) => ({ ...current, [imageId]: 'Refining tags' }))
 
-    try {
+    const applySuggestions = (labels: string[], source: string, confidence: number) => {
+      setImages((current) =>
+        current.map((candidate) => {
+          if (candidate.id !== imageId) return candidate
+          const accepted = new Set(candidate.tags.map(normalizeTag))
+          const suggestions = mergeSuggestionRecords(candidate.suggestions, labels, source, confidence).filter(
+            (suggestion) => !accepted.has(suggestionLabel(suggestion)),
+          )
+          return { ...candidate, suggestions }
+        }),
+      )
+      setModelStatusByImageId((current) => ({ ...current, [imageId]: `${labels.length} suggestion${labels.length === 1 ? '' : 's'}` }))
+    }
+
+    // The Apple Foundation Model call — kept as its own step so a remote
+    // provider that errors or returns something unparsable can drop back to
+    // it instead of surfacing a hard failure for what used to be a working
+    // local feature.
+    const runLocalFallback = async () => {
       const result = await normalizeNativeTagsWithFoundationModel(referenceModelContext(image))
       if (!result.available) {
         setLocalModelAvailable(false)
@@ -4143,18 +4198,36 @@ function FileWorkspace({
         setModelStatusByImageId((current) => ({ ...current, [imageId]: 'No new suggestions' }))
         return
       }
+      applySuggestions(result.suggestions, 'model', 0.82)
+    }
 
-      setImages((current) =>
-        current.map((candidate) => {
-          if (candidate.id !== imageId) return candidate
-          const accepted = new Set(candidate.tags.map(normalizeTag))
-          const suggestions = mergeSuggestionRecords(candidate.suggestions, result.suggestions, 'model', 0.82).filter(
-            (suggestion) => !accepted.has(suggestionLabel(suggestion)),
-          )
-          return { ...candidate, suggestions }
-        }),
-      )
-      setModelStatusByImageId((current) => ({ ...current, [imageId]: `${result.suggestions.length} suggestion${result.suggestions.length === 1 ? '' : 's'}` }))
+    try {
+      const route = selectAiProviderForTask('classify_reference', aiProviders, aiRoutingMode, selectedAiProviderId)
+      const provider = route.providerId ? aiProviders.find((candidate) => candidate.id === route.providerId) : undefined
+
+      if (!provider || provider.type === 'apple_foundation') {
+        await runLocalFallback()
+        return
+      }
+
+      const prompt = [
+        'Suggest additional tags for this creative reference image based on its existing metadata.',
+        'Return only a JSON array of short tag strings — no explanation, no markdown fence.',
+        '',
+        referenceModelContext(image),
+      ].join('\n')
+
+      try {
+        const result = await generateNativeAiText(provider, prompt)
+        const labels = parseAiJson<string[]>(result.content)?.filter((label) => typeof label === 'string' && label.trim())
+        if (!labels || labels.length === 0) {
+          await runLocalFallback()
+          return
+        }
+        applySuggestions(labels, provider.id, 0.82)
+      } catch {
+        await runLocalFallback()
+      }
     } catch {
       setModelStatusByImageId((current) => ({ ...current, [imageId]: 'Refine failed' }))
     } finally {
@@ -4408,8 +4481,15 @@ function FileWorkspace({
     const baseNodes = request.contextNodes
       ?? collectKiraContext(request.source, request.scope, { ideas, images, palettes, diagrams, placeholders, links })
     const instruction = request.prompt.trim() || aiNodeActionPrompts[request.action]
+    // Diagram summaries (e.g. the "Compress to five steps" suggestion chip)
+    // go through this same node-generation path but should honor whatever
+    // provider the user assigned to summarize_diagram in Settings, instead
+    // of always falling back to generate_node's assignment.
+    const taskKind: AiTaskKind = sourceNode?.kind === 'diagram' && request.action === 'summarize'
+      ? 'summarize_diagram'
+      : 'generate_node'
     const route = selectAiProviderForTask(
-      'generate_node',
+      taskKind,
       aiProviders,
       aiRoutingMode,
       selectedAiProviderId,
@@ -4577,47 +4657,108 @@ function FileWorkspace({
     )
   }
 
-  function regeneratePalette(paletteId: string, algorithm: PaletteHarmony) {
-    pushCanvasHistory()
+  async function regeneratePalette(paletteId: string, algorithm: PaletteHarmony) {
     const before = palettes.find((palette) => palette.id === paletteId)
-    if (before) {
-      recordNodeVersion('palette', before, {
-        ...before,
-        colors: generatePaletteHarmony(before.colors[0] ?? '#84cdbc', algorithm),
-        algorithm,
-        updatedAt: nowIso(),
-      }, 'user_edit')
-    }
-    setPalettes((current) =>
-      current.map((palette) => {
-        if (palette.id !== paletteId) return palette
-        return {
-          ...palette,
-          colors: generatePaletteHarmony(palette.colors[0] ?? '#84cdbc', algorithm),
-          algorithm,
-          updatedAt: nowIso(),
+    if (!before) return
+
+    // generate_palette/rebalance_palette both land here — there's only ever
+    // one "regenerate" trigger in the UI — so this is the AI attempt for
+    // both task kinds, with the existing deterministic harmony math as the
+    // fallback exactly as it behaved before this function could call out.
+    let colors = generatePaletteHarmony(before.colors[0] ?? '#84cdbc', algorithm)
+
+    setPaletteRegeneratingId(paletteId)
+    try {
+      const route = selectAiProviderForTask('rebalance_palette', aiProviders, aiRoutingMode, selectedAiProviderId)
+      const provider = route.providerId ? aiProviders.find((candidate) => candidate.id === route.providerId) : undefined
+      if (provider && provider.type !== 'apple_foundation') {
+        const prompt = [
+          `Suggest a cohesive "${algorithm}" color palette of exactly ${before.colors.length} hex colors, evolving this current palette: ${before.colors.join(', ')}.`,
+          'Return only a JSON array of 6-digit hex color strings like "#84cdbc" — no explanation, no markdown fence.',
+        ].join('\n')
+        try {
+          const result = await generateNativeAiText(provider, prompt)
+          const parsed = parseAiJson<string[]>(result.content)
+          const validColors = parsed?.filter((value) => typeof value === 'string' && /^#[0-9a-fA-F]{6}$/.test(value))
+          if (validColors && validColors.length === before.colors.length) {
+            colors = validColors.map((value) => value.toLowerCase())
+          }
+        } catch {
+          // Falls through to the local harmony colors already computed above.
         }
-      }),
+      }
+    } finally {
+      setPaletteRegeneratingId(null)
+    }
+
+    pushCanvasHistory()
+    recordNodeVersion('palette', before, {
+      ...before,
+      colors,
+      algorithm,
+      updatedAt: nowIso(),
+    }, 'user_edit')
+    setPalettes((current) =>
+      current.map((palette) =>
+        palette.id === paletteId
+          ? { ...palette, colors, algorithm, updatedAt: nowIso() }
+          : palette,
+      ),
     )
   }
 
-  function findSimilarReferences(imageId: string) {
+  async function findSimilarReferences(imageId: string) {
     const source = images.find((image) => image.id === imageId)
     if (!source) return
-    const sourceTags = new Set(source.tags.map(normalizeTag))
-    const sourceHue = hueFromHex(source.palette[0])
-    const similarIds = images
-      .filter((image) => image.id !== imageId)
-      .map((image) => {
-        const tagScore = image.tags.filter((tag) => sourceTags.has(normalizeTag(tag))).length
-        const hueDistance = Math.abs(hueFromHex(image.palette[0]) - sourceHue)
-        const colorScore = 1 - Math.min(hueDistance, 360 - hueDistance) / 180
-        return { image, score: tagScore * 2 + colorScore }
-      })
-      .filter((entry) => entry.score > 0.45)
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 8)
-      .map((entry) => entry.image.id)
+
+    const scoreLocally = () => {
+      const sourceTags = new Set(source.tags.map(normalizeTag))
+      const sourceHue = hueFromHex(source.palette[0])
+      return images
+        .filter((image) => image.id !== imageId)
+        .map((image) => {
+          const tagScore = image.tags.filter((tag) => sourceTags.has(normalizeTag(tag))).length
+          const hueDistance = Math.abs(hueFromHex(image.palette[0]) - sourceHue)
+          const colorScore = 1 - Math.min(hueDistance, 360 - hueDistance) / 180
+          return { image, score: tagScore * 2 + colorScore }
+        })
+        .filter((entry) => entry.score > 0.45)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 8)
+        .map((entry) => entry.image.id)
+    }
+
+    let similarIds = scoreLocally()
+
+    setFindSimilarRunningId(imageId)
+    try {
+      const route = selectAiProviderForTask('find_similar', aiProviders, aiRoutingMode, selectedAiProviderId)
+      const provider = route.providerId ? aiProviders.find((candidate) => candidate.id === route.providerId) : undefined
+      if (provider && provider.type !== 'apple_foundation') {
+        const candidates = images.filter((image) => image.id !== imageId)
+        const prompt = [
+          'Rank the candidate images below by visual/thematic similarity to the source image, most similar first.',
+          `Source: tags [${source.tags.join(', ') || 'none'}], dominant color ${source.palette[0] ?? 'unknown'}.`,
+          'Candidates:',
+          ...candidates.map((image) => `${image.id}: tags [${image.tags.join(', ') || 'none'}], dominant color ${image.palette[0] ?? 'unknown'}`),
+          '',
+          'Return only a JSON array of up to 8 candidate ids, most similar first — no explanation, no markdown fence.',
+        ].join('\n')
+        try {
+          const result = await generateNativeAiText(provider, prompt)
+          const parsed = parseAiJson<string[]>(result.content)
+          const validIds = parsed?.filter((id) => typeof id === 'string' && candidates.some((image) => image.id === id))
+          if (validIds && validIds.length > 0) {
+            similarIds = validIds.slice(0, 8)
+          }
+        } catch {
+          // Falls through to the local tag+hue ranking already computed above.
+        }
+      }
+    } finally {
+      setFindSimilarRunningId(null)
+    }
+
     setSelectedReferenceIds(new Set([imageId, ...similarIds]))
     setLibraryStatus(`${similarIds.length} similar reference${similarIds.length === 1 ? '' : 's'} selected`)
   }
@@ -4941,11 +5082,56 @@ function FileWorkspace({
     deleteLink(deleteTarget.id)
   }
 
-  function rebuildOutlineDraft() {
+  async function rebuildOutlineDraft() {
+    // title/references/strength are derived from real ideas/links and stay
+    // local — only `summary` (currently a crude template concatenation) is
+    // worth asking a provider to rewrite, so the locally-built draft is both
+    // the base and the fallback if no provider is routed or generation fails.
     const draft = createOutlineDraft(ideas, images, links)
     setOutlineDrafts([draft])
     setOutlineStatus('Draft rebuilt')
     setActiveView('Outline')
+
+    if (draft.sections.length === 0) return
+
+    setIsRebuildingOutline(true)
+    try {
+      const route = selectAiProviderForTask('generate_outline', aiProviders, aiRoutingMode, selectedAiProviderId)
+      const provider = route.providerId ? aiProviders.find((candidate) => candidate.id === route.providerId) : undefined
+      if (!provider || provider.type === 'apple_foundation') return
+
+      const prompt = [
+        'Rewrite the summary for each outline section below into one clear paragraph, keeping its meaning intact.',
+        'Return only a JSON object mapping each id to its rewritten summary string — no explanation, no markdown fence.',
+        '',
+        ...draft.sections.map((section) => `${section.ideaId}: ${section.summary}`),
+      ].join('\n')
+
+      try {
+        const result = await generateNativeAiText(provider, prompt)
+        const parsed = parseAiJson<Record<string, string>>(result.content)
+        if (!parsed || typeof parsed !== 'object') return
+        setOutlineDrafts((current) =>
+          current.map((existing) =>
+            existing.id === draft.id
+              ? {
+                  ...existing,
+                  sections: existing.sections.map((section) =>
+                    typeof parsed[section.ideaId] === 'string' && parsed[section.ideaId].trim()
+                      ? { ...section, summary: parsed[section.ideaId].trim() }
+                      : section,
+                  ),
+                }
+              : existing,
+          ),
+        )
+        setOutlineStatus(`Draft rebuilt · ${provider.name}`)
+      } catch {
+        // Keeps the locally-built template summaries already shown.
+      }
+    } finally {
+      setIsRebuildingOutline(false)
+    }
   }
 
   async function exportOutlineMarkdown() {
@@ -5543,6 +5729,7 @@ function FileWorkspace({
                 onNodeVersionRestore={restoreNodeVersion}
                 onToggleAiExcluded={toggleNodeAiExcluded}
                 onRebuildOutline={rebuildOutlineDraft}
+                isRebuildingOutline={isRebuildingOutline}
                 onIdeaInlineChange={updateIdea}
                 onImageInlineChange={updateImage}
                 onToggleImageTagsPinned={toggleImageTagsPinned}
@@ -5552,6 +5739,7 @@ function FileWorkspace({
                 onDiagramInlineChange={updateDiagram}
                 onPlaceholderInlineChange={updatePlaceholder}
                 onReferenceFindSimilar={findSimilarReferences}
+                findSimilarRunningId={findSimilarRunningId}
                 onReferenceCrop={setCropTargetImageId}
                 onReferenceConvertToPalette={(imageId) => createPaletteNode(images.find((image) => image.id === imageId))}
                 onReferenceReplace={replaceReferenceFromFiles}
@@ -5566,6 +5754,7 @@ function FileWorkspace({
                 onPaletteColorAdd={addPaletteColor}
                 onPaletteColorRemove={removePaletteColor}
                 onPaletteRegenerate={regeneratePalette}
+                paletteRegeneratingId={paletteRegeneratingId}
                 localModelAvailable={localModelAvailable}
                 modelRunningImageId={modelRunningImageId}
                 modelStatusByImageId={modelStatusByImageId}
@@ -7807,6 +7996,9 @@ function GraphCanvas({
   onPaletteColorAdd,
   onPaletteColorRemove,
   onPaletteRegenerate,
+  paletteRegeneratingId,
+  findSimilarRunningId,
+  isRebuildingOutline,
   localModelAvailable,
   modelRunningImageId,
   modelStatusByImageId,
@@ -7867,7 +8059,8 @@ function GraphCanvas({
   nodeVersions: NodeVersionRecord[]
   onNodeVersionRestore: (versionId: string) => void
   onToggleAiExcluded: (kind: GraphNodeKind, id: string) => void
-  onRebuildOutline: () => void
+  onRebuildOutline: () => void | Promise<void>
+  isRebuildingOutline: boolean
   onIdeaInlineChange: (ideaId: string, patch: Partial<Pick<Idea, 'content' | 'notes' | 'sourceUrl'>>) => void
   onImageInlineChange: (imageId: string, patch: Partial<Pick<EvidenceImage, 'content' | 'notes' | 'sourceUrl'>>) => void
   onToggleImageTagsPinned: (imageId: string) => void
@@ -7876,7 +8069,8 @@ function GraphCanvas({
   onPaletteInlineChange: (paletteId: string, patch: Partial<Pick<PaletteNode, 'content' | 'notes' | 'sourceUrl'>>) => void
   onDiagramInlineChange: (diagramId: string, patch: Partial<Pick<DiagramNode, 'content' | 'notes' | 'sourceUrl' | 'source'>>) => void
   onPlaceholderInlineChange: (placeholderId: string, patch: Partial<Pick<PlaceholderNode, 'content' | 'notes' | 'sourceUrl'>>) => void
-  onReferenceFindSimilar: (imageId: string) => void
+  onReferenceFindSimilar: (imageId: string) => void | Promise<void>
+  findSimilarRunningId: string | null
   onReferenceCrop: (imageId: string) => void
   onReferenceConvertToPalette: (imageId: string) => void
   onReferenceReplace: (imageId: string, files: FileList | File[]) => void
@@ -7890,7 +8084,8 @@ function GraphCanvas({
   onPaletteColorChange: (paletteId: string, colorIndex: number, color: string) => void
   onPaletteColorAdd: (paletteId: string) => void
   onPaletteColorRemove: (paletteId: string, colorIndex: number) => void
-  onPaletteRegenerate: (paletteId: string, algorithm: PaletteHarmony) => void
+  onPaletteRegenerate: (paletteId: string, algorithm: PaletteHarmony) => void | Promise<void>
+  paletteRegeneratingId: string | null
   localModelAvailable: boolean
   modelRunningImageId: string | null
   modelStatusByImageId: Record<string, string>
@@ -7994,6 +8189,32 @@ function GraphCanvas({
   function closeDetailsPopover() {
     setDetailsPopoverNode(null)
     detailsTriggerRef.current?.focus()
+  }
+  // Direct Manipulation (DESIGN.md §2.1): the popover should visibly grow
+  // out of the node that opened it, not fade in as a disconnected centered
+  // dialog. A ref callback (not useLayoutEffect — this runs from inside
+  // renderNodeBelowStack, a plain helper fn called per node, not a
+  // component, so hooks aren't legal here) does a one-shot FLIP: read the
+  // trigger's on-screen rect, invert the popover to start there, then
+  // transition it back to its natural resting transform.
+  function applyNodeDetailsMorph(el: HTMLDivElement | null) {
+    if (!el || el.dataset.morphed === 'true') return
+    const origin = detailsTriggerRef.current?.getBoundingClientRect()
+    if (!origin || (origin.width === 0 && origin.height === 0)) return // no usable origin — CSS fallback animation plays instead
+    el.dataset.morphed = 'true'
+    el.style.animation = 'none'
+    const finalRect = el.getBoundingClientRect()
+    const scaleX = origin.width / finalRect.width
+    const scaleY = origin.height / finalRect.height
+    const translateX = origin.left + origin.width / 2 - (finalRect.left + finalRect.width / 2)
+    const translateY = origin.top + origin.height / 2 - (finalRect.top + finalRect.height / 2)
+    el.style.transition = 'none'
+    el.style.opacity = '0'
+    el.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scaleX}, ${scaleY})`
+    void el.offsetHeight // force reflow so the transition below animates from this starting state
+    el.style.transition = 'transform 240ms var(--ease-out-soft), opacity 160ms ease'
+    el.style.opacity = '1'
+    el.style.transform = 'none'
   }
   // Only one Details popover can be open at a time, so one flat key is
   // enough to track a drag-to-reorder gesture across its block modules.
@@ -9010,6 +9231,7 @@ function GraphCanvas({
               aria-modal="true"
               aria-label={`${node.title || graphNodeKindLabel(kind)} details`}
               onClick={(event) => event.stopPropagation()}
+              ref={applyNodeDetailsMorph}
             >
               {/* Every action that used to live on the node face's toolbar —
                   add-new/AI actions plus the kind-specific ones — is
@@ -9029,8 +9251,14 @@ function GraphCanvas({
                       }}
                     />
                   </label>
-                  <button type="button" aria-label="Find similar" title="Find similar" onClick={() => onReferenceFindSimilar(id)}>
-                    <Search size={13} />
+                  <button
+                    type="button"
+                    aria-label="Find similar"
+                    title={findSimilarRunningId === id ? 'Finding similar…' : 'Find similar'}
+                    disabled={findSimilarRunningId === id}
+                    onClick={() => void onReferenceFindSimilar(id)}
+                  >
+                    {findSimilarRunningId === id ? <span className="ai-inline-spinner" aria-hidden="true" /> : <Search size={13} />}
                   </button>
                   <button type="button" aria-label="Crop image" title="Crop" onClick={() => onReferenceCrop(id)}>
                     <CropIcon size={13} />
@@ -9058,14 +9286,26 @@ function GraphCanvas({
                   <button type="button" aria-label="Add color" title="Add color" onClick={() => onPaletteColorAdd(id)}>
                     <Plus size={13} />
                   </button>
-                  <button type="button" aria-label="Rebalance palette" title="Rebalance" onClick={() => onPaletteRegenerate(id, 'analogous')}>
-                    <Sparkles size={13} />
+                  <button
+                    type="button"
+                    aria-label="Rebalance palette"
+                    title={paletteRegeneratingId === id ? 'Rebalancing…' : 'Rebalance'}
+                    disabled={paletteRegeneratingId === id}
+                    onClick={() => void onPaletteRegenerate(id, 'analogous')}
+                  >
+                    {paletteRegeneratingId === id ? <span className="ai-inline-spinner" aria-hidden="true" /> : <Sparkles size={13} />}
                   </button>
                 </>
               )}
               {kind === 'idea' && (
-                <button type="button" aria-label="Create outline" title="Create outline" onClick={onRebuildOutline}>
-                  <Bot size={13} />
+                <button
+                  type="button"
+                  aria-label="Create outline"
+                  title={isRebuildingOutline ? 'Creating outline…' : 'Create outline'}
+                  disabled={isRebuildingOutline}
+                  onClick={() => void onRebuildOutline()}
+                >
+                  {isRebuildingOutline ? <span className="ai-inline-spinner" aria-hidden="true" /> : <Bot size={13} />}
                 </button>
               )}
               {/* Visually separates "do something to this node" (edit/replace/
@@ -16734,6 +16974,34 @@ async function generateNativeAiText(provider: AiProviderProfile, prompt: string)
     throw new Error('AI generation runs in the desktop app because secrets and local endpoints are native-only.')
   }
   return invoke<AiGenerationResult>('generate_ai_text', { provider: providerRequestPayload(provider), prompt })
+}
+
+async function generateNativeAiVision(provider: AiProviderProfile, imageDataUrl: string, prompt: string) {
+  if (!isTauriRuntime()) {
+    throw new Error('AI generation runs in the desktop app because secrets and local endpoints are native-only.')
+  }
+  return invoke<AiGenerationResult>('generate_ai_vision', {
+    provider: providerRequestPayload(provider),
+    imageDataUrl,
+    prompt,
+  })
+}
+
+// Every AI-routed task below asks the model to answer with JSON only (arrays
+// of tags/ids, hex-color lists, id->summary maps) so it can be parsed without
+// a bespoke prompt-specific extractor per task. Models sometimes still wrap
+// the answer in a ```json fence despite being told not to — strip that
+// before parsing. Returns null on anything that doesn't parse, which is the
+// signal every caller uses to fall back to its local algorithm.
+function parseAiJson<T>(content: string): T | null {
+  const trimmed = content.trim()
+  const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i)
+  const candidate = fenced ? fenced[1] : trimmed
+  try {
+    return JSON.parse(candidate) as T
+  } catch {
+    return null
+  }
 }
 
 // Detects the native error surfaced when a Codex (ChatGPT OAuth) provider runs a
