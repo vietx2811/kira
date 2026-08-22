@@ -1697,7 +1697,13 @@ const defaultAiProviderProfiles: AiProviderProfile[] = [
     authMode: 'local',
     model: 'system default',
     status: 'unavailable',
-    defaultFor: ['tag_reference', 'classify_reference', 'generate_outline', 'generate_node', 'summarize_diagram'],
+    // Only OCR/tag normalization are actually wired to the on-device Foundation
+    // Models helper (see run_foundation_models_process's "availability"/"tags"
+    // modes). Text generation (outline rewrite, node/diagram generation) has no
+    // native implementation, so it must not be a default routing target for
+    // those tasks — "prefer local" would otherwise preempt a working remote
+    // provider and dead-end into the "not wired" error / fallback draft.
+    defaultFor: ['tag_reference', 'classify_reference'],
   },
   {
     id: 'openai',
@@ -6895,7 +6901,7 @@ function SettingsView({
                 </div>
                 <div>
                   <dt>Default use</dt>
-                  <dd>Tagging, classification, outline, diagram summary</dd>
+                  <dd>Tagging, classification</dd>
                 </div>
               </dl>
             </section>
@@ -17284,7 +17290,12 @@ function selectAiProviderForTask(
 
   if (taskDefault) return providerRoute(task, taskDefault, 'task default')
   if (availableRemote) return providerRoute(task, availableRemote, 'remote fallback')
-  if (localProvider) return providerRoute(task, localProvider, 'local fallback')
+  // Only offer the local provider here if it actually claims this task —
+  // routing to it unconditionally sent capability-less tasks (e.g. text
+  // generation via Apple Foundation Models, which only implements OCR/tag
+  // normalization) into a guaranteed native error instead of the honest
+  // "nothing is configured" message below.
+  if (localProvider?.defaultFor.includes(task)) return providerRoute(task, localProvider, 'local fallback')
   return unavailableRoute(task, 'No provider configured')
 }
 
