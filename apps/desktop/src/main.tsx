@@ -22,6 +22,7 @@ import {
   Brain,
   Camera,
   Check,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   ChevronUp,
@@ -641,6 +642,7 @@ type AiGenerationResult = {
 }
 type ExtensionTargetStatus = {
   installed: boolean
+  disabled: boolean
   available: boolean
   detail: string
   installPath: string
@@ -1631,12 +1633,14 @@ function defaultExtensionInstallStatus(): ExtensionInstallStatus {
   return {
     chrome: {
       installed: false,
+      disabled: false,
       available: true,
       detail: 'Desktop status check not run',
       installPath: 'Bundled in KIRA.app/Contents/Resources/.../extension/dist',
     },
     safari: {
       installed: false,
+      disabled: false,
       available: true,
       detail: 'Desktop status check not run',
       installPath: 'Embedded in KIRA.app/Contents/PlugIns',
@@ -3974,12 +3978,33 @@ function FileWorkspace({
       return
     }
     if (targetId === target.settingsActionId && target.href) window.open(target.href, '_blank', 'noopener,noreferrer')
-    if (navigator.clipboard?.writeText) {
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error('Clipboard API unavailable')
       await navigator.clipboard.writeText(target.path)
       setAiSettingsStatus(`${target.title}: install path copied`)
-    } else {
+    } catch {
       setAiSettingsStatus(`${target.title}: ${target.path}`)
     }
+  }
+
+  // Real "Load unpacked" still requires the user to paste this into Chrome's
+  // own folder picker — the packaged app's Finder-reveal alone doesn't put
+  // it on the clipboard. This closes that gap: sync the stable copy, then
+  // copy its path so step 4 in the Capture tab is a paste, not a re-navigate.
+  async function handleCopyChromeDistPath() {
+    const stablePath = await syncChromeExtensionDist()
+    const path = stablePath ?? extensionInstallTargets.find((item) => item.id === 'chrome')?.path ?? ''
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error('Clipboard API unavailable')
+      await navigator.clipboard.writeText(path)
+      setAiSettingsStatus('Chrome install folder path copied')
+    } catch {
+      // Permission-denied clipboard writes throw rather than resolve — show
+      // the path directly rather than leaving the action looking like it did
+      // nothing.
+      setAiSettingsStatus(path)
+    }
+    await refreshExtensionInstallStatus()
   }
 
   async function saveAiProviderSecret(providerId: string, secret: string) {
@@ -5638,7 +5663,7 @@ function FileWorkspace({
             void getCurrentWindow().startResizeDragging('SouthEast')
           }}
         />
-        <section className="content-region">
+        <section className="content-region" data-reflow={activeView === 'Outline' || activeView === 'Slides' ? 'true' : undefined}>
           <div className="view-region">
             {activeView === 'Canvas' && (
               <div className={isCanvasNoticeVisible ? 'canvas-notice is-visible' : 'canvas-notice'} role="status">
@@ -5716,6 +5741,7 @@ function FileWorkspace({
                 aiProviders={aiProviders}
                 aiRoutingMode={aiRoutingMode}
                 selectedAiProviderId={selectedAiProviderId}
+                onSelectedAiProviderIdChange={setSelectedAiProviderId}
                 onOpenAiSettings={() => setIsSettingsOpen(true)}
                 onApplyProjectTemplate={applyProjectTemplate}
                 onGeneratePromptStarter={generatePromptStarter}
@@ -5850,6 +5876,7 @@ function FileWorkspace({
             onWelcomeOpen={() => { openWelcomeProject(false); setIsSettingsOpen(false) }}
             onExtensionAction={handleExtensionInstallAction}
             onExtensionRefresh={refreshExtensionInstallStatus}
+            onCopyChromeDistPath={handleCopyChromeDistPath}
             onClose={() => setIsSettingsOpen(false)}
           />
         </div>
@@ -6034,6 +6061,56 @@ function App() {
   }
 
   const pendingCloseFile = pendingCloseFileId ? files.find((file) => file.id === pendingCloseFileId) ?? null : null
+  const [dragOverTabId, setDragOverTabId] = useState<string | null>(null)
+  const draggingTabIdRef = useRef<string | null>(null)
+
+  function reorderFiles(draggedId: string, targetId: string) {
+    if (draggedId === targetId) return
+    setFiles((current) => {
+      const from = current.findIndex((file) => file.id === draggedId)
+      const to = current.findIndex((file) => file.id === targetId)
+      if (from === -1 || to === -1) return current
+      const next = current.slice()
+      const [moved] = next.splice(from, 1)
+      next.splice(to, 0, moved)
+      return next
+    })
+  }
+
+  function cycleActiveFile(direction: 1 | -1) {
+    if (files.length < 2) return
+    const index = files.findIndex((file) => file.id === activeFileId)
+    const nextIndex = (index + direction + files.length) % files.length
+    setActiveFileId(files[nextIndex].id)
+  }
+
+  // Tab bar shortcuts live at the app level (not the per-tab keydown handler
+  // above) because closing/cycling tabs needs `files`/`activeFileId`, which
+  // only exist here — the per-tab component only ever sees the one file it
+  // renders. Cmd+W matches every browser's "close current tab"; Ctrl+Tab /
+  // Cmd+Shift+[ / Cmd+Shift+] match the cycle shortcuts VS Code, Arc, and
+  // Chrome all use for the same visual tab-strip metaphor this borrows.
+  useEffect(() => {
+    function handleTabBarKeydown(event: KeyboardEvent) {
+      const key = event.key.toLowerCase()
+      if ((event.metaKey || event.ctrlKey) && !event.altKey && key === 'w') {
+        event.preventDefault()
+        requestCloseFile(activeFileId)
+        return
+      }
+      if (event.ctrlKey && !event.metaKey && !event.altKey && key === 'tab') {
+        event.preventDefault()
+        cycleActiveFile(event.shiftKey ? -1 : 1)
+        return
+      }
+      if (event.metaKey && event.shiftKey && !event.ctrlKey && !event.altKey && (event.key === ']' || event.key === '[')) {
+        event.preventDefault()
+        cycleActiveFile(event.key === ']' ? 1 : -1)
+      }
+    }
+    window.addEventListener('keydown', handleTabBarKeydown)
+    return () => window.removeEventListener('keydown', handleTabBarKeydown)
+  }, [activeFileId, files])
 
   const tabBar = (
     <nav
@@ -6043,17 +6120,46 @@ function App() {
       onDoubleClick={toggleWindowMaximizeFromChrome}
       onPointerDown={startWindowDrag}
     >
-      <div className={files.length === 1 ? 'file-tab-list is-single' : 'file-tab-list'}>
+      <div className="file-tab-list">
         {files.map((file) => (
           <button
             key={file.id}
             type="button"
             data-file-tab-id={file.id}
-            className={file.id === activeFileId ? 'file-tab is-active' : 'file-tab'}
+            className={[
+              file.id === activeFileId ? 'file-tab is-active' : 'file-tab',
+              dragOverTabId === file.id ? 'is-drop-target' : '',
+            ].filter(Boolean).join(' ')}
             aria-pressed={file.id === activeFileId}
+            draggable
             onClick={() => setActiveFileId(file.id)}
             onAuxClick={(event) => {
               if (event.button === 1) requestCloseFile(file.id)
+            }}
+            onDragStart={(event) => {
+              draggingTabIdRef.current = file.id
+              event.dataTransfer.effectAllowed = 'move'
+              event.dataTransfer.setData('application/x-kira-file-tab-id', file.id)
+            }}
+            onDragOver={(event) => {
+              if (!draggingTabIdRef.current || draggingTabIdRef.current === file.id) return
+              event.preventDefault()
+              event.dataTransfer.dropEffect = 'move'
+              setDragOverTabId(file.id)
+            }}
+            onDragLeave={() => {
+              setDragOverTabId((current) => (current === file.id ? null : current))
+            }}
+            onDrop={(event) => {
+              event.preventDefault()
+              const draggedId = draggingTabIdRef.current ?? event.dataTransfer.getData('application/x-kira-file-tab-id')
+              if (draggedId) reorderFiles(draggedId, file.id)
+              draggingTabIdRef.current = null
+              setDragOverTabId(null)
+            }}
+            onDragEnd={() => {
+              draggingTabIdRef.current = null
+              setDragOverTabId(null)
             }}
           >
             {file.isDirty && <span className="file-tab-dirty" aria-hidden="true" />}
@@ -6655,6 +6761,7 @@ function SettingsView({
   onWelcomeOpen,
   onExtensionAction,
   onExtensionRefresh,
+  onCopyChromeDistPath,
   onClose,
 }: {
   providers: AiProviderProfile[]
@@ -6682,6 +6789,7 @@ function SettingsView({
   onWelcomeOpen: () => void
   onExtensionAction: (targetId: string) => void
   onExtensionRefresh: () => void
+  onCopyChromeDistPath: () => void | Promise<void>
   onClose: () => void
 }) {
   const remoteProviders = providers.filter((provider) => provider.authMode !== 'local')
@@ -6805,8 +6913,8 @@ function SettingsView({
         onClick={() => onActiveProviderChange(provider.id)}
       >
         <span>
-          <strong>{provider.name}</strong>
-          <em>{aiProviderTypeLabels[provider.type]}</em>
+          <strong title={provider.name}>{provider.name}</strong>
+          <em title={aiProviderTypeLabels[provider.type]}>{aiProviderTypeLabels[provider.type]}</em>
         </span>
         <small>{aiProviderStatusLabels[provider.status]}</small>
       </button>
@@ -6922,11 +7030,44 @@ function SettingsView({
           <div className="capture-list" role="list">
             {extensionInstallTargets.map((target) => {
               const status = extensionStatusForTarget(extensionInstallStatus, target.id)
+              if (target.id === 'chrome') {
+                return (
+                  <div className="capture-row capture-row--steps" role="listitem" data-status={status.installed && !status.disabled ? 'installed' : 'not-detected'} key={target.id}>
+                    <div className="capture-row-head">
+                      <strong>{target.title}</strong>
+                      <small>{status.installed && !status.disabled ? 'Installed' : status.detail}</small>
+                    </div>
+                    <ol className="capture-steps">
+                      <li>
+                        <span>Copy the install folder path</span>
+                        <button className="quiet-button" type="button" onClick={() => void onCopyChromeDistPath()}>
+                          <Clipboard size={13} />
+                          Copy path
+                        </button>
+                      </li>
+                      <li>
+                        <span>Open chrome://extensions</span>
+                        <button
+                          className="icon-button"
+                          type="button"
+                          onClick={() => onExtensionAction(target.settingsActionId)}
+                          aria-label="Open chrome://extensions"
+                          title="Open chrome://extensions"
+                        >
+                          <ExternalLink size={14} />
+                        </button>
+                      </li>
+                      <li><span>Turn on Developer mode (top right of that page)</span></li>
+                      <li><span>Click "Load unpacked" and paste the copied path</span></li>
+                    </ol>
+                  </div>
+                )
+              }
               return (
-                <div className="capture-row" role="listitem" data-status={status.installed ? 'installed' : 'not-detected'} key={target.id}>
+                <div className="capture-row" role="listitem" data-status={status.installed && !status.disabled ? 'installed' : 'not-detected'} key={target.id}>
                   <div>
                     <strong>{target.title}</strong>
-                    <small>{status.installed ? 'Installed' : status.detail}</small>
+                    <small>{status.installed && !status.disabled ? 'Installed' : status.detail}</small>
                   </div>
                   <div className="capture-row-actions">
                     <button className="quiet-button" type="button" onClick={() => onExtensionAction(target.installActionId)}>
@@ -8119,6 +8260,7 @@ function GraphCanvas({
   aiProviders,
   aiRoutingMode,
   selectedAiProviderId,
+  onSelectedAiProviderIdChange,
   onOpenAiSettings,
   onApplyProjectTemplate,
   onGeneratePromptStarter,
@@ -8206,6 +8348,7 @@ function GraphCanvas({
   aiProviders: AiProviderProfile[]
   aiRoutingMode: AiRoutingMode
   selectedAiProviderId: string
+  onSelectedAiProviderIdChange?: (id: string) => void
   onOpenAiSettings: () => void
   onApplyProjectTemplate: (templateId: ProjectTemplateId) => void
   onGeneratePromptStarter: (prompt: string) => void
@@ -8600,6 +8743,42 @@ function GraphCanvas({
     // focusing an invisible field mid-morph would show no caret at all.
     const timer = window.setTimeout(() => kiraInputRef.current?.focus(), 180)
     return () => window.clearTimeout(timer)
+  }, [isKiraOpen])
+
+  // The dock floats above the canvas and can land directly over a node with
+  // no visual cue that anything is underneath it. Dim whatever it's covering
+  // so the occlusion reads as intentional layering instead of a bug. Polls
+  // on a short interval rather than the pan/zoom state itself — cheap, and
+  // avoids coupling this to the canvas viewport's own change tracking.
+  useEffect(() => {
+    if (!isKiraOpen) return
+    const dimmedNodes = new Set<HTMLElement>()
+
+    function recomputeOverlap() {
+      const dock = kiraDockRef.current
+      if (!(dock instanceof HTMLElement)) return
+      const dockBox = dock.getBoundingClientRect()
+      const nextDimmed = new Set<HTMLElement>()
+      document.querySelectorAll<HTMLElement>('[data-node-id]').forEach((node) => {
+        const box = node.getBoundingClientRect()
+        const overlaps =
+          box.left < dockBox.right && box.right > dockBox.left && box.top < dockBox.bottom && box.bottom > dockBox.top
+        if (overlaps) nextDimmed.add(node)
+      })
+      dimmedNodes.forEach((node) => {
+        if (!nextDimmed.has(node)) node.classList.remove('is-dimmed-by-kira')
+      })
+      nextDimmed.forEach((node) => node.classList.add('is-dimmed-by-kira'))
+      dimmedNodes.clear()
+      nextDimmed.forEach((node) => dimmedNodes.add(node))
+    }
+
+    recomputeOverlap()
+    const interval = window.setInterval(recomputeOverlap, 400)
+    return () => {
+      window.clearInterval(interval)
+      dimmedNodes.forEach((node) => node.classList.remove('is-dimmed-by-kira'))
+    }
   }, [isKiraOpen])
 
   // The Kira dock is the only floating canvas layer that doesn't already use
@@ -9673,7 +9852,7 @@ function GraphCanvas({
       : 0
     const isThinking = kiraSession?.status === 'thinking'
     const isError = kiraSession?.status === 'error'
-    const hasTray = open && (isKiraContextOpen || isKiraSuggestOpen)
+    const hasTray = open && isKiraSuggestOpen
     const placeholder = !routedProvider
       ? t('kira.placeholderNoProvider', lang)
       : anchorNode
@@ -9694,14 +9873,9 @@ function GraphCanvas({
         aria-label="Kira"
         aria-modal={false}
         onKeyDown={(event) => {
-          // Bound to the whole dock, not just the textarea, so Escape works
-          // from every focusable element inside it — the scope <select>,
-          // context chip remove buttons, and suggestion buttons are all
-          // tabbable, and Escape did nothing from any of them before this.
           if (event.key !== 'Escape') return
           event.preventDefault()
-          if (isKiraContextOpen || isKiraSuggestOpen) {
-            setIsKiraContextOpen(false)
+          if (isKiraSuggestOpen) {
             setIsKiraSuggestOpen(false)
             kiraInputRef.current?.focus()
             return
@@ -9709,120 +9883,199 @@ function GraphCanvas({
           closeKiraSession()
         }}
       >
-        <div className="kira-dock-row">
+        {!open ? (
           <button
             type="button"
             ref={kiraOrbRef}
             className="kira-dock-orb"
             aria-label={t('kira.askLabel', lang)}
-            aria-expanded={open}
-            data-tooltip={open ? undefined : 'Kira'}
-            tabIndex={open ? -1 : 0}
-            inert={open || undefined}
+            aria-expanded={false}
+            data-tooltip="Kira"
+            tabIndex={0}
             onClick={() => (kiraSession ? closeKiraSession() : openKiraFromRail())}
           >
             <KiraMark size={18} state={isThinking ? 'thinking' : 'rest'} />
           </button>
+        ) : (
+          <div className="kira-dock-composer">
+            {/* 1. Bundled context & tags inside textbox */}
+            <div className="kira-dock-context-bar">
+              {/* Context Scope tag */}
+              <div className="kira-dock-scope-chip" title="Context scope">
+                <Layers size={11} className="kira-dock-chip-icon" />
+                <select
+                  aria-label="Context scope"
+                  value={kiraSession?.scope ?? 'downstream_branch'}
+                  onChange={(event) => setKiraSession((current) => current ? { ...current, scope: event.target.value as AiNodeScope, removedContextKeys: [] } : current)}
+                >
+                  {(Object.keys(aiNodeScopeLabels) as AiNodeScope[]).map((scope) => (
+                    <option key={scope} value={scope}>{aiNodeScopeLabels[scope]}</option>
+                  ))}
+                </select>
+                <ChevronDown size={10} className="kira-dock-chip-chevron" />
+              </div>
 
-          <span className="kira-dock-sigil" aria-hidden="true">
-            <KiraMark size={20} state={isThinking ? 'thinking' : 'rest'} />
-          </span>
+              {/* Context Node tags */}
+              {contextNodes.map((node) => (
+                <span className="kira-chip" key={`${node.kind}:${node.id}`} title={node.title}>
+                  <span className="kira-chip-kind">{graphNodeKindLabel(node.kind)}</span>
+                  <span className="kira-chip-title">{node.title.length > 18 ? `${node.title.slice(0, 18)}…` : node.title}</span>
+                  <button
+                    type="button"
+                    className="kira-chip-remove"
+                    aria-label={`Remove ${node.title} from context`}
+                    onClick={() => setKiraSession((current) => current ? { ...current, removedContextKeys: [...current.removedContextKeys, `${node.kind}:${node.id}`] } : current)}
+                  >
+                    <X size={10} />
+                  </button>
+                </span>
+              ))}
 
-          <textarea
-            className="kira-dock-input"
-            ref={kiraInputRef}
-            rows={1}
-            placeholder={placeholder}
-            value={kiraSession?.prompt ?? ''}
-            disabled={isThinking}
-            tabIndex={open ? 0 : -1}
-            inert={!open || undefined}
-            onChange={(event) => {
-              setKiraSession((current) => current ? { ...current, prompt: event.target.value } : current)
-              // Auto-grow up to ~6 lines (see .kira-dock-input max-height),
-              // then the textarea's own overflow-y:auto takes over — a
-              // multi-line message no longer just scrolls invisibly inside
-              // a one-line box.
-              const el = event.currentTarget
-              el.style.height = 'auto'
-              el.style.height = `${el.scrollHeight}px`
-            }}
-            onKeyDown={handleKiraInputKeyDown}
-          />
+              {/* Attached file chips */}
+              {kiraSession && kiraSession.attachments.map((attachment) => (
+                <span className="kira-attachment-chip" key={attachment.id} title={attachment.name}>
+                  {attachment.isImage ? (
+                    <img src={attachment.previewUrl} alt="" />
+                  ) : (
+                    <FileText size={11} />
+                  )}
+                  <span className="kira-attachment-name">{attachment.name}</span>
+                  <button
+                    type="button"
+                    aria-label={`Remove ${attachment.name}`}
+                    onClick={() => removeKiraAttachment(attachment.id)}
+                  >
+                    <X size={10} />
+                  </button>
+                </span>
+              ))}
+            </div>
 
-          <div className="kira-dock-actions" inert={!open || undefined}>
-            <label className="kira-dock-attach" aria-label="Attach file" title="Attach file">
-              <Paperclip size={13} />
-              <input
-                type="file"
-                multiple
+            {/* 2. Textarea with rich auto-expand & long paragraph support */}
+            <div className="kira-dock-input-wrap">
+              <textarea
+                className="kira-dock-input"
+                ref={kiraInputRef}
+                rows={1}
+                placeholder={placeholder}
+                value={kiraSession?.prompt ?? ''}
+                disabled={isThinking}
+                tabIndex={0}
                 onChange={(event) => {
-                  if (event.target.files?.length) addKiraAttachments(event.target.files)
-                  event.target.value = ''
+                  setKiraSession((current) => current ? { ...current, prompt: event.target.value } : current)
+                  const el = event.currentTarget
+                  el.style.height = 'auto'
+                  el.style.height = `${Math.min(el.scrollHeight, 240)}px`
                 }}
+                onKeyDown={handleKiraInputKeyDown}
               />
-            </label>
-            <button
-              type="button"
-              className={isKiraContextOpen ? 'kira-dock-pill is-open' : 'kira-dock-pill'}
-              aria-expanded={isKiraContextOpen}
-              aria-label={`Context: ${contextNodes.length} nodes`}
-              onClick={() => { setIsKiraContextOpen((current) => !current); setIsKiraSuggestOpen(false) }}
-            >
-              <Layers size={12} />
-              {contextNodes.length}
-            </button>
-            <button
-              type="button"
-              className={isKiraSuggestOpen ? 'kira-dock-pill is-open' : 'kira-dock-pill'}
-              aria-expanded={isKiraSuggestOpen}
-              aria-label="Suggestions"
-              onClick={() => { setIsKiraSuggestOpen((current) => !current); setIsKiraContextOpen(false) }}
-            >
-              <HelpCircle size={12} />
-            </button>
-            <span className="kira-dock-sep" aria-hidden="true" />
-            <button
-              type="button"
-              className="kira-dock-submit"
-              aria-label={t('kira.askLabel', lang)}
-              disabled={!canSubmitKira()}
-              onClick={() => void submitKiraSession()}
-            >
-              {isThinking ? <KiraMark size={13} state="thinking" /> : <ArrowUp size={15} />}
-            </button>
-            <button type="button" className="kira-dock-close" aria-label="Close Kira" onClick={closeKiraSession}>
-              <X size={13} />
-            </button>
-          </div>
-        </div>
+            </div>
 
-        {open && kiraSession && kiraSession.attachments.length > 0 && (
-          <div className="kira-dock-attachments" aria-label="Attached files">
-            {kiraSession.attachments.map((attachment) => (
-              <span className="kira-attachment-chip" key={attachment.id} title={attachment.name}>
-                {attachment.isImage ? (
-                  <img src={attachment.previewUrl} alt="" />
-                ) : (
-                  <FileText size={13} />
-                )}
-                <span className="kira-attachment-name">{attachment.name}</span>
+            {/* 3. Bottom controls bar inside the composer box */}
+            <div className="kira-dock-footer">
+              <div className="kira-dock-footer-left">
+                {/* AI Model Selector Button */}
+                <div className="kira-dock-model-selector" title="Select AI Model">
+                  <Sparkles size={12} className="kira-dock-model-icon" />
+                  <span className="kira-dock-model-label">
+                    {routedProvider ? (routedProvider.model && routedProvider.model !== 'auto' ? routedProvider.model : routedProvider.name) : 'Select Model'}
+                  </span>
+                  <ChevronDown size={11} className="kira-dock-model-chevron" />
+                  <select
+                    aria-label="Select AI Model"
+                    value={kiraSession?.providerOverrideId ?? routedProvider?.id ?? ''}
+                    onChange={(event) => {
+                      const val = event.target.value
+                      if (val === '__settings__') {
+                        onOpenAiSettings()
+                        return
+                      }
+                      const prov = aiProviders.find((p) => p.id === val)
+                      if (prov) {
+                        setKiraSession((current) => current ? {
+                          ...current,
+                          providerOverrideId: prov.id,
+                          modelOverride: prov.model,
+                        } : current)
+                        onSelectedAiProviderIdChange?.(prov.id)
+                      }
+                    }}
+                  >
+                    {aiProviders.length === 0 ? (
+                      <option value="__settings__">Configure AI Provider…</option>
+                    ) : (
+                      <>
+                        <optgroup label="AI Providers">
+                          {aiProviders.map((p) => (
+                            <option key={p.id} value={p.id}>
+                              {p.name} ({p.model})
+                            </option>
+                          ))}
+                        </optgroup>
+                        <option value="__settings__">⚙️ AI Settings…</option>
+                      </>
+                    )}
+                  </select>
+                </div>
+
+                {/* Attach file button */}
+                <label className="kira-dock-action-btn" aria-label="Attach file" title="Attach file">
+                  <Paperclip size={13} />
+                  <input
+                    type="file"
+                    multiple
+                    onChange={(event) => {
+                      if (event.target.files?.length) addKiraAttachments(event.target.files)
+                      event.target.value = ''
+                    }}
+                  />
+                </label>
+
+                {/* Suggestions button */}
                 <button
                   type="button"
-                  aria-label={`Remove ${attachment.name}`}
-                  onClick={() => removeKiraAttachment(attachment.id)}
+                  className={isKiraSuggestOpen ? 'kira-dock-action-btn is-active' : 'kira-dock-action-btn'}
+                  aria-expanded={isKiraSuggestOpen}
+                  aria-label="Prompt Suggestions"
+                  title="Prompt Suggestions"
+                  onClick={() => setIsKiraSuggestOpen((current) => !current)}
                 >
-                  <X size={10} />
+                  <HelpCircle size={13} />
                 </button>
-              </span>
-            ))}
+              </div>
+
+              <div className="kira-dock-footer-right">
+                {tokenEstimate > 0 && (
+                  <span className="kira-dock-token-meta">~{tokenEstimate.toLocaleString()} tokens</span>
+                )}
+                <button
+                  type="button"
+                  className="kira-dock-submit"
+                  aria-label={t('kira.askLabel', lang)}
+                  title="Send prompt (Enter)"
+                  disabled={!canSubmitKira()}
+                  onClick={() => void submitKiraSession()}
+                >
+                  {isThinking ? <KiraMark size={13} state="thinking" /> : <ArrowUp size={14} />}
+                </button>
+                <button
+                  type="button"
+                  className="kira-dock-close-btn"
+                  aria-label="Close Kira"
+                  title="Close (Esc)"
+                  onClick={closeKiraSession}
+                >
+                  <X size={13} />
+                </button>
+              </div>
+            </div>
           </div>
         )}
 
-        {open && routedProvider && (
+        {open && routedProvider && isThinking && (
           <p className="kira-dock-provider" aria-live="polite">
-            <span className={isThinking ? 'kira-dock-provider-dot is-busy' : 'kira-dock-provider-dot'} aria-hidden="true" />
-            {isThinking ? `${routedProvider.name} is generating…` : routedProvider.name}
+            <span className="kira-dock-provider-dot is-busy" aria-hidden="true" />
+            {`${routedProvider.name} is generating…`}
           </p>
         )}
 
@@ -9843,41 +10096,9 @@ function GraphCanvas({
           </p>
         )}
 
-        <div className="kira-dock-tray">
-          <div className="kira-dock-tray-inner">
-            {isKiraContextOpen && kiraSession && (
-              <>
-                <div className="kira-dock-tray-head">
-                  <select
-                    aria-label="Context scope"
-                    value={kiraSession.scope}
-                    onChange={(event) => setKiraSession((current) => current ? { ...current, scope: event.target.value as AiNodeScope, removedContextKeys: [] } : current)}
-                  >
-                    {(Object.keys(aiNodeScopeLabels) as AiNodeScope[]).map((scope) => (
-                      <option key={scope} value={scope}>{aiNodeScopeLabels[scope]}</option>
-                    ))}
-                  </select>
-                  <span className="kira-dock-tray-meta">{contextNodes.length} nodes · ~{tokenEstimate.toLocaleString()} tokens</span>
-                </div>
-                <div className="kira-chip-row">
-                  {contextNodes.map((node) => (
-                    <span className="kira-chip" key={`${node.kind}:${node.id}`} title={node.title}>
-                      <span className="kira-chip-kind">{graphNodeKindLabel(node.kind)}</span>
-                      {node.title.length > 20 ? `${node.title.slice(0, 20)}…` : node.title}
-                      <button
-                        type="button"
-                        className="kira-chip-remove"
-                        aria-label={`Remove ${node.title} from context`}
-                        onClick={() => setKiraSession((current) => current ? { ...current, removedContextKeys: [...current.removedContextKeys, `${node.kind}:${node.id}`] } : current)}
-                      >
-                        <X size={10} />
-                      </button>
-                    </span>
-                  ))}
-                </div>
-              </>
-            )}
-            {isKiraSuggestOpen && (
+        {open && isKiraSuggestOpen && (
+          <div className="kira-dock-tray">
+            <div className="kira-dock-tray-inner">
               <div className="kira-dock-suggestions">
                 {suggestions.map((suggestion) => (
                   <button
@@ -9895,9 +10116,9 @@ function GraphCanvas({
                   </button>
                 ))}
               </div>
-            )}
+            </div>
           </div>
-        </div>
+        )}
       </div>
     )
   }
@@ -17232,6 +17453,15 @@ async function openNativeExtensionInstallTarget(targetId: string) {
   await invoke<void>('open_extension_install_target', { targetId })
 }
 
+// Copies the bundled Chrome extension into a stable Application Support path
+// (surviving future KIRA updates) and hands back that path so it can be
+// written to the clipboard for "Load unpacked" — see sync_chrome_extension_dist
+// in src-tauri/src/lib.rs.
+async function syncChromeExtensionDist(): Promise<string | null> {
+  if (!isTauriRuntime()) return null
+  return invoke<string>('sync_chrome_extension_dist_command')
+}
+
 function extensionStatusForTarget(status: ExtensionInstallStatus, targetId: string) {
   return targetId === 'safari' ? status.safari : status.chrome
 }
@@ -17562,7 +17792,7 @@ function slideLayoutsToHtml(slides: SlideLayout[], metadata: { title: string; ge
     .palette-strip { display: grid; overflow: hidden; height: 42px; grid-auto-flow: column; grid-auto-columns: 1fr; }
     figcaption { overflow: hidden; padding: 10px 12px; color: #c9c8bd; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
     .missing { align-self: center; color: #b7a4df; }
-    .deck-hint { position: fixed; right: 16px; bottom: 16px; z-index: 9; display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 999px; background: rgba(255,255,255,.08); color: #c9c8bd; font-size: 12px; backdrop-filter: blur(8px); transition: opacity .4s ease; }
+    .deck-hint { position: fixed; right: 16px; bottom: 16px; z-index: 9; display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 6px; background: rgba(255,255,255,.08); color: #c9c8bd; font-size: 12px;  transition: opacity .4s ease; }
     .deck-progress { position: fixed; top: 0; left: 0; right: 0; z-index: 9; height: 3px; background: var(--deck-accent); transform-origin: left; transform: scaleX(0); transition: transform .25s ease; }
     @media (max-width: 860px) { .slide { grid-template-columns: 1fr; } aside { grid-auto-flow: column; justify-content: space-between; } h2 { max-width: 14ch; } }
     @page { size: 1280px 720px; margin: 0; }

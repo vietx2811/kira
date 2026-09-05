@@ -9,7 +9,6 @@
     "build": "bun run scripts/build.ts"
   },
   "dependencies": {
-    "@openai/codex-sdk": "0.142.0",
-    "@openai/codex": "0.142.0"
+    "@openai/codex-sdk": "0.142.0"
   }
 }

@@ -27,23 +27,23 @@
   --surface-drawer: #151716;
   --surface-inspector: #151716;
   --surface-inset: #0f1110;
-  --node-surface: rgb(21 24 21 / 0.82);
-  --node-surface-selected: rgb(19 23 21 / 0.94);
+  --node-surface: var(--surface-1);
+  --node-surface-selected: var(--surface-2);
   --node-border: rgb(255 255 255 / 0.045);
-  --node-shadow: 0 18px 48px rgb(0 0 0 / 0.35);
+  --node-shadow: 0 4px 12px rgba(0, 0, 0, 0.15), 0 0 0 1px var(--border-strong);
   --node-shadow-soft: 0 0 0 1px var(--accent-faint);
-  --node-shadow-rest: 0 6px 20px rgb(0 0 0 / 0.22);
-  --node-shadow-hover: 0 12px 34px rgb(0 0 0 / 0.3);
+  --node-shadow-rest: 0 2px 6px rgba(0, 0, 0, 0.1), 0 0 0 1px var(--border-soft);
+  --node-shadow-hover: 0 4px 12px rgba(0, 0, 0, 0.2), 0 0 0 1px var(--border-strong);
   --window-border: rgb(255 255 255 / 0.08);
   /* The window chrome and canvas gutter share the same native
      UnderWindowBackground layer. Only floating controls and drawers add tint. */
-  --material-window-chrome: transparent;
-  --material-drawer: rgb(12 14 13 / 0.78);
-  --material-inspector: rgb(13 15 14 / 0.82);
-  --glass-sidebar: var(--material-window-chrome);
+  --material-window-chrome: var(--bg-base);
+  --material-drawer: var(--surface-drawer);
+  --material-inspector: var(--surface-inspector);
+  --glass-sidebar: var(--bg-base);
   --glass-drawer: var(--material-drawer);
-  --glass-chrome: rgb(10 12 11 / 0.58);
-  --glass-content: rgb(10 12 11 / 0.34);
+  --glass-chrome: var(--surface-2);
+  --glass-content: var(--surface-1);
   --glass-inspector: var(--material-inspector);
   --glass-hover: rgb(255 255 255 / 0.055);
   --glass-active: var(--accent-faint);
@@ -64,15 +64,10 @@
   --kira-warm: #f0c07f;
   --kira-mid: #d79fc0;
   --kira-cool: #a5a6ea;
-  --kira-sweep: linear-gradient(135deg, var(--kira-warm) 0%, var(--kira-mid) 52%, var(--kira-cool) 100%);
-  --kira-sweep-soft: linear-gradient(
-    135deg,
-    color-mix(in srgb, var(--kira-warm), transparent 62%) 0%,
-    color-mix(in srgb, var(--kira-mid), transparent 62%) 52%,
-    color-mix(in srgb, var(--kira-cool), transparent 62%) 100%
-  );
-  --kira-tint: color-mix(in srgb, var(--kira-mid), transparent 92%);
-  --kira-halo: color-mix(in srgb, var(--kira-mid), transparent 76%);
+  --kira-sweep: var(--accent-strong);
+  --kira-sweep-soft: var(--accent-weak);
+  --kira-tint: var(--accent-faint);
+  --kira-halo: transparent;
   --kira-border: color-mix(in srgb, var(--kira-mid), transparent 64%);
   --kira-text: #e8cfd9;
   /* Sized off the viewport, not a parent percentage — .kira-dock's
@@ -81,7 +76,7 @@
      already set inline on .workspace by JS and inherit down through the
      canvas tree, so the dock still shrinks correctly when the library or
      inspector drawer is open. */
-  --kira-dock-width: min(440px, calc(100vw - var(--canvas-overlay-left-inset, 0px) - var(--canvas-right-inset, 0px) - 64px));
+  --kira-dock-width: min(540px, calc(100vw - var(--canvas-overlay-left-inset, 0px) - var(--canvas-right-inset, 0px) - 48px));
   --kira-dock-lift: 74px;
   --danger: #d98779;
   --space-1: 4px;
@@ -229,7 +224,7 @@
 .inspector::-webkit-scrollbar-thumb,
 .version-list::-webkit-scrollbar-thumb {
   border: 2px solid transparent;
-  border-radius: 999px;
+  border-radius: var(--radius-2);
   background-color: rgb(255 255 255 / 0.14);
   background-clip: padding-box;
 }
@@ -314,7 +309,7 @@ button {
 .app-shell[data-glass-state="fallback"],
 .app-shell[data-glass-state="browser"] {
   background:
-    linear-gradient(180deg, rgb(255 255 255 / 0.035), rgb(255 255 255 / 0.01)),
+    rgb(255 255 255 / 0.02),
     rgb(13 14 13 / 0.96);
 }
 
@@ -363,7 +358,7 @@ button {
   height: 30px;
   padding: 0 8px 0 10px;
   border: 0;
-  border-radius: 9px;
+  border-radius: var(--radius-2);
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
@@ -409,7 +404,7 @@ button {
   width: 6px;
   height: 6px;
   flex: 0 0 auto;
-  border-radius: 999px;
+  border-radius: var(--radius-2);
   background: var(--accent-amber);
   animation: dirtyDotIn var(--duration-base) var(--ease-out-soft) both;
 }
@@ -424,6 +419,7 @@ button {
   min-width: 0;
   text-overflow: ellipsis;
   white-space: nowrap;
+  user-select: none;
 }
 
 .file-tab-close {
@@ -432,7 +428,7 @@ button {
   height: 16px;
   flex: 0 0 auto;
   place-items: center;
-  border-radius: 999px;
+  border-radius: var(--radius-2);
   color: var(--text-soft);
   opacity: 0;
   transition: opacity 120ms ease, background 120ms ease, color 120ms ease;
@@ -573,9 +569,8 @@ button {
   overflow-y: auto;
   padding: 12px;
   border: 1px solid var(--border-soft);
-  border-radius: 12px;
+  border-radius: var(--radius-3);
   background: var(--node-surface-selected);
-  backdrop-filter: blur(16px);
   pointer-events: auto;
 }
 
@@ -607,7 +602,7 @@ button {
   place-items: center;
   overflow: hidden;
   border: 0;
-  border-radius: 9px;
+  border-radius: var(--radius-2);
   background: transparent;
 }
 
@@ -670,8 +665,6 @@ button {
   justify-self: center;
   background: var(--glass-chrome);
   box-shadow: var(--panel-shadow);
-  -webkit-backdrop-filter: blur(18px) saturate(1.2);
-  backdrop-filter: blur(18px) saturate(1.2);
   pointer-events: auto;
 }
 
@@ -750,8 +743,6 @@ button {
   border: 1px solid rgb(255 255 255 / 0.055);
   background: var(--glass-chrome);
   box-shadow: var(--panel-shadow);
-  -webkit-backdrop-filter: blur(18px) saturate(1.2);
-  backdrop-filter: blur(18px) saturate(1.2);
 }
 
 .content-toolbar-actions {
@@ -813,8 +804,8 @@ button {
 
 .primary-button {
   border: 1px solid color-mix(in srgb, var(--accent-cyan), transparent 62%);
-  background: var(--glass-active);
-  color: var(--accent-strong);
+  background: var(--accent-cyan);
+  color: var(--bg-base); font-weight: 500;
 }
 
 .package-status {
@@ -927,7 +918,7 @@ button {
   left: -10px;
   width: 3px;
   height: 20px;
-  border-radius: 999px;
+  border-radius: var(--radius-2);
   background: var(--accent-cyan);
   content: "";
   opacity: 0;
@@ -976,7 +967,7 @@ button {
   width: 27px;
   height: 27px;
   place-items: center;
-  border-radius: 999px;
+  border-radius: var(--radius-2);
   background: transparent;
   color: var(--text-muted);
 }
@@ -1000,11 +991,10 @@ button {
   display: grid;
   min-width: 156px;
   padding: 6px;
-  border: 1px solid rgb(255 255 255 / 0.065);
+  border: 1px solid rgb(255 255 255 / 0.1);
   border-radius: 10px;
-  background: rgb(15 17 16 / 0.94);
+  background: rgb(15 17 16 / 0.97);
   box-shadow: 0 18px 44px rgb(0 0 0 / 0.36);
-  backdrop-filter: blur(18px) saturate(1.16);
   gap: 2px;
   transform-origin: top;
   animation: popoverIn var(--duration-base) var(--ease-out-soft) both;
@@ -1039,7 +1029,7 @@ button {
   height: 30px;
   padding: 0 8px;
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--radius-2);
   background: transparent;
   color: var(--text-soft);
   cursor: pointer;
@@ -1062,9 +1052,8 @@ button {
 .icon-button:hover,
 .quiet-button:hover,
 .primary-button:hover {
-  transform: translateY(-1px);
-  background: rgb(255 255 255 / 0.07);
-  color: var(--text-main);
+  background: var(--accent-strong);
+  color: var(--bg-base);
 }
 
 .workspace {
@@ -1122,7 +1111,7 @@ button {
   height: 26px;
   padding: 0;
   border: 1px solid var(--border-soft);
-  border-radius: 999px;
+  border-radius: var(--radius-2);
   place-items: center;
   background: color-mix(in srgb, var(--surface-inspector), transparent 8%);
   box-shadow: 0 8px 24px rgb(0 0 0 / 0.24);
@@ -1158,6 +1147,15 @@ button {
   min-width: 0;
   min-height: 0;
   background: transparent;
+  transition: left var(--duration-panel) var(--ease-out-soft);
+}
+
+/* Outline and Slides are document-style views, not an infinite pan canvas —
+   unlike Canvas/3D, their content must reflow around the Library drawer
+   instead of sitting behind it. Reuses the same drawer-width inset the
+   canvas overlays (dock, zoom controls) already account for. */
+.content-region[data-reflow="true"] {
+  left: calc(var(--shell-rail-width) + var(--canvas-overlay-left-inset, 0px));
 }
 
 .view-region {
@@ -1178,7 +1176,7 @@ button {
   max-width: min(420px, calc(100% - 32px));
   padding: 8px 16px;
   border: 1px solid var(--border-soft);
-  border-radius: 999px;
+  border-radius: var(--radius-2);
   background: var(--glass-inspector);
   box-shadow: var(--panel-shadow);
   color: var(--text-main);
@@ -1191,8 +1189,6 @@ button {
   pointer-events: none;
   transform: translate(-50%, 6px);
   transition: opacity 160ms ease, transform 160ms ease;
-  -webkit-backdrop-filter: blur(20px) saturate(1.22);
-  backdrop-filter: blur(20px) saturate(1.22);
 }
 
 .canvas-notice.is-visible {
@@ -1218,7 +1214,7 @@ button {
   bottom: 16px;
   left: 0;
   width: 1px;
-  border-radius: 999px;
+  border-radius: var(--radius-2);
   background: color-mix(in srgb, var(--text-main), transparent 96%);
   content: "";
 }
@@ -1268,12 +1264,7 @@ button {
   display: grid;
   place-items: center;
   padding: 28px;
-  background:
-    radial-gradient(circle at 22% 18%, color-mix(in srgb, var(--accent-cyan), transparent 78%), transparent 32%),
-    radial-gradient(circle at 78% 76%, color-mix(in srgb, var(--accent-amber), transparent 88%), transparent 30%),
-    color-mix(in srgb, var(--bg-canvas), transparent 18%);
-  -webkit-backdrop-filter: blur(26px) saturate(1.18);
-  backdrop-filter: blur(26px) saturate(1.18);
+  background: var(--bg-canvas);
 }
 
 .onboarding-shell {
@@ -1284,13 +1275,11 @@ button {
   width: min(860px, 100%);
   max-height: min(760px, calc(100dvh - 56px));
   border: 1px solid var(--border-strong);
-  border-radius: 18px;
+  border-radius: var(--radius-3);
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--text-main), transparent 94%), transparent),
+    transparent,
     var(--glass-inspector);
   box-shadow: var(--panel-shadow);
-  -webkit-backdrop-filter: blur(30px) saturate(1.24);
-  backdrop-filter: blur(30px) saturate(1.24);
   overflow: hidden;
 }
 
@@ -1332,7 +1321,7 @@ button {
   position: absolute;
   inset: 14px;
   border: 1px solid color-mix(in srgb, var(--accent-cyan), transparent 70%);
-  border-radius: 999px;
+  border-radius: var(--radius-2);
   animation: onboardingSpin 12s linear infinite;
 }
 
@@ -1341,7 +1330,7 @@ button {
   position: absolute;
   width: 8px;
   height: 8px;
-  border-radius: 999px;
+  border-radius: var(--radius-2);
   background: var(--accent-cyan);
   content: "";
 }
@@ -1363,9 +1352,9 @@ button {
   display: grid;
   place-items: center;
   border: 1px solid var(--border-soft);
-  border-radius: 24px;
+  border-radius: var(--radius-3);
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--text-main), transparent 90%), transparent),
+    transparent,
     var(--node-surface-selected);
   box-shadow: var(--node-shadow);
   animation: onboardingBreathe 4s ease-in-out infinite;
@@ -1383,7 +1372,7 @@ button {
   height: 34px;
   place-items: center;
   border: 1px solid var(--border-soft);
-  border-radius: 999px;
+  border-radius: var(--radius-2);
   background: var(--node-surface);
   box-shadow: var(--node-shadow-soft);
   font-size: 1rem;
@@ -1452,7 +1441,7 @@ button {
   min-height: 28px;
   padding: 0 10px;
   border: 1px solid var(--border-soft);
-  border-radius: 999px;
+  border-radius: var(--radius-2);
   background: var(--glass-hover);
   color: var(--text-soft);
   font-size: 0.74rem;
@@ -1477,9 +1466,9 @@ button {
   width: 100%;
   padding: 16px 18px;
   border: 1px solid color-mix(in srgb, var(--accent-cyan), transparent 62%);
-  border-radius: 16px;
+  border-radius: var(--radius-3);
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--accent-cyan), transparent 88%), transparent),
+    color-mix(in srgb, var(--accent-cyan), transparent 90%),
     var(--glass-active);
   color: var(--text-main);
   cursor: pointer;
@@ -1491,7 +1480,6 @@ button {
 }
 .onboarding-primary-cta:hover {
   border-color: color-mix(in srgb, var(--accent-cyan), transparent 44%);
-  transform: translateY(-1px);
 }
 .onboarding-primary-cta svg {
   color: var(--accent-strong);
@@ -1529,7 +1517,7 @@ button {
   width: 100%;
   padding: 12px 14px;
   border: 1px solid var(--border-soft);
-  border-radius: 12px;
+  border-radius: var(--radius-3);
   background: color-mix(in srgb, var(--surface-inspector), transparent 22%);
   color: var(--text-soft);
   cursor: pointer;
@@ -1587,9 +1575,9 @@ button {
   min-width: 0;
   padding: 14px;
   border: 1px solid var(--border-soft);
-  border-radius: 14px;
+  border-radius: var(--radius-3);
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--text-main), transparent 96%), transparent),
+    transparent,
     color-mix(in srgb, var(--surface-inspector), transparent 12%);
   gap: 10px;
 }
@@ -1626,14 +1614,14 @@ button {
   height: 34px;
   place-items: center;
   border: 1px solid var(--border-soft);
-  border-radius: 12px;
+  border-radius: var(--radius-3);
   background: var(--glass-active);
   font-size: 1.02rem;
 }
 
 .onboarding-detail {
   border: 1px solid var(--border-soft);
-  border-radius: 12px;
+  border-radius: var(--radius-3);
   background: var(--inset-field);
 }
 
@@ -1786,8 +1774,6 @@ button {
   border-radius: var(--shell-card-radius);
   background: var(--glass-drawer);
   box-shadow: none;
-  -webkit-backdrop-filter: blur(26px) saturate(1.18);
-  backdrop-filter: blur(26px) saturate(1.18);
 }
 
 .inspector {
@@ -1795,8 +1781,6 @@ button {
   border-radius: var(--shell-card-radius);
   background: var(--glass-inspector);
   box-shadow: none;
-  -webkit-backdrop-filter: blur(26px) saturate(1.18);
-  backdrop-filter: blur(26px) saturate(1.18);
 }
 
 .inbox.is-dragging-files {
@@ -1833,7 +1817,7 @@ button {
   bottom: 0;
   left: var(--space-4);
   height: 1px;
-  background: linear-gradient(90deg, rgb(255 255 255 / 0.07), rgb(255 255 255 / 0));
+  background: transparent;
   content: "";
 }
 
@@ -1885,10 +1869,10 @@ h2 {
 
 .panel-meta-badge {
   padding: 1px 6px;
-  border-radius: 999px;
+  border-radius: var(--radius-2);
   background: var(--accent-faint);
   color: var(--accent-strong);
-  font-size: 0.64rem;
+  font-size: 0.7rem;
   font-weight: 700;
 }
 
@@ -1933,7 +1917,7 @@ p {
   align-items: center;
   max-width: 140px;
   padding: 3px 6px 3px 9px;
-  border-radius: 999px;
+  border-radius: var(--radius-2);
   background: var(--accent-faint);
   color: var(--accent-strong);
   cursor: pointer;
@@ -1978,12 +1962,10 @@ p {
   display: grid;
   width: min(260px, calc(100% - 28px));
   padding: 10px;
-  border: 1px solid var(--border-soft);
+  border: 1px solid rgb(255 255 255 / 0.1);
   border-radius: var(--radius-3);
-  background: var(--glass-inspector);
+  background: rgb(13 15 14 / 0.97);
   box-shadow: var(--shadow-soft);
-  -webkit-backdrop-filter: blur(24px) saturate(1.25);
-  backdrop-filter: blur(24px) saturate(1.25);
   gap: 8px;
   transform-origin: top right;
   animation: popoverIn var(--duration-base) var(--ease-out-soft) both;
@@ -2016,20 +1998,17 @@ p {
 
 .filter-chips {
   display: flex;
+  flex-wrap: wrap;
   gap: 5px;
-  overflow: hidden;
 }
 
 .filter-chip {
-  max-width: 76px;
-  overflow: hidden;
   padding: 3px 7px;
   border-radius: var(--radius-1);
   background: rgb(255 255 255 / 0.035);
   color: var(--text-muted);
   cursor: pointer;
-  font-size: 0.68rem;
-  text-overflow: ellipsis;
+  font-size: 0.75rem;
   white-space: nowrap;
 }
 
@@ -2264,7 +2243,7 @@ p {
   top: 8px;
   left: 8px;
   z-index: 2;
-  border-radius: 999px;
+  border-radius: var(--radius-2);
   /* A scrim behind the box — without it the checkbox reads fine on a dark
      photo and disappears entirely on a light one. */
   background: rgb(0 0 0 / 0.32);
@@ -2439,12 +2418,12 @@ p {
   overflow: hidden;
   padding: 2px 5px;
   border: 0;
-  border-radius: 999px;
+  border-radius: var(--radius-2);
   background: rgb(255 255 255 / 0.06);
   color: var(--text-soft);
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 0.62rem;
+  font-size: 0.7rem;
   line-height: normal;
 }
 
@@ -2560,7 +2539,7 @@ button.mini-tags-more:focus-visible {
   position: relative;
   height: 4px;
   overflow: hidden;
-  border-radius: 999px;
+  border-radius: var(--radius-2);
   background: rgb(255 255 255 / 0.08);
 }
 
@@ -2568,7 +2547,7 @@ button.mini-tags-more:focus-visible {
   position: absolute;
   inset: 0 auto 0 0;
   width: 0%;
-  border-radius: 999px;
+  border-radius: var(--radius-2);
   background: var(--accent-cyan);
   transition: width 120ms ease;
 }
@@ -2718,10 +2697,10 @@ button.mini-tags-more:focus-visible {
   min-width: 22px;
   height: 18px;
   padding: 0 6px;
-  border-radius: 999px;
+  border-radius: var(--radius-2);
   background: rgb(255 255 255 / 0.055);
   color: var(--text-muted);
-  font-size: 0.66rem;
+  font-size: 0.72rem;
   font-weight: 650;
   letter-spacing: 0;
   text-transform: none;
@@ -2780,7 +2759,7 @@ button.mini-tags-more:focus-visible {
   display: inline-block;
   width: 11px;
   height: 11px;
-  border-radius: 999px;
+  border-radius: var(--radius-2);
   border: 2px solid color-mix(in srgb, var(--accent-strong), transparent 65%);
   border-top-color: var(--accent-strong);
   animation: codex-spin 600ms linear infinite;
@@ -2817,14 +2796,14 @@ button.mini-tags-more:focus-visible {
 
 .suggestion-label {
   color: var(--text-muted);
-  font-size: 0.64rem;
+  font-size: 0.7rem;
 }
 
 .suggestion-row button,
 .suggestion-chip {
-  border: 1px solid rgb(223 174 103 / 0.2);
-  border-radius: 999px;
-  background: rgb(223 174 103 / 0.08);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-2);
+  background: var(--surface-1);
 }
 
 .suggestion-row button,
@@ -2833,7 +2812,7 @@ button.mini-tags-more:focus-visible {
   padding: 0 7px;
   border: 0;
   background: transparent;
-  color: #f3d3a1;
+  color: var(--text-soft);
   cursor: pointer;
   gap: 4px;
   font-size: 0.68rem;
@@ -2849,7 +2828,7 @@ button.mini-tags-more:focus-visible {
   width: 22px;
   padding: 0;
   justify-content: center;
-  color: rgb(243 211 161 / 0.58);
+  color: var(--text-muted);
 }
 
 .suggestion-chip button:hover {
@@ -2857,8 +2836,8 @@ button.mini-tags-more:focus-visible {
 }
 
 .suggestion-chip small {
-  color: rgb(243 211 161 / 0.58);
-  font-size: 0.62rem;
+  color: var(--text-muted);
+  font-size: 0.7rem;
 }
 
 .graph-shell {
@@ -2966,7 +2945,7 @@ button.mini-tags-more:focus-visible {
   min-height: 38px;
   padding: 5px 9px 6px;
   border: 1px solid var(--border-soft);
-  border-radius: 999px;
+  border-radius: var(--radius-2);
   background: var(--node-surface-selected);
   color: var(--text-soft);
   cursor: grab;
@@ -2992,7 +2971,7 @@ button.mini-tags-more:focus-visible {
 .canvas-frame-description {
   overflow: hidden;
   color: var(--text-muted);
-  font-size: 0.62rem;
+  font-size: 0.7rem;
   font-weight: 500;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -3079,11 +3058,9 @@ button.mini-tags-more:focus-visible {
   max-height: calc(100% - 132px);
   padding: 26px;
   border: 0;
-  border-radius: 20px;
+  border-radius: var(--radius-3);
   background: color-mix(in srgb, var(--surface-drawer), transparent 7%);
-  box-shadow: 0 24px 70px rgb(0 0 0 / 0.2);
-  -webkit-backdrop-filter: blur(28px) saturate(1.3);
-  backdrop-filter: blur(28px) saturate(1.3);
+  box-shadow: 0 12px 36px rgba(0,0,0,0.25), 0 0 0 1px var(--border-soft);
   gap: 16px;
   overflow: auto;
   transform: translate(-50%, -50%);
@@ -3099,7 +3076,7 @@ button.mini-tags-more:focus-visible {
   border: 1px solid color-mix(in srgb, var(--accent-cyan), transparent 62%);
   border-radius: var(--radius-3);
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--accent-cyan), transparent 88%), transparent),
+    color-mix(in srgb, var(--accent-cyan), transparent 90%),
     var(--glass-active);
   color: var(--text-main);
   cursor: pointer;
@@ -3110,7 +3087,6 @@ button.mini-tags-more:focus-visible {
 }
 .canvas-zero-restore:hover {
   border-color: color-mix(in srgb, var(--accent-cyan), transparent 44%);
-  transform: translateY(-1px);
 }
 .canvas-zero-restore svg {
   color: var(--accent-strong);
@@ -3198,7 +3174,7 @@ button.mini-tags-more:focus-visible {
   height: 38px;
   padding: 0 12px;
   border: 1px solid var(--border-soft);
-  border-radius: 9px;
+  border-radius: var(--radius-2);
   outline: none;
   background: var(--surface-inset);
   color: var(--text-main);
@@ -3281,7 +3257,7 @@ button.mini-tags-more:focus-visible {
   height: 10px;
   padding: 0;
   border: 1.5px solid var(--bg-canvas);
-  border-radius: 999px;
+  border-radius: var(--radius-2);
   background: var(--accent-cyan);
   cursor: pointer;
   opacity: 0;
@@ -3323,9 +3299,8 @@ button.mini-tags-more:focus-visible {
   width: 220px;
   padding: 10px;
   border: 1px solid var(--border-soft);
-  border-radius: 12px;
+  border-radius: var(--radius-3);
   background: var(--node-surface-selected);
-  backdrop-filter: blur(16px);
   pointer-events: auto;
   transform: translate(-50%, calc(-100% - 14px));
   font-size: 0.78rem;
@@ -3376,7 +3351,7 @@ button.mini-tags-more:focus-visible {
 .link-popover textarea {
   width: 100%;
   border: 1px solid var(--border-soft);
-  border-radius: 7px;
+  border-radius: var(--radius-2);
   background: var(--bg-canvas);
   color: var(--text-main);
   font: inherit;
@@ -3442,6 +3417,18 @@ button.mini-tags-more:focus-visible {
 
 /* Always WYSIWYG (see NodeRichEditor) — this is the one and only layout, no
    separate "resting display" vs "editing" state to merge anymore. */
+/* Ask Kira's dock floats above the canvas; when it lands over a node this
+   dims that node so the occlusion reads as deliberate layering rather than
+   the node having silently vanished underneath. Toggled from JS in the
+   Kira-dock overlap effect — keyed off the same [data-node-id] every node
+   kind (idea/image/palette/diagram/placeholder) already carries. */
+[data-node-id].is-dimmed-by-kira {
+  opacity: 0.32;
+  filter: saturate(0.7);
+  transition: opacity var(--duration-base) var(--ease-soft), filter var(--duration-base) var(--ease-soft);
+  pointer-events: none;
+}
+
 .idea-node {
   display: block;
   width: 224px;
@@ -3452,17 +3439,14 @@ button.mini-tags-more:focus-visible {
   color: var(--text-main);
   text-align: left;
   box-shadow: var(--node-shadow-rest);
-  backdrop-filter: blur(12px);
 }
 
 .idea-node--sticker {
   width: 248px;
   border-color: color-mix(in srgb, var(--accent-amber), transparent 76%);
-  border-radius: 3px 12px 12px 12px;
-  background:
-    linear-gradient(145deg, rgb(255 255 255 / 0.1), transparent 34%),
-    color-mix(in srgb, var(--accent-amber), var(--bg-canvas) 72%);
-  box-shadow: 0 10px 24px rgb(0 0 0 / 0.16);
+  border-radius: 0; /* Stickers are square in FigJam/Miro */
+  background: color-mix(in srgb, var(--accent-amber), var(--bg-canvas) 72%);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15), 0 0 0 1px var(--border-soft);
 }
 
 /* Sticky-note metaphor (§2.4): a hand-placed note gets a hand-written feel.
@@ -3508,7 +3492,6 @@ button.mini-tags-more:focus-visible {
   border: 1px solid var(--border-soft);
   border-radius: 10px;
   background: var(--node-surface-selected);
-  backdrop-filter: blur(12px);
   transform: translateX(-50%);
   cursor: default;
 }
@@ -3520,7 +3503,7 @@ button.mini-tags-more:focus-visible {
   place-items: center;
   padding: 0;
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--radius-2);
   background: transparent;
   color: var(--text-soft);
   cursor: pointer;
@@ -3546,7 +3529,6 @@ button.mini-tags-more:focus-visible {
   border-bottom: 1px solid var(--border-soft);
   border-radius: 0;
   background: none;
-  backdrop-filter: none;
 }
 
 .node-rich-editor-toolbar-divider {
@@ -3597,7 +3579,7 @@ button.mini-tags-more:focus-visible {
   width: 8px;
   height: 8px;
   margin-top: 5px;
-  border-radius: 999px;
+  border-radius: var(--radius-2);
 }
 
 .idea-status--strong {
@@ -3645,7 +3627,7 @@ button.mini-tags-more:focus-visible {
   max-width: 100%;
   overflow: hidden;
   color: var(--text-muted);
-  font-size: 0.66rem;
+  font-size: 0.72rem;
   line-height: 1.2;
   opacity: 0;
   pointer-events: none;
@@ -3675,7 +3657,6 @@ button.mini-tags-more:focus-visible {
   gap: 5px;
   text-align: left;
   box-shadow: var(--node-shadow-rest);
-  backdrop-filter: blur(12px);
 }
 
 .palette-node strong,
@@ -3691,7 +3672,7 @@ button.mini-tags-more:focus-visible {
 .palette-node small,
 .diagram-node small {
   color: var(--text-muted);
-  font-size: 0.66rem;
+  font-size: 0.72rem;
 }
 
 .diagram-node {
@@ -3726,7 +3707,7 @@ button.mini-tags-more:focus-visible {
   display: flex;
   overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--text-main), transparent 78%);
-  border-radius: 999px;
+  border-radius: var(--radius-2);
 }
 
 .node-palette i {
@@ -3744,7 +3725,7 @@ button.mini-tags-more:focus-visible {
   height: 20px;
   place-items: center;
   border: 1px solid color-mix(in srgb, var(--accent-cyan), transparent 54%);
-  border-radius: 999px;
+  border-radius: var(--radius-2);
   background: var(--node-surface-selected);
   color: var(--text-main);
   opacity: 0;
@@ -3781,7 +3762,7 @@ button.mini-tags-more:focus-visible {
   height: 20px;
   place-items: center;
   border: 1px solid var(--kira-border);
-  border-radius: 999px;
+  border-radius: var(--radius-2);
   background: var(--node-surface-selected);
   color: var(--kira-mid);
   opacity: 0;
@@ -3796,7 +3777,7 @@ button.mini-tags-more:focus-visible {
 .diagram-node.is-selected .node-kira-control,
 .placeholder-node.is-selected .node-kira-control {
   opacity: 1;
-  background: var(--kira-sweep);
+  background: var(--accent-strong);
   color: var(--bg-base);
   transform: scale(calc(1 / var(--node-scale, 1)));
 }
@@ -3816,7 +3797,7 @@ button.mini-tags-more:focus-visible {
 :is(.idea-node, .image-node, .palette-node, .diagram-node, .placeholder-node).is-selected .node-kira-control:hover {
   background-size: 220% 220%;
   animation: kira-sweep-travel 720ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
-  box-shadow: 0 0 0 4px var(--kira-halo);
+  box-shadow: 0 0 0 4px transparent;
   transform: scale(calc(1.14 / var(--node-scale, 1)));
 }
 
@@ -3833,7 +3814,7 @@ button.mini-tags-more:focus-visible {
   width: 20px;
   height: 20px;
   border: 1px solid color-mix(in srgb, var(--accent-cyan), transparent 42%);
-  border-radius: 999px;
+  border-radius: var(--radius-2);
   place-items: center;
   background: var(--node-surface-selected);
   box-shadow: 0 3px 12px rgb(0 0 0 / 0.24);
@@ -3972,7 +3953,7 @@ button.mini-tags-more:focus-visible {
   place-items: center;
   padding: 0;
   border: 1px solid var(--border-soft);
-  border-radius: 999px;
+  border-radius: var(--radius-2);
   background: var(--node-surface-selected);
   color: var(--text-soft);
   cursor: pointer;
@@ -4046,7 +4027,6 @@ button.mini-tags-more:focus-visible {
   border: 1px solid var(--border-soft);
   border-radius: 10px;
   background: var(--node-surface-selected);
-  backdrop-filter: blur(12px);
 }
 
 .node-toolbar button {
@@ -4056,7 +4036,7 @@ button.mini-tags-more:focus-visible {
   place-items: center;
   padding: 0;
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--radius-2);
   background: transparent;
   color: var(--text-soft);
   cursor: pointer;
@@ -4089,7 +4069,6 @@ button.mini-tags-more:focus-visible {
   place-items: center;
   padding: 5vh 24px;
   background: rgb(5 6 6 / 0.56);
-  backdrop-filter: blur(3px);
   animation: node-overlay-scrim-in 160ms var(--ease-out-soft);
 }
 
@@ -4106,10 +4085,9 @@ button.mini-tags-more:focus-visible {
   overflow-y: auto;
   padding: 20px 22px;
   border: 1px solid var(--border-soft);
-  border-radius: 16px;
+  border-radius: var(--radius-3);
   background: var(--node-surface-selected);
-  backdrop-filter: blur(20px);
-  box-shadow: 0 30px 80px rgb(0 0 0 / 0.45);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.25), 0 0 0 1px var(--border-soft);
   font-size: 0.82rem;
   animation: node-overlay-panel-in 180ms var(--ease-out-soft);
 }
@@ -4300,7 +4278,7 @@ button.mini-tags-more:focus-visible {
   width: 26px;
   height: 26px;
   place-items: center;
-  border-radius: 7px;
+  border-radius: var(--radius-2);
   color: var(--text-soft);
   cursor: pointer;
 }
@@ -4395,11 +4373,7 @@ button.mini-tags-more:focus-visible {
   }
 }
 
-@property --kira-rim-angle {
-  syntax: "<angle>";
-  initial-value: 0deg;
-  inherits: false;
-}
+
 
 /* Fixed 44px footprint so the tool rail and zoom rail never shift sideways
    when the dock inside opens — the dock itself is absolutely positioned
@@ -4426,15 +4400,9 @@ button.mini-tags-more:focus-visible {
   width: 44px;
   grid-template-rows: auto 0fr;
   border: 1px solid transparent;
-  border-radius: 999px;
-  background:
-    linear-gradient(var(--surface-inspector), var(--surface-inspector)) padding-box,
-    var(--kira-sweep) border-box;
-  box-shadow:
-    inset 0 1px 0 color-mix(in srgb, var(--text-main), transparent 94%),
-    var(--panel-shadow);
-  -webkit-backdrop-filter: blur(24px) saturate(1.35);
-  backdrop-filter: blur(24px) saturate(1.35);
+  border-radius: var(--radius-2);
+  background: var(--surface-inspector);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.1), 0 0 0 1px var(--border-soft);
   color: var(--text-main);
   transform: translate(-50%, 0);
   transition:
@@ -4447,44 +4415,24 @@ button.mini-tags-more:focus-visible {
 }
 
 .kira-dock.is-open {
-  /* No fallback here on purpose: --kira-dock-width is always set on :root
-     (see the tokens above), and a calc(100% - ...) fallback is exactly the
-     bug that token exists to avoid — % resolves against this element's own
-     44px launcher-slot containing block, not the viewport, and would
-     silently collapse the open dock back down to a sliver. */
   width: var(--kira-dock-width);
   transform: translate(calc(-50% + var(--kira-dock-shift, 0px)), calc(-1 * var(--kira-dock-lift, 74px)));
-  border-radius: var(--radius-5);
+  border-radius: var(--radius-3);
   cursor: default;
   will-change: width, transform;
-  /* Layer stack, bottom → top: a specular sheen falling off the top edge,
-     a faint warm→cool wash so the glass is tinted rather than neutral grey,
-     then the base fill — more transparent and more saturated than the
-     tool rail so it reads as a different substance, not just a bigger
-     version of the same panel. */
-  background:
-    linear-gradient(
-      to bottom,
-      rgb(255 255 255 / 0.075) 0px,
-      rgb(255 255 255 / 0.018) 22px,
-      rgb(255 255 255 / 0) 46px
-    ),
-    linear-gradient(
-      100deg,
-      color-mix(in srgb, var(--kira-warm), transparent 96%) 0%,
-      color-mix(in srgb, var(--kira-mid), transparent 95%) 48%,
-      color-mix(in srgb, var(--kira-cool), transparent 96%) 100%
-    ),
-    linear-gradient(rgb(11 13 12 / 0.78), rgb(11 13 12 / 0.78));
-  -webkit-backdrop-filter: blur(40px) saturate(1.9) brightness(1.06);
-  backdrop-filter: blur(40px) saturate(1.9) brightness(1.06);
-  box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 0.14),
-    inset 0 0 0 1px rgb(255 255 255 / 0.045),
-    inset 0 -1px 0 rgb(255 255 255 / 0.03),
-    0 10px 32px -8px color-mix(in srgb, var(--kira-mid), transparent 84%),
-    0 28px 64px -12px rgb(0 0 0 / 0.55),
-    0 4px 12px rgb(0 0 0 / 0.28);
+  background: var(--surface-inspector);
+  border: 1px solid var(--border-soft);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(0, 0, 0, 0.2);
+  transition:
+    width var(--duration-slow) var(--ease-spring),
+    transform var(--duration-slow) var(--ease-spring),
+    border-color 140ms ease,
+    box-shadow 140ms ease;
+}
+
+.kira-dock.is-open:focus-within {
+  border-color: color-mix(in srgb, var(--accent-cyan), transparent 30%);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-cyan), transparent 45%), 0 12px 36px rgba(0, 0, 0, 0.48);
 }
 
 .kira-dock.is-open.has-tray {
@@ -4495,289 +4443,149 @@ button.mini-tags-more:focus-visible {
   border-color: color-mix(in srgb, var(--danger), transparent 62%);
 }
 
-/* Hologram rim: a conic gradient that circulates around the edge, hollowed
-   to a 1px band. Deliberately restrained — a short arc, low opacity, a slow
-   period — so it reads as a slow travelling glint, not an RGB keyboard.
-   Degrades to a static (non-animating) rim if @property is unsupported. */
-.kira-dock::before {
+.kira-dock-composer {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  padding: 8px 10px 8px 10px;
+  gap: 6px;
+  box-sizing: border-box;
+}
+
+/* Context & Selection Tags bar packed inside composer */
+.kira-dock-context-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 2px 2px 2px;
+  max-height: 84px;
+  overflow-y: auto;
+}
+
+.kira-dock-context-bar::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+.kira-dock-context-bar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 2px;
+}
+
+.kira-dock-scope-chip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 6px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-1);
+  background: rgb(255 255 255 / 0.04);
+  color: var(--text-soft);
+  font-size: 0.68rem;
+  font-weight: 550;
+  cursor: pointer;
+  transition: all 120ms ease;
+}
+
+.kira-dock-scope-chip:hover {
+  background: rgb(255 255 255 / 0.08);
+  border-color: var(--border-strong);
+  color: var(--text-main);
+}
+
+.kira-dock-scope-chip select {
   position: absolute;
   inset: 0;
-  z-index: 0;
-  padding: 1px;
-  border-radius: inherit;
-  background: conic-gradient(
-    from var(--kira-rim-angle),
-    transparent 0%,
-    color-mix(in srgb, var(--kira-warm), transparent 55%) 8%,
-    color-mix(in srgb, var(--kira-mid), transparent 45%) 18%,
-    color-mix(in srgb, var(--kira-cool), transparent 55%) 28%,
-    transparent 42%,
-    transparent 100%
-  );
-  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
-  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  mask-composite: exclude;
-  content: "";
   opacity: 0;
-  pointer-events: none;
-  transition: opacity 260ms var(--ease-soft);
-}
-
-.kira-dock.is-open::before {
-  opacity: 0.42;
-  animation: kira-rim-travel 9s linear infinite;
-}
-
-.kira-dock.is-open.is-thinking::before {
-  opacity: 0.72;
-  animation-duration: 2.4s;
-}
-
-@keyframes kira-rim-travel {
-  to { --kira-rim-angle: 360deg; }
-}
-
-.kira-dock-orb {
-  position: relative;
-  z-index: 1;
-  display: grid;
-  flex: 0 0 auto;
-  width: 44px;
-  height: 44px;
-  place-items: center;
-  border: 0;
-  border-radius: 999px;
-  background: transparent;
-  color: inherit;
   cursor: pointer;
+  width: 100%;
+  height: 100%;
 }
 
-.kira-dock:not(.is-open):hover {
-  transform: translate(-50%, -1px);
+.kira-dock-chip-icon {
+  color: var(--accent-cyan);
+  flex-shrink: 0;
 }
 
-.kira-dock.is-open .kira-dock-orb {
-  width: 0;
-  min-width: 0;
-  padding: 0;
-  opacity: 0;
-  pointer-events: none;
+.kira-dock-chip-chevron {
+  color: var(--text-muted);
+  flex-shrink: 0;
 }
 
-.kira-dock[data-tooltip]::after,
-.kira-dock-orb[data-tooltip]::after {
-  position: absolute;
-  bottom: calc(100% + 10px);
-  left: 50%;
-  z-index: 20;
-  padding: 5px 7px;
+.kira-chip {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  height: 22px;
+  padding: 0 4px 0 6px;
   border: 1px solid var(--border-soft);
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--surface-inspector), transparent 4%);
-  box-shadow: 0 8px 20px rgb(0 0 0 / 0.24);
-  color: var(--text-main);
-  content: attr(data-tooltip);
-  font-size: 0.66rem;
-  font-weight: 580;
-  opacity: 0;
-  pointer-events: none;
-  transform: translate(-50%, 4px);
-  transition: opacity 120ms ease, transform 140ms var(--ease-out-soft);
+  border-radius: var(--radius-1);
+  background: rgb(255 255 255 / 0.04);
+  color: var(--text-soft);
+  font-size: 0.68rem;
+  gap: 4px;
+  box-sizing: border-box;
+}
+
+.kira-chip-kind {
+  font-size: 0.6rem;
+  font-weight: 700;
+  color: var(--accent-cyan);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.kira-chip-title {
+  max-width: 130px;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.kira-dock-orb[data-tooltip]:hover::after,
-.kira-dock-orb[data-tooltip]:focus-visible::after {
-  opacity: 1;
-  transform: translate(-50%, 0);
-}
-
-/* Four grid items — orb, sigil, input, actions — so four column tracks are
-   required. Getting this wrong silently wraps the fourth item (actions)
-   onto an implicit second row instead of erroring. */
-.kira-dock-row {
-  position: relative;
-  z-index: 1;
+.kira-chip-remove {
   display: grid;
-  grid-template-columns: auto auto 1fr auto;
-  align-items: center;
-  height: 44px;
-  padding: 0;
-  gap: 10px;
-  transition: min-height var(--duration-slow) var(--ease-spring), padding var(--duration-slow) var(--ease-spring);
-}
-
-.kira-dock.is-open .kira-dock-row {
-  /* min-height + align-items: end, not a fixed height — the textarea
-     grows upward as the user types a multi-line message (see the
-     onChange auto-resize in renderKiraDock) while the action icons stay
-     anchored to the bottom edge, like a normal chat composer. */
-  min-height: 56px;
-  align-items: end;
-  padding: 10px 8px 10px 14px;
-}
-
-.kira-dock.is-open .kira-dock-orb,
-.kira-dock.is-open .kira-dock-sigil,
-.kira-dock.is-open .kira-dock-actions {
-  padding-bottom: 3px;
-}
-
-.kira-dock-sigil {
-  display: none;
-  flex: 0 0 auto;
-  align-items: center;
-}
-
-.kira-dock.is-open .kira-dock-sigil {
-  display: inline-flex;
-}
-
-.kira-dock-input {
-  /* Fills its 1fr grid cell — it must NOT be pinned to the dock's full
-     width, or it would demand that width in ADDITION to the sigil and
-     actions columns either side, overflowing the row. */
-  width: 100%;
-  min-width: 0;
-  /* The global `textarea { min-height: 92px }` rule further down this file
-     (for the multi-line note/description fields elsewhere) would otherwise
-     floor this single-line composer at 92px regardless of the height set
-     below. */
-  min-height: 0;
-  height: 0;
+  width: 14px;
+  height: 14px;
   padding: 0;
   border: 0;
-  background: none;
-  color: var(--text-main);
-  font: inherit;
-  font-size: 0.95rem;
-  line-height: 1.4;
-  opacity: 0;
-  resize: none;
-  overflow-x: hidden;
-  overflow-y: auto;
-  transition: opacity 140ms var(--ease-soft);
-}
-
-.kira-dock-input::placeholder {
-  color: var(--text-muted);
-}
-
-.kira-dock-input:focus {
-  outline: none;
-}
-
-.kira-dock.is-open .kira-dock-input {
-  /* Starts at one line's worth; the onChange handler in renderKiraDock
-     measures scrollHeight and sets an inline height on every keystroke, so
-     this class-level value is only the pre-JS/empty-state fallback. Capped
-     at ~6 lines — past that, overflow-y:auto (above) takes over instead of
-     the dock growing indefinitely. */
-  height: 1.4em;
-  max-height: 8.4em;
-  opacity: 1;
-  transition-delay: 120ms;
-}
-
-.kira-dock-actions {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 140ms var(--ease-soft);
-}
-
-.kira-dock.is-open .kira-dock-actions {
-  opacity: 1;
-  pointer-events: auto;
-  transition-delay: 120ms;
-}
-
-.kira-dock-pill {
-  display: inline-flex;
-  align-items: center;
-  height: 24px;
-  padding: 0 8px;
-  border: 1px solid var(--border-soft);
-  border-radius: 999px;
-  background: rgb(255 255 255 / 0.05);
-  color: var(--text-soft);
-  cursor: pointer;
-  font-size: 0.68rem;
-  gap: 4px;
-}
-
-.kira-dock-pill:hover,
-.kira-dock-pill.is-open {
-  border-color: var(--kira-border);
-  background: var(--kira-tint);
-  color: var(--text-main);
-}
-
-.kira-dock-sep {
-  width: 1px;
-  height: 20px;
-  background: var(--separator-hairline);
-}
-
-.kira-dock-attach {
-  position: relative;
-  display: grid;
-  flex: 0 0 auto;
-  width: 26px;
-  height: 26px;
+  border-radius: var(--radius-1);
   place-items: center;
-  border-radius: 999px;
+  background: transparent;
   color: var(--text-muted);
   cursor: pointer;
-  overflow: hidden;
 }
 
-.kira-dock-attach:hover {
-  background: var(--glass-hover);
+.kira-chip-remove:hover {
+  background: rgb(255 255 255 / 0.12);
   color: var(--text-main);
-}
-
-.kira-dock-attach input {
-  position: absolute;
-  inset: 0;
-  opacity: 0;
-  cursor: pointer;
-}
-
-.kira-dock-attachments {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  padding: 0 14px 10px;
 }
 
 .kira-attachment-chip {
   display: inline-flex;
   align-items: center;
   max-width: 160px;
-  height: 26px;
-  padding: 0 6px 0 4px;
+  height: 22px;
+  padding: 0 4px 0 6px;
   border: 1px solid var(--border-soft);
-  border-radius: 999px;
-  background: rgb(255 255 255 / 0.05);
+  border-radius: var(--radius-1);
+  background: rgb(255 255 255 / 0.04);
   color: var(--text-soft);
   font-size: 0.68rem;
-  gap: 5px;
+  gap: 4px;
 }
 
 .kira-attachment-chip img {
-  width: 18px;
-  height: 18px;
-  border-radius: 999px;
+  width: 14px;
+  height: 14px;
+  border-radius: 2px;
   object-fit: cover;
 }
 
 .kira-attachment-name {
+  max-width: 100px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -4789,52 +4597,201 @@ button.mini-tags-more:focus-visible {
   width: 14px;
   height: 14px;
   place-items: center;
-  border-radius: 999px;
-  color: var(--text-muted);
-  cursor: pointer;
-}
-
-.kira-attachment-chip button:hover {
-  background: var(--glass-hover);
-  color: var(--text-main);
-}
-
-.kira-dock-submit {
-  display: grid;
-  width: 30px;
-  height: 30px;
-  place-items: center;
   border: 0;
-  border-radius: 999px;
-  background: var(--kira-sweep);
-  color: var(--bg-base);
-  cursor: pointer;
-  transition: opacity var(--duration-fast) var(--ease-soft), transform var(--duration-fast) var(--ease-out-soft);
-}
-
-.kira-dock-submit:disabled {
-  cursor: not-allowed;
-  opacity: 0.28;
-}
-
-.kira-dock-submit:not(:disabled):hover {
-  transform: scale(1.06);
-}
-
-.kira-dock-close {
-  display: grid;
-  width: 26px;
-  height: 26px;
-  place-items: center;
-  border: 0;
-  border-radius: 999px;
+  border-radius: var(--radius-1);
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
 }
 
-.kira-dock-close:hover {
-  background: var(--glass-hover);
+.kira-attachment-chip button:hover {
+  background: rgb(255 255 255 / 0.12);
+  color: var(--text-main);
+}
+
+/* Prompt Input Container */
+.kira-dock-input-wrap {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.kira-dock-input {
+  width: 100%;
+  min-width: 0;
+  min-height: 42px;
+  max-height: 240px;
+  padding: 4px 2px;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--text-main);
+  font-family: inherit;
+  font-size: 0.92rem;
+  line-height: 1.5;
+  resize: none;
+  overflow-x: hidden;
+  overflow-y: auto;
+  box-sizing: border-box;
+}
+
+.kira-dock-input::placeholder {
+  color: var(--text-muted);
+}
+
+.kira-dock-input:focus {
+  outline: none;
+}
+
+/* Bottom Controls Bar */
+.kira-dock-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 6px;
+  border-top: 1px solid var(--separator-hairline);
+}
+
+.kira-dock-footer-left {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.kira-dock-footer-right {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.kira-dock-model-selector {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 7px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-1);
+  background: rgb(255 255 255 / 0.04);
+  color: var(--text-soft);
+  font-size: 0.7rem;
+  font-weight: 550;
+  cursor: pointer;
+  transition: all 120ms ease;
+}
+
+.kira-dock-model-selector:hover {
+  background: rgb(255 255 255 / 0.08);
+  border-color: var(--border-strong);
+  color: var(--text-main);
+}
+
+.kira-dock-model-selector select {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+  width: 100%;
+  height: 100%;
+}
+
+.kira-dock-model-icon {
+  color: var(--accent-cyan);
+  flex-shrink: 0;
+}
+
+.kira-dock-model-label {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kira-dock-model-chevron {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.kira-dock-action-btn {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-1);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  overflow: hidden;
+  transition: all 120ms ease;
+}
+
+.kira-dock-action-btn:hover {
+  background: rgb(255 255 255 / 0.08);
+  color: var(--text-main);
+}
+
+.kira-dock-action-btn.is-active {
+  background: var(--accent-faint);
+  color: var(--accent-strong);
+}
+
+.kira-dock-action-btn input[type="file"] {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.kira-dock-token-meta {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  padding-right: 2px;
+}
+
+.kira-dock-submit {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  border: 0;
+  border-radius: var(--radius-1);
+  background: var(--accent-strong);
+  color: var(--bg-base);
+  cursor: pointer;
+  transition: opacity 120ms ease, transform 120ms ease;
+}
+
+.kira-dock-submit:disabled {
+  cursor: not-allowed;
+  opacity: 0.25;
+}
+
+.kira-dock-submit:not(:disabled):hover {
+  filter: brightness(1.08);
+  transform: scale(1.04);
+}
+
+.kira-dock-close-btn {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border: 0;
+  border-radius: var(--radius-1);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 120ms ease;
+}
+
+.kira-dock-close-btn:hover {
+  background: rgb(255 255 255 / 0.08);
   color: var(--text-main);
 }
 
@@ -4843,7 +4800,7 @@ button.mini-tags-more:focus-visible {
   z-index: 1;
   height: 1px;
   margin: 0 14px 12px;
-  background: var(--kira-sweep);
+  background: var(--accent-strong);
   background-size: 300% 100%;
   animation: kira-thinking-bar 1.9s linear infinite;
 }
@@ -4905,7 +4862,7 @@ button.mini-tags-more:focus-visible {
 .kira-dock-provider-dot {
   width: 6px;
   height: 6px;
-  border-radius: 999px;
+  border-radius: var(--radius-2);
   flex: none;
   background: var(--accent-strong);
   opacity: 0.55;
@@ -4967,7 +4924,7 @@ button.mini-tags-more:focus-visible {
 
 .kira-dock-tray-meta {
   color: var(--text-muted);
-  font-size: 0.66rem;
+  font-size: 0.72rem;
   white-space: nowrap;
 }
 
@@ -4990,10 +4947,10 @@ button.mini-tags-more:focus-visible {
   max-width: 100%;
   padding: 4px 6px 4px 8px;
   border: 1px solid var(--kira-border);
-  border-radius: 999px;
-  background: var(--kira-tint);
+  border-radius: var(--radius-2);
+  background: var(--accent-faint);
   color: var(--text-soft);
-  font-size: 0.66rem;
+  font-size: 0.72rem;
   gap: 5px;
 }
 
@@ -5009,7 +4966,7 @@ button.mini-tags-more:focus-visible {
   height: 14px;
   padding: 0;
   border: 0;
-  border-radius: 999px;
+  border-radius: var(--radius-2);
   place-items: center;
   background: transparent;
   color: var(--text-muted);
@@ -5036,12 +4993,12 @@ button.mini-tags-more:focus-visible {
 
 .kira-suggestion:hover {
   border-color: var(--kira-border);
-  background: var(--kira-tint);
+  background: var(--accent-faint);
 }
 
 .kira-suggestion-why {
   color: var(--text-muted);
-  font-size: 0.66rem;
+  font-size: 0.72rem;
 }
 
 .idea-node.is-selected,
@@ -5087,10 +5044,8 @@ button.mini-tags-more:focus-visible {
   padding: 5px;
   border: 1px solid var(--border-soft);
   border-radius: 10px;
-  background: color-mix(in srgb, var(--surface-inspector), transparent 8%);
+  background: color-mix(in srgb, var(--surface-inspector), transparent 4%);
   box-shadow: 0 14px 34px rgb(0 0 0 / 0.28);
-  -webkit-backdrop-filter: blur(22px) saturate(1.25);
-  backdrop-filter: blur(22px) saturate(1.25);
   gap: 2px;
   transform: translate(8px, 8px);
 }
@@ -5111,7 +5066,7 @@ button.mini-tags-more:focus-visible {
 .node-context-heading span {
   overflow: hidden;
   color: var(--text-muted);
-  font-size: 0.66rem;
+  font-size: 0.72rem;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -5123,7 +5078,7 @@ button.mini-tags-more:focus-visible {
   height: 30px;
   padding: 0 7px;
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--radius-2);
   background: transparent;
   color: var(--text-soft);
   cursor: pointer;
@@ -5154,13 +5109,11 @@ button.mini-tags-more:focus-visible {
   height: 54px;
   padding: 6px 10px;
   border: 1px solid var(--border-soft);
-  border-radius: 999px;
+  border-radius: var(--radius-2);
   background: var(--glass-inspector);
   box-shadow:
     inset 0 1px 0 color-mix(in srgb, var(--text-main), transparent 94%),
     var(--panel-shadow);
-  -webkit-backdrop-filter: blur(24px) saturate(1.35);
-  backdrop-filter: blur(24px) saturate(1.35);
   gap: 8px;
 }
 
@@ -5186,7 +5139,7 @@ button.mini-tags-more:focus-visible {
   height: 38px;
   place-items: center;
   border: 0;
-  border-radius: 999px;
+  border-radius: var(--radius-2);
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
@@ -5196,8 +5149,7 @@ button.mini-tags-more:focus-visible {
 .canvas-tool-rail button:hover,
 .canvas-tool-rail button:focus-visible {
   background: rgb(255 255 255 / 0.05);
-  transform: translateY(-1px);
-  box-shadow: 0 4px 10px rgb(0 0 0 / 0.22);
+  
 }
 
 /* Expressive icon tinting (§2.4 of DESIGN.md): the create-node cluster gets a
@@ -5229,10 +5181,7 @@ button.mini-tags-more:focus-visible {
   color: color-mix(in srgb, var(--accent-cyan), var(--text-soft) 55%);
 }
 
-.canvas-tool-rail button[data-tool-kind]:hover .tool-icon,
-.canvas-tool-rail button[data-tool-kind]:focus-visible .tool-icon {
-  filter: drop-shadow(0 1px 4px rgb(0 0 0 / 0.4));
-}
+
 
 .canvas-tool-rail button[data-tooltip]::after {
   position: absolute;
@@ -5246,7 +5195,7 @@ button.mini-tags-more:focus-visible {
   box-shadow: 0 8px 20px rgb(0 0 0 / 0.24);
   color: var(--text-main);
   content: attr(data-tooltip);
-  font-size: 0.66rem;
+  font-size: 0.72rem;
   font-weight: 580;
   opacity: 0;
   pointer-events: none;
@@ -5327,7 +5276,7 @@ button.mini-tags-more:focus-visible {
   min-height: 38px;
   padding: 4px;
   border: 1px solid var(--border-soft);
-  border-radius: 999px;
+  border-radius: var(--radius-2);
   background: var(--glass-inspector);
   /* A firmer, bottom-weighted contact shadow (vs. the all-around
      --panel-shadow) so the pill reads as resting on the canvas floor
@@ -5337,8 +5286,6 @@ button.mini-tags-more:focus-visible {
   gap: 4px;
   font-size: 0.72rem;
   white-space: nowrap;
-  -webkit-backdrop-filter: blur(20px) saturate(1.22);
-  backdrop-filter: blur(20px) saturate(1.22);
 }
 
 /* Secondary to the view-rail's mode switch and the create-tools rail — this
@@ -5358,7 +5305,7 @@ button.mini-tags-more:focus-visible {
   height: 26px;
   padding: 0 10px;
   border: 0;
-  border-radius: 999px;
+  border-radius: var(--radius-2);
   background: transparent;
   color: var(--text-soft);
   cursor: pointer;
@@ -5391,7 +5338,6 @@ button.mini-tags-more:focus-visible {
   padding: var(--space-3);
   border-radius: var(--radius-3);
   background: var(--glass-inspector);
-  backdrop-filter: blur(18px);
   gap: var(--space-2);
   transform-origin: bottom left;
   animation: popoverInUp var(--duration-base) var(--ease-out-soft) both;
@@ -5423,7 +5369,7 @@ button.mini-tags-more:focus-visible {
   height: 26px;
   padding: 0 var(--space-2);
   border: 0;
-  border-radius: 999px;
+  border-radius: var(--radius-2);
   background: rgb(255 255 255 / 0.075);
   color: var(--text-main);
   font-size: 0.72rem;
@@ -5463,7 +5409,7 @@ button.mini-tags-more:focus-visible {
   height: 24px;
   place-items: center;
   border: 0;
-  border-radius: 999px;
+  border-radius: var(--radius-2);
   background: transparent;
   color: var(--text-soft);
   cursor: pointer;
@@ -5505,9 +5451,7 @@ button.mini-tags-more:focus-visible {
   overflow: hidden;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-3);
-  background:
-    radial-gradient(circle at 24% 0%, color-mix(in srgb, var(--accent-cyan), transparent 94%), transparent 34%),
-    #151716;
+  background: var(--surface-1);
   box-shadow: var(--shadow-soft);
 }
 
@@ -5585,7 +5529,7 @@ button.mini-tags-more:focus-visible {
   flex: 0 0 auto;
   max-width: 280px;
   padding: 7px var(--space-3);
-  border-radius: 999px;
+  border-radius: var(--radius-2);
   background: var(--glass-hover);
   color: var(--text-soft);
   font-size: 0.72rem;
@@ -5617,7 +5561,7 @@ button.mini-tags-more:focus-visible {
 .settings-control-strip label span,
 .settings-chip span {
   color: var(--text-muted);
-  font-size: 0.64rem;
+  font-size: 0.7rem;
 }
 
 .settings-control-strip select {
@@ -5703,7 +5647,7 @@ button.mini-tags-more:focus-visible {
 .capture-row small {
   overflow: hidden;
   color: var(--text-muted);
-  font-size: 0.66rem;
+  font-size: 0.72rem;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -5720,6 +5664,65 @@ button.mini-tags-more:focus-visible {
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
+}
+
+/* Chrome's sideload is a real multi-step manual flow (no way around
+   Developer Mode without a Chrome Web Store listing) — laying it out as a
+   numbered list makes that sequence legible instead of two buttons with no
+   visible order between them. */
+.capture-row--steps {
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-2);
+}
+
+.capture-row-head {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.capture-steps {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  gap: 5px;
+  counter-reset: capture-step;
+}
+
+.capture-steps li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 6px 8px;
+  border-radius: var(--radius-1);
+  background: rgb(255 255 255 / 0.03);
+  color: var(--text-soft);
+  font-size: 0.78rem;
+}
+
+.capture-steps li::before {
+  counter-increment: capture-step;
+  content: counter(capture-step);
+  display: inline-grid;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  place-items: center;
+  border-radius: var(--radius-2);
+  background: var(--accent-faint);
+  color: var(--text-main);
+  font-size: 0.66rem;
+  font-weight: 700;
+}
+
+.capture-steps li span {
+  flex: 1;
+  min-width: 0;
+}
+
+.capture-steps li .quiet-button {
+  flex: none;
 }
 
 .settings-section-heading {
@@ -5819,14 +5822,14 @@ button.mini-tags-more:focus-visible {
 
 .provider-list-row em {
   color: var(--text-muted);
-  font-size: 0.66rem;
+  font-size: 0.72rem;
   font-style: normal;
 }
 
 .provider-list-row small {
   align-self: start;
   color: var(--text-faint);
-  font-size: 0.64rem;
+  font-size: 0.7rem;
 }
 
 .provider-list-row[data-status="connected"] small {
@@ -5933,10 +5936,10 @@ button.mini-tags-more:focus-visible {
 
 .provider-task-list span {
   padding: 4px 7px;
-  border-radius: 999px;
+  border-radius: var(--radius-2);
   background: var(--glass-hover);
   color: var(--text-muted);
-  font-size: 0.66rem;
+  font-size: 0.72rem;
 }
 
 .oauth-ready-note {
@@ -5998,7 +6001,7 @@ button.mini-tags-more:focus-visible {
   display: block;
   margin-bottom: 6px;
   color: var(--text-muted);
-  font-size: 0.66rem;
+  font-size: 0.72rem;
   font-weight: 800;
   letter-spacing: 0.02em;
   text-transform: uppercase;
@@ -6017,7 +6020,7 @@ button.mini-tags-more:focus-visible {
   gap: 6px !important;
   min-height: 28px;
   padding: 0 9px;
-  border-radius: 999px;
+  border-radius: var(--radius-2);
   background: var(--glass-hover);
   color: var(--text-muted);
   cursor: pointer;
@@ -6046,10 +6049,10 @@ button.mini-tags-more:focus-visible {
   min-width: 0;
   min-height: 24px;
   padding: 0 8px;
-  border-radius: 999px;
+  border-radius: var(--radius-2);
   background: var(--glass-hover);
   color: var(--text-soft);
-  font-size: 0.66rem;
+  font-size: 0.72rem;
   gap: 5px;
   overflow-wrap: anywhere;
 }
@@ -6197,7 +6200,7 @@ button.mini-tags-more:focus-visible {
   overflow: visible;
   height: 22px;
   border: 0;
-  border-radius: 999px;
+  border-radius: var(--radius-2);
   box-shadow:
     inset 0 0 0 1px rgb(255 255 255 / 0.11),
     0 10px 28px rgb(0 0 0 / 0.14);
@@ -6220,7 +6223,7 @@ i.palette-color-segment {
 
 .palette-color-segment:first-child {
   border-left: 0;
-  border-radius: 999px 0 0 999px;
+  border-radius: var(--radius-2) 0 0 999px;
 }
 
 .palette-color-segment:last-child {
@@ -6228,7 +6231,7 @@ i.palette-color-segment {
 }
 
 .palette-color-segment:only-child {
-  border-radius: 999px;
+  border-radius: var(--radius-2);
 }
 
 .palette-color-segment.is-selected {
@@ -6242,7 +6245,7 @@ i.palette-color-segment {
   bottom: calc(100% + 7px);
   z-index: 2;
   padding: 4px 7px;
-  border-radius: 999px;
+  border-radius: var(--radius-2);
   background: rgb(12 13 12 / 0.94);
   color: var(--text-main);
   font-size: 0.68rem;
@@ -6268,11 +6271,11 @@ button.palette-color-segment:focus-visible code {
   height: 22px;
   padding: 0 7px;
   border: 0;
-  border-radius: 999px;
+  border-radius: var(--radius-2);
   background: rgb(255 255 255 / 0.055);
   color: var(--text-muted);
   cursor: pointer;
-  font-size: 0.62rem;
+  font-size: 0.7rem;
 }
 
 .reference-palette-actions button:hover {
@@ -6359,7 +6362,7 @@ button.palette-color-segment:focus-visible code {
   height: 18px;
   margin-left: -5px;
   border: 1px solid var(--border-soft);
-  border-radius: 999px;
+  border-radius: var(--radius-2);
   box-shadow: 0 0 0 1px rgb(0 0 0 / 0.16);
 }
 
@@ -6416,7 +6419,7 @@ button.palette-color-segment:focus-visible code {
   width: 11px;
   height: 11px;
   border: 1px solid var(--border-soft);
-  border-radius: 999px;
+  border-radius: var(--radius-2);
 }
 
 .accent-color-recommendations span {
@@ -6481,7 +6484,7 @@ button.palette-color-segment:focus-visible code {
   align-items: center;
   min-height: 34px;
   padding: 0 var(--space-3);
-  border-radius: 999px;
+  border-radius: var(--radius-2);
   background: rgb(12 13 12 / 0.76);
   color: var(--text-muted);
   gap: var(--space-2);
@@ -6513,7 +6516,7 @@ button.palette-color-segment:focus-visible code {
   width: 26px;
   height: 26px;
   place-items: center;
-  border-radius: 999px;
+  border-radius: var(--radius-2);
   background: transparent;
   color: var(--text-soft);
   cursor: pointer;
@@ -6530,8 +6533,12 @@ button.palette-color-segment:focus-visible code {
 }
 
 .graph3d-legend {
+  /* top must clear the absolutely-positioned .topbar (10px + 36px tall,
+     z-index:80) — same 54px the project-settings popover uses below it,
+     otherwise the last chip renders underneath the view switcher/settings
+     gear instead of just wrapping. */
   position: absolute;
-  top: var(--space-4);
+  top: 54px;
   right: var(--space-4);
   display: flex;
   max-width: min(520px, calc(100% - 32px));
@@ -6554,7 +6561,7 @@ button.palette-color-segment:focus-visible code {
   align-items: center;
   min-height: 28px;
   padding: 0 var(--space-2);
-  border-radius: 999px;
+  border-radius: var(--radius-2);
   background: rgb(12 13 12 / 0.64);
   color: var(--text-soft);
   cursor: pointer;
@@ -6575,13 +6582,13 @@ button.palette-color-segment:focus-visible code {
 .graph3d-legend i {
   width: 8px;
   height: 8px;
-  border-radius: 999px;
+  border-radius: var(--radius-2);
   background: var(--text-muted);
 }
 
 .graph3d-legend small {
   color: var(--text-muted);
-  font-size: 0.66rem;
+  font-size: 0.72rem;
   font-variant-numeric: tabular-nums;
 }
 
@@ -6677,7 +6684,7 @@ button.palette-color-segment:focus-visible code {
   align-items: center;
   min-height: 32px;
   padding: 3px;
-  border-radius: 999px;
+  border-radius: var(--radius-2);
   background: rgb(12 13 12 / 0.72);
   color: var(--text-muted);
   gap: 2px;
@@ -6689,18 +6696,20 @@ button.palette-color-segment:focus-visible code {
   width: 26px;
   height: 26px;
   place-items: center;
-  border-radius: 999px;
+  border-radius: var(--radius-2);
   background: transparent;
   color: var(--text-soft);
   cursor: pointer;
 }
 
 .slideshow-controls select {
-  width: 74px;
+  width: auto;
+  min-width: 74px;
+  max-width: 160px;
   height: 26px;
   padding: 0 var(--space-2);
   border: 0;
-  border-radius: 999px;
+  border-radius: var(--radius-2);
   background: rgb(255 255 255 / 0.055);
   color: var(--text-soft);
   font-size: 0.72rem;
@@ -6867,7 +6876,7 @@ button.palette-color-segment:focus-visible code {
   width: 12px;
   height: 12px;
   border: 1px solid var(--border-soft);
-  border-radius: 999px;
+  border-radius: var(--radius-2);
 }
 
 .slide-customizer-row strong {
@@ -7044,7 +7053,7 @@ button.palette-color-segment:focus-visible code {
   display: grid;
   overflow: hidden;
   height: 28px;
-  border-radius: 999px;
+  border-radius: var(--radius-2);
   grid-auto-flow: column;
   grid-auto-columns: 1fr;
 }
@@ -7114,6 +7123,7 @@ button.palette-color-segment:focus-visible code {
 
 .outline-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   padding: var(--space-4);
@@ -7125,6 +7135,7 @@ button.palette-color-segment:focus-visible code {
 
 .outline-titlebar {
   display: grid;
+  min-width: 0;
   gap: 2px;
 }
 
@@ -7136,7 +7147,9 @@ button.palette-color-segment:focus-visible code {
 
 .outline-tools {
   display: inline-flex;
+  flex-wrap: wrap;
   align-items: center;
+  min-width: 0;
   gap: var(--space-2);
 }
 
@@ -7554,7 +7567,7 @@ button.palette-color-segment:focus-visible code {
 
 .node-version-row small {
   color: var(--text-muted);
-  font-size: 0.66rem;
+  font-size: 0.72rem;
 }
 
 .node-version-row button {
@@ -7656,7 +7669,7 @@ button.palette-color-segment:focus-visible code {
   min-height: 24px;
   padding: 0 5px 0 8px;
   border: 1px solid color-mix(in srgb, var(--accent-cyan), transparent 81%);
-  border-radius: 999px;
+  border-radius: var(--radius-2);
   background: var(--accent-faint);
   color: #c7eee5;
   gap: 5px;
@@ -7669,7 +7682,7 @@ button.palette-color-segment:focus-visible code {
   width: 17px;
   height: 17px;
   place-items: center;
-  border-radius: 999px;
+  border-radius: var(--radius-2);
   background: transparent;
   color: rgb(199 238 229 / 0.7);
   cursor: pointer;
@@ -7739,7 +7752,7 @@ button.palette-color-segment:focus-visible code {
   border-radius: 5px;
   background: rgb(255 255 255 / 0.06);
   color: var(--text-main);
-  font-size: 0.64rem;
+  font-size: 0.7rem;
   font-weight: 750;
 }
 
@@ -7914,7 +7927,7 @@ textarea {
   display: grid;
   place-items: center;
   padding: var(--space-5);
-  background: rgb(0 0 0 / 0.46);
+  background: rgb(0 0 0 / 0.62);
 }
 
 .confirm-dialog {
@@ -8171,7 +8184,7 @@ textarea {
   overflow: hidden;
   height: 7px;
   margin-bottom: var(--space-3);
-  border-radius: 999px;
+  border-radius: var(--radius-2);
   background: rgb(255 255 255 / 0.07);
 }
 
@@ -8268,7 +8281,7 @@ textarea {
 .codex-login__status-dot {
   width: 7px;
   height: 7px;
-  border-radius: 999px;
+  border-radius: var(--radius-2);
   background: var(--success, #8fcf9f);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--success, #8fcf9f), transparent 80%);
   flex: none;
@@ -8311,7 +8324,7 @@ textarea {
 .codex-login__spinner {
   width: 13px;
   height: 13px;
-  border-radius: 999px;
+  border-radius: var(--radius-2);
   border: 2px solid color-mix(in srgb, var(--accent-strong), transparent 65%);
   border-top-color: var(--accent-strong);
   animation: codex-spin 600ms linear infinite;
@@ -8339,7 +8352,7 @@ textarea {
 .cli-status__dot {
   width: 7px;
   height: 7px;
-  border-radius: 999px;
+  border-radius: var(--radius-2);
   flex: none;
   background: var(--accent-amber);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-amber), transparent 80%);

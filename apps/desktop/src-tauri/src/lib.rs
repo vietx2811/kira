@@ -4,6 +4,8 @@ use image::{GenericImageView, ImageFormat};
 use objc2_app_kit::{NSColor, NSWindow};
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
+#[cfg(unix)]
+use std::os::unix::process::CommandExt;
 use std::{
     ffi::OsStr,
     fs,
@@ -369,6 +371,12 @@ struct AiGenerationResult {
 #[derive(Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 struct CodexStatus {
+    // Set by codex_status_native() itself, not by the JS helper's status.ts —
+    // that helper only reads ~/.codex/*, it has no opinion on whether the CLI
+    // binary is actually installed. #[serde(default)] keeps deserializing the
+    // helper's JSON (which never includes this key) from failing.
+    #[serde(default)]
+    installed: bool,
     logged_in: bool,
     auth_mode: Option<String>,
     account: Option<String>,
@@ -377,8 +385,8 @@ struct CodexStatus {
     models: Vec<String>,
 }
 
-// Unlike Codex, KIRA never bundles the `claude` binary or initiates its login — it only detects
-// an install/session the user already set up themselves (see byok-not-oauth memory).
+// KIRA doesn't vendor a copy of either CLI (see byok-not-oauth memory) — both Codex and Claude
+// Code are detected on the user's PATH via find_bin_in_dirs and run in place.
 #[derive(Default)]
 struct ClaudeCodeStatus {
     installed: bool,
@@ -390,6 +398,10 @@ struct ClaudeCodeStatus {
 #[serde(rename_all = "camelCase")]
 struct ExtensionTargetStatus {
     installed: bool,
+    // Chrome periodically auto-disables unpacked ("developer mode")
+    // extensions with a warning banner; only meaningful when `installed`.
+    #[serde(default)]
+    disabled: bool,
     available: bool,
     detail: String,
     install_path: String,
@@ -551,7 +563,10 @@ fn open_extension_install_target(app: AppHandle, target_id: String) -> Result<()
     match target_id.as_str() {
         "chrome" => open_system_target("chrome://extensions"),
         "safari" => open_system_target("x-apple.systempreferences:com.apple.Safari-Settings.extension"),
-        "chrome_dist" => open_system_target(&extension_dist_path(Some(&app)).to_string_lossy()),
+        "chrome_dist" => {
+            let path = sync_chrome_extension_dist(&app).unwrap_or_else(|_| extension_dist_path(Some(&app)));
+            open_system_target(&path.to_string_lossy())
+        }
         "safari_app" => {
             register_safari_extension()?;
             open_system_target("x-apple.systempreferences:com.apple.Safari-Settings.extension")
@@ -2058,8 +2073,13 @@ fn run_apple_vision_ocr_process_with_helper(
     run_swift_script(&script_path, APPLE_VISION_OCR_SWIFT, &[image_path])
 }
 
+// Resolves the user's own installed `codex` binary via PATH — mirrors
+// claude_code_bin_path(); KIRA no longer vendors a copy of the Codex CLI.
+// apps/codex-helper's resolveCodexBin() already treats "no override here" as
+// "let the CLI/codex-sdk search PATH itself", so this only needs to match
+// what that fallback would find, for status reporting in the Settings UI.
 fn codex_bin_path() -> Option<PathBuf> {
-    bundled_sidecar_path("codex")
+    find_bin_in_dirs(&common_cli_search_dirs(), "codex")
 }
 
 fn run_codex_helper(args: &[&std::ffi::OsStr], stdin_data: Option<&str>) -> Result<Output, String> {
@@ -2087,12 +2107,19 @@ fn run_codex_helper(args: &[&std::ffi::OsStr], stdin_data: Option<&str>) -> Resu
 }
 
 fn codex_status_native() -> Result<CodexStatus, String> {
+    // status.ts reads ~/.codex/* directly and has no opinion on whether the
+    // `codex` binary itself is installed — that check has to happen here.
+    if codex_bin_path().is_none() {
+        return Ok(CodexStatus::default());
+    }
     let output = run_codex_helper(&[std::ffi::OsStr::new("status")], None)?;
     if !output.status.success() {
         return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
     }
-    serde_json::from_slice(&output.stdout)
-        .map_err(|e| format!("Invalid Codex status output: {e}"))
+    let mut status: CodexStatus = serde_json::from_slice(&output.stdout)
+        .map_err(|e| format!("Invalid Codex status output: {e}"))?;
+    status.installed = true;
+    Ok(status)
 }
 
 #[tauri::command]
@@ -2107,6 +2134,18 @@ fn codex_login(
     if !matches!(method.as_str(), "chatgpt" | "device" | "api-key") {
         return Err(format!("Unknown login method: {method}"));
     }
+
+    if codex_bin_path().is_none() {
+        return Err("Codex CLI not found. Install it, then try Sign in with ChatGPT again.".to_string());
+    }
+
+    // Self-heal from any `codex login` left over from before process_group(0)
+    // existed, or from KIRA being force-quit mid-login: such a process keeps
+    // the OAuth callback's localhost:1455 listener, so a fresh attempt would
+    // otherwise hang waiting on a callback that goes to that stale process
+    // instead. Best-effort and scoped to this exact command line.
+    #[cfg(unix)]
+    let _ = Command::new("pkill").args(["-9", "-f", "codex login"]).status();
 
     let helper = bundled_sidecar_path("kira-codex-helper")
         .ok_or_else(|| "Codex helper binary not found".to_string())?;
@@ -2132,6 +2171,17 @@ fn codex_login(
     }
     command.stdout(std::process::Stdio::piped());
     command.stderr(std::process::Stdio::piped());
+
+    // The helper spawns `codex login` as its own child; killing just the helper
+    // (e.g. from codex_cancel_login) leaves that grandchild running as an
+    // orphan that still holds the OAuth callback's localhost:1455 listener —
+    // confirmed by hand: killing the helper alone leaves `codex login` alive
+    // and the port bound, so every later login attempt hangs waiting on a
+    // callback that goes to the wrong (orphaned) process. Making the helper
+    // its own process group leader lets codex_cancel_login kill the whole
+    // group at once instead of just the one tracked PID.
+    #[cfg(unix)]
+    command.process_group(0);
 
     let mut child = command.spawn().map_err(|e| format!("Unable to start login: {e}"))?;
     let stdout = child.stdout.take().ok_or_else(|| "no stdout".to_string())?;
@@ -2199,7 +2249,17 @@ fn codex_login(
 #[tauri::command]
 fn codex_cancel_login(state: tauri::State<'_, CodexLoginState>) -> Result<(), String> {
     if let Some(mut child) = state.child.lock().unwrap().take() {
+        // codex_login spawns the helper as its own process group leader
+        // specifically so this can kill `codex login` along with it — killing
+        // only the tracked child PID leaves that grandchild running, still
+        // bound to the OAuth callback port, so the next login attempt hangs.
+        #[cfg(unix)]
+        {
+            let pid = child.id();
+            let _ = Command::new("kill").args(["-9", "--", &format!("-{pid}")]).status();
+        }
         let _ = child.kill();
+        let _ = child.wait();
     }
     Ok(())
 }
@@ -2211,15 +2271,15 @@ fn codex_logout() -> Result<(), String> {
     else { Err(String::from_utf8_lossy(&output.stderr).trim().to_string()) }
 }
 
-// Resolves the user's own installed `claude` binary via PATH — deliberately not a
-// `bundled_sidecar_path` lookup, since KIRA doesn't vendor a copy of the Claude Code CLI.
-fn claude_code_bin_path() -> Option<PathBuf> {
+// Search dirs shared by every "detect the user's own CLI install" lookup
+// (claude, codex, ...). GUI apps launched from Finder/Dock inherit a minimal
+// PATH that often skips the Node/npm install locations a user's own shell
+// PATH would include, hence the extra fixed candidates below.
+fn common_cli_search_dirs() -> Vec<PathBuf> {
     let mut search_dirs: Vec<PathBuf> = Vec::new();
     if let Ok(path_var) = std::env::var("PATH") {
         search_dirs.extend(std::env::split_paths(&path_var));
     }
-    // GUI apps launched from Finder/Dock inherit a minimal PATH that often skips the
-    // Node/npm install locations a user's own shell PATH would include.
     if let Some(home) = std::env::var_os("HOME").map(PathBuf::from) {
         search_dirs.push(home.join(".npm-global/bin"));
         search_dirs.push(home.join(".volta/bin"));
@@ -2227,14 +2287,19 @@ fn claude_code_bin_path() -> Option<PathBuf> {
     }
     search_dirs.push(PathBuf::from("/opt/homebrew/bin"));
     search_dirs.push(PathBuf::from("/usr/local/bin"));
-
-    find_claude_bin_in_dirs(&search_dirs)
+    search_dirs
 }
 
-fn find_claude_bin_in_dirs(dirs: &[PathBuf]) -> Option<PathBuf> {
+fn find_bin_in_dirs(dirs: &[PathBuf], binary_name: &str) -> Option<PathBuf> {
     dirs.iter()
-        .map(|dir| dir.join("claude"))
+        .map(|dir| dir.join(binary_name))
         .find(|candidate| candidate.is_file())
+}
+
+// Resolves the user's own installed `claude` binary via PATH — deliberately not a
+// `bundled_sidecar_path` lookup, since KIRA doesn't vendor a copy of the Claude Code CLI.
+fn claude_code_bin_path() -> Option<PathBuf> {
+    find_bin_in_dirs(&common_cli_search_dirs(), "claude")
 }
 
 // `claude auth status` (verified against the real binary): exits 0 when logged in, prints a
@@ -2465,6 +2530,11 @@ fn test_ai_provider_native(
 
     if provider.provider_type == "codex" {
         return match codex_status_native() {
+            Ok(status) if !status.installed => Ok(AiProviderTestResult {
+                connected: false,
+                status: "unavailable".to_string(),
+                message: "Codex CLI not found. Install it, then use Sign in with ChatGPT.".to_string(),
+            }),
             Ok(status) if status.logged_in => Ok(AiProviderTestResult {
                 connected: true,
                 status: "connected".to_string(),
@@ -2569,7 +2639,13 @@ fn list_ai_models_native(
     if provider.provider_type == "codex" {
         let status = codex_status_native()?;
         return Ok(AiModelListResult {
-            status: "codex".to_string(),
+            status: if !status.installed {
+                "not installed".to_string()
+            } else if status.logged_in {
+                "codex".to_string()
+            } else {
+                "not signed in".to_string()
+            },
             models: status.models,
         });
     }
@@ -3322,11 +3398,43 @@ fn detect_extension_install_status(app: Option<&AppHandle>) -> ExtensionInstallS
     }
 }
 
+fn extension_disabled_in_preferences(contents: &str, path_string: &str) -> bool {
+    // Best-effort only: Chrome's extension `state` field (0 = disabled, 1 =
+    // enabled) has been part of the extension system since its earliest
+    // versions, so this is low-risk — but the exact JSON shape is still an
+    // internal Chrome implementation detail, not a stable public API. If
+    // parsing fails or nothing matches, this just returns false, identical
+    // to the behavior before this check existed.
+    let Ok(json) = serde_json::from_str::<serde_json::Value>(contents) else {
+        return false;
+    };
+    let Some(settings) = json
+        .get("extensions")
+        .and_then(|e| e.get("settings"))
+        .and_then(|s| s.as_object())
+    else {
+        return false;
+    };
+    for entry in settings.values() {
+        let matches_path = entry.get("path").and_then(|p| p.as_str()) == Some(path_string);
+        let matches_name = entry
+            .get("manifest")
+            .and_then(|m| m.get("name"))
+            .and_then(|n| n.as_str())
+            .is_some_and(|name| name.contains("KIRA"));
+        if matches_path || matches_name {
+            return entry.get("state").and_then(|s| s.as_i64()) == Some(0);
+        }
+    }
+    false
+}
+
 fn detect_chrome_extension_status(app: Option<&AppHandle>) -> ExtensionTargetStatus {
     let install_path = extension_dist_path(app);
     let path_string = install_path.to_string_lossy().to_string();
     let mut checked_profiles = 0;
     let mut matched_profile = None;
+    let mut disabled = false;
     for preferences_path in chrome_preferences_paths() {
         checked_profiles += 1;
         if let Ok(contents) = fs::read_to_string(&preferences_path) {
@@ -3335,12 +3443,15 @@ fn detect_chrome_extension_status(app: Option<&AppHandle>) -> ExtensionTargetSta
                 || contents.contains("kiraCapture")
             {
                 matched_profile = preferences_path.parent().map(|path| path.to_string_lossy().to_string());
+                disabled = extension_disabled_in_preferences(&contents, &path_string);
                 break;
             }
         }
     }
     let available = install_path.join("manifest.json").exists();
-    let detail = if let Some(profile) = &matched_profile {
+    let detail = if disabled {
+        "Installed but disabled by Chrome — click Load unpacked again".to_string()
+    } else if let Some(profile) = &matched_profile {
         format!("Detected in {profile}")
     } else if checked_profiles > 0 {
         format!("Not detected across {checked_profiles} Chromium profile(s)")
@@ -3349,6 +3460,7 @@ fn detect_chrome_extension_status(app: Option<&AppHandle>) -> ExtensionTargetSta
     };
     ExtensionTargetStatus {
         installed: matched_profile.is_some(),
+        disabled,
         available,
         detail,
         install_path: path_string,
@@ -3383,6 +3495,9 @@ fn detect_safari_extension_status(app: Option<&AppHandle>) -> ExtensionTargetSta
     };
     ExtensionTargetStatus {
         installed,
+        // pluginkit reports registered/not, not enabled/disabled — Safari
+        // has no equivalent "auto-disabled" state for this to distinguish.
+        disabled: false,
         available,
         detail,
         install_path: install_path.to_string_lossy().to_string(),
@@ -3417,12 +3532,75 @@ fn chrome_preferences_paths() -> Vec<PathBuf> {
     paths
 }
 
-fn extension_dist_path(app: Option<&AppHandle>) -> PathBuf {
+fn extension_bundled_dist_path(app: Option<&AppHandle>) -> PathBuf {
     bundled_resource_path(app, Path::new("dist"))
         .or_else(|| bundled_resource_dir_containing(app, "manifest.json", "extension/dist"))
         .unwrap_or_else(|| {
         workspace_root_guess().join("apps").join("extension").join("dist")
     })
+}
+
+// A path inside the versioned .app bundle would shift (or vanish) across a
+// KIRA update, silently orphaning whatever Chrome loaded via "Load unpacked"
+// at the old path. Mirroring the bundled dist into Application Support once
+// per launch gives Chrome a install target that survives updates in place.
+fn chrome_stable_dist_dir(app: Option<&AppHandle>) -> Option<PathBuf> {
+    let dir = app?.path().app_data_dir().ok()?.join("extension").join("chrome-dist");
+    Some(dir)
+}
+
+fn extension_dist_path(app: Option<&AppHandle>) -> PathBuf {
+    if let Some(stable) = chrome_stable_dist_dir(app) {
+        if stable.join("manifest.json").exists() {
+            return stable;
+        }
+    }
+    extension_bundled_dist_path(app)
+}
+
+fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
+    fs::create_dir_all(dst)?;
+    for entry in fs::read_dir(src)? {
+        let entry = entry?;
+        let dest_path = dst.join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            copy_dir_recursive(&entry.path(), &dest_path)?;
+        } else {
+            fs::copy(entry.path(), &dest_path)?;
+        }
+    }
+    Ok(())
+}
+
+// Mirrors the bundled extension/dist into the stable Application Support
+// path `extension_dist_path` prefers once it exists. Cheap to call on every
+// launch and every Settings > Capture refresh: skips the actual copy unless
+// the bundled manifest changed, so it isn't rewriting the folder (and its
+// mtime) on every app start.
+fn sync_chrome_extension_dist(app: &AppHandle) -> Result<PathBuf, String> {
+    let source = extension_bundled_dist_path(Some(app));
+    if !source.join("manifest.json").exists() {
+        return Err("Bundled Chrome extension files were not found".to_string());
+    }
+    let stable = chrome_stable_dist_dir(Some(app))
+        .ok_or_else(|| "Could not resolve the app data directory".to_string())?;
+
+    let needs_copy = match (fs::read(source.join("manifest.json")), fs::read(stable.join("manifest.json"))) {
+        (Ok(src_manifest), Ok(dst_manifest)) => src_manifest != dst_manifest,
+        _ => true,
+    };
+    if needs_copy {
+        if stable.exists() {
+            fs::remove_dir_all(&stable).map_err(|error| error.to_string())?;
+        }
+        copy_dir_recursive(&source, &stable).map_err(|error| error.to_string())?;
+    }
+    Ok(stable)
+}
+
+#[tauri::command]
+fn sync_chrome_extension_dist_command(app: AppHandle) -> Result<String, String> {
+    sync_chrome_extension_dist(&app).map(|path| path.to_string_lossy().to_string())
 }
 
 fn safari_container_app_path(app: Option<&AppHandle>) -> PathBuf {
@@ -4224,6 +4402,9 @@ pub fn run() {
             if let Err(error) = register_safari_extension() {
                 eprintln!("KIRA Safari extension registration skipped: {error}");
             }
+            if let Err(error) = sync_chrome_extension_dist(&app.handle().clone()) {
+                eprintln!("KIRA Chrome extension dist sync skipped: {error}");
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -4244,6 +4425,7 @@ pub fn run() {
             generate_ai_vision,
             get_extension_install_status,
             open_extension_install_target,
+            sync_chrome_extension_dist_command,
             export_outline_markdown,
             export_outline_html,
             export_contact_sheet_html,
@@ -4823,7 +5005,7 @@ mod tests {
         fs::write(&bin, b"stub").expect("write stub");
 
         let unrelated_dir = std::env::temp_dir().join(format!("kira-claude-bin-test-miss-{id}"));
-        let discovered = find_claude_bin_in_dirs(&[unrelated_dir, dir.clone()]);
+        let discovered = find_bin_in_dirs(&[unrelated_dir, dir.clone()], "claude");
 
         assert_eq!(discovered, Some(bin));
         let _ = fs::remove_dir_all(dir);
@@ -4833,7 +5015,58 @@ mod tests {
     fn claude_code_bin_discovery_returns_none_when_not_found() {
         let id = timestamp_millis();
         let dir = std::env::temp_dir().join(format!("kira-claude-bin-test-empty-{id}"));
-        assert_eq!(find_claude_bin_in_dirs(&[dir]), None);
+        assert_eq!(find_bin_in_dirs(&[dir], "claude"), None);
+    }
+
+    #[test]
+    fn codex_bin_discovery_finds_executable_in_search_dirs() {
+        let id = timestamp_millis();
+        let dir = std::env::temp_dir().join(format!("kira-codex-bin-test-{id}"));
+        fs::create_dir_all(&dir).expect("create dir");
+        let bin = dir.join("codex");
+        fs::write(&bin, b"stub").expect("write stub");
+
+        let unrelated_dir = std::env::temp_dir().join(format!("kira-codex-bin-test-miss-{id}"));
+        let discovered = find_bin_in_dirs(&[unrelated_dir, dir.clone()], "codex");
+
+        assert_eq!(discovered, Some(bin));
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn codex_bin_discovery_returns_none_when_not_found() {
+        let id = timestamp_millis();
+        let dir = std::env::temp_dir().join(format!("kira-codex-bin-test-empty-{id}"));
+        assert_eq!(find_bin_in_dirs(&[dir], "codex"), None);
+    }
+
+    // Shape of Chrome's `Preferences` JSON for a matched unpacked extension —
+    // `extensions.settings.<id>` with `state: 0/1` (disabled/enabled). Field
+    // name only, not exhaustive of every key Chrome actually writes there.
+    #[test]
+    fn extension_disabled_in_preferences_detects_state_zero_by_path() {
+        let json = r#"{"extensions":{"settings":{"abcdefghijklmnop":{"path":"/Users/x/Library/Application Support/KIRA/extension/chrome-dist","state":0,"manifest":{"name":"KIRA"}}}}}"#;
+        assert!(extension_disabled_in_preferences(
+            json,
+            "/Users/x/Library/Application Support/KIRA/extension/chrome-dist"
+        ));
+    }
+
+    #[test]
+    fn extension_disabled_in_preferences_false_when_enabled() {
+        let json = r#"{"extensions":{"settings":{"abcdefghijklmnop":{"path":"/some/dist","state":1,"manifest":{"name":"KIRA"}}}}}"#;
+        assert!(!extension_disabled_in_preferences(json, "/some/dist"));
+    }
+
+    #[test]
+    fn extension_disabled_in_preferences_false_when_no_match() {
+        let json = r#"{"extensions":{"settings":{"other":{"path":"/unrelated","state":0}}}}"#;
+        assert!(!extension_disabled_in_preferences(json, "/some/dist"));
+    }
+
+    #[test]
+    fn extension_disabled_in_preferences_false_on_malformed_json() {
+        assert!(!extension_disabled_in_preferences("not json", "/some/dist"));
     }
 
     // `claude auth status` output shape, verified against the real installed binary:

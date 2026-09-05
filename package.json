@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "pnpm --filter @kira/desktop dev",
     "build": "pnpm --filter @kira/desktop build && pnpm --filter @kira/extension build",
-    "preview": "pnpm --filter @kira/desktop preview"
+    "preview": "pnpm --filter @kira/desktop preview",
+    "release:mac": "pnpm --filter @kira/desktop release:mac",
+    "package:mac": "pnpm release:mac && ./packaging/macos/package-release.sh"
   },
   "packageManager": "pnpm@10.32.1"
 }
