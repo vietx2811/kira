@@ -129,6 +129,7 @@ apps/
   desktop/       Tauri 2 + React desktop app
   extension/     Chrome MV3 and Safari Web Extension
   codex-helper/  Local Codex integration helper
+  website/       Marketing site + privacy policy (kira.vietx.xyz)
 packaging/
   macos/         Self-signing script and release instructions
 docs/            Architecture, research, and design documentation
