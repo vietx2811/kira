@@ -5106,6 +5106,21 @@ mod tests {
         assert!(!extension_disabled_in_preferences("not json", "/some/dist"));
     }
 
+    // The sign-in command interpolates a resolved binary path into an AppleScript string that
+    // is itself a shell command line, so the path crosses two layers of quoting. `~/.local/bin`
+    // is the common install location and is plain, but "Application Support" paths are not.
+    #[test]
+    fn shell_single_quote_survives_spaces_and_quotes() {
+        assert_eq!(shell_single_quote("/Users/me/.local/bin/claude"), "'/Users/me/.local/bin/claude'");
+        assert_eq!(
+            shell_single_quote("/Volumes/My Disk/App Code/claude"),
+            "'/Volumes/My Disk/App Code/claude'"
+        );
+        // A single quote in the path has to terminate, escape, and reopen the quoted run,
+        // otherwise the rest of the path would leak out of the string as shell tokens.
+        assert_eq!(shell_single_quote("/tmp/it's/claude"), r"'/tmp/it'\''s/claude'");
+    }
+
     // `claude auth status` output shape, verified against the real installed binary:
     // `{"loggedIn": bool, "authMethod": "...", "email": "...", ...}` on stdout, exit 0 either way.
     #[test]
