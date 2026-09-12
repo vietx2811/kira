@@ -91,11 +91,15 @@
   --radius-4: 12px;
   --radius-5: 20px;
   /* AppKit-keyed type scale — labelFontSize / smallSystemFontSize /
-     systemFontSize / a panel-title step / a view-heading step. Replaces the
-     26 ad-hoc rem sizes that used to run ~78% of native macOS scale. */
+     systemFontSize / a panel-title step / a view-heading step. Every UI
+     font-size in this file resolves to one of these steps, with two
+     deliberate exception classes: four decorative pseudo-elements that use
+     font-size to scale a glyph rather than to set text, and two clamp()
+     display headings (onboarding hero, slide title) that must stay fluid
+     with the viewport. Add a step here rather than reintroducing a one-off
+     value, which is how the scale drifted out of sync before. */
   --text-mini: 10px;
   --text-small: 11px;
-  --text-micro: 10px;
   --text-body: 13px;
   --text-title: 15px;
   --text-large: 20px;
@@ -364,7 +368,7 @@ button {
   color: var(--text-muted);
   cursor: pointer;
   gap: 6px;
-  font-size: 0.76rem;
+  font-size: var(--text-small);
   transition: background var(--duration-base) var(--ease-soft), color var(--duration-base) var(--ease-soft), box-shadow var(--duration-base) var(--ease-soft);
   animation: fileTabIn var(--duration-panel) var(--ease-out-soft) both;
 }
@@ -614,7 +618,7 @@ button {
 }
 
 .brand-name {
-  font-size: 1rem;
+  font-size: var(--text-title);
   font-weight: 680;
   letter-spacing: 0;
 }
@@ -629,7 +633,7 @@ button {
 .toolbar-status {
   overflow: hidden;
   color: var(--text-muted);
-  font-size: 0.72rem;
+  font-size: var(--text-small);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -811,7 +815,7 @@ button {
 
 .package-status {
   color: var(--text-muted);
-  font-size: 0.72rem;
+  font-size: var(--text-small);
 }
 
 .primary-button.is-wide {
@@ -1034,7 +1038,7 @@ button {
   background: transparent;
   color: var(--text-soft);
   cursor: pointer;
-  font-size: 0.72rem;
+  font-size: var(--text-small);
   gap: 7px;
   text-align: left;
 }
@@ -1181,7 +1185,7 @@ button {
   background: var(--glass-inspector);
   box-shadow: var(--panel-shadow);
   color: var(--text-main);
-  font-size: 0.78rem;
+  font-size: var(--text-small);
   text-align: center;
   white-space: nowrap;
   overflow: hidden;
@@ -1399,7 +1403,7 @@ button {
 
 .onboarding-kicker {
   color: var(--accent-strong);
-  font-size: 0.72rem;
+  font-size: var(--text-small);
   font-weight: 900;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -1424,7 +1428,7 @@ button {
 .onboarding-hero p {
   max-width: 32ch;
   margin-top: 14px;
-  font-size: 0.92rem;
+  font-size: var(--text-body);
 }
 
 .onboarding-status-row {
@@ -1445,7 +1449,7 @@ button {
   border-radius: var(--radius-2);
   background: var(--glass-hover);
   color: var(--text-soft);
-  font-size: 0.74rem;
+  font-size: var(--text-small);
   gap: 6px;
 }
 
@@ -1492,11 +1496,11 @@ button {
 }
 .onboarding-cta-body strong {
   color: var(--text-main);
-  font-size: 1rem;
+  font-size: var(--text-body);
 }
 .onboarding-cta-body small {
   color: var(--text-soft);
-  font-size: 0.76rem;
+  font-size: var(--text-small);
 }
 
 .onboarding-secondary {
@@ -1506,7 +1510,7 @@ button {
 .onboarding-secondary-label {
   padding-left: 2px;
   color: var(--text-muted);
-  font-size: var(--text-micro);
+  font-size: var(--text-mini);
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
@@ -1543,12 +1547,12 @@ button {
 }
 .onboarding-link-text strong {
   color: var(--text-main);
-  font-size: 0.86rem;
+  font-size: var(--text-body);
 }
 .onboarding-link-text small {
   overflow: hidden;
   color: var(--text-muted);
-  font-size: 0.73rem;
+  font-size: var(--text-small);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1597,14 +1601,14 @@ button {
 .onboarding-step-head strong {
   display: block;
   color: var(--text-main);
-  font-size: 0.98rem;
+  font-size: var(--text-title);
 }
 
 .onboarding-step-head small {
   display: block;
   overflow: hidden;
   color: var(--text-muted);
-  font-size: 0.74rem;
+  font-size: var(--text-small);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1634,7 +1638,7 @@ button {
   padding: 0 12px;
   color: var(--text-soft);
   cursor: pointer;
-  font-size: 0.78rem;
+  font-size: var(--text-small);
   font-weight: 800;
   list-style: none;
 }
@@ -1836,7 +1840,7 @@ button {
 .panel-kicker {
   margin: 0 0 2px;
   color: var(--accent-sage);
-  font-size: var(--text-micro);
+  font-size: var(--text-mini);
   font-weight: 760;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -1850,12 +1854,12 @@ p {
 }
 
 h1 {
-  font-size: 1.08rem;
+  font-size: var(--text-title);
   font-weight: 680;
 }
 
 h2 {
-  font-size: 0.95rem;
+  font-size: var(--text-body);
   font-weight: 680;
 }
 
@@ -1865,7 +1869,7 @@ h2 {
   margin-top: 4px;
   color: var(--text-muted);
   gap: 6px;
-  font-size: 0.72rem;
+  font-size: var(--text-small);
 }
 
 .panel-meta-badge {
@@ -1873,19 +1877,26 @@ h2 {
   border-radius: var(--radius-2);
   background: var(--accent-faint);
   color: var(--accent-strong);
-  font-size: 0.7rem;
+  font-size: var(--text-mini);
   font-weight: 700;
 }
 
 h3 {
   margin-bottom: var(--space-2);
-  font-size: 0.9rem;
+  font-size: var(--text-body);
   font-weight: 670;
 }
 
 p {
   color: var(--text-soft);
-  font-size: 0.86rem;
+  font-size: var(--text-body);
+}
+
+/* Without this, an unscoped <small> takes the browser's relative `smaller`
+   (~9.2px under an 11px parent) and lands below the scale's floor. The few
+   scoped `... small` rules already settled on this step. */
+small {
+  font-size: var(--text-small);
 }
 
 .search-field {
@@ -1900,7 +1911,7 @@ p {
   box-shadow: inset 0 -1px 0 rgb(255 255 255 / 0.055);
   color: var(--text-muted);
   gap: var(--space-2);
-  font-size: 0.78rem;
+  font-size: var(--text-small);
 }
 
 .library-browse-bar {
@@ -1910,7 +1921,7 @@ p {
   min-height: 32px;
   padding: 0 var(--space-4) var(--space-2);
   color: var(--text-muted);
-  font-size: 0.72rem;
+  font-size: var(--text-small);
 }
 
 .active-filter-chip {
@@ -1923,7 +1934,7 @@ p {
   color: var(--accent-strong);
   cursor: pointer;
   gap: 4px;
-  font-size: var(--text-micro);
+  font-size: var(--text-mini);
   font-weight: 620;
 }
 
@@ -1989,7 +2000,7 @@ p {
   color: var(--text-soft);
   cursor: pointer;
   gap: 6px;
-  font-size: 0.72rem;
+  font-size: var(--text-small);
 }
 
 .library-command-menu button:hover {
@@ -2009,7 +2020,7 @@ p {
   background: rgb(255 255 255 / 0.035);
   color: var(--text-muted);
   cursor: pointer;
-  font-size: 0.75rem;
+  font-size: var(--text-small);
   white-space: nowrap;
 }
 
@@ -2341,7 +2352,7 @@ p {
 
 .library-node-row strong {
   color: var(--text-main);
-  font-size: 0.8rem;
+  font-size: var(--text-small);
   white-space: nowrap;
 }
 
@@ -2352,7 +2363,7 @@ p {
 .library-node-row small {
   display: none;
   color: var(--text-muted);
-  font-size: var(--text-micro);
+  font-size: var(--text-mini);
   line-height: 1.28;
 }
 
@@ -2378,13 +2389,13 @@ p {
 
 .image-row-copy strong {
   color: var(--text-main);
-  font-size: 0.82rem;
+  font-size: var(--text-small);
   font-weight: 630;
 }
 
 .image-row-copy small {
   color: var(--text-muted);
-  font-size: 0.72rem;
+  font-size: var(--text-small);
 }
 
 /* Sibling of the row/card select button (not nested inside it) — see
@@ -2424,7 +2435,7 @@ p {
   color: var(--text-soft);
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 0.7rem;
+  font-size: var(--text-mini);
   line-height: normal;
 }
 
@@ -2494,7 +2505,7 @@ button.mini-tags-more:focus-visible {
 
 .mini-tags-popover > strong {
   color: var(--text-muted);
-  font-size: var(--text-micro);
+  font-size: var(--text-mini);
   font-weight: 600;
 }
 
@@ -2519,7 +2530,7 @@ button.mini-tags-more:focus-visible {
   background: transparent;
   color: var(--text-muted);
   gap: var(--space-2);
-  font-size: 0.76rem;
+  font-size: var(--text-small);
 }
 
 .library-download-bar {
@@ -2531,7 +2542,7 @@ button.mini-tags-more:focus-visible {
 .library-download-label {
   overflow: hidden;
   color: var(--text-muted);
-  font-size: 0.7rem;
+  font-size: var(--text-mini);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -2605,7 +2616,7 @@ button.mini-tags-more:focus-visible {
   background: rgb(255 255 255 / 0.045);
   color: var(--text-soft);
   cursor: pointer;
-  font-size: 0.72rem;
+  font-size: var(--text-small);
 }
 
 .batch-bar button:hover {
@@ -2615,7 +2626,7 @@ button.mini-tags-more:focus-visible {
 
 .selection-count {
   color: var(--accent-cyan);
-  font-size: 0.74rem;
+  font-size: var(--text-small);
   white-space: nowrap;
 }
 
@@ -2624,12 +2635,12 @@ button.mini-tags-more:focus-visible {
   gap: var(--space-1);
   padding: var(--space-4);
   color: var(--text-muted);
-  font-size: 0.78rem;
+  font-size: var(--text-small);
 }
 
 .empty-state strong {
   color: var(--text-soft);
-  font-size: 0.86rem;
+  font-size: var(--text-body);
 }
 
 .empty-state button {
@@ -2640,7 +2651,7 @@ button.mini-tags-more:focus-visible {
   background: var(--accent-faint);
   color: var(--accent-strong);
   cursor: pointer;
-  font-size: 0.74rem;
+  font-size: var(--text-small);
 }
 
 .drop-copy {
@@ -2654,7 +2665,7 @@ button.mini-tags-more:focus-visible {
   border-radius: var(--radius-2);
   background: var(--accent-faint);
   color: var(--accent-strong);
-  font-size: 0.78rem;
+  font-size: var(--text-small);
   pointer-events: none;
 }
 
@@ -2670,7 +2681,7 @@ button.mini-tags-more:focus-visible {
   color: var(--accent-strong);
   cursor: pointer;
   gap: var(--space-2);
-  font-size: 0.76rem;
+  font-size: var(--text-small);
 }
 
 .file-action {
@@ -2688,7 +2699,7 @@ button.mini-tags-more:focus-visible {
   margin-bottom: var(--space-3);
   color: var(--text-soft);
   gap: var(--space-2);
-  font-size: 0.74rem;
+  font-size: var(--text-small);
   font-weight: 720;
   letter-spacing: 0.03em;
   text-transform: uppercase;
@@ -2704,7 +2715,7 @@ button.mini-tags-more:focus-visible {
   border-radius: var(--radius-2);
   background: rgb(255 255 255 / 0.055);
   color: var(--text-muted);
-  font-size: 0.72rem;
+  font-size: var(--text-small);
   font-weight: 650;
   letter-spacing: 0;
   text-transform: none;
@@ -2735,7 +2746,7 @@ button.mini-tags-more:focus-visible {
   background: rgb(255 255 255 / 0.045);
   color: var(--text-soft);
   cursor: pointer;
-  font-size: var(--text-micro);
+  font-size: var(--text-mini);
   font-weight: 650;
   letter-spacing: 0;
   text-transform: none;
@@ -2749,7 +2760,7 @@ button.mini-tags-more:focus-visible {
 .tag-status {
   margin: var(--space-2) 0 0;
   color: var(--text-muted);
-  font-size: 0.72rem;
+  font-size: var(--text-small);
 }
 
 .tag-status.is-error {
@@ -2775,7 +2786,7 @@ button.mini-tags-more:focus-visible {
   gap: var(--space-2);
   padding-top: var(--space-2);
   color: var(--text-soft);
-  font-size: 0.76rem;
+  font-size: var(--text-small);
 }
 
 .suggestion-row + .suggestion-row {
@@ -2800,7 +2811,7 @@ button.mini-tags-more:focus-visible {
 
 .suggestion-label {
   color: var(--text-muted);
-  font-size: 0.7rem;
+  font-size: var(--text-mini);
 }
 
 .suggestion-row button,
@@ -2819,7 +2830,7 @@ button.mini-tags-more:focus-visible {
   color: var(--text-soft);
   cursor: pointer;
   gap: 4px;
-  font-size: var(--text-micro);
+  font-size: var(--text-mini);
 }
 
 .suggestion-chip {
@@ -2841,7 +2852,7 @@ button.mini-tags-more:focus-visible {
 
 .suggestion-chip small {
   color: var(--text-muted);
-  font-size: 0.7rem;
+  font-size: var(--text-mini);
 }
 
 .graph-shell {
@@ -2955,7 +2966,7 @@ button.mini-tags-more:focus-visible {
   cursor: grab;
   pointer-events: auto;
   align-content: center;
-  font-size: 0.72rem;
+  font-size: var(--text-small);
   font-weight: 650;
   gap: 1px;
   text-align: left;
@@ -2975,7 +2986,7 @@ button.mini-tags-more:focus-visible {
 .canvas-frame-description {
   overflow: hidden;
   color: var(--text-muted);
-  font-size: 0.7rem;
+  font-size: var(--text-mini);
   font-weight: 500;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -3009,7 +3020,7 @@ button.mini-tags-more:focus-visible {
   background: transparent;
   color: var(--text-muted);
   font: inherit;
-  font-size: var(--text-micro);
+  font-size: var(--text-mini);
   outline: none;
 }
 
@@ -3103,12 +3114,12 @@ button.mini-tags-more:focus-visible {
 }
 .canvas-zero-restore-text strong {
   color: var(--text-main);
-  font-size: 0.88rem;
+  font-size: var(--text-body);
 }
 .canvas-zero-restore-text small {
   overflow: hidden;
   color: var(--text-soft);
-  font-size: 0.74rem;
+  font-size: var(--text-small);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -3128,7 +3139,7 @@ button.mini-tags-more:focus-visible {
 .canvas-zero-heading h2 {
   margin: 0;
   color: var(--text-main);
-  font-size: 1.08rem;
+  font-size: var(--text-title);
   font-weight: 640;
   letter-spacing: -0.01em;
 }
@@ -3159,7 +3170,7 @@ button.mini-tags-more:focus-visible {
 }
 
 .canvas-template-card strong {
-  font-size: 0.9rem;
+  font-size: var(--text-body);
 }
 
 .canvas-template-card.is-welcome {
@@ -3307,7 +3318,7 @@ button.mini-tags-more:focus-visible {
   background: var(--node-surface-selected);
   pointer-events: auto;
   transform: translate(-50%, calc(-100% - 14px));
-  font-size: 0.78rem;
+  font-size: var(--text-small);
 }
 
 .link-popover-endpoints {
@@ -3315,7 +3326,7 @@ button.mini-tags-more:focus-visible {
   align-items: center;
   gap: 6px;
   color: var(--text-soft);
-  font-size: 0.72rem;
+  font-size: var(--text-small);
 }
 
 .link-popover-endpoints span {
@@ -3375,7 +3386,7 @@ button.mini-tags-more:focus-visible {
   display: grid;
   gap: 3px;
   color: var(--text-soft);
-  font-size: 0.72rem;
+  font-size: var(--text-small);
 }
 
 .link-popover .danger-action {
@@ -3458,7 +3469,7 @@ button.mini-tags-more:focus-visible {
    are legitimate" guidance — no web font fetch. */
 .idea-node--sticker .node-rich-editor-content {
   font-family: "Bradley Hand", "Segoe Print", "Noteworthy", cursive;
-  font-size: 0.92rem;
+  font-size: var(--text-body);
 }
 
 /* Calm resting state; hover lifts the card without shouting. */
@@ -3637,7 +3648,7 @@ button.mini-tags-more:focus-visible {
   max-width: 100%;
   overflow: hidden;
   color: var(--text-muted);
-  font-size: 0.72rem;
+  font-size: var(--text-small);
   line-height: 1.2;
   opacity: 0;
   pointer-events: none;
@@ -3673,7 +3684,7 @@ button.mini-tags-more:focus-visible {
 .diagram-node strong,
 .placeholder-node span {
   overflow: hidden;
-  font-size: 0.76rem;
+  font-size: var(--text-small);
   font-weight: 650;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -3682,7 +3693,7 @@ button.mini-tags-more:focus-visible {
 .palette-node small,
 .diagram-node small {
   color: var(--text-muted);
-  font-size: 0.72rem;
+  font-size: var(--text-small);
 }
 
 .diagram-node {
@@ -4507,17 +4518,69 @@ button.mini-tags-more:focus-visible {
   color: var(--text-main);
 }
 
-.kira-dock-scope-chip select {
-  position: absolute;
-  inset: 0;
-  opacity: 0;
-  cursor: pointer;
-  width: 100%;
-  height: 100%;
-}
 
 .kira-dock-scope-label {
   white-space: nowrap;
+}
+
+/* Both dock triggers are <button> now, so they need the app font back. */
+.kira-dock-scope-chip,
+.kira-dock-model-selector {
+  font-family: inherit;
+  text-align: left;
+}
+
+/* Portalled to <body>, so it is positioned fixed and needs to clear the
+   body-level layers rather than the dock's own z-index: 9 stacking context. */
+.dock-select-list {
+  position: fixed;
+  z-index: 200;
+  max-height: 260px;
+  margin: 0;
+  padding: 4px;
+  overflow-y: auto;
+  list-style: none;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-3);
+  background: var(--node-surface-selected);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.25), 0 0 0 1px var(--border-soft);
+  animation: node-overlay-panel-in 140ms var(--ease-out-soft);
+}
+
+.dock-select-option {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: var(--radius-1);
+  color: var(--text-soft);
+  font-size: var(--text-small);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.dock-select-option.is-active {
+  background: rgb(255 255 255 / 0.08);
+  color: var(--text-main);
+}
+
+.dock-select-option[aria-selected='true'] {
+  color: var(--text-main);
+}
+
+.dock-select-check {
+  color: var(--accent-cyan);
+  opacity: 0;
+}
+
+.dock-select-option[aria-selected='true'] .dock-select-check {
+  opacity: 1;
+}
+
+.dock-select-option-meta {
+  color: var(--text-muted);
+  font-size: var(--text-mini);
 }
 
 .kira-dock-chip-icon {
@@ -4588,7 +4651,7 @@ button.mini-tags-more:focus-visible {
   border-radius: var(--radius-1);
   background: rgb(255 255 255 / 0.04);
   color: var(--text-soft);
-  font-size: var(--text-micro);
+  font-size: var(--text-mini);
   gap: 4px;
 }
 
@@ -4703,14 +4766,6 @@ button.mini-tags-more:focus-visible {
   color: var(--text-main);
 }
 
-.kira-dock-model-selector select {
-  position: absolute;
-  inset: 0;
-  opacity: 0;
-  cursor: pointer;
-  width: 100%;
-  height: 100%;
-}
 
 .kira-dock-model-icon {
   color: var(--accent-cyan);
@@ -5001,7 +5056,7 @@ button.mini-tags-more:focus-visible {
   background: var(--surface-inset);
   color: var(--text-main);
   cursor: pointer;
-  font-size: 0.72rem;
+  font-size: var(--text-small);
   gap: 1px;
   text-align: left;
 }
@@ -5013,7 +5068,7 @@ button.mini-tags-more:focus-visible {
 
 .kira-suggestion-why {
   color: var(--text-muted);
-  font-size: 0.72rem;
+  font-size: var(--text-small);
 }
 
 .idea-node.is-selected,
@@ -5074,14 +5129,14 @@ button.mini-tags-more:focus-visible {
 }
 
 .node-context-heading strong {
-  font-size: 0.72rem;
+  font-size: var(--text-small);
   font-weight: 680;
 }
 
 .node-context-heading span {
   overflow: hidden;
   color: var(--text-muted);
-  font-size: 0.72rem;
+  font-size: var(--text-small);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -5097,7 +5152,7 @@ button.mini-tags-more:focus-visible {
   background: transparent;
   color: var(--text-soft);
   cursor: pointer;
-  font-size: 0.72rem;
+  font-size: var(--text-small);
   gap: 7px;
   text-align: left;
 }
@@ -5210,7 +5265,7 @@ button.mini-tags-more:focus-visible {
   box-shadow: 0 8px 20px rgb(0 0 0 / 0.24);
   color: var(--text-main);
   content: attr(data-tooltip);
-  font-size: 0.72rem;
+  font-size: var(--text-small);
   font-weight: 580;
   opacity: 0;
   pointer-events: none;
@@ -5299,7 +5354,7 @@ button.mini-tags-more:focus-visible {
   box-shadow: 0 10px 20px -6px rgb(0 0 0 / 0.45), 0 2px 6px rgb(0 0 0 / 0.3);
   color: var(--text-muted);
   gap: 4px;
-  font-size: 0.72rem;
+  font-size: var(--text-small);
   white-space: nowrap;
 }
 
@@ -5311,7 +5366,7 @@ button.mini-tags-more:focus-visible {
   border-color: transparent;
   background: color-mix(in srgb, var(--glass-inspector), transparent 30%);
   box-shadow: 0 8px 16px -6px rgb(0 0 0 / 0.35);
-  font-size: var(--text-micro);
+  font-size: var(--text-mini);
 }
 
 .canvas-view-rail-trigger {
@@ -5325,7 +5380,7 @@ button.mini-tags-more:focus-visible {
   color: var(--text-soft);
   cursor: pointer;
   gap: 5px;
-  font-size: 0.72rem;
+  font-size: var(--text-small);
 }
 
 .canvas-view-rail-trigger:hover,
@@ -5376,7 +5431,7 @@ button.mini-tags-more:focus-visible {
 
 .graph-tools-drawer span {
   color: var(--text-muted);
-  font-size: var(--text-micro);
+  font-size: var(--text-mini);
 }
 
 .graph-tools-drawer select {
@@ -5387,7 +5442,7 @@ button.mini-tags-more:focus-visible {
   border-radius: var(--radius-2);
   background: rgb(255 255 255 / 0.075);
   color: var(--text-main);
-  font-size: 0.72rem;
+  font-size: var(--text-small);
   outline: none;
 }
 
@@ -5414,7 +5469,7 @@ button.mini-tags-more:focus-visible {
   background: var(--accent-faint);
   color: var(--text-main);
   cursor: pointer;
-  font-size: 0.72rem;
+  font-size: var(--text-small);
 }
 
 
@@ -5486,7 +5541,7 @@ button.mini-tags-more:focus-visible {
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
-  font-size: 0.78rem;
+  font-size: var(--text-small);
   font-weight: 620;
   text-align: left;
 }
@@ -5526,7 +5581,7 @@ button.mini-tags-more:focus-visible {
 .settings-panel h3 {
   margin: 0;
   color: var(--text-main);
-  font-size: 0.98rem;
+  font-size: var(--text-title);
   font-weight: 680;
 }
 
@@ -5536,7 +5591,7 @@ button.mini-tags-more:focus-visible {
 .settings-note-list {
   margin: var(--space-1) 0 0;
   color: var(--text-muted);
-  font-size: 0.78rem;
+  font-size: var(--text-small);
   line-height: 1.45;
 }
 
@@ -5547,7 +5602,7 @@ button.mini-tags-more:focus-visible {
   border-radius: var(--radius-2);
   background: var(--glass-hover);
   color: var(--text-soft);
-  font-size: 0.72rem;
+  font-size: var(--text-small);
 }
 
 .settings-status.is-error {
@@ -5576,7 +5631,7 @@ button.mini-tags-more:focus-visible {
 .settings-control-strip label span,
 .settings-chip span {
   color: var(--text-muted);
-  font-size: 0.7rem;
+  font-size: var(--text-mini);
 }
 
 .settings-control-strip select {
@@ -5588,7 +5643,7 @@ button.mini-tags-more:focus-visible {
   border-radius: var(--radius-1);
   background: var(--surface-inset);
   color: var(--text-main);
-  font-size: 0.74rem;
+  font-size: var(--text-small);
   outline: none;
 }
 
@@ -5602,7 +5657,7 @@ button.mini-tags-more:focus-visible {
 .settings-chip strong {
   overflow: hidden;
   color: var(--text-main);
-  font-size: 0.76rem;
+  font-size: var(--text-small);
   font-weight: 680;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -5654,7 +5709,7 @@ button.mini-tags-more:focus-visible {
 .capture-row strong {
   overflow: hidden;
   color: var(--text-main);
-  font-size: 0.78rem;
+  font-size: var(--text-small);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -5662,7 +5717,7 @@ button.mini-tags-more:focus-visible {
 .capture-row small {
   overflow: hidden;
   color: var(--text-muted);
-  font-size: 0.72rem;
+  font-size: var(--text-small);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -5713,7 +5768,7 @@ button.mini-tags-more:focus-visible {
   border-radius: var(--radius-1);
   background: rgb(255 255 255 / 0.03);
   color: var(--text-soft);
-  font-size: 0.78rem;
+  font-size: var(--text-small);
 }
 
 .capture-steps li::before {
@@ -5727,7 +5782,7 @@ button.mini-tags-more:focus-visible {
   border-radius: var(--radius-2);
   background: var(--accent-faint);
   color: var(--text-main);
-  font-size: var(--text-micro);
+  font-size: var(--text-mini);
   font-weight: 700;
 }
 
@@ -5781,7 +5836,7 @@ button.mini-tags-more:focus-visible {
   border-radius: var(--radius-1);
   background: var(--surface-inset);
   color: var(--text-main);
-  font-size: 0.76rem;
+  font-size: var(--text-small);
   outline: none;
 }
 
@@ -5832,19 +5887,19 @@ button.mini-tags-more:focus-visible {
 
 .provider-list-row strong {
   color: var(--text-main);
-  font-size: 0.78rem;
+  font-size: var(--text-small);
 }
 
 .provider-list-row em {
   color: var(--text-muted);
-  font-size: 0.72rem;
+  font-size: var(--text-small);
   font-style: normal;
 }
 
 .provider-list-row small {
   align-self: start;
   color: var(--text-faint);
-  font-size: 0.7rem;
+  font-size: var(--text-mini);
 }
 
 .provider-list-row[data-status="connected"] small {
@@ -5885,13 +5940,13 @@ button.mini-tags-more:focus-visible {
 
 .provider-card-header strong {
   color: var(--text-main);
-  font-size: 0.86rem;
+  font-size: var(--text-body);
 }
 
 .provider-card-header span,
 .provider-card-header em {
   color: var(--text-muted);
-  font-size: var(--text-micro);
+  font-size: var(--text-mini);
   font-style: normal;
 }
 
@@ -5914,7 +5969,7 @@ button.mini-tags-more:focus-visible {
 .settings-panel label span,
 .settings-definition-list dt {
   color: var(--text-muted);
-  font-size: var(--text-micro);
+  font-size: var(--text-mini);
 }
 
 .provider-card input,
@@ -5928,7 +5983,7 @@ button.mini-tags-more:focus-visible {
   border-radius: var(--radius-1);
   background: var(--surface-inset);
   color: var(--text-main);
-  font-size: 0.76rem;
+  font-size: var(--text-small);
   outline: none;
 }
 
@@ -5954,7 +6009,7 @@ button.mini-tags-more:focus-visible {
   border-radius: var(--radius-2);
   background: var(--glass-hover);
   color: var(--text-muted);
-  font-size: 0.72rem;
+  font-size: var(--text-small);
 }
 
 .oauth-ready-note {
@@ -5964,19 +6019,19 @@ button.mini-tags-more:focus-visible {
   border-radius: var(--radius-2);
   background: var(--glass-active);
   color: var(--text-muted);
-  font-size: var(--text-micro);
+  font-size: var(--text-mini);
 }
 
 .oauth-ready-note strong {
   color: var(--text-main);
-  font-size: 0.72rem;
+  font-size: var(--text-small);
 }
 
 .provider-key-help {
   justify-self: start;
   margin-top: 4px;
   color: var(--accent-cyan);
-  font-size: 0.7rem;
+  font-size: var(--text-mini);
   text-decoration: none;
   transition: color 140ms ease;
 }
@@ -6004,7 +6059,7 @@ button.mini-tags-more:focus-visible {
   background: color-mix(in srgb, var(--accent-amber), transparent 86%);
   color: var(--accent-amber);
   cursor: pointer;
-  font-size: 0.7rem;
+  font-size: var(--text-mini);
 }
 
 .provider-task-groups {
@@ -6016,7 +6071,7 @@ button.mini-tags-more:focus-visible {
   display: block;
   margin-bottom: 6px;
   color: var(--text-muted);
-  font-size: 0.72rem;
+  font-size: var(--text-small);
   font-weight: 800;
   letter-spacing: 0.02em;
   text-transform: uppercase;
@@ -6039,7 +6094,7 @@ button.mini-tags-more:focus-visible {
   background: var(--glass-hover);
   color: var(--text-muted);
   cursor: pointer;
-  font-size: var(--text-micro);
+  font-size: var(--text-mini);
 }
 
 .provider-task-toggle input {
@@ -6067,7 +6122,7 @@ button.mini-tags-more:focus-visible {
   border-radius: var(--radius-2);
   background: var(--glass-hover);
   color: var(--text-soft);
-  font-size: 0.72rem;
+  font-size: var(--text-small);
   gap: 5px;
   overflow-wrap: anywhere;
 }
@@ -6105,7 +6160,7 @@ button.mini-tags-more:focus-visible {
 
 .settings-disclosure summary span {
   color: var(--text-muted);
-  font-size: var(--text-micro);
+  font-size: var(--text-mini);
 }
 
 .settings-disclosure summary::after {
@@ -6143,7 +6198,7 @@ button.mini-tags-more:focus-visible {
 .settings-definition-list dd {
   margin: 0;
   color: var(--text-main);
-  font-size: 0.76rem;
+  font-size: var(--text-small);
 }
 
 .task-route-list {
@@ -6166,7 +6221,7 @@ button.mini-tags-more:focus-visible {
   min-width: 0;
   overflow: hidden;
   color: var(--text-muted);
-  font-size: var(--text-micro);
+  font-size: var(--text-mini);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -6175,7 +6230,7 @@ button.mini-tags-more:focus-visible {
   min-width: 0;
   overflow: hidden;
   color: var(--text-main);
-  font-size: 0.7rem;
+  font-size: var(--text-mini);
   font-weight: 640;
   text-align: right;
   text-overflow: ellipsis;
@@ -6263,7 +6318,7 @@ i.palette-color-segment {
   border-radius: var(--radius-2);
   background: rgb(12 13 12 / 0.94);
   color: var(--text-main);
-  font-size: var(--text-micro);
+  font-size: var(--text-mini);
   opacity: 0;
   pointer-events: none;
   transform: translate(50%, 4px);
@@ -6290,7 +6345,7 @@ button.palette-color-segment:focus-visible code {
   background: rgb(255 255 255 / 0.055);
   color: var(--text-muted);
   cursor: pointer;
-  font-size: 0.7rem;
+  font-size: var(--text-mini);
 }
 
 .reference-palette-actions button:hover {
@@ -6363,7 +6418,7 @@ button.palette-color-segment:focus-visible code {
 
 .project-color-summary small {
   color: var(--text-soft);
-  font-size: 0.76rem;
+  font-size: var(--text-small);
 }
 
 .project-color-dots {
@@ -6462,7 +6517,7 @@ button.palette-color-segment:focus-visible code {
 
 .color-inline-row code {
   color: var(--text-soft);
-  font-size: 0.76rem;
+  font-size: var(--text-small);
 }
 
 .generated-color-row {
@@ -6473,13 +6528,13 @@ button.palette-color-segment:focus-visible code {
   min-height: 28px;
   padding: 0 2px;
   color: var(--text-muted);
-  font-size: 0.72rem;
+  font-size: var(--text-small);
   gap: 8px;
 }
 
 .generated-color-row code {
   color: var(--text-soft);
-  font-size: 0.72rem;
+  font-size: var(--text-small);
 }
 
 .graph3d-stage {
@@ -6503,7 +6558,7 @@ button.palette-color-segment:focus-visible code {
   background: rgb(12 13 12 / 0.76);
   color: var(--text-muted);
   gap: var(--space-2);
-  font-size: 0.72rem;
+  font-size: var(--text-small);
 }
 
 .graph3d-hud span {
@@ -6581,7 +6636,7 @@ button.palette-color-segment:focus-visible code {
   color: var(--text-soft);
   cursor: pointer;
   gap: 6px;
-  font-size: var(--text-micro);
+  font-size: var(--text-mini);
 }
 
 .graph3d-legend button:hover {
@@ -6603,7 +6658,7 @@ button.palette-color-segment:focus-visible code {
 
 .graph3d-legend small {
   color: var(--text-muted);
-  font-size: 0.72rem;
+  font-size: var(--text-small);
   font-variant-numeric: tabular-nums;
 }
 
@@ -6667,13 +6722,13 @@ button.palette-color-segment:focus-visible code {
 }
 
 .slideshow-rail span {
-  font-size: var(--text-micro);
+  font-size: var(--text-mini);
   font-variant-numeric: tabular-nums;
 }
 
 .slideshow-rail strong {
   overflow: hidden;
-  font-size: 0.76rem;
+  font-size: var(--text-small);
   font-weight: 640;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -6703,7 +6758,7 @@ button.palette-color-segment:focus-visible code {
   background: rgb(12 13 12 / 0.72);
   color: var(--text-muted);
   gap: 2px;
-  font-size: 0.72rem;
+  font-size: var(--text-small);
 }
 
 .slideshow-controls button {
@@ -6727,7 +6782,7 @@ button.palette-color-segment:focus-visible code {
   border-radius: var(--radius-2);
   background: rgb(255 255 255 / 0.055);
   color: var(--text-soft);
-  font-size: 0.72rem;
+  font-size: var(--text-small);
   outline: none;
 }
 
@@ -6805,14 +6860,14 @@ button.palette-color-segment:focus-visible code {
 }
 
 .slide-export-popover strong {
-  font-size: 0.8rem;
+  font-size: var(--text-small);
   font-weight: 620;
 }
 
 .slide-export-popover small {
   overflow: hidden;
   color: var(--text-muted);
-  font-size: var(--text-micro);
+  font-size: var(--text-mini);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -6846,12 +6901,12 @@ button.palette-color-segment:focus-visible code {
 }
 
 .slide-customizer-head strong {
-  font-size: 0.82rem;
+  font-size: var(--text-small);
 }
 
 .slide-customizer-head span {
   color: var(--text-muted);
-  font-size: 0.7rem;
+  font-size: var(--text-mini);
 }
 
 .slide-customizer-reset {
@@ -6861,7 +6916,7 @@ button.palette-color-segment:focus-visible code {
   background: var(--accent-faint);
   color: var(--accent-strong);
   cursor: pointer;
-  font-size: var(--text-micro);
+  font-size: var(--text-mini);
 }
 
 .slide-customizer-list {
@@ -6896,7 +6951,7 @@ button.palette-color-segment:focus-visible code {
 
 .slide-customizer-row strong {
   overflow: hidden;
-  font-size: 0.76rem;
+  font-size: var(--text-small);
   font-weight: 560;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -6909,7 +6964,7 @@ button.palette-color-segment:focus-visible code {
   border-radius: var(--radius-1);
   background: var(--inset-field);
   color: var(--text-soft);
-  font-size: 0.7rem;
+  font-size: var(--text-mini);
   outline: none;
 }
 
@@ -6946,7 +7001,7 @@ button.palette-color-segment:focus-visible code {
 }
 
 .slide-copy span {
-  font-size: 0.72rem;
+  font-size: var(--text-small);
   font-weight: 760;
   text-transform: uppercase;
 }
@@ -6962,13 +7017,13 @@ button.palette-color-segment:focus-visible code {
 .slide-copy p {
   max-width: 48ch;
   color: var(--text-soft);
-  font-size: 0.98rem;
+  font-size: var(--text-body);
   text-wrap: pretty;
 }
 
 .slide-copy small {
   color: var(--text-muted);
-  font-size: 0.74rem;
+  font-size: var(--text-small);
 }
 
 .slide-reference-layout {
@@ -7037,7 +7092,7 @@ button.palette-color-segment:focus-visible code {
   overflow: hidden;
   padding: var(--space-3);
   color: var(--text-soft);
-  font-size: 0.8rem;
+  font-size: var(--text-small);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -7076,7 +7131,7 @@ button.palette-color-segment:focus-visible code {
 .slide-palette strong,
 .slide-diagram strong {
   overflow: hidden;
-  font-size: 0.88rem;
+  font-size: var(--text-body);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -7090,7 +7145,7 @@ button.palette-color-segment:focus-visible code {
 .slide-diagram span {
   grid-column: 2;
   color: var(--text-muted);
-  font-size: 0.74rem;
+  font-size: var(--text-small);
 }
 
 .slide-reference {
@@ -7121,7 +7176,7 @@ button.palette-color-segment:focus-visible code {
   overflow: hidden;
   padding: var(--space-2);
   color: var(--text-soft);
-  font-size: 0.72rem;
+  font-size: var(--text-small);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -7143,7 +7198,7 @@ button.palette-color-segment:focus-visible code {
   justify-content: space-between;
   padding: var(--space-4);
   color: var(--text-soft);
-  font-size: 0.78rem;
+  font-size: var(--text-small);
   font-weight: 700;
   gap: var(--space-3);
 }
@@ -7156,7 +7211,7 @@ button.palette-color-segment:focus-visible code {
 
 .outline-titlebar small {
   color: var(--text-muted);
-  font-size: 0.7rem;
+  font-size: var(--text-mini);
   font-weight: 520;
 }
 
@@ -7181,7 +7236,7 @@ button.palette-color-segment:focus-visible code {
   min-height: 18px;
   padding: 0 var(--space-5) var(--space-2);
   color: var(--text-muted);
-  font-size: 0.72rem;
+  font-size: var(--text-small);
 }
 
 .diagnostics-row {
@@ -7196,7 +7251,7 @@ button.palette-color-segment:focus-visible code {
 .diagnostics-summary,
 .diagnostics-clear {
   color: var(--text-muted);
-  font-size: 0.72rem;
+  font-size: var(--text-small);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
@@ -7236,13 +7291,13 @@ button.palette-color-segment:focus-visible code {
 }
 
 .diagnostic-chip span {
-  font-size: 0.72rem;
+  font-size: var(--text-small);
   font-weight: 680;
 }
 
 .diagnostic-chip small {
   color: var(--text-muted);
-  font-size: var(--text-micro);
+  font-size: var(--text-mini);
 }
 
 .diagnostic-chip:hover {
@@ -7278,7 +7333,7 @@ button.palette-color-segment:focus-visible code {
 
 .outline-empty strong {
   color: var(--text-soft);
-  font-size: 0.9rem;
+  font-size: var(--text-body);
 }
 
 .outline-empty button {
@@ -7288,7 +7343,7 @@ button.palette-color-segment:focus-visible code {
   background: var(--accent-faint);
   color: var(--accent-strong);
   cursor: pointer;
-  font-size: 0.74rem;
+  font-size: var(--text-small);
 }
 
 .outline-title {
@@ -7306,19 +7361,19 @@ button.palette-color-segment:focus-visible code {
 
 .outline-title span {
   color: var(--text-muted);
-  font-size: 0.72rem;
+  font-size: var(--text-small);
   font-variant-numeric: tabular-nums;
 }
 
 .outline-title small {
   color: var(--text-muted);
-  font-size: 0.72rem;
+  font-size: var(--text-small);
   white-space: nowrap;
 }
 
 .outline-title strong {
   overflow: hidden;
-  font-size: 1.04rem;
+  font-size: var(--text-title);
   font-weight: 680;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -7328,7 +7383,7 @@ button.palette-color-segment:focus-visible code {
   max-width: 68ch;
   margin: var(--space-2) 0 var(--space-3) 46px;
   color: var(--text-soft);
-  font-size: 0.88rem;
+  font-size: var(--text-body);
   text-wrap: pretty;
 }
 
@@ -7362,7 +7417,7 @@ button.palette-color-segment:focus-visible code {
   min-height: 30px;
   border-radius: var(--radius-2);
   color: var(--text-soft);
-  font-size: 0.74rem;
+  font-size: var(--text-small);
 }
 
 .outline-references button {
@@ -7572,17 +7627,17 @@ button.palette-color-segment:focus-visible code {
 
 .node-version-row strong {
   color: var(--text-main);
-  font-size: 0.76rem;
+  font-size: var(--text-small);
 }
 
 .node-version-row span {
   color: var(--text-soft);
-  font-size: 0.72rem;
+  font-size: var(--text-small);
 }
 
 .node-version-row small {
   color: var(--text-muted);
-  font-size: 0.72rem;
+  font-size: var(--text-small);
 }
 
 .node-version-row button {
@@ -7638,7 +7693,7 @@ button.palette-color-segment:focus-visible code {
 
 .linked-list strong {
   overflow: hidden;
-  font-size: 0.78rem;
+  font-size: var(--text-small);
   font-weight: 620;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -7646,7 +7701,7 @@ button.palette-color-segment:focus-visible code {
 
 .linked-list small {
   color: var(--text-muted);
-  font-size: var(--text-micro);
+  font-size: var(--text-mini);
 }
 
 .linked-list-empty {
@@ -7654,7 +7709,7 @@ button.palette-color-segment:focus-visible code {
   align-items: center;
   min-height: 32px;
   color: var(--text-muted);
-  font-size: 0.74rem;
+  font-size: var(--text-small);
 }
 
 .linked-list-toggle {
@@ -7668,7 +7723,7 @@ button.palette-color-segment:focus-visible code {
   background: rgb(255 255 255 / 0.045);
   color: var(--text-soft);
   cursor: pointer;
-  font-size: 0.72rem;
+  font-size: var(--text-small);
 }
 
 .linked-list-toggle:hover {
@@ -7688,7 +7743,7 @@ button.palette-color-segment:focus-visible code {
   background: var(--accent-faint);
   color: #c7eee5;
   gap: 5px;
-  font-size: 0.7rem;
+  font-size: var(--text-mini);
   font-weight: 630;
 }
 
@@ -7731,7 +7786,7 @@ button.palette-color-segment:focus-visible code {
   background: var(--accent-faint);
   color: var(--accent-strong);
   cursor: pointer;
-  font-size: 0.72rem;
+  font-size: var(--text-small);
 }
 
 .graph-shortcuts {
@@ -7742,7 +7797,7 @@ button.palette-color-segment:focus-visible code {
 .graph-shortcuts summary {
   cursor: pointer;
   color: var(--text-muted);
-  font-size: 0.72rem;
+  font-size: var(--text-small);
   font-weight: 700;
 }
 
@@ -7767,21 +7822,21 @@ button.palette-color-segment:focus-visible code {
   border-radius: 5px;
   background: rgb(255 255 255 / 0.06);
   color: var(--text-main);
-  font-size: 0.7rem;
+  font-size: var(--text-mini);
   font-weight: 750;
 }
 
 .graph-shortcuts dd {
   margin: 0;
   color: var(--text-soft);
-  font-size: var(--text-micro);
+  font-size: var(--text-mini);
 }
 
 .field-label {
   display: block;
   margin: var(--space-3) 0 var(--space-2);
   color: var(--text-muted);
-  font-size: 0.72rem;
+  font-size: var(--text-small);
   font-weight: 700;
   letter-spacing: 0.05em;
   text-transform: uppercase;
@@ -7794,7 +7849,7 @@ button.palette-color-segment:focus-visible code {
 
 .range-field span {
   color: var(--text-muted);
-  font-size: 0.72rem;
+  font-size: var(--text-small);
   font-weight: 700;
 }
 
@@ -7824,7 +7879,7 @@ select {
   border: 0;
   background: transparent;
   color: var(--text-main);
-  font-size: 0.95rem;
+  font-size: var(--text-body);
   font-weight: 670;
 }
 
@@ -7850,7 +7905,7 @@ textarea {
 .diagram-source-input {
   min-height: 160px;
   font-family: "SFMono-Regular", Consolas, monospace;
-  font-size: 0.72rem;
+  font-size: var(--text-small);
   line-height: 1.45;
 }
 
@@ -7882,7 +7937,7 @@ textarea {
 .palette-color-row code {
   overflow: hidden;
   color: var(--text-soft);
-  font-size: var(--text-micro);
+  font-size: var(--text-mini);
   text-overflow: ellipsis;
 }
 
@@ -7927,7 +7982,7 @@ textarea {
   background: transparent;
   color: rgb(217 135 121 / 0.82);
   cursor: pointer;
-  font-size: 0.76rem;
+  font-size: var(--text-small);
   text-align: left;
 }
 
@@ -7958,7 +8013,7 @@ textarea {
 
 .confirm-dialog h2 {
   margin-bottom: var(--space-2);
-  font-size: 1rem;
+  font-size: var(--text-title);
 }
 
 .confirm-dialog p {
@@ -7988,7 +8043,7 @@ textarea {
   align-items: center;
   justify-content: space-between;
   color: var(--text-main);
-  font-size: 0.86rem;
+  font-size: var(--text-body);
   font-weight: 650;
 }
 
@@ -8013,7 +8068,7 @@ textarea {
 
 .crop-dialog-hint {
   color: var(--text-muted);
-  font-size: 0.72rem;
+  font-size: var(--text-small);
 }
 
 .crop-dialog-actions {
@@ -8076,7 +8131,7 @@ textarea {
 .version-branches button small {
   grid-column: 2;
   color: var(--text-muted);
-  font-size: var(--text-micro);
+  font-size: var(--text-mini);
 }
 
 .version-branch-form {
@@ -8117,12 +8172,12 @@ textarea {
 
 .version-browser-toolbar strong {
   color: var(--text-main);
-  font-size: 0.86rem;
+  font-size: var(--text-body);
 }
 
 .version-browser-toolbar span {
   color: var(--text-muted);
-  font-size: 0.72rem;
+  font-size: var(--text-small);
 }
 
 .version-dialog-header {
@@ -8134,12 +8189,12 @@ textarea {
 
 .version-dialog h2 {
   margin: 0 0 var(--space-1);
-  font-size: 1rem;
+  font-size: var(--text-title);
 }
 
 .version-dialog p {
   color: var(--text-muted);
-  font-size: 0.76rem;
+  font-size: var(--text-small);
 }
 
 .version-list {
@@ -8166,17 +8221,17 @@ textarea {
 
 .version-row strong {
   color: var(--text-main);
-  font-size: 0.84rem;
+  font-size: var(--text-small);
 }
 
 .version-row span {
   color: var(--text-muted);
-  font-size: 0.72rem;
+  font-size: var(--text-small);
 }
 
 .version-row small {
   color: var(--text-muted);
-  font-size: 0.7rem;
+  font-size: var(--text-mini);
 }
 
 .danger-button {
@@ -8259,7 +8314,7 @@ textarea {
   margin-top: var(--space-1);
 }
 .codex-login__details summary {
-  font-size: 0.72rem;
+  font-size: var(--text-small);
   color: var(--text-muted);
   cursor: pointer;
   list-style: none;
@@ -8285,7 +8340,7 @@ textarea {
   border-radius: var(--radius-1);
   background: var(--surface-inset);
   color: var(--text-main);
-  font-size: 0.76rem;
+  font-size: var(--text-small);
   outline: none;
 }
 .codex-login__signed-in {
@@ -8303,7 +8358,7 @@ textarea {
 }
 .codex-login__status-text {
   flex: 1;
-  font-size: 0.76rem;
+  font-size: var(--text-small);
   color: var(--text-soft);
 }
 .codex-login__device {
@@ -8314,12 +8369,12 @@ textarea {
   padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-2);
   background: var(--surface-inset);
-  font-size: 0.74rem;
+  font-size: var(--text-small);
   color: var(--text-soft);
 }
 .codex-login__device code {
   font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 0.8rem;
+  font-size: var(--text-small);
   letter-spacing: 0.06em;
   color: var(--text-main);
   background: rgb(255 255 255 / 0.05);
@@ -8327,13 +8382,13 @@ textarea {
   border-radius: var(--radius-1);
 }
 .codex-login__hint {
-  font-size: 0.72rem;
+  font-size: var(--text-small);
   color: var(--text-muted);
   margin: 0;
 }
 .codex-login__error {
   color: var(--danger, #d98779);
-  font-size: 0.74rem;
+  font-size: var(--text-small);
   margin: 0;
 }
 .codex-login__spinner {
@@ -8407,6 +8462,6 @@ textarea {
 }
 .settings-language__hint {
   margin: 0;
-  font-size: 0.74rem;
+  font-size: var(--text-small);
   color: var(--text-muted);
 }

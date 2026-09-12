@@ -1671,6 +1671,203 @@ function useDismissableLayer(active: boolean, ignoreSelector: string, onDismiss:
   }, [active, ignoreSelector, onDismiss])
 }
 
+type DockSelectOption = { value: string; label: string; meta?: string }
+
+// ARIA listbox with aria-activedescendant: focus stays on the trigger while the arrow keys
+// move the active option, which is why the key handling lives on the button. The list is
+// portalled to <body> because the context bar it sits in has its own overflow scroll and
+// would otherwise clip the popup. `open` is owned by the parent so it can gate its own
+// dismissable layer while the list is up, since a pick lands as a pointerdown outside
+// the dock and would otherwise tear the whole session down.
+function DockSelect({
+  options,
+  value,
+  onChange,
+  ariaLabel,
+  className,
+  title,
+  open,
+  onOpenChange,
+  children,
+}: {
+  options: DockSelectOption[]
+  value: string
+  onChange: (value: string) => void
+  ariaLabel: string
+  className: string
+  title?: string
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  children: React.ReactNode
+}) {
+  const [activeIndex, setActiveIndex] = useState(-1)
+  const [placement, setPlacement] = useState<{ left: number; bottom: number; minWidth: number } | null>(null)
+  const triggerRef = useRef<HTMLButtonElement | null>(null)
+  const listRef = useRef<HTMLUListElement | null>(null)
+  const listId = useId()
+  const selectedIndex = options.findIndex((option) => option.value === value)
+
+  const place = useCallback(() => {
+    const trigger = triggerRef.current
+    if (!trigger) return
+    const rect = trigger.getBoundingClientRect()
+    // Opens upward: every dock control sits at the bottom edge of the window.
+    setPlacement({ left: rect.left, bottom: window.innerHeight - rect.top + 6, minWidth: rect.width })
+  }, [])
+
+  useLayoutEffect(() => {
+    if (!open) return
+    place()
+    setActiveIndex(selectedIndex >= 0 ? selectedIndex : 0)
+    // WebKit doesn't focus a <button> on click, and the dock autofocuses its
+    // textarea — without this the arrow keys and Escape never reach the trigger.
+    triggerRef.current?.focus()
+  }, [open, place, selectedIndex])
+
+  useEffect(() => {
+    if (!open) return
+    const reposition = () => place()
+    window.addEventListener('resize', reposition)
+    window.addEventListener('scroll', reposition, true)
+    return () => {
+      window.removeEventListener('resize', reposition)
+      window.removeEventListener('scroll', reposition, true)
+    }
+  }, [open, place])
+
+  useEffect(() => {
+    if (!open || activeIndex < 0) return
+    listRef.current?.querySelector(`[data-index="${activeIndex}"]`)?.scrollIntoView({ block: 'nearest' })
+  }, [open, activeIndex])
+
+  // Deliberately not useDismissableLayer: that hook's Escape path is a document
+  // capture listener, so it would close the list before the keydown reached the
+  // trigger below. The handler there would then see open === false, skip its
+  // stopPropagation, and let the dock's own Escape handler tear down the session.
+  useEffect(() => {
+    if (!open) return
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target
+      if (!(target instanceof Element)) return
+      if (triggerRef.current?.contains(target)) return
+      if (target.closest('.dock-select-list')) return
+      onOpenChange(false)
+    }
+    document.addEventListener('pointerdown', handlePointerDown, true)
+    return () => document.removeEventListener('pointerdown', handlePointerDown, true)
+  }, [open, onOpenChange])
+
+  const commit = (index: number) => {
+    const option = options[index]
+    onOpenChange(false)
+    triggerRef.current?.focus()
+    if (option) onChange(option.value)
+  }
+
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>) => {
+    if (!open) {
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp' || event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault()
+        event.stopPropagation()
+        onOpenChange(true)
+      }
+      return
+    }
+    // Every key this widget handles is stopped here. The dock container has its own
+    // Escape handler that closes the whole session, and the canvas below reacts to
+    // arrow keys; neither should see a keystroke aimed at this list.
+    switch (event.key) {
+      case 'ArrowDown':
+        event.preventDefault()
+        event.stopPropagation()
+        setActiveIndex((current) => Math.min(options.length - 1, current + 1))
+        break
+      case 'ArrowUp':
+        event.preventDefault()
+        event.stopPropagation()
+        setActiveIndex((current) => Math.max(0, current - 1))
+        break
+      case 'Home':
+        event.preventDefault()
+        event.stopPropagation()
+        setActiveIndex(0)
+        break
+      case 'End':
+        event.preventDefault()
+        event.stopPropagation()
+        setActiveIndex(options.length - 1)
+        break
+      case 'Enter':
+      case ' ':
+        event.preventDefault()
+        event.stopPropagation()
+        commit(activeIndex)
+        break
+      case 'Escape':
+        event.preventDefault()
+        event.stopPropagation()
+        onOpenChange(false)
+        triggerRef.current?.focus()
+        break
+      case 'Tab':
+        event.stopPropagation()
+        onOpenChange(false)
+        break
+      default:
+        break
+    }
+  }
+
+  return (
+    <>
+      <button
+        ref={triggerRef}
+        type="button"
+        className={className}
+        title={title}
+        role="combobox"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-controls={open ? listId : undefined}
+        aria-label={ariaLabel}
+        onClick={() => onOpenChange(!open)}
+        onKeyDown={handleKeyDown}
+      >
+        {children}
+      </button>
+      {open && placement && createPortal(
+        <ul
+          ref={listRef}
+          id={listId}
+          role="listbox"
+          aria-label={ariaLabel}
+          className="dock-select-list"
+          style={{ left: placement.left, bottom: placement.bottom, minWidth: placement.minWidth }}
+          aria-activedescendant={activeIndex >= 0 ? `${listId}-option-${activeIndex}` : undefined}
+        >
+          {options.map((option, index) => (
+            <li
+              key={option.value}
+              id={`${listId}-option-${index}`}
+              data-index={index}
+              role="option"
+              aria-selected={option.value === value}
+              className={index === activeIndex ? 'dock-select-option is-active' : 'dock-select-option'}
+              onPointerEnter={() => setActiveIndex(index)}
+              onClick={() => commit(index)}
+            >
+              <Check size={11} className="dock-select-check" aria-hidden={option.value !== value} />
+              <span className="dock-select-option-label">{option.label}</span>
+              {option.meta && <span className="dock-select-option-meta">{option.meta}</span>}
+            </li>
+          ))}
+        </ul>,
+        document.body,
+      )}
+    </>
+  )
+}
+
 // Keeps a panel mounted for `exitDurationMs` after `isOpen` goes false so its
 // CSS closing transition can play instead of the panel vanishing instantly,
 // and defers the "entered" flag by a frame on open so the opening transition
@@ -8604,6 +8801,7 @@ function GraphCanvas({
   // stays a single composer line until the user asks to see more.
   const [isKiraContextOpen, setIsKiraContextOpen] = useState(false)
   const [isKiraSuggestOpen, setIsKiraSuggestOpen] = useState(false)
+  const [openDockSelect, setOpenDockSelect] = useState<'scope' | 'model' | null>(null)
   const isKiraOpen = Boolean(kiraSession)
   const kiraDockRef = useRef<HTMLDivElement | null>(null)
   const kiraOrbRef = useRef<HTMLButtonElement | null>(null)
@@ -8836,9 +9034,12 @@ function GraphCanvas({
   // The Kira dock is the only floating canvas layer that doesn't already use
   // this. Gated off while a tray is open so the capture-phase Escape here
   // doesn't preempt "Esc closes the tray first" in handleKiraInputKeyDown.
+  // `.dock-select-list` is portalled to <body>, so picking a scope or a model is a
+  // pointerdown outside `.kira-dock`. The selector keeps that click from closing the dock;
+  // gating on openDockSelect is what keeps Escape from closing the dock and the list at once.
   useDismissableLayer(
-    isKiraOpen && !isKiraContextOpen && !isKiraSuggestOpen,
-    '.kira-dock',
+    isKiraOpen && !isKiraContextOpen && !isKiraSuggestOpen && openDockSelect === null,
+    '.kira-dock, .dock-select-list',
     closeKiraSession,
   )
 
@@ -9953,20 +10154,23 @@ function GraphCanvas({
             {/* 1. Bundled context & tags inside textbox */}
             <div className="kira-dock-context-bar">
               {/* Context Scope tag */}
-              <div className="kira-dock-scope-chip" title="Context scope">
+              <DockSelect
+                className="kira-dock-scope-chip"
+                title="Context scope"
+                ariaLabel="Context scope"
+                open={openDockSelect === 'scope'}
+                onOpenChange={(next) => setOpenDockSelect(next ? 'scope' : null)}
+                value={kiraSession?.scope ?? 'downstream_branch'}
+                options={(Object.keys(aiNodeScopeLabels) as AiNodeScope[]).map((scope) => ({
+                  value: scope,
+                  label: aiNodeScopeLabels[scope],
+                }))}
+                onChange={(next) => setKiraSession((current) => current ? { ...current, scope: next as AiNodeScope, removedContextKeys: [] } : current)}
+              >
                 <Layers size={11} className="kira-dock-chip-icon" />
                 <span className="kira-dock-scope-label">{aiNodeScopeLabels[kiraSession?.scope ?? 'downstream_branch']}</span>
-                <select
-                  aria-label="Context scope"
-                  value={kiraSession?.scope ?? 'downstream_branch'}
-                  onChange={(event) => setKiraSession((current) => current ? { ...current, scope: event.target.value as AiNodeScope, removedContextKeys: [] } : current)}
-                >
-                  {(Object.keys(aiNodeScopeLabels) as AiNodeScope[]).map((scope) => (
-                    <option key={scope} value={scope}>{aiNodeScopeLabels[scope]}</option>
-                  ))}
-                </select>
                 <ChevronDown size={10} className="kira-dock-chip-chevron" />
-              </div>
+              </DockSelect>
 
               {/* Context Node tags */}
               {contextNodes.map((node) => (
@@ -10028,45 +10232,42 @@ function GraphCanvas({
             <div className="kira-dock-footer">
               <div className="kira-dock-footer-left">
                 {/* AI Model Selector Button */}
-                <div className="kira-dock-model-selector" title="Select AI Model">
+                <DockSelect
+                  className="kira-dock-model-selector"
+                  title="Select AI Model"
+                  ariaLabel="Select AI Model"
+                  open={openDockSelect === 'model'}
+                  onOpenChange={(next) => setOpenDockSelect(next ? 'model' : null)}
+                  value={kiraSession?.providerOverrideId ?? routedProvider?.id ?? ''}
+                  options={aiProviders.length === 0
+                    ? [{ value: '__settings__', label: 'Configure AI Provider…' }]
+                    : aiProviders.map((p) => ({
+                      value: p.id,
+                      label: `${p.name} (${p.model})`,
+                      meta: aiProviderStatusLabels[p.status],
+                    }))}
+                  onChange={(next) => {
+                    if (next === '__settings__') {
+                      onOpenAiSettings()
+                      return
+                    }
+                    const prov = aiProviders.find((p) => p.id === next)
+                    if (prov) {
+                      setKiraSession((current) => current ? {
+                        ...current,
+                        providerOverrideId: prov.id,
+                        modelOverride: prov.model,
+                      } : current)
+                      onSelectedAiProviderIdChange?.(prov.id)
+                    }
+                  }}
+                >
                   <Sparkles size={12} className="kira-dock-model-icon" />
                   <span className="kira-dock-model-label">
                     {routedProvider ? (routedProvider.model && routedProvider.model !== 'auto' ? routedProvider.model : routedProvider.name) : 'Select Model'}
                   </span>
                   <ChevronDown size={11} className="kira-dock-model-chevron" />
-                  <select
-                    aria-label="Select AI Model"
-                    value={kiraSession?.providerOverrideId ?? routedProvider?.id ?? ''}
-                    onChange={(event) => {
-                      const val = event.target.value
-                      if (val === '__settings__') {
-                        onOpenAiSettings()
-                        return
-                      }
-                      const prov = aiProviders.find((p) => p.id === val)
-                      if (prov) {
-                        setKiraSession((current) => current ? {
-                          ...current,
-                          providerOverrideId: prov.id,
-                          modelOverride: prov.model,
-                        } : current)
-                        onSelectedAiProviderIdChange?.(prov.id)
-                      }
-                    }}
-                  >
-                    {aiProviders.length === 0 ? (
-                      <option value="__settings__">Configure AI Provider…</option>
-                    ) : (
-                      <optgroup label="AI Providers">
-                        {aiProviders.map((p) => (
-                          <option key={p.id} value={p.id}>
-                            {p.name} ({p.model}) · {aiProviderStatusLabels[p.status]}
-                          </option>
-                        ))}
-                      </optgroup>
-                    )}
-                  </select>
-                </div>
+                </DockSelect>
 
                 {/* AI settings — navigation, deliberately not an option inside the model selector */}
                 <button
