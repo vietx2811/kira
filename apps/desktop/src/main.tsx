@@ -704,7 +704,7 @@ type Lang = 'en' | 'vi'
 // one place and not the other.
 const UI_STRINGS: Record<string, { en: string; vi: string }> = {
   'lang.label': { en: 'Language', vi: 'Ngôn ngữ' },
-  'lang.hint': { en: 'Interface language for labels and panels.', vi: 'Ngôn ngữ hiển thị cho nhãn và bảng điều khiển.' },
+  'lang.hint': { en: 'Translates navigation, library, and Kira chat. Settings, outline, and slides stay in English for now.', vi: 'Dịch điều hướng, thư viện, và trò chuyện với Kira. Cài đặt, dàn ý, và trình chiếu vẫn dùng tiếng Anh.' },
   'inspector.title': { en: 'Inspector', vi: 'Chi tiết' },
   'inspector.name': { en: 'Name', vi: 'Tên' },
   'inspector.description': { en: 'Description', vi: 'Mô tả' },
@@ -2891,9 +2891,9 @@ function FileWorkspace({
         setLibraryStatus('Downloaded original pin image')
         return
       }
-      setLibraryStatus('Could not fetch original pin quality — using preview')
+      setLibraryStatus('Could not fetch original pin quality, using preview')
     } catch {
-      setLibraryStatus('Could not fetch original pin quality — using preview')
+      setLibraryStatus('Could not fetch original pin quality, using preview')
     } finally {
       setPinDownload((current) => (current?.imageId === imageId ? null : current))
     }
@@ -4570,7 +4570,7 @@ function FileWorkspace({
     // panel and the link note below, not stamped into every generated node —
     // but the outcome still needs to reach the user somewhere, so it goes to
     // the library status line instead of vanishing silently on failure.
-    setLibraryStatus(generatedBody ? `Kira: ${generationStatus}` : `Kira used a fallback draft — ${generationStatus}`)
+    setLibraryStatus(generatedBody ? `Kira: ${generationStatus}` : `Kira used a fallback draft: ${generationStatus}`)
     const body = generatedBody || [
       'Generated draft fallback.',
       '',
@@ -6719,7 +6719,7 @@ function ClaudeCodeStatus({ provider }: { provider: AiProviderProfile }) {
         <span>{provider.lastMessage ?? (connected ? 'Claude Code CLI detected and signed in' : 'Claude Code CLI not detected on this machine')}</span>
       </div>
       <p className="cli-status__hint">
-        KIRA reuses your existing Claude Code session — sign in with <code>claude auth login</code> in your own
+        KIRA reuses your existing Claude Code session. Sign in with <code>claude auth login</code> in your own
         terminal. KIRA never opens or stores your Claude.ai login; it only checks status and runs tasks through
         the CLI you already have.
       </p>
@@ -6809,6 +6809,10 @@ function SettingsView({
   // calls) but were previously fired with no feedback at all — not even a
   // disabled button — so a double-click could fire the same probe twice.
   const [providerBusy, setProviderBusy] = useState<{ id: string; action: 'test' | 'models' } | null>(null)
+  const [pendingDeleteProviderId, setPendingDeleteProviderId] = useState<string | null>(null)
+  const pendingDeleteProvider = pendingDeleteProviderId
+    ? providers.find((provider) => provider.id === pendingDeleteProviderId) ?? null
+    : null
   async function handleProviderTest(providerId: string) {
     setProviderBusy({ id: providerId, action: 'test' })
     try {
@@ -7037,29 +7041,34 @@ function SettingsView({
                       <strong>{target.title}</strong>
                       <small>{status.installed && !status.disabled ? 'Installed' : status.detail}</small>
                     </div>
-                    <ol className="capture-steps">
-                      <li>
-                        <span>Copy the install folder path</span>
-                        <button className="quiet-button" type="button" onClick={() => void onCopyChromeDistPath()}>
-                          <Clipboard size={13} />
-                          Copy path
-                        </button>
-                      </li>
-                      <li>
-                        <span>Open chrome://extensions</span>
-                        <button
-                          className="icon-button"
-                          type="button"
-                          onClick={() => onExtensionAction(target.settingsActionId)}
-                          aria-label="Open chrome://extensions"
-                          title="Open chrome://extensions"
-                        >
-                          <ExternalLink size={14} />
-                        </button>
-                      </li>
-                      <li><span>Turn on Developer mode (top right of that page)</span></li>
-                      <li><span>Click "Load unpacked" and paste the copied path</span></li>
-                    </ol>
+                    <details className="settings-disclosure">
+                      <summary>
+                        <span>Install steps</span>
+                      </summary>
+                      <ol className="capture-steps">
+                        <li>
+                          <span>Copy the install folder path</span>
+                          <button className="quiet-button" type="button" onClick={() => void onCopyChromeDistPath()}>
+                            <Clipboard size={13} />
+                            Copy path
+                          </button>
+                        </li>
+                        <li>
+                          <span>Open chrome://extensions</span>
+                          <button
+                            className="icon-button"
+                            type="button"
+                            onClick={() => onExtensionAction(target.settingsActionId)}
+                            aria-label="Open chrome://extensions"
+                            title="Open chrome://extensions"
+                          >
+                            <ExternalLink size={14} />
+                          </button>
+                        </li>
+                        <li><span>Turn on Developer mode (top right of that page)</span></li>
+                        <li><span>Click "Load unpacked" and paste the copied path</span></li>
+                      </ol>
+                    </details>
                   </div>
                 )
               }
@@ -7354,7 +7363,7 @@ function SettingsView({
                     Models
                   </button>
                   {activeProvider.authMode !== 'local' && (
-                    <button className="danger-inline-button" type="button" onClick={() => onProviderDelete(activeProvider.id)}>
+                    <button className="danger-inline-button" type="button" onClick={() => setPendingDeleteProviderId(activeProvider.id)}>
                       Delete profile
                     </button>
                   )}
@@ -7454,6 +7463,31 @@ function SettingsView({
         </section>
         )}
       </div>
+      {pendingDeleteProvider && (
+        <div className="dialog-overlay">
+          <section aria-modal="true" className="confirm-dialog" role="alertdialog" aria-labelledby="delete-provider-dialog-title">
+            <div>
+              <h2 id="delete-provider-dialog-title">Delete {pendingDeleteProvider.name}?</h2>
+              <p>This removes the profile and its stored API key from the macOS Keychain. This can't be undone.</p>
+            </div>
+            <div className="dialog-actions">
+              <button className="quiet-button" type="button" onClick={() => setPendingDeleteProviderId(null)}>
+                Cancel
+              </button>
+              <button
+                className="danger-button"
+                type="button"
+                onClick={() => {
+                  onProviderDelete(pendingDeleteProvider.id)
+                  setPendingDeleteProviderId(null)
+                }}
+              >
+                Delete profile
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
     </section>
   )
 }
@@ -8205,7 +8239,7 @@ function EvidenceInbox({
           <div className="library-download-track">
             <div
               className={downloadProgress.progress == null ? 'library-download-fill is-indeterminate' : 'library-download-fill'}
-              style={downloadProgress.progress == null ? undefined : { width: `${Math.min(100, Math.round(downloadProgress.progress * 100))}%` }}
+              style={downloadProgress.progress == null ? undefined : { transform: `scaleX(${Math.min(1, downloadProgress.progress)})` }}
             />
           </div>
         </div>
@@ -9029,7 +9063,7 @@ function GraphCanvas({
     }
     const payload = extractDroppedReferencePayload(event.dataTransfer)
     if (!payload) {
-      onNotice('Unsupported drop — use an image file, URL, or an item from the Library')
+      onNotice('Unsupported drop, use an image file, URL, or an item from the Library')
       return false
     }
     void onDroppedReference(payload, target)
@@ -9661,7 +9695,7 @@ function GraphCanvas({
               <span className="node-details-actionbar-sep" aria-hidden="true" />
               <button
                 type="button"
-                aria-label={node.aiExcluded ? 'Excluded from AI — click to include' : 'Included in AI context — click to exclude'}
+                aria-label={node.aiExcluded ? 'Excluded from AI, click to include' : 'Included in AI context, click to exclude'}
                 title={node.aiExcluded ? 'Excluded from AI' : 'Included in AI context'}
                 className={node.aiExcluded ? 'is-active' : ''}
                 onClick={() => onToggleAiExcluded(kind, id)}
@@ -10671,6 +10705,7 @@ function GraphCanvas({
                 data-node-id={idea.id}
                 role="button"
                 tabIndex={0}
+                aria-label={idea.title}
                 style={{
                   left: `${idea.x}%`,
                   top: `${idea.y}%`,
@@ -10750,6 +10785,7 @@ function GraphCanvas({
                 data-node-id={image.id}
                 role="button"
                 tabIndex={0}
+                aria-label={image.title}
                 style={{
                   left: `${image.x}%`,
                   top: `${image.y}%`,
@@ -10830,6 +10866,7 @@ function GraphCanvas({
                 data-node-id={palette.id}
                 role="button"
                 tabIndex={0}
+                aria-label={palette.title}
                 style={{
                   left: `${palette.x}%`,
                   top: `${palette.y}%`,
@@ -10892,6 +10929,7 @@ function GraphCanvas({
                 data-node-id={diagram.id}
                 role="button"
                 tabIndex={0}
+                aria-label={diagram.title}
                 style={{
                   left: `${diagram.x}%`,
                   top: `${diagram.y}%`,
@@ -10954,6 +10992,7 @@ function GraphCanvas({
                 data-node-id={placeholder.id}
                 role="button"
                 tabIndex={0}
+                aria-label={placeholder.title}
                 style={{
                   left: `${placeholder.x}%`,
                   top: `${placeholder.y}%`,
@@ -12202,7 +12241,7 @@ function ReferenceCropDialog({
             }}
           />
         </div>
-        <p className="crop-dialog-hint">Drag to reframe, scroll or pinch to zoom. The original file never changes — reset anytime.</p>
+        <p className="crop-dialog-hint">Drag to reframe, scroll or pinch to zoom. The original file never changes, reset anytime.</p>
         <div className="dialog-actions crop-dialog-actions">
           <button type="button" className="quiet-button" onClick={onReset}>
             Reset crop
@@ -13316,7 +13355,7 @@ function TagBlock({
             <button
               type="button"
               className={pinned ? 'section-tool is-active' : 'section-tool'}
-              aria-label={pinned ? 'Always shown on node — click to hide' : 'Hidden on node — click to always show'}
+              aria-label={pinned ? 'Always shown on node, click to hide' : 'Hidden on node, click to always show'}
               title={pinned ? 'Always shown on node' : 'Show on node'}
               onClick={onTogglePinned}
             >
@@ -13434,7 +13473,7 @@ function PaletteBlock({
             <button
               type="button"
               className={pinned ? 'section-tool is-active' : 'section-tool'}
-              aria-label={pinned ? 'Always shown on node — click to hide' : 'Hidden on node — click to always show'}
+              aria-label={pinned ? 'Always shown on node, click to hide' : 'Hidden on node, click to always show'}
               title={pinned ? 'Always shown on node' : 'Show on node'}
               onClick={onTogglePinned}
             >

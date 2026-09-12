@@ -13,7 +13,7 @@ colors:
   border-strong: "rgb(255 255 255 / 0.13)"
   text-main: "#f1eee7"
   text-soft: "#b3afa5"
-  text-muted: "#77766d"
+  text-muted: "#8f8c80"
   accent-cyan: "#84cdbc"
   accent-strong: "#9edccd"
   accent-weak: "rgb(132 205 188 / 0.28)"
@@ -33,7 +33,7 @@ typography:
     fontWeight: 680
   label:
     fontFamily: "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
-    fontSize: "0.68rem"
+    fontSize: "0.6875rem"
     fontWeight: 800
     letterSpacing: "normal"
   mono:
@@ -147,7 +147,7 @@ Warm near-black neutrals carry the whole surface; a single teal-cyan accent mark
 - **Inset Field** (`#0f1110` / `--surface-inset`): form inputs, recessed wells.
 - **Main Text** (`#f1eee7` / `--text-main`): titles, primary labels.
 - **Soft Text** (`#b3afa5` / `--text-soft`): body copy, secondary labels, quiet-button text.
-- **Muted Text** (`#77766d` / `--text-muted`): captions, detail lines, uppercase micro-labels.
+- **Muted Text** (`#8f8c80` / `--text-muted`): captions, detail lines, uppercase micro-labels. Tuned to clear WCAG AA (4.5:1) against `--surface-2`, the darkest surface it's regularly paired with.
 - **Hairline Border** (`rgb(255 255 255 / 0.06)` / `--border-soft`): the only border weight for dividing rows and outlining panels.
 
 ### Status accents (borrowed from Neutral+Primary, not new colors)
@@ -162,14 +162,15 @@ Warm near-black neutrals carry the whole surface; a single teal-cyan accent mark
 **Body Font:** Inter (with ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif fallback)
 **Mono Font:** SFMono-Regular, Consolas, monospace (code paths, install paths)
 
-**Character:** A single, restrained UI sans at 14px base. Weight carries hierarchy far more than size does; most panel text sits within a 0.66rem–0.98rem range.
+**Character:** A single, restrained UI sans at 14px base. Weight carries hierarchy far more than size does; most panel text sits within a 0.6875rem–0.98rem range. `--text-micro` (0.6875rem / 11px) is the floor for functional text — nothing that conveys meaning renders smaller, per WCAG's minimum-legible-size guidance.
 
 ### Hierarchy
 - **Title** (680 weight, 0.98rem): panel/section headings (`<h3>` in settings panels).
 - **Body** (400 weight, 14px base / 0.78rem in panels): descriptive copy, max ~58ch line length.
 - **Row label** (400 weight, 0.78rem): the primary text in a list row (e.g. "Chrome / Chromium").
-- **Row detail** (400 weight, 0.66–0.68rem, `--text-muted`): the secondary status/detail line under a row label.
-- **Micro-label** (800 weight, 0.64–0.72rem, uppercase where used): field labels, chip captions.
+- **Row detail** (400 weight, `--text-micro` / 0.6875rem, `--text-muted`): the secondary status/detail line under a row label.
+- **Micro-label** (800 weight, 0.6875–0.74rem, uppercase where used): field labels, chip captions.
+- **Sticky-note content** (`"Bradley Hand", "Segoe Print", "Noteworthy", cursive`, 0.92rem): the one sanctioned exception to the Inter-only rule, used solely on `.idea-node--sticker` content per the sticky-note metaphor in §2.4. System handwriting fonts only, no web font fetch.
 
 ### Named Rules
 **The Weight-Not-Size Rule.** Hierarchy between a row's title and its status/detail line is carried by color (`--text-main` vs `--text-muted`) and a smaller size, never by inventing a new font weight beyond 400/680/800.
@@ -197,7 +198,7 @@ Flat by default. KIRA conveys depth through tonal layering (base → surface-1 �
 ### List Rows (the canonical pattern for Providers, Extensions, and similar status lists)
 - **Container:** single `border: 1px solid var(--border-soft)`, `border-radius: var(--radius-2)`, `background: var(--surface-drawer)`, `overflow: hidden` — one continuous list, not N separate cards.
 - **Row:** `grid-template-columns: minmax(0,1fr) auto`, `padding: 10px 12px`, `border-top: 1px solid var(--border-soft)` (omitted on the first row).
-- **Row content (left):** stacked `strong` (title, `--text-main`, 0.78rem) + `small`/`em` (status detail, `--text-muted` or `--text-faint`, 0.64–0.66rem).
+- **Row content (left):** stacked `strong` (title, `--text-main`, 0.78rem) + `small`/`em` (status detail, `--text-muted` or `--text-faint`, `--text-micro` / 0.6875rem).
 - **Row action (right):** exactly one primary action per row (button or chevron affordance). A second, lower-priority action (e.g. "open settings") is an icon-only quiet button, not a second full-width text button.
 - **Status color:** driven by a `data-status` attribute on the row (`connected`/`installed` → `--accent-cyan` text; `key_missing`/`needs-attention` → `--accent-amber` text). Status is always paired with a text word, never color alone.
 
