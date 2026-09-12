@@ -6712,6 +6712,7 @@ function CodexApiKeyField({ busy, onSubmit }: { busy: boolean; onSubmit: (key: s
 
 function ClaudeCodeStatus({ provider }: { provider: AiProviderProfile }) {
   const connected = provider.status === 'connected'
+  const [launchError, setLaunchError] = useState<string | null>(null)
   return (
     <div className="cli-status" data-status={connected ? 'connected' : 'not-connected'}>
       <div className="cli-status__row">
@@ -6719,10 +6720,27 @@ function ClaudeCodeStatus({ provider }: { provider: AiProviderProfile }) {
         <span>{provider.lastMessage ?? (connected ? 'Claude Code CLI detected and signed in' : 'Claude Code CLI not detected on this machine')}</span>
       </div>
       <p className="cli-status__hint">
-        KIRA reuses your existing Claude Code session. Sign in with <code>claude auth login</code> in your own
-        terminal. KIRA never opens or stores your Claude.ai login; it only checks status and runs tasks through
-        the CLI you already have.
+        KIRA never renders or stores your Claude.ai login itself. Signing in opens Terminal and runs{' '}
+        <code>claude auth login</code> there, so the CLI completes the flow and keeps the session; KIRA only
+        checks status and runs tasks through it. Use Recheck once the terminal reports you are signed in.
       </p>
+      {!connected && (
+        <button
+          className="quiet-button"
+          type="button"
+          onClick={() => {
+            setLaunchError(null)
+            void openClaudeCodeLoginTerminal().catch((error) => setLaunchError(String(error)))
+          }}
+        >
+          Sign in in Terminal
+        </button>
+      )}
+      {launchError && (
+        <p className="cli-status__hint" role="alert">
+          {launchError}
+        </p>
+      )}
     </div>
   )
 }
@@ -9937,6 +9955,7 @@ function GraphCanvas({
               {/* Context Scope tag */}
               <div className="kira-dock-scope-chip" title="Context scope">
                 <Layers size={11} className="kira-dock-chip-icon" />
+                <span className="kira-dock-scope-label">{aiNodeScopeLabels[kiraSession?.scope ?? 'downstream_branch']}</span>
                 <select
                   aria-label="Context scope"
                   value={kiraSession?.scope ?? 'downstream_branch'}
@@ -10038,25 +10057,34 @@ function GraphCanvas({
                     {aiProviders.length === 0 ? (
                       <option value="__settings__">Configure AI Provider…</option>
                     ) : (
-                      <>
-                        <optgroup label="AI Providers">
-                          {aiProviders.map((p) => (
-                            <option key={p.id} value={p.id}>
-                              {p.name} ({p.model})
-                            </option>
-                          ))}
-                        </optgroup>
-                        <option value="__settings__">⚙️ AI Settings…</option>
-                      </>
+                      <optgroup label="AI Providers">
+                        {aiProviders.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.name} ({p.model}) · {aiProviderStatusLabels[p.status]}
+                          </option>
+                        ))}
+                      </optgroup>
                     )}
                   </select>
                 </div>
+
+                {/* AI settings — navigation, deliberately not an option inside the model selector */}
+                <button
+                  type="button"
+                  className="kira-dock-action-btn"
+                  aria-label="Open AI settings"
+                  title="Open AI settings"
+                  onClick={() => onOpenAiSettings()}
+                >
+                  <Settings size={13} />
+                </button>
 
                 {/* Attach file button */}
                 <label className="kira-dock-action-btn" aria-label="Attach file" title="Attach file">
                   <Paperclip size={13} />
                   <input
                     type="file"
+                    aria-label="Attach file"
                     multiple
                     onChange={(event) => {
                       if (event.target.files?.length) addKiraAttachments(event.target.files)
@@ -17476,6 +17504,12 @@ function cancelCodexLogin() {
 
 function codexLogout() {
   return invoke<void>('codex_logout')
+}
+
+// Opens Terminal with `claude auth login` running. KIRA shows no login UI of its own and never
+// handles the token — the CLI owns the flow end to end.
+function openClaudeCodeLoginTerminal() {
+  return invoke<void>('claude_code_open_login_terminal')
 }
 
 function onCodexLoginProgress(callback: (event: CodexLoginEvent) => void) {

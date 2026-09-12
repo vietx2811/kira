@@ -2321,6 +2321,42 @@ fn claude_code_status_native() -> Result<ClaudeCodeStatus, String> {
     Ok(ClaudeCodeStatus { installed: true, logged_in, account })
 }
 
+// Hands the user a Terminal window with `claude auth login` already running. Deliberately shaped
+// this way, not as an in-app sign-in: Anthropic's Agent SDK terms don't allow third-party apps to
+// *offer* claude.ai login, so KIRA renders no login UI of its own, never sees the browser
+// exchange, and never reads or persists the session token. The CLI owns the flow and its own
+// storage end to end; KIRA only saves the user a trip to the terminal.
+#[tauri::command]
+fn claude_code_open_login_terminal() -> Result<(), String> {
+    let bin = claude_code_bin_path()
+        .ok_or_else(|| "Claude Code CLI not found. Install it first, then retry.".to_string())?;
+
+    // Single-quote for the shell so a path with spaces survives, then escape for AppleScript.
+    let shell_command = format!("{} auth login", shell_single_quote(&bin.to_string_lossy()));
+    let script = format!(
+        "tell application \"Terminal\"\nactivate\ndo script \"{}\"\nend tell",
+        shell_command.replace('\\', "\\\\").replace('"', "\\\"")
+    );
+
+    let output = Command::new("osascript")
+        .args(["-e", &script])
+        .output()
+        .map_err(|e| format!("Unable to open Terminal: {e}"))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(if stderr.is_empty() {
+            "Unable to open Terminal".to_string()
+        } else {
+            stderr
+        });
+    }
+    Ok(())
+}
+
+fn shell_single_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', r"'\''"))
+}
+
 // Runs the CLI directly as a one-shot harness (headless print mode) rather than through any
 // SDK/login layer — KIRA never initiates or stores a Claude Code session, it only reuses
 // whatever the user already signed into via `claude auth login`.
@@ -4434,7 +4470,8 @@ pub fn run() {
             update_capture_context,
             codex_login,
             codex_cancel_login,
-            codex_logout
+            codex_logout,
+            claude_code_open_login_terminal
         ])
         .run(tauri::generate_context!())
         .expect("error while running KIRA desktop shell");
