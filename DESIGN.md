@@ -157,6 +157,8 @@ Warm near-black neutrals carry the whole surface; a single teal-cyan accent mark
 ### Named Rules
 **The One Accent Rule.** Teal-cyan is the only color allowed to mean "active" or "good." Everything else that needs to signal state borrows amber (attention) or danger (error) as text color only — never as a new background or a second brand color.
 
+**The Kira Signature Exception.** The one sanctioned exception to the One Accent Rule: the AI entry point on a selected node (`.node-kira-control`) uses a dedicated warm/mid/cool sweep (`--kira-warm #f0c07f`, `--kira-mid #d79fc0`, `--kira-cool #a5a6ea`) as a hover "glint" animation, marking where AI assistance lives on the canvas. This is a signature, not a status color — it never means "active," "good," "attention," or "error," and it appears nowhere except the Kira control itself. No other component may borrow this palette.
+
 ## 4. Typography
 
 **Body Font:** Inter (with ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif fallback)
