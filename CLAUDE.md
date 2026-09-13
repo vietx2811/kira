@@ -9,13 +9,14 @@ Tên session có thể đổi: tìm tên hiện tại bằng `ListAgents`, đừ
 - **Orchestrator**: điều phối, giao việc, **người duy nhất merge vào `main` và push**, giữ memory dùng chung.
 - **UI/UX**: critique và thiết kế giao diện.
 - **Researcher**: nghiên cứu, lưu báo cáo ở `docs/research/` theo `docs/research/README.md`. Không sửa code app.
-- **Worker**: triển khai việc được giao.
+- **Worker**: triển khai việc được giao (frontend, script, tooling).
+- **Native/Backend**: `src-tauri/` (`lib.rs`, command Tauri, sidecar, đường native macOS). Tách khỏi `main.tsx` nên hầu như không tranh chấp file với UI/UX và Worker.
 
 Đổi vai trò, hoặc có bài học dùng chung: **báo Orchestrator để đưa vào file này, không tự ghi memory** (memory ghi sự thật về code sẽ lỗi thời khi code đổi).
 
 ## Model theo loại việc
 
-Orchestrator chọn model và effort cho thread khác bằng `set_session_model` / `set_session_effort` (không tự đổi model của chính mình).
+Orchestrator chọn model và effort cho thread khác bằng `set_session_model` / `set_session_effort` (không tự đổi model của chính mình). **Chọn theo loại việc của task đang giao, không theo vai trò cố định của thread**: cùng một thread UI/UX có thể chạy Opus khi phán đoán thiết kế và Sonnet khi chỉ thay token theo spec. Kiểm model hiện tại bằng `get_session` trước khi giao, và ghi model đã chọn vào brief.
 
 | Loại việc | Model | Effort |
 |---|---|---|
