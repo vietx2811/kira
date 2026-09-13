@@ -12,6 +12,12 @@
 
 Nhãn nguồn: **[code]**, **[ngoài]**, **[ngoài-phụ]**, **[suy luận]** như các báo cáo trước.
 
+> **Đính chính của Orchestrator (2026-09-14, đối chiếu `main` tại `e294fea`).** Báo cáo đo trên `c66b82f`, trước các merge về theme cùng ngày. Hai điểm ở §0 không còn đúng:
+> - **"108 giá trị font-size ngoài token":** con số lấy từ bản critique 2026-09-12, trước khi migration type scale xong. Trên `main` hiện chỉ còn 2 giá trị không phải token và không phải `clamp()`: `14px` ở gốc và `0` để ẩn phần tử, đều có chủ đích.
+> - **"Chưa có NSVisualEffectView":** sai từ trước. `main.tsx` gọi `getCurrentWindow().setEffects({ effects: [Effect.UnderWindowBackground] })` từ commit `4e94e2a` (2026-06-03), chỉ là không khai trong `tauri.conf.json`. Thread UI/UX đã kiểm trên bundle debug: vật liệu có thật, đổi theo light/dark lúc đang chạy, và từ `f6498e3` lộ ra ở tab bar và rail trái. Mục 4 ở lộ trình §5 (bật `windowEffects`) vì vậy đã xong một phần.
+>
+> Các điểm khác vẫn đúng trên `e294fea`: 0 `backdrop-filter`, hai bộ icon (`lucide-react`, `@phosphor-icons/react`), không stylelint hay test frontend. Số màu viết tay trong thuộc tính `color`/`background` là 63 (đếm theo cách khác với detector, không so trực tiếp được với con số 51).
+
 ---
 
 ## 0. Hiện trạng [code] tại `c66b82f`
