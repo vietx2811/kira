@@ -8,6 +8,11 @@
 //
 // No dependencies beyond Node's stdlib. Run: node scripts/graphify-lite.mjs
 // Exit code 0 = clean, 2 = at least one error-level finding.
+//
+// --strict: promotes section 5's findings (colors in a non-last
+// background layer) from warnings to errors, so the process exits 2
+// when any are present. Without --strict, section 5 findings stay
+// warnings and never affect the exit code (the default behaviour).
 
 import fs from 'node:fs'
 import path from 'node:path'
@@ -16,6 +21,7 @@ import { fileURLToPath } from 'node:url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const repoRoot = path.resolve(__dirname, '..')
+const strictMode = process.argv.includes('--strict')
 
 const MAIN_TSX = path.join(repoRoot, 'apps/desktop/src/main.tsx')
 const STYLES_CSS = path.join(repoRoot, 'apps/desktop/src/styles.css')
@@ -723,7 +729,9 @@ for (const decl of bgDecls) {
 }
 
 if (backgroundFindings.length) {
-  say(`WARNINGS (${backgroundFindings.length}):`)
+  if (strictMode) hasError = true
+  const label = strictMode ? 'ERRORS' : 'WARNINGS'
+  say(`${label} (${backgroundFindings.length})${strictMode ? ' [--strict: promoted from warnings]' : ''}:`)
   for (const f of backgroundFindings) {
     say(`  - ${f.selector} (styles.css:${f.line}): ${f.severity}`)
     say(`      layer ${f.index}: ${f.layer}`)
