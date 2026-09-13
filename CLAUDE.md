@@ -13,10 +13,24 @@ Tên session có thể đổi: tìm tên hiện tại bằng `ListAgents`, đừ
 
 Đổi vai trò, hoặc có bài học dùng chung: **báo Orchestrator để đưa vào file này, không tự ghi memory** (memory ghi sự thật về code sẽ lỗi thời khi code đổi).
 
+## Model theo loại việc
+
+Orchestrator chọn model và effort cho thread khác bằng `set_session_model` / `set_session_effort` (không tự đổi model của chính mình).
+
+| Loại việc | Model | Effort |
+|---|---|---|
+| Điều phối, kiểm chứng trước khi merge, phán đoán xuyên thread | Opus 5 | high |
+| Nghiên cứu mở, đánh giá tool hay nguồn ngoài | Opus 5 | high |
+| Critique và thiết kế UI, logic theme, việc nặng phán đoán | Opus 5 | high |
+| Triển khai code theo spec đã rõ | Sonnet 5 | xhigh |
+| Việc máy móc, không cần phán đoán, **không đọc `main.tsx`** (context chỉ 200K) | Haiku 4.5 | low / medium |
+
+**Fable 5.1** là mức nâng cấp: chỉ dùng khi việc khó nhất vẫn bế tắc ở Opus, hoặc khi user yêu cầu (đắt gấp đôi Opus, lượt chạy lâu hơn). Đánh giá chi phí theo **việc hoàn thành**, không theo từng lượt: model rẻ mà phải làm lại thì không rẻ.
+
 ## Nhắn tin giữa các thread
 
 - `SendMessage` chỉ **xếp hàng**; "success" không có nghĩa đã được đọc, và session idle **có thể không tự thức dậy**.
-- Cần session idle **làm ngay**: dùng `mcp__ccd_session_mgmt__send_message` với `session_id`. `delivered` = lượt đã bắt đầu; `queued` = đang chờ sau việc hiện tại.
+- Cần session idle **làm ngay**: dùng `mcp__ccd_session_mgmt__send_message` với `session_id`. `delivered` = lượt đã bắt đầu; `queued` = đang chờ sau việc hiện tại. `delivered` **vẫn có thể thất bại** (vd hết hạn mức sử dụng): xác nhận qua transcript.
 - `session_id` lấy từ `list_sessions`. Tên trong `ListAgents` **khác** title trong `list_sessions`: xác nhận đúng session bằng transcript (`list_events`). Kiểm tra tin đã xử lý chưa: `isRunning` / `lastActivityAt`, hoặc tìm tin trong transcript.
 
 ## Git: mỗi task một worktree
