@@ -60,6 +60,7 @@ Mọi report kết thúc task chia 3 phần, theo thứ tự:
    - Script quét CSS phải **tách selector nhóm** (`.a, .b { … }`).
    - Đếm phần tử theo class: popover render sẵn vẫn nằm trong DOM dù đang ẩn, nên giới hạn `:scope > …` hoặc lọc phần tử hiển thị.
 4. **Tên nút, tên command lấy từ memory hay tài liệu: grep lại trước khi dùng.**
+5. **Trước khi báo xong một nhánh đụng `main.tsx`, `styles.css` hoặc `lib.rs`: chạy `node scripts/graphify-lite.mjs` trong worktree của nhánh đó.** Exit 2 là có lỗi (invoke chưa đăng ký, biến CSS chưa khai báo). Script đọc repo nơi chính nó nằm, nên chạy bản trong worktree đang kiểm, và đối chiếu dòng `Commit:` ở cuối.
 
 ## `styles.css`: type scale
 
