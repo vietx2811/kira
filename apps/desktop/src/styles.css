@@ -38,8 +38,10 @@
   /* The window chrome and canvas gutter share the same native
      UnderWindowBackground layer. Only floating controls and drawers add tint. */
   --material-window-chrome: var(--bg-base);
+  --material-chrome-glass: var(--bg-base);
   --material-drawer: var(--surface-drawer);
   --material-inspector: var(--surface-inspector);
+  --scrim: rgb(0 0 0 / 0.62);
   --glass-sidebar: var(--bg-base);
   --glass-drawer: var(--material-drawer);
   --glass-chrome: var(--surface-2);
@@ -240,7 +242,7 @@
 .version-list::-webkit-scrollbar-thumb {
   border: 2px solid transparent;
   border-radius: var(--radius-2);
-  background-color: rgb(255 255 255 / 0.14);
+  background-color: color-mix(in srgb, var(--text-main) 14%, transparent);
   background-clip: padding-box;
 }
 
@@ -258,7 +260,7 @@
 .outline-list::-webkit-scrollbar-thumb:hover,
 .inspector::-webkit-scrollbar-thumb:hover,
 .version-list::-webkit-scrollbar-thumb:hover {
-  background-color: rgb(255 255 255 / 0.26);
+  background-color: color-mix(in srgb, var(--text-main) 26%, transparent);
 }
 
 .project-settings-popover::-webkit-scrollbar-corner,
@@ -319,6 +321,10 @@ button {
 
 .app-shell[data-glass-state="native"] {
   background: transparent;
+  /* The native window rides on an UnderWindowBackground material. Only the
+     window chrome lets it through: the canvas and every reading surface stay
+     on their own tokens so text contrast never depends on the wallpaper. */
+  --material-window-chrome: var(--material-chrome-glass);
 }
 
 .app-shell[data-glass-state="fallback"],
@@ -337,6 +343,9 @@ button {
   --material-inspector: var(--surface-inspector);
   --glass-chrome: var(--surface-2);
   --focus-ring: 0 0 0 3px color-mix(in srgb, var(--accent-cyan), transparent 62%);
+  /* :root sets the scrollbar pair from static values; scrollbar-color inherits,
+     so restating it here themes every scroll container inside the shell. */
+  scrollbar-color: color-mix(in srgb, var(--text-main) 14%, transparent) transparent;
   /* :root sets color from the static --text-main, and color inherits as a
      resolved value, so uncolored text needs the themed value restated here. */
   color: var(--text-main);
@@ -479,7 +488,7 @@ button {
   z-index: 300;
   display: grid;
   place-items: center;
-  background: #000;
+  background: var(--bg-base);
   animation: splashExit 220ms ease 830ms forwards;
 }
 
@@ -1025,9 +1034,9 @@ button {
   display: grid;
   min-width: 156px;
   padding: 6px;
-  border: 1px solid rgb(255 255 255 / 0.1);
+  border: 1px solid var(--border-strong);
   border-radius: 10px;
-  background: rgb(15 17 16 / 0.97);
+  background: color-mix(in srgb, var(--surface-2) 97%, transparent);
   box-shadow: 0 18px 44px rgb(0 0 0 / 0.36);
   gap: 2px;
   transform-origin: top;
@@ -1310,9 +1319,7 @@ button {
   max-height: min(760px, calc(100dvh - 56px));
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-3);
-  background:
-    transparent,
-    var(--glass-inspector);
+  background: var(--glass-inspector);
   box-shadow: var(--panel-shadow);
   overflow: hidden;
 }
@@ -1599,7 +1606,7 @@ button {
 }
 
 .inbox.is-dragging-files {
-  background: rgb(18 25 22 / 0.9);
+  background: color-mix(in srgb, var(--accent-cyan) 12%, var(--surface-drawer));
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-strong), transparent 64%);
 }
 
@@ -1784,9 +1791,9 @@ small {
   display: grid;
   width: min(260px, calc(100% - 28px));
   padding: 10px;
-  border: 1px solid rgb(255 255 255 / 0.1);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius-3);
-  background: rgb(13 15 14 / 0.97);
+  background: color-mix(in srgb, var(--surface-2) 97%, transparent);
   box-shadow: var(--shadow-soft);
   gap: 8px;
   transform-origin: top right;
@@ -4291,6 +4298,25 @@ button.mini-tags-more:focus-visible {
   box-sizing: border-box;
 }
 
+/* No rule shipped for the closed-dock orb, so it fell back to the UA button
+   chrome: a ButtonFace fill that reads as a grey block in dark mode. */
+.kira-dock-orb {
+  display: grid;
+  width: 100%;
+  height: 42px;
+  border: 0;
+  border-radius: var(--radius-2);
+  background: transparent;
+  place-items: center;
+  color: var(--text-soft);
+  cursor: pointer;
+  transition: color var(--duration-base) var(--ease-soft);
+}
+
+.kira-dock-orb:hover {
+  color: var(--text-main);
+}
+
 /* Context & Selection Tags bar packed inside composer */
 .kira-dock-context-bar {
   display: flex;
@@ -5887,8 +5913,8 @@ button.mini-tags-more:focus-visible {
   padding: 0 var(--space-2);
   border: 0;
   border-radius: var(--radius-1);
-  background: color-mix(in srgb, var(--accent-amber), transparent 86%);
-  color: var(--accent-amber);
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+  color: var(--danger);
   cursor: pointer;
   font-size: var(--text-small);
 }
@@ -6147,7 +6173,7 @@ i.palette-color-segment {
   z-index: 2;
   padding: 4px 7px;
   border-radius: var(--radius-2);
-  background: rgb(12 13 12 / 0.94);
+  background: color-mix(in srgb, var(--surface-1) 94%, transparent);
   color: var(--text-main);
   font-size: var(--text-mini);
   opacity: 0;
@@ -6391,7 +6417,7 @@ button.palette-color-segment:focus-visible code {
   min-height: 34px;
   padding: 0 var(--space-3);
   border-radius: var(--radius-2);
-  background: rgb(12 13 12 / 0.76);
+  background: color-mix(in srgb, var(--surface-1) 76%, transparent);
   color: var(--text-muted);
   gap: var(--space-2);
   font-size: var(--text-small);
@@ -6459,7 +6485,7 @@ button.palette-color-segment:focus-visible code {
   left: var(--space-4);
   /* Floats directly on the WebGL canvas with no other chrome behind it, so
      it needs a more opaque tint than the base .segmented track. */
-  background: rgb(12 13 12 / 0.64);
+  background: color-mix(in srgb, var(--surface-1) 64%, transparent);
 }
 
 .graph3d-legend button {
@@ -6468,7 +6494,7 @@ button.palette-color-segment:focus-visible code {
   min-height: 28px;
   padding: 0 var(--space-2);
   border-radius: var(--radius-2);
-  background: rgb(12 13 12 / 0.64);
+  background: color-mix(in srgb, var(--surface-1) 64%, transparent);
   color: var(--text-soft);
   cursor: pointer;
   gap: 6px;
@@ -6476,7 +6502,7 @@ button.palette-color-segment:focus-visible code {
 }
 
 .graph3d-legend button:hover {
-  background: rgb(255 255 255 / 0.075);
+  background: var(--glass-hover);
   color: var(--text-main);
 }
 
@@ -7581,7 +7607,7 @@ button.palette-color-segment:focus-visible code {
   border: 1px solid color-mix(in srgb, var(--accent-cyan), transparent 81%);
   border-radius: var(--radius-2);
   background: var(--accent-faint);
-  color: #c7eee5;
+  color: var(--accent-on-glass-active);
   gap: 5px;
   font-size: var(--text-small);
   font-weight: 630;
@@ -7594,7 +7620,7 @@ button.palette-color-segment:focus-visible code {
   place-items: center;
   border-radius: var(--radius-2);
   background: transparent;
-  color: rgb(199 238 229 / 0.7);
+  color: color-mix(in srgb, var(--accent-on-glass-active) 70%, transparent);
   cursor: pointer;
 }
 
@@ -7837,7 +7863,7 @@ textarea {
   display: grid;
   place-items: center;
   padding: var(--space-5);
-  background: rgb(0 0 0 / 0.62);
+  background: var(--scrim);
 }
 
 .confirm-dialog {
@@ -7846,7 +7872,7 @@ textarea {
   padding: var(--space-5);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-3);
-  background: #151716;
+  background: var(--surface-1);
   box-shadow: var(--shadow-soft);
   gap: var(--space-5);
 }
@@ -7873,7 +7899,7 @@ textarea {
   padding: var(--space-4);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-3);
-  background: #151716;
+  background: var(--surface-1);
   box-shadow: var(--shadow-soft);
   gap: var(--space-3);
 }
@@ -7922,7 +7948,7 @@ textarea {
   padding: var(--space-4);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-3);
-  background: #151716;
+  background: var(--surface-1);
   box-shadow: var(--shadow-soft);
   gap: var(--space-4);
 }
@@ -8080,14 +8106,14 @@ textarea {
   height: 32px;
   padding: 0 var(--space-3);
   border-radius: var(--radius-2);
-  background: rgb(217 135 121 / 0.14);
-  color: #ffd5ce;
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+  color: var(--danger);
   cursor: pointer;
 }
 
 .danger-button:hover {
-  background: rgb(217 135 121 / 0.2);
-  color: #fff1ee;
+  background: color-mix(in srgb, var(--danger) 22%, transparent);
+  color: var(--danger);
 }
 
 .confidence-bar {
