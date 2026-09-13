@@ -17,6 +17,13 @@ Thêm hoặc đổi vai trò thì cập nhật mục này qua Orchestrator.
 
 **Bài học và luật dùng chung: báo Orchestrator để đưa vào file này. Không tự ghi vào memory.** Thread trong worktree không thấy memory, và một sự thật về code ghi trong memory sẽ lỗi thời ngay khi code đổi. Memory chỉ dành cho bối cảnh chi tiết mà file này chỉ tóm tắt.
 
+## Nhắn tin giữa các thread
+
+- `SendMessage` chỉ **xếp hàng**, và kết quả "success" không có nghĩa tin đã được đọc. Một session tương tác đang idle **có thể không tự thức dậy** để xử lý: đã xảy ra với Researcher (brief nằm đó không ai đọc) và vixio-25 (không trả lời cả ngày).
+- Cần session idle **bắt đầu làm ngay** (giao việc, bàn giao): dùng `mcp__ccd_session_mgmt__send_message` với `session_id`. Kết quả `delivered` nghĩa là lượt của session đó đã bắt đầu; `queued` là đang chờ sau việc hiện tại.
+- `session_id` lấy từ `list_sessions`. Tên trong `ListAgents` (vd `vixio-31`) **khác** title trong `list_sessions` (vd "Researcher Agent Thread"), nên xác nhận đúng session bằng cách đọc transcript qua `list_events`, đừng đoán theo tên.
+- Muốn biết tin đã được xử lý chưa: xem `isRunning` / `lastActivityAt` trong `list_sessions`, hoặc tìm tin đó trong transcript.
+
 ## Git: mỗi task một worktree
 
 - Bắt đầu task: tạo worktree + branch từ `main` mới nhất, ví dụ `git worktree add .claude/worktrees/<task> -b <vai-tro>/<task> main` (hoặc tool `EnterWorktree`). `.claude/worktrees/` đã được ignore.
