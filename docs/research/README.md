@@ -22,3 +22,4 @@ Nơi lưu các báo cáo nghiên cứu của thread **Researcher** (session `vix
 | Ngày | File | Chủ đề | Trạng thái |
 |---|---|---|---|
 | 2026-09-13 | [2026-09-13-graphify-code-graph.md](2026-09-13-graphify-code-graph.md) | Đánh giá graphify (code knowledge graph) vs graphify-lite | Kết luận: làm graphify-lite |
+| 2026-09-13 | [2026-09-13-right-panel-and-research-harness.md](2026-09-13-right-panel-and-research-harness.md) | Panel phải (chat AI + Changes) và harness/skill nghiên cứu | Chờ user chốt 10 quyết định (§D) |
