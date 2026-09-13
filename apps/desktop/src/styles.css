@@ -1426,7 +1426,7 @@ button {
 .onboarding-secondary-label {
   padding-left: 2px;
   color: var(--text-muted);
-  font-size: var(--text-mini);
+  font-size: var(--text-small);
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
@@ -1618,7 +1618,7 @@ button {
 .panel-kicker {
   margin: 0 0 2px;
   color: var(--accent-sage);
-  font-size: var(--text-mini);
+  font-size: var(--text-small);
   font-weight: 760;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -1655,7 +1655,7 @@ h2 {
   border-radius: var(--radius-2);
   background: var(--accent-faint);
   color: var(--accent-strong);
-  font-size: var(--text-mini);
+  font-size: var(--text-small);
   font-weight: 700;
 }
 
@@ -1712,7 +1712,7 @@ small {
   color: var(--accent-strong);
   cursor: pointer;
   gap: 4px;
-  font-size: var(--text-mini);
+  font-size: var(--text-small);
   font-weight: 620;
 }
 
@@ -2141,7 +2141,7 @@ small {
 .library-node-row small {
   display: none;
   color: var(--text-muted);
-  font-size: var(--text-mini);
+  font-size: var(--text-small);
   line-height: 1.28;
 }
 
@@ -2283,7 +2283,7 @@ button.mini-tags-more:focus-visible {
 
 .mini-tags-popover > strong {
   color: var(--text-muted);
-  font-size: var(--text-mini);
+  font-size: var(--text-small);
   font-weight: 600;
 }
 
@@ -2320,7 +2320,7 @@ button.mini-tags-more:focus-visible {
 .library-download-label {
   overflow: hidden;
   color: var(--text-muted);
-  font-size: var(--text-mini);
+  font-size: var(--text-small);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -2524,7 +2524,7 @@ button.mini-tags-more:focus-visible {
   background: rgb(255 255 255 / 0.045);
   color: var(--text-soft);
   cursor: pointer;
-  font-size: var(--text-mini);
+  font-size: var(--text-small);
   font-weight: 650;
   letter-spacing: 0;
   text-transform: none;
@@ -2589,7 +2589,7 @@ button.mini-tags-more:focus-visible {
 
 .suggestion-label {
   color: var(--text-muted);
-  font-size: var(--text-mini);
+  font-size: var(--text-small);
 }
 
 .suggestion-row button,
@@ -2608,7 +2608,7 @@ button.mini-tags-more:focus-visible {
   color: var(--text-soft);
   cursor: pointer;
   gap: 4px;
-  font-size: var(--text-mini);
+  font-size: var(--text-small);
 }
 
 .suggestion-chip {
@@ -2630,7 +2630,7 @@ button.mini-tags-more:focus-visible {
 
 .suggestion-chip small {
   color: var(--text-muted);
-  font-size: var(--text-mini);
+  font-size: var(--text-small);
 }
 
 .graph-shell {
@@ -2764,7 +2764,7 @@ button.mini-tags-more:focus-visible {
 .canvas-frame-description {
   overflow: hidden;
   color: var(--text-muted);
-  font-size: var(--text-mini);
+  font-size: var(--text-small);
   font-weight: 500;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2798,7 +2798,7 @@ button.mini-tags-more:focus-visible {
   background: transparent;
   color: var(--text-muted);
   font: inherit;
-  font-size: var(--text-mini);
+  font-size: var(--text-small);
   outline: none;
 }
 
@@ -4358,7 +4358,7 @@ button.mini-tags-more:focus-visible {
 
 .dock-select-option-meta {
   color: var(--text-muted);
-  font-size: var(--text-mini);
+  font-size: var(--text-small);
 }
 
 .kira-dock-chip-icon {
@@ -4387,7 +4387,7 @@ button.mini-tags-more:focus-visible {
 }
 
 .kira-chip-kind {
-  font-size: var(--text-mini);
+  font-size: var(--text-small);
   font-weight: 700;
   color: var(--accent-cyan);
   text-transform: uppercase;
@@ -4429,7 +4429,7 @@ button.mini-tags-more:focus-visible {
   border-radius: var(--radius-1);
   background: rgb(255 255 255 / 0.04);
   color: var(--text-soft);
-  font-size: var(--text-mini);
+  font-size: var(--text-small);
   gap: 4px;
 }
 
@@ -4596,7 +4596,7 @@ button.mini-tags-more:focus-visible {
 }
 
 .kira-dock-token-meta {
-  font-size: var(--text-mini);
+  font-size: var(--text-small);
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
   padding-right: 2px;
@@ -5144,7 +5144,7 @@ button.mini-tags-more:focus-visible {
   border-color: transparent;
   background: color-mix(in srgb, var(--glass-inspector), transparent 30%);
   box-shadow: 0 8px 16px -6px rgb(0 0 0 / 0.35);
-  font-size: var(--text-mini);
+  font-size: var(--text-small);
 }
 
 .canvas-view-rail-trigger {
@@ -5209,7 +5209,7 @@ button.mini-tags-more:focus-visible {
 
 .graph-tools-drawer span {
   color: var(--text-muted);
-  font-size: var(--text-mini);
+  font-size: var(--text-small);
 }
 
 .graph-tools-drawer select {
@@ -5409,7 +5409,7 @@ button.mini-tags-more:focus-visible {
 .settings-control-strip label span,
 .settings-chip span {
   color: var(--text-muted);
-  font-size: var(--text-mini);
+  font-size: var(--text-small);
 }
 
 .settings-control-strip select {
@@ -5685,7 +5685,7 @@ button.mini-tags-more:focus-visible {
 .provider-list-row small {
   align-self: start;
   color: var(--text-muted);
-  font-size: var(--text-mini);
+  font-size: var(--text-small);
 }
 
 .provider-list-row[data-status="connected"] small {
@@ -5732,7 +5732,7 @@ button.mini-tags-more:focus-visible {
 .provider-card-header span,
 .provider-card-header em {
   color: var(--text-muted);
-  font-size: var(--text-mini);
+  font-size: var(--text-small);
   font-style: normal;
 }
 
@@ -5755,7 +5755,7 @@ button.mini-tags-more:focus-visible {
 .settings-panel label span,
 .settings-definition-list dt {
   color: var(--text-muted);
-  font-size: var(--text-mini);
+  font-size: var(--text-small);
 }
 
 .provider-card input,
@@ -5805,7 +5805,7 @@ button.mini-tags-more:focus-visible {
   border-radius: var(--radius-2);
   background: var(--glass-active);
   color: var(--text-muted);
-  font-size: var(--text-mini);
+  font-size: var(--text-small);
 }
 
 .oauth-ready-note strong {
@@ -5817,7 +5817,7 @@ button.mini-tags-more:focus-visible {
   justify-self: start;
   margin-top: 4px;
   color: var(--accent-cyan);
-  font-size: var(--text-mini);
+  font-size: var(--text-small);
   text-decoration: none;
   transition: color 140ms ease;
 }
@@ -5845,7 +5845,7 @@ button.mini-tags-more:focus-visible {
   background: color-mix(in srgb, var(--accent-amber), transparent 86%);
   color: var(--accent-amber);
   cursor: pointer;
-  font-size: var(--text-mini);
+  font-size: var(--text-small);
 }
 
 .provider-task-groups {
@@ -5880,7 +5880,7 @@ button.mini-tags-more:focus-visible {
   background: var(--glass-hover);
   color: var(--text-muted);
   cursor: pointer;
-  font-size: var(--text-mini);
+  font-size: var(--text-small);
 }
 
 .provider-task-toggle input {
@@ -5946,7 +5946,7 @@ button.mini-tags-more:focus-visible {
 
 .settings-disclosure summary span {
   color: var(--text-muted);
-  font-size: var(--text-mini);
+  font-size: var(--text-small);
 }
 
 .settings-disclosure summary::after {
@@ -6007,7 +6007,7 @@ button.mini-tags-more:focus-visible {
   min-width: 0;
   overflow: hidden;
   color: var(--text-muted);
-  font-size: var(--text-mini);
+  font-size: var(--text-small);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -6016,7 +6016,7 @@ button.mini-tags-more:focus-visible {
   min-width: 0;
   overflow: hidden;
   color: var(--text-main);
-  font-size: var(--text-mini);
+  font-size: var(--text-small);
   font-weight: 640;
   text-align: right;
   text-overflow: ellipsis;
@@ -6131,7 +6131,7 @@ button.palette-color-segment:focus-visible code {
   background: rgb(255 255 255 / 0.055);
   color: var(--text-muted);
   cursor: pointer;
-  font-size: var(--text-mini);
+  font-size: var(--text-small);
 }
 
 .reference-palette-actions button:hover {
@@ -6422,7 +6422,7 @@ button.palette-color-segment:focus-visible code {
   color: var(--text-soft);
   cursor: pointer;
   gap: 6px;
-  font-size: var(--text-mini);
+  font-size: var(--text-small);
 }
 
 .graph3d-legend button:hover {
@@ -6508,7 +6508,7 @@ button.palette-color-segment:focus-visible code {
 }
 
 .slideshow-rail span {
-  font-size: var(--text-mini);
+  font-size: var(--text-small);
   font-variant-numeric: tabular-nums;
 }
 
@@ -6653,7 +6653,7 @@ button.palette-color-segment:focus-visible code {
 .slide-export-popover small {
   overflow: hidden;
   color: var(--text-muted);
-  font-size: var(--text-mini);
+  font-size: var(--text-small);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -6692,7 +6692,7 @@ button.palette-color-segment:focus-visible code {
 
 .slide-customizer-head span {
   color: var(--text-muted);
-  font-size: var(--text-mini);
+  font-size: var(--text-small);
 }
 
 .slide-customizer-reset {
@@ -6702,7 +6702,7 @@ button.palette-color-segment:focus-visible code {
   background: var(--accent-faint);
   color: var(--accent-strong);
   cursor: pointer;
-  font-size: var(--text-mini);
+  font-size: var(--text-small);
 }
 
 .slide-customizer-list {
@@ -6750,7 +6750,7 @@ button.palette-color-segment:focus-visible code {
   border-radius: var(--radius-1);
   background: var(--inset-field);
   color: var(--text-soft);
-  font-size: var(--text-mini);
+  font-size: var(--text-small);
   outline: none;
 }
 
@@ -6997,7 +6997,7 @@ button.palette-color-segment:focus-visible code {
 
 .outline-titlebar small {
   color: var(--text-muted);
-  font-size: var(--text-mini);
+  font-size: var(--text-small);
   font-weight: 520;
 }
 
@@ -7083,7 +7083,7 @@ button.palette-color-segment:focus-visible code {
 
 .diagnostic-chip small {
   color: var(--text-muted);
-  font-size: var(--text-mini);
+  font-size: var(--text-small);
 }
 
 .diagnostic-chip:hover {
@@ -7487,7 +7487,7 @@ button.palette-color-segment:focus-visible code {
 
 .linked-list small {
   color: var(--text-muted);
-  font-size: var(--text-mini);
+  font-size: var(--text-small);
 }
 
 .linked-list-empty {
@@ -7529,7 +7529,7 @@ button.palette-color-segment:focus-visible code {
   background: var(--accent-faint);
   color: #c7eee5;
   gap: 5px;
-  font-size: var(--text-mini);
+  font-size: var(--text-small);
   font-weight: 630;
 }
 
@@ -7608,14 +7608,14 @@ button.palette-color-segment:focus-visible code {
   border-radius: 5px;
   background: rgb(255 255 255 / 0.06);
   color: var(--text-main);
-  font-size: var(--text-mini);
+  font-size: var(--text-small);
   font-weight: 750;
 }
 
 .graph-shortcuts dd {
   margin: 0;
   color: var(--text-soft);
-  font-size: var(--text-mini);
+  font-size: var(--text-small);
 }
 
 .field-label {
@@ -7917,7 +7917,7 @@ textarea {
 .version-branches button small {
   grid-column: 2;
   color: var(--text-muted);
-  font-size: var(--text-mini);
+  font-size: var(--text-small);
 }
 
 .version-branch-form {
@@ -8017,7 +8017,7 @@ textarea {
 
 .version-row small {
   color: var(--text-muted);
-  font-size: var(--text-mini);
+  font-size: var(--text-small);
 }
 
 .danger-button {
