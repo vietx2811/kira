@@ -54,12 +54,18 @@ Mọi report kết thúc task, gửi user hay gửi Orchestrator, chia 3 phần 
 - **Trước khi tin một kết quả test, chứng minh app đang chạy đúng là code bạn định test**, ví dụ một thay đổi hay probe của chính bạn có mặt trong trang. Tái lập được một lỗi 2 lần chưa chứng minh gì nếu cả 2 lần đều chạy nhầm code.
 - **Kết quả "không có" hay "0" chưa chứng minh là không có.** Kèm một đối chứng cho thấy phép kiểm tra đọc được dữ liệu thật (vd đếm số dòng file đã đọc). Trong zsh, `$VAR:abc` bị hiểu thành modifier nên phải viết `${VAR}:abc`. `grep -c` đếm **dòng**, không đếm số lần xuất hiện; CSS do vite trả về nằm trên một dòng, nên dùng `grep -o … | wc -l`.
 - **Script quét CSS phải tách selector nhóm** (`.a, .b { … }`). Gán rule cho dòng selector cuối cùng sẽ bỏ sót các selector phía trên. Lỗi này từng giấu `.onboarding-orbit-ring::before` và để `.mini-tag-chip` (nhãn tag chức năng) kẹt ở 10px.
+- **Đếm phần tử theo class trên DOM**: component có popover render sẵn (vd danh sách "xem thêm tag") vẫn nằm trong DOM dù đang ẩn. Giới hạn vào con trực tiếp (`:scope > …`) hoặc lọc phần tử đang hiển thị.
 - Tên nút, tên command lấy từ memory hay tài liệu thì grep lại trước khi dùng. Memory từng ghi một nút "Recheck" và một command `claude_code_status` đều không tồn tại.
 - Trước khi tin một màu hay giá trị đọc từ `getComputedStyle`, kiểm tra biến `var()` có thật sự được khai báo. Biến không tồn tại khiến thuộc tính rơi về giá trị kế thừa, nên con số đo được là ngẫu nhiên (từng xảy ra với `--text-faint`).
 
 ## `styles.css`: type scale
 
-Mọi `font-size` phải là token: `--text-mini` 10px, `--text-small` 11px, `--text-body` 13px, `--text-title` 15px, `--text-large` 20px. Ngoại lệ duy nhất: 2 display heading dùng `clamp()` (onboarding hero, slide title). Cần cỡ mới thì thêm bậc vào scale, đừng viết giá trị dùng một lần. Không để phần tử nào inherit 14px từ root, vì 14px không phải một bậc.
+Mọi `font-size` phải là token: `--text-mini` 10px, `--text-small` 11px, `--text-body` 13px, `--text-title` 15px, `--text-large` 20px.
+
+- Chữ **chức năng** (nhãn nút, trạng thái, chip, tag, form control) tối thiểu `--text-small` (11px).
+- `--text-mini` (10px) chỉ dành cho chữ **phụ trợ** thật sự nhỏ: số thứ tự bước dạng badge, số đếm "+N", mã hex mono trong ô màu. Không dùng cho nhãn hay trạng thái nào người dùng cần đọc để thao tác.
+- Ngoại lệ duy nhất ngoài token: 2 display heading dùng `clamp()` (onboarding hero, slide title).
+- Cần cỡ mới thì thêm bậc vào scale, đừng viết giá trị dùng một lần. Không để phần tử nào inherit 14px từ root, vì 14px không phải một bậc.
 
 ## Ràng buộc đã chốt
 
