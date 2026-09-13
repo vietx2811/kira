@@ -33,3 +33,7 @@ Thumbs.db
 # Claude Code local (personal) settings
 .claude/settings.local.json
 .gstack/
+
+# Per-task git worktrees for parallel Claude threads (see CLAUDE.md). Was only in
+# .git/info/exclude, which a fresh clone (e.g. a cloud thread) does not have.
+.claude/worktrees/
