@@ -522,41 +522,49 @@ function extractBackgroundDeclarations(css) {
   // Use stack-based parsing to handle nested blocks (@media, @supports, etc).
   // Returns array of {selector, property, propertyOffset, value}.
   const findings = []
-  const stack = [] // Stack of {selector, openBraceIdx}
-  let lastCloseBrace = 0
+  const stack = [] // Stack of {selector, openBraceIdx, children: [[start, end]]}
+  let lastBoundary = 0 // index after the last `{`, `}` or `;`
 
   for (let i = 0; i < css.length; i++) {
     const ch = css[i]
 
     if (ch === '{') {
-      // Opening brace: collect selector from after last } (or 0) to here
-      const selectorText = css.slice(lastCloseBrace, i)
-      let selector = selectorText.trim().replace(/\s+/g, ' ')
-
-      stack.push({ selector, openBraceIdx: i })
+      // The prelude (selector group or at-rule) starts after the previous boundary.
+      const prelude = css.slice(lastBoundary, i).trim().replace(/\s+/g, ' ')
+      const parent = stack[stack.length - 1]
+      const selector = parent ? `${parent.selector} > ${prelude}` : prelude
+      stack.push({ selector, openBraceIdx: i, children: [] })
+      lastBoundary = i + 1
+    } else if (ch === ';') {
+      lastBoundary = i + 1
     } else if (ch === '}') {
-      if (stack.length > 0) {
-        // Closing brace: process declarations in this block
-        const block = stack.pop()
-        const blockStart = block.openBraceIdx + 1
-        const blockEnd = i
+      lastBoundary = i + 1
+      if (stack.length === 0) continue
+      const block = stack.pop()
+      const blockStart = block.openBraceIdx + 1
+      const parent = stack[stack.length - 1]
+      if (parent) parent.children.push([block.openBraceIdx, i + 1])
 
-        // Find background: or background-image: declarations using regex
-        const blockContent = css.slice(blockStart, blockEnd)
-        const bgRe = /(background|background-image)\s*:\s*([^;]*(?:\n[^;]*)*);/g
-        let m
-        while ((m = bgRe.exec(blockContent))) {
-          const property = m[1]
-          const value = m[2].trim()
-          const propertyOffset = blockStart + m.index + property.length + 1
-          findings.push({
-            selector: block.selector,
-            property,
-            propertyOffset,
-            value
-          })
-        }
-        lastCloseBrace = i + 1
+      // Only this block's own declarations: blank out nested child blocks
+      // (same length, so offsets still map to the original file).
+      let blockContent = css.slice(blockStart, i)
+      for (const [start, end] of block.children) {
+        const a = start - blockStart
+        const b = end - blockStart
+        blockContent = blockContent.slice(0, a) + ' '.repeat(b - a) + blockContent.slice(b)
+      }
+
+      // `background` / `background-image` as a whole property name, not the
+      // tail of a custom property like `--x-background`.
+      const bgRe = /(?<![\w-])(background-image|background)\s*:\s*([^;]*);/g
+      let m
+      while ((m = bgRe.exec(blockContent))) {
+        findings.push({
+          selector: block.selector,
+          property: m[1],
+          propertyOffset: blockStart + m.index,
+          value: m[2].trim()
+        })
       }
     }
   }
