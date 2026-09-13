@@ -279,17 +279,32 @@ function extractProviderTypeUnion(ts) {
   const marker = 'type AiProviderType ='
   const start = ts.indexOf(marker)
   if (start === -1) return []
-  // The union is a sequence of `| 'literal'` lines ending at the first
-  // line that doesn't start (after whitespace) with `|`.
+  // The union is a sequence of `| 'literal'` lines. Scan line by line,
+  // collecting literals from lines starting with `|`, and stop at the first
+  // line that doesn't start with `|` (after whitespace trimming).
   const rest = ts.slice(start + marker.length)
-  const re = /\|\s*'([a-zA-Z0-9_]+)'/g
+  const lines = rest.split('\n')
   const out = []
-  let m
-  // Stop once we hit something that is clearly past the union (a `type`
-  // keyword or two consecutive newlines with no leading `|`), approximated
-  // here by only scanning the first ~40 lines after the marker.
-  const window = rest.split('\n').slice(0, 40).join('\n')
-  while ((m = re.exec(window))) out.push(m[1])
+  let inUnion = false
+  for (const line of lines) {
+    const trimmed = line.trim()
+    if (!inUnion && !trimmed) continue // skip leading empty lines
+    if (trimmed.startsWith('|')) {
+      inUnion = true
+      const m = trimmed.match(/\|\s*'([a-zA-Z0-9_]+)'/)
+      if (m) out.push(m[1])
+    } else if (inUnion) {
+      // Hit a non-| line after union started; end of union
+      break
+    } else if (trimmed) {
+      // First non-empty, non-| line: could be single-line union
+      // Extract all quoted strings and stop (assumes = 'a' | 'b' all on one line)
+      for (const m of trimmed.matchAll(/'([a-zA-Z0-9_]+)'/g)) {
+        out.push(m[1])
+      }
+      break
+    }
+  }
   return out
 }
 
