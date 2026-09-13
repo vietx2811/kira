@@ -514,12 +514,39 @@ function isColorValue(layer) {
   // Hex color
   if (/^#[0-9a-f]{3,8}$/.test(trimmed)) return true
 
-  // CSS named colors (sampling common ones; browsers support 140+)
+  // Full CSS named-color set (148 keywords, CSS Color Module Level 4,
+  // aliceblue..yellowgreen incl. rebeccapurple). 'transparent' and
+  // 'currentcolor' are handled above, not in this list.
   const namedColors = new Set([
-    'red', 'green', 'blue', 'black', 'white', 'yellow', 'cyan', 'magenta',
-    'gray', 'silver', 'maroon', 'navy', 'olive', 'purple', 'teal', 'lime',
-    'aqua', 'orange', 'brown', 'pink', 'gold', 'indigo', 'turquoise',
-    'violet', 'salmon', 'coral', 'khaki', 'lavender', 'bisque', 'honeydew'
+    'aliceblue', 'antiquewhite', 'aqua', 'aquamarine', 'azure', 'beige',
+    'bisque', 'black', 'blanchedalmond', 'blue', 'blueviolet', 'brown',
+    'burlywood', 'cadetblue', 'chartreuse', 'chocolate', 'coral',
+    'cornflowerblue', 'cornsilk', 'crimson', 'cyan', 'darkblue', 'darkcyan',
+    'darkgoldenrod', 'darkgray', 'darkgreen', 'darkgrey', 'darkkhaki',
+    'darkmagenta', 'darkolivegreen', 'darkorange', 'darkorchid', 'darkred',
+    'darksalmon', 'darkseagreen', 'darkslateblue', 'darkslategray',
+    'darkslategrey', 'darkturquoise', 'darkviolet', 'deeppink',
+    'deepskyblue', 'dimgray', 'dimgrey', 'dodgerblue', 'firebrick',
+    'floralwhite', 'forestgreen', 'fuchsia', 'gainsboro', 'ghostwhite',
+    'gold', 'goldenrod', 'gray', 'green', 'greenyellow', 'grey', 'honeydew',
+    'hotpink', 'indianred', 'indigo', 'ivory', 'khaki', 'lavender',
+    'lavenderblush', 'lawngreen', 'lemonchiffon', 'lightblue', 'lightcoral',
+    'lightcyan', 'lightgoldenrodyellow', 'lightgray', 'lightgreen',
+    'lightgrey', 'lightpink', 'lightsalmon', 'lightseagreen',
+    'lightskyblue', 'lightslategray', 'lightslategrey', 'lightsteelblue',
+    'lightyellow', 'lime', 'limegreen', 'linen', 'magenta', 'maroon',
+    'mediumaquamarine', 'mediumblue', 'mediumorchid', 'mediumpurple',
+    'mediumseagreen', 'mediumslateblue', 'mediumspringgreen',
+    'mediumturquoise', 'mediumvioletred', 'midnightblue', 'mintcream',
+    'mistyrose', 'moccasin', 'navajowhite', 'navy', 'oldlace', 'olive',
+    'olivedrab', 'orange', 'orangered', 'orchid', 'palegoldenrod',
+    'palegreen', 'paleturquoise', 'palevioletred', 'papayawhip',
+    'peachpuff', 'peru', 'pink', 'plum', 'powderblue', 'purple',
+    'rebeccapurple', 'red', 'rosybrown', 'royalblue', 'saddlebrown',
+    'salmon', 'sandybrown', 'seagreen', 'seashell', 'sienna', 'silver',
+    'skyblue', 'slateblue', 'slategray', 'slategrey', 'snow', 'springgreen',
+    'steelblue', 'tan', 'teal', 'thistle', 'tomato', 'turquoise', 'violet',
+    'wheat', 'white', 'whitesmoke', 'yellow', 'yellowgreen'
   ])
   if (namedColors.has(trimmed)) return true
 
