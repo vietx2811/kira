@@ -13,7 +13,7 @@ use std::{
     net::{TcpListener, TcpStream},
     path::{Path, PathBuf},
     process::{Command, Output},
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, MutexGuard},
     thread,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -2122,6 +2122,16 @@ fn codex_status_native() -> Result<CodexStatus, String> {
     Ok(status)
 }
 
+// A panic anywhere else while this Mutex is held would poison it; a bare
+// `.lock().unwrap()` here would then panic again on the very next command
+// invocation, and that second panic crosses the IPC boundary (WKWebView's
+// script-message-handler callback) as a non-unwinding abort. Poisoning only
+// marks the guard, it never corrupts the `Option<Child>` payload itself, so
+// recovering it with the poisoned guard's own data is safe.
+fn lock_ignoring_poison<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
 #[tauri::command]
 fn codex_login(
     app: AppHandle,
@@ -2186,7 +2196,7 @@ fn codex_login(
     let mut child = command.spawn().map_err(|e| format!("Unable to start login: {e}"))?;
     let stdout = child.stdout.take().ok_or_else(|| "no stdout".to_string())?;
     let stderr = child.stderr.take().ok_or_else(|| "no stderr".to_string())?;
-    *state.child.lock().unwrap() = Some(child);
+    *lock_ignoring_poison(&state.child) = Some(child);
 
     // Drain stderr on a background thread WHILE we stream stdout below. A piped stderr that
     // nobody reads fills its OS pipe buffer once the child writes enough to it; the child then
@@ -2224,7 +2234,7 @@ fn codex_login(
     }
 
     let status = {
-        let mut guard = state.child.lock().unwrap();
+        let mut guard = lock_ignoring_poison(&state.child);
         match guard.take() {
             Some(mut c) => c.wait().map_err(|e| format!("login wait failed: {e}"))?,
             None => return Err("Login was cancelled".to_string()),
@@ -2248,7 +2258,7 @@ fn codex_login(
 
 #[tauri::command]
 fn codex_cancel_login(state: tauri::State<'_, CodexLoginState>) -> Result<(), String> {
-    if let Some(mut child) = state.child.lock().unwrap().take() {
+    if let Some(mut child) = lock_ignoring_poison(&state.child).take() {
         // codex_login spawns the helper as its own process group leader
         // specifically so this can kill `codex login` along with it — killing
         // only the tracked child PID leaves that grandchild running, still
@@ -2832,7 +2842,7 @@ fn generate_openai_compatible_text(
     prompt: &str,
 ) -> Result<String, String> {
     let url = format!("{}/chat/completions", normalized_openai_chat_base_url(provider)?);
-    let mut request = generation_http_client().post(url);
+    let mut request = generation_http_client()?.post(url);
     if let Some(secret) = secret.filter(|secret| !secret.trim().is_empty()) {
         request = request.bearer_auth(secret);
     }
@@ -2873,7 +2883,7 @@ fn generate_anthropic_text(
     prompt: &str,
 ) -> Result<String, String> {
     let url = format!("{}/v1/messages", normalized_provider_base_url(provider)?);
-    let response = generation_http_client()
+    let response = generation_http_client()?
         .post(url)
         .header("x-api-key", secret)
         .header("anthropic-version", "2023-06-01")
@@ -2917,7 +2927,7 @@ fn generate_gemini_text(
         generation_model(provider, "gemini-1.5-pro"),
         secret
     );
-    let response = generation_http_client()
+    let response = generation_http_client()?
         .post(url)
         .json(&serde_json::json!({
             "contents": [
@@ -2956,7 +2966,7 @@ fn generate_gemini_text(
 
 fn generate_ollama_text(provider: &AiProviderTestRequest, prompt: &str) -> Result<String, String> {
     let url = format!("{}/api/generate", normalized_ollama_base_url(provider)?);
-    let response = generation_http_client()
+    let response = generation_http_client()?
         .post(url)
         .json(&serde_json::json!({
             "model": generation_model(provider, "llama3.2"),
@@ -3049,7 +3059,7 @@ fn generate_openai_compatible_vision(
     image_data_url: &str,
 ) -> Result<String, String> {
     let url = format!("{}/chat/completions", normalized_openai_chat_base_url(provider)?);
-    let mut request = generation_http_client().post(url);
+    let mut request = generation_http_client()?.post(url);
     if let Some(secret) = secret.filter(|secret| !secret.trim().is_empty()) {
         request = request.bearer_auth(secret);
     }
@@ -3095,7 +3105,7 @@ fn generate_anthropic_vision(
 ) -> Result<String, String> {
     let (media_type, data) = split_data_url(image_data_url)?;
     let url = format!("{}/v1/messages", normalized_provider_base_url(provider)?);
-    let response = generation_http_client()
+    let response = generation_http_client()?
         .post(url)
         .header("x-api-key", secret)
         .header("anthropic-version", "2023-06-01")
@@ -3144,7 +3154,7 @@ fn generate_gemini_vision(
         generation_model(provider, "gemini-1.5-pro"),
         secret
     );
-    let response = generation_http_client()
+    let response = generation_http_client()?
         .post(url)
         .json(&serde_json::json!({
             "contents": [
@@ -3189,7 +3199,7 @@ fn generate_ollama_vision(
 ) -> Result<String, String> {
     let (_, data) = split_data_url(image_data_url)?;
     let url = format!("{}/api/generate", normalized_ollama_base_url(provider)?);
-    let response = generation_http_client()
+    let response = generation_http_client()?
         .post(url)
         .json(&serde_json::json!({
             "model": generation_model(provider, "llava"),
@@ -3254,7 +3264,7 @@ fn list_local_or_openai_compatible_models(
 
 fn list_ollama_models(provider: &AiProviderTestRequest) -> Result<Vec<String>, String> {
     let url = format!("{}/api/tags", normalized_provider_base_url(provider)?);
-    let response = http_client()
+    let response = http_client()?
         .get(url)
         .send()
         .map_err(|error| format!("Ollama model list failed: {error}"))?;
@@ -3267,7 +3277,7 @@ fn list_openai_compatible_models(
     secret: Option<&str>,
 ) -> Result<Vec<String>, String> {
     let url = format!("{}/models", normalized_openai_chat_base_url(provider)?);
-    let mut request = http_client().get(url);
+    let mut request = http_client()?.get(url);
     if let Some(secret) = secret.filter(|secret| !secret.trim().is_empty()) {
         request = request.bearer_auth(secret);
     }
@@ -3283,7 +3293,7 @@ fn list_anthropic_models(
     secret: &str,
 ) -> Result<Vec<String>, String> {
     let url = format!("{}/v1/models", normalized_provider_base_url(provider)?);
-    let response = http_client()
+    let response = http_client()?
         .get(url)
         .header("x-api-key", secret)
         .header("anthropic-version", "2023-06-01")
@@ -3302,7 +3312,7 @@ fn list_gemini_models(
         normalized_provider_base_url(provider)?,
         secret
     );
-    let response = http_client()
+    let response = http_client()?
         .get(url)
         .send()
         .map_err(|error| format!("Gemini model list failed: {error}"))?;
@@ -3381,18 +3391,18 @@ fn normalized_ollama_base_url(provider: &AiProviderTestRequest) -> Result<String
     Ok(base.strip_suffix("/v1").unwrap_or(&base).to_string())
 }
 
-fn http_client() -> reqwest::blocking::Client {
+fn http_client() -> Result<reqwest::blocking::Client, String> {
     reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(8))
         .build()
-        .expect("build reqwest client")
+        .map_err(|error| format!("Unable to build HTTP client: {error}"))
 }
 
-fn generation_http_client() -> reqwest::blocking::Client {
+fn generation_http_client() -> Result<reqwest::blocking::Client, String> {
     reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(45))
         .build()
-        .expect("build generation reqwest client")
+        .map_err(|error| format!("Unable to build generation HTTP client: {error}"))
 }
 
 fn response_json(
@@ -4494,6 +4504,29 @@ mod tests {
     fn image_data_url_splitter_rejects_non_base64_input() {
         assert!(split_data_url("https://example.com/image.png").is_err());
         assert!(split_data_url("data:image/png,not-base64").is_err());
+    }
+
+    #[test]
+    fn lock_ignoring_poison_recovers_value_after_a_poisoning_panic() {
+        let mutex = Arc::new(Mutex::new(41));
+
+        // Poison the mutex from another thread: panic while the lock is held.
+        let poisoner = Arc::clone(&mutex);
+        let result = std::thread::spawn(move || {
+            let mut guard = poisoner.lock().unwrap();
+            *guard += 1;
+            panic!("simulated panic while holding the lock");
+        })
+        .join();
+        assert!(result.is_err(), "the spawned thread should have panicked");
+        assert!(mutex.is_poisoned(), "the mutex should now be poisoned");
+
+        // A bare `.lock().unwrap()` would panic again here; the helper must not.
+        let mut guard = lock_ignoring_poison(&mutex);
+        assert_eq!(*guard, 42, "the write made before the panic must still be visible");
+        *guard = 100;
+        drop(guard);
+        assert_eq!(*lock_ignoring_poison(&mutex), 100);
     }
 
     #[test]
