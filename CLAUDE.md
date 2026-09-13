@@ -67,7 +67,7 @@ Mọi report kết thúc task chia 3 phần, theo thứ tự:
    - Browser pane ẩn làm transition/animation đứng giữa chừng, `getComputedStyle` trả màu dở dang: gắn tạm `*,*::before,*::after{transition:none!important;animation-duration:0s!important}` trước khi đo. Click theo `ref` thay vì tọa độ khi phần tử đang animate.
    - `grep` trên máy này là **ugrep**, bỏ qua `--include` và quét cả file khác loại: dùng `/usr/bin/grep` hoặc liệt kê file tường minh.
 4. **Tên nút, tên command lấy từ memory hay tài liệu: grep lại trước khi dùng.**
-5. **Trước khi báo xong một nhánh đụng `main.tsx`, `styles.css` hoặc `lib.rs`: chạy `node scripts/graphify-lite.mjs` trong worktree của nhánh đó.** Exit 2 là có lỗi (invoke chưa đăng ký, biến CSS chưa khai báo). Script đọc repo nơi chính nó nằm, nên chạy bản trong worktree đang kiểm, và đối chiếu dòng `Commit:` ở cuối.
+5. **Trước khi báo xong một nhánh đụng `main.tsx`, `styles.css` hoặc `lib.rs`: chạy `node scripts/graphify-lite.mjs --strict` trong worktree của nhánh đó.** Exit 2 là có lỗi (invoke chưa đăng ký, biến CSS chưa khai báo, màu ở lớp nền không cuối). Hai cảnh báo `open_project_package*` là đã biết và vô hại: được gọi qua biểu thức ba ngôi trong `openNativeProjectPackage()`, script chỉ bắt tên command viết literal. Script đọc repo nơi chính nó nằm, nên chạy bản trong worktree đang kiểm, và đối chiếu dòng `Commit:` ở cuối.
 
 ## `styles.css`: token màu theo theme
 
