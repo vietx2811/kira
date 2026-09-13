@@ -45,8 +45,19 @@
   --glass-chrome: var(--surface-2);
   --glass-content: var(--surface-1);
   --glass-inspector: var(--material-inspector);
+  /* Static fallback only: an alias resolves here at :root, so it would not see
+     .app-shell's per-project tokens. buildProjectAppearanceStyle() sets the
+     themed values. */
+  --glass-strong: var(--node-surface-selected);
+  --glass-border-strong: var(--border-strong);
   --glass-hover: rgb(255 255 255 / 0.055);
   --glass-active: var(--accent-faint);
+  /* Text on --glass-active. buildProjectAppearanceStyle() recomputes these per
+     project so they clear AA on the tint composited over each theme surface;
+     these static values only apply outside .app-shell. */
+  --text-on-glass-active: var(--text-soft);
+  --accent-on-glass-active: var(--accent-strong);
+  --accent-alt-on-glass-active: var(--accent-amber);
   --separator-hairline: rgb(255 255 255 / 0.052);
   --inset-field: rgb(0 0 0 / 0.12);
   --border-soft: rgb(255 255 255 / 0.06);
@@ -5335,7 +5346,7 @@ button.mini-tags-more:focus-visible {
 
 .settings-nav-item.is-active {
   background: var(--glass-active);
-  color: var(--accent-strong);
+  color: var(--accent-on-glass-active);
 }
 
 .settings-scroll {
@@ -5652,12 +5663,9 @@ button.mini-tags-more:focus-visible {
   background: var(--glass-active);
 }
 
-/* --text-muted (3.65:1) fails AA on --glass-active's rendered tint; --text-soft
-   clears 4.5:1. Placed before the data-status color rules below so a
-   connected/key_missing row's semantic color still wins when both apply. */
 .provider-list-row[aria-pressed="true"] em,
 .provider-list-row[aria-pressed="true"] small {
-  color: var(--text-soft);
+  color: var(--text-on-glass-active);
 }
 
 .provider-list-row span {
@@ -5699,6 +5707,15 @@ button.mini-tags-more:focus-visible {
 .provider-list-row[data-status="key_missing"] small,
 .provider-list-row[data-status="billing_separate"] small {
   color: var(--accent-amber);
+}
+
+.provider-list-row[aria-pressed="true"][data-status="connected"] small {
+  color: var(--accent-on-glass-active);
+}
+
+.provider-list-row[aria-pressed="true"][data-status="key_missing"] small,
+.provider-list-row[aria-pressed="true"][data-status="billing_separate"] small {
+  color: var(--accent-alt-on-glass-active);
 }
 
 .provider-card,
@@ -5808,7 +5825,7 @@ button.mini-tags-more:focus-visible {
   padding: 8px;
   border-radius: var(--radius-2);
   background: var(--glass-active);
-  color: var(--text-muted);
+  color: var(--text-on-glass-active);
   font-size: var(--text-small);
 }
 
@@ -6209,6 +6226,11 @@ button.palette-color-segment:focus-visible code {
 .project-color-summary small {
   color: var(--text-soft);
   font-size: var(--text-small);
+}
+
+.project-color-summary:hover small,
+.project-color-summary.is-active small {
+  color: var(--text-on-glass-active);
 }
 
 .project-color-dots {
@@ -6641,6 +6663,10 @@ button.palette-color-segment:focus-visible code {
 .slide-export-popover button:hover {
   background: var(--glass-active);
   color: var(--text-main);
+}
+
+.slide-export-popover button:hover small {
+  color: var(--text-on-glass-active);
 }
 
 .slide-export-popover span {

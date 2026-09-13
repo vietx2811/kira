@@ -12764,6 +12764,12 @@ function buildProjectAppearanceStyle(appearance: ProjectAppearance): React.CSSPr
   const tokens = projectColorTokens(appearance)
   const accent = tokens.accent
   const dark = tokens.mode === 'dark'
+  const glassActiveAlpha = dark ? 0.24 : 0.22
+  const glassActiveBackgrounds = glassActiveComposites(tokens, glassActiveAlpha)
+  // Floating popovers share one surface and one strong hairline; the glass-strong
+  // pair reuses them so a popover can't drift from its siblings.
+  const nodeSurfaceSelected = colorWithAlpha(tokens.nodeSelected, dark ? 0.94 : 0.9)
+  const borderStrong = dark ? 'rgb(255 255 255 / 0.13)' : colorWithAlpha(tokens.textMain, 0.18)
   return {
     '--bg-base': tokens.base,
     '--bg-canvas': tokens.canvasSurface,
@@ -12774,7 +12780,7 @@ function buildProjectAppearanceStyle(appearance: ProjectAppearance): React.CSSPr
     '--surface-inspector': tokens.surfaceInspector,
     '--surface-inset': tokens.surfaceInset,
     '--node-surface': colorWithAlpha(tokens.nodeSurface, dark ? 0.82 : 0.78),
-    '--node-surface-selected': colorWithAlpha(tokens.nodeSelected, dark ? 0.94 : 0.9),
+    '--node-surface-selected': nodeSurfaceSelected,
     '--node-border': dark ? 'rgb(255 255 255 / 0.045)' : colorWithAlpha(tokens.textMain, 0.11),
     '--node-shadow': dark ? '0 18px 48px rgb(0 0 0 / 0.35)' : `0 10px 28px ${colorWithAlpha(tokens.textMain, 0.13)}`,
     '--node-shadow-soft': `0 0 0 1px ${colorWithAlpha(tokens.accentStrong, dark ? 0.1 : 0.16)}`,
@@ -12785,12 +12791,17 @@ function buildProjectAppearanceStyle(appearance: ProjectAppearance): React.CSSPr
     '--glass-drawer': dark ? colorWithAlpha(tokens.surfaceDrawer, 0.88) : colorWithAlpha(tokens.surfaceDrawer, 0.9),
     '--glass-content': dark ? colorWithAlpha(tokens.base, 0.22) : colorWithAlpha(tokens.base, 0.28),
     '--glass-inspector': dark ? colorWithAlpha(tokens.surfaceInspector, 0.86) : colorWithAlpha(tokens.surfaceInspector, 0.9),
+    '--glass-strong': nodeSurfaceSelected,
+    '--glass-border-strong': borderStrong,
     '--glass-hover': dark ? 'rgb(255 255 255 / 0.055)' : 'rgb(34 31 26 / 0.055)',
-    '--glass-active': colorWithAlpha(accent, dark ? 0.24 : 0.22),
+    '--glass-active': colorWithAlpha(accent, glassActiveAlpha),
+    '--text-on-glass-active': softestReadableText(tokens.textSoft, tokens.textMain, glassActiveBackgrounds),
+    '--accent-on-glass-active': readableAccentOn(tokens.accentStrong, glassActiveBackgrounds, dark),
+    '--accent-alt-on-glass-active': readableAccentOn(tokens.accentAlt, glassActiveBackgrounds, dark),
     '--separator-hairline': dark ? 'rgb(255 255 255 / 0.052)' : colorWithAlpha(tokens.textMain, 0.1),
     '--inset-field': dark ? 'rgb(0 0 0 / 0.12)' : 'rgb(255 255 255 / 0.58)',
     '--border-soft': dark ? 'rgb(255 255 255 / 0.06)' : colorWithAlpha(tokens.textMain, 0.1),
-    '--border-strong': dark ? 'rgb(255 255 255 / 0.13)' : colorWithAlpha(tokens.textMain, 0.18),
+    '--border-strong': borderStrong,
     '--text-main': tokens.textMain,
     '--text-soft': tokens.textSoft,
     '--text-muted': tokens.textMuted,
@@ -13169,6 +13180,53 @@ function contrastRatio(foreground: string, background: string) {
   const lighter = Math.max(a, b)
   const darker = Math.min(a, b)
   return (lighter + 0.05) / (darker + 0.05)
+}
+
+function minContrastRatio(foreground: string, backgrounds: string[]) {
+  return Math.min(...backgrounds.map((background) => contrastRatio(foreground, background)))
+}
+
+// --glass-active is a translucent accent tint, so the color text actually sits
+// on depends on the surface underneath. Composite it over every theme surface
+// it can land on and let the worst one decide. On light themes the tint
+// darkens the surface, which is what pulls soft and accent text below AA.
+function glassActiveComposites(tokens: ReturnType<typeof projectColorTokens>, alpha: number) {
+  return [
+    tokens.base,
+    tokens.canvasSurface,
+    tokens.surface1,
+    tokens.surface2,
+    tokens.surface3,
+    tokens.surfaceDrawer,
+    tokens.surfaceInspector,
+    tokens.surfaceInset,
+  ].map((surface) => mixColor(tokens.accent, surface, 1 - alpha))
+}
+
+// Walks the soft tone toward the main tone and stops at the first step that
+// clears AA, so a selected row keeps its title/detail hierarchy instead of
+// flattening straight to the main text color.
+function softestReadableText(soft: string, main: string, backgrounds: string[], target = 4.5) {
+  if (minContrastRatio(soft, backgrounds) >= target) return soft
+  for (let step = 1; step <= 10; step += 1) {
+    const candidate = mixColor(soft, main, step / 10)
+    if (minContrastRatio(candidate, backgrounds) >= target) return candidate
+  }
+  return main
+}
+
+// Keeps the accent's hue and chroma and only moves lightness away from the
+// backgrounds (lighter on dark themes, darker on light) until it clears AA.
+function readableAccentOn(accent: string, backgrounds: string[], dark: boolean, target = 4.5) {
+  if (minContrastRatio(accent, backgrounds) >= target) return accent
+  const oklch = converter('oklch')(accent)
+  if (!oklch) return accent
+  const start = oklch.l ?? 0.5
+  for (let step = 1; step <= 60; step += 1) {
+    const candidate = formatHex({ ...oklch, l: clamp(start + (dark ? step : -step) * 0.01, 0, 1) })
+    if (minContrastRatio(candidate, backgrounds) >= target) return candidate
+  }
+  return dark ? '#f4f1ea' : '#23211d'
 }
 
 function relativeLuminance(color: string) {
