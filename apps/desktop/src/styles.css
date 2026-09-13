@@ -323,9 +323,23 @@ button {
 
 .app-shell[data-glass-state="fallback"],
 .app-shell[data-glass-state="browser"] {
-  background:
-    rgb(255 255 255 / 0.02),
-    rgb(13 14 13 / 0.96);
+  /* No native material behind the page here, so the shell paints its own
+     themed ground; the page canvas under it stays dark from :root. */
+  background: var(--bg-base);
+}
+
+/* Aliases of per-project tokens. A var() alias resolves on the element that
+   declares it, so the :root copies only serve content outside .app-shell;
+   redeclaring them here makes them follow the inline theme tokens. */
+.app-shell {
+  --material-window-chrome: var(--bg-base);
+  --material-drawer: var(--surface-drawer);
+  --material-inspector: var(--surface-inspector);
+  --glass-chrome: var(--surface-2);
+  --focus-ring: 0 0 0 3px color-mix(in srgb, var(--accent-cyan), transparent 62%);
+  /* :root sets color from the static --text-main, and color inherits as a
+     resolved value, so uncolored text needs the themed value restated here. */
+  color: var(--text-main);
 }
 
 .app-shell[data-color-mode="light"] {
@@ -385,11 +399,11 @@ button {
 
 .file-tab:hover {
   color: var(--text-main);
-  background: rgb(255 255 255 / 0.055);
+  background: color-mix(in srgb, var(--text-main) 5.5%, transparent);
 }
 
 .file-tab.is-active {
-  background: rgb(255 255 255 / 0.09);
+  background: color-mix(in srgb, var(--text-main) 9%, transparent);
   color: var(--text-main);
   box-shadow:
     0 1px 2px rgb(0 0 0 / 0.16),
@@ -455,7 +469,7 @@ button {
 }
 
 .file-tab-close:hover {
-  background: rgb(255 255 255 / 0.1);
+  background: color-mix(in srgb, var(--text-main) 10%, transparent);
   color: var(--text-main);
 }
 
@@ -539,13 +553,15 @@ button {
   flex: 0 0 auto;
   place-items: center;
   margin: 0 0 0 2px;
+  border: 0;
   border-radius: var(--radius-1);
+  background: transparent;
   color: var(--text-soft);
   cursor: pointer;
 }
 
 .file-tab-add:hover {
-  background: rgb(255 255 255 / 0.06);
+  background: color-mix(in srgb, var(--text-main) 6%, transparent);
   color: var(--text-main);
 }
 
@@ -694,7 +710,7 @@ button {
   display: inline-flex;
   padding: 3px;
   border-radius: var(--radius-2);
-  background: rgb(255 255 255 / 0.026);
+  background: color-mix(in srgb, var(--text-main) 2.6%, transparent);
   gap: 2px;
 }
 
@@ -1628,7 +1644,7 @@ button {
 
 .panel-kicker {
   margin: 0 0 2px;
-  color: var(--accent-sage);
+  color: var(--accent-cyan);
   font-size: var(--text-small);
   font-weight: 760;
   letter-spacing: 0.08em;
@@ -6484,7 +6500,7 @@ button.palette-color-segment:focus-visible code {
 .slideshow-shell[data-presenting="true"] {
   grid-template-columns: minmax(0, 1fr);
   padding: 0;
-  background: #080909;
+  background: var(--bg-base);
 }
 
 .slideshow-shell[data-presenting="true"] .slideshow-rail {
@@ -6529,7 +6545,7 @@ button.palette-color-segment:focus-visible code {
 
 .slideshow-rail button.is-active,
 .slideshow-rail button:hover {
-  background: rgb(255 255 255 / 0.055);
+  background: color-mix(in srgb, var(--text-main) 5.5%, transparent);
   color: var(--text-main);
 }
 
@@ -6554,7 +6570,7 @@ button.palette-color-segment:focus-visible code {
   min-height: 0;
   padding: clamp(28px, 4vw, 58px);
   border-radius: var(--radius-3);
-  background: rgb(8 9 9 / 0.72);
+  background: color-mix(in srgb, var(--bg-base) 72%, transparent);
   gap: clamp(28px, 4vw, 64px);
 }
 
@@ -6567,7 +6583,7 @@ button.palette-color-segment:focus-visible code {
   min-height: 32px;
   padding: 3px;
   border-radius: var(--radius-2);
-  background: rgb(12 13 12 / 0.72);
+  background: color-mix(in srgb, var(--surface-1) 72%, transparent);
   color: var(--text-muted);
   gap: 2px;
   font-size: var(--text-small);
@@ -6592,7 +6608,7 @@ button.palette-color-segment:focus-visible code {
   padding: 0 var(--space-2);
   border: 0;
   border-radius: var(--radius-2);
-  background: rgb(255 255 255 / 0.055);
+  background: color-mix(in srgb, var(--text-main) 5.5%, transparent);
   color: var(--text-soft);
   font-size: var(--text-small);
   outline: none;
@@ -6600,7 +6616,7 @@ button.palette-color-segment:focus-visible code {
 
 .slideshow-controls button:hover,
 .slideshow-controls button[aria-pressed="true"] {
-  background: rgb(255 255 255 / 0.075);
+  background: color-mix(in srgb, var(--text-main) 7.5%, transparent);
   color: var(--text-main);
 }
 
@@ -6890,7 +6906,7 @@ button.palette-color-segment:focus-visible code {
   min-height: min(58vh, 520px);
   border: 0;
   border-radius: var(--radius-3);
-  background: rgb(255 255 255 / 0.05);
+  background: color-mix(in srgb, var(--text-main) 5%, transparent);
   color: var(--text-main);
   cursor: pointer;
   text-align: left;
@@ -6928,7 +6944,7 @@ button.palette-color-segment:focus-visible code {
   padding: var(--space-3);
   border: 0;
   border-radius: var(--radius-3);
-  background: rgb(255 255 255 / 0.055);
+  background: color-mix(in srgb, var(--text-main) 5.5%, transparent);
   color: var(--text-main);
   cursor: pointer;
   gap: var(--space-2);
@@ -6970,7 +6986,7 @@ button.palette-color-segment:focus-visible code {
   min-height: 116px;
   padding: 0;
   border-radius: var(--radius-2);
-  background: rgb(255 255 255 / 0.04);
+  background: color-mix(in srgb, var(--text-main) 4%, transparent);
   color: var(--text-soft);
   cursor: pointer;
   overflow: hidden;
@@ -7003,7 +7019,7 @@ button.palette-color-segment:focus-visible code {
   min-width: 0;
   min-height: 0;
   border-radius: var(--radius-3);
-  background: #0d0f0e;
+  background: var(--bg-canvas);
   overflow: hidden;
 }
 
@@ -7092,7 +7108,7 @@ button.palette-color-segment:focus-visible code {
   min-height: 32px;
   padding: 4px var(--space-2);
   border-radius: var(--radius-2);
-  background: rgb(255 255 255 / 0.04);
+  background: color-mix(in srgb, var(--text-main) 4%, transparent);
   color: var(--text-soft);
   cursor: pointer;
   gap: 1px;
@@ -7117,7 +7133,7 @@ button.palette-color-segment:focus-visible code {
 }
 
 .diagnostic-chip:hover {
-  background: rgb(255 255 255 / 0.065);
+  background: color-mix(in srgb, var(--text-main) 6.5%, transparent);
   color: var(--text-main);
 }
 
@@ -7131,7 +7147,7 @@ button.palette-color-segment:focus-visible code {
 
 .outline-section {
   padding: var(--space-4) 0;
-  border-top: 1px solid rgb(255 255 255 / 0.055);
+  border-top: 1px solid color-mix(in srgb, var(--text-main) 5.5%, transparent);
 }
 
 .outline-section:first-child {
@@ -7238,14 +7254,14 @@ button.palette-color-segment:focus-visible code {
 
 .outline-references button {
   padding: 0 var(--space-2) 0 4px;
-  background: rgb(255 255 255 / 0.035);
+  background: color-mix(in srgb, var(--text-main) 3.5%, transparent);
   cursor: pointer;
   gap: var(--space-2);
 }
 
 .outline-references button:hover {
   color: var(--text-main);
-  background: rgb(255 255 255 / 0.06);
+  background: color-mix(in srgb, var(--text-main) 6%, transparent);
 }
 
 .outline-references .linked-list {
@@ -7493,7 +7509,7 @@ button.palette-color-segment:focus-visible code {
 }
 
 .linked-list button:hover {
-  background: rgb(255 255 255 / 0.04);
+  background: color-mix(in srgb, var(--text-main) 4%, transparent);
 }
 
 .linked-list .reference-thumb {
@@ -7536,7 +7552,7 @@ button.palette-color-segment:focus-visible code {
   margin-top: var(--space-2);
   padding: 0 var(--space-2);
   border-radius: var(--radius-1);
-  background: rgb(255 255 255 / 0.045);
+  background: color-mix(in srgb, var(--text-main) 4.5%, transparent);
   color: var(--text-soft);
   cursor: pointer;
   font-size: var(--text-small);
