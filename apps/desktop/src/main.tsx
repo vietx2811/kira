@@ -6477,19 +6477,12 @@ function OnboardingOverlay({
         </button>
 
         <div className="onboarding-hero">
-          <div className="onboarding-orbit" aria-hidden="true">
-            <span className="onboarding-orbit-ring" />
-            <span className="onboarding-orbit-dot onboarding-orbit-dot--ai">🧠</span>
-            <span className="onboarding-orbit-dot onboarding-orbit-dot--capture">📎</span>
-            <span className="onboarding-orbit-dot onboarding-orbit-dot--spark">✨</span>
-            <span className="onboarding-brand-core">
-              <img src="/kira-icon.png" alt="" />
-            </span>
-          </div>
+          <span className="onboarding-brand-mark" aria-hidden="true">
+            <img src="/kira-icon.png" alt="" />
+          </span>
           <div>
             <span className="onboarding-kicker">KIRA setup</span>
-            <h2>Start calm. Add power when you need it.</h2>
-            <p>One key, one capture helper, one guided board.</p>
+            <h2>Start calm. <span>Add power later.</span></h2>
             <div className="onboarding-status-row" aria-label="Setup status">
               <span><Bot size={13} /> {connectedProviderCount > 0 ? 'AI ready' : 'AI optional'}</span>
               <span><Sparkles size={13} /> {installedExtensionCount > 0 ? 'Capture ready' : 'Capture optional'}</span>
@@ -6499,21 +6492,21 @@ function OnboardingOverlay({
 
         <div className="onboarding-steps">
           <button type="button" className="onboarding-primary-cta" onClick={() => { onWelcomeOpen(); onClose() }}>
-            <span className="onboarding-step-icon">🌱</span>
+            <span className="onboarding-step-icon"><Layers size={17} aria-hidden="true" /></span>
             <span className="onboarding-cta-body">
               <strong>Open the guided board</strong>
-              <small>Learn the canvas by moving through a small editable example</small>
+              <small>A small editable example</small>
             </span>
             <ChevronRight size={18} aria-hidden="true" />
           </button>
 
           <div className="onboarding-secondary">
-            <span className="onboarding-secondary-label">Optional, set up anytime</span>
+            <span className="onboarding-secondary-label">Set up anytime</span>
             <button type="button" className="onboarding-link-row" onClick={() => { onProviderFocus('codex'); onClose() }}>
               <Bot size={15} aria-hidden="true" />
               <span className="onboarding-link-text">
                 <strong>Connect AI</strong>
-                <small>Reuse Claude Code or Codex, or add an API key</small>
+                <small>Claude Code, Codex, or an API key</small>
               </span>
               <ChevronRight size={15} aria-hidden="true" />
             </button>
@@ -6521,17 +6514,16 @@ function OnboardingOverlay({
               <Sparkles size={15} aria-hidden="true" />
               <span className="onboarding-link-text">
                 <strong>Capture from browser</strong>
-                <small>Drag images straight from any page into a node</small>
+                <small>Drag images from any page</small>
               </span>
               <ChevronRight size={15} aria-hidden="true" />
             </button>
           </div>
         </div>
 
+        {/* "Open Welcome.kira" lived here too, running the same onWelcomeOpen as the
+            primary CTA above but without closing the dialog. One way in is enough. */}
         <footer className="onboarding-footer">
-          <button className="quiet-button" type="button" onClick={onWelcomeOpen}>
-            Open Welcome.kira
-          </button>
           <button className="primary-button" type="button" onClick={onClose}>
             Start workspace
           </button>
@@ -6914,12 +6906,14 @@ function ClaudeCodeStatus({ provider }: { provider: AiProviderProfile }) {
     <div className="cli-status" data-status={connected ? 'connected' : 'not-connected'}>
       <div className="cli-status__row">
         <span className="cli-status__dot" aria-hidden="true" />
-        <span>{provider.lastMessage ?? (connected ? 'Claude Code CLI detected and signed in' : 'Claude Code CLI not detected on this machine')}</span>
+        {/* Without a lastMessage nothing has actually run yet, so this can only report that.
+            Claiming the CLI is missing here was wrong whenever it was simply unchecked. */}
+        <span>{provider.lastMessage ?? (connected ? 'Claude Code CLI detected and signed in' : 'Not checked yet. Run Test to look for the CLI on this machine.')}</span>
       </div>
       <p className="cli-status__hint">
         KIRA never renders or stores your Claude.ai login itself. Signing in opens Terminal and runs{' '}
         <code>claude auth login</code> there, so the CLI completes the flow and keeps the session; KIRA only
-        checks status and runs tasks through it. Use Recheck once the terminal reports you are signed in.
+        checks status and runs tasks through it. Run Test once the terminal reports you are signed in.
       </p>
       {!connected && (
         <button

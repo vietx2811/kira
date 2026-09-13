@@ -92,12 +92,11 @@
   --radius-5: 20px;
   /* AppKit-keyed type scale — labelFontSize / smallSystemFontSize /
      systemFontSize / a panel-title step / a view-heading step. Every UI
-     font-size in this file resolves to one of these steps, with two
-     deliberate exception classes: four decorative pseudo-elements that use
-     font-size to scale a glyph rather than to set text, and two clamp()
-     display headings (onboarding hero, slide title) that must stay fluid
-     with the viewport. Add a step here rather than reintroducing a one-off
-     value, which is how the scale drifted out of sync before. */
+     font-size in this file resolves to one of these steps; the only
+     exceptions are the two clamp() display headings (onboarding hero,
+     slide title) that must stay fluid with the viewport. Add a step here
+     rather than reintroducing a one-off value, which is how the scale
+     drifted out of sync before. */
   --text-mini: 10px;
   --text-small: 11px;
   --text-body: 13px;
@@ -775,6 +774,9 @@ button {
   height: 32px;
   border-radius: var(--radius-2);
   cursor: pointer;
+  /* These declared no size at all and silently inherited the 14px root, which
+     is not a step on the scale. Button labels are body copy. */
+  font-size: var(--text-body);
   transition:
     background 160ms ease,
     border-color 160ms ease,
@@ -1305,100 +1307,21 @@ button {
   gap: 28px;
 }
 
-.onboarding-hero::after {
-  position: absolute;
-  right: 18px;
-  bottom: 18px;
-  color: color-mix(in srgb, var(--accent-cyan), transparent 62%);
-  content: "✦";
-  font-size: 1.6rem;
-  animation: onboardingTwinkle 3.8s ease-in-out infinite;
-}
-
-.onboarding-orbit {
-  position: relative;
-  width: 178px;
-  height: 178px;
-  margin: 0 auto;
-}
-
-.onboarding-orbit-ring {
-  position: absolute;
-  inset: 14px;
-  border: 1px solid color-mix(in srgb, var(--accent-cyan), transparent 70%);
-  border-radius: var(--radius-2);
-  animation: onboardingSpin 12s linear infinite;
-}
-
-.onboarding-orbit-ring::before,
-.onboarding-orbit-ring::after {
-  position: absolute;
-  width: 8px;
-  height: 8px;
-  border-radius: var(--radius-2);
-  background: var(--accent-cyan);
-  content: "";
-}
-
-.onboarding-orbit-ring::before {
-  top: -4px;
-  left: 50%;
-}
-
-.onboarding-orbit-ring::after {
-  right: 18px;
-  bottom: 8px;
-  background: var(--accent-amber);
-}
-
-.onboarding-brand-core {
-  position: absolute;
-  inset: 48px;
+.onboarding-brand-mark {
   display: grid;
+  justify-self: start;
+  width: 92px;
+  height: 92px;
   place-items: center;
   border: 1px solid var(--border-soft);
-  border-radius: var(--radius-3);
-  background:
-    transparent,
-    var(--node-surface-selected);
+  border-radius: var(--radius-4);
+  background: var(--node-surface-selected);
   box-shadow: var(--node-shadow);
-  animation: onboardingBreathe 4s ease-in-out infinite;
 }
 
-.onboarding-brand-core img {
-  width: 62px;
-  height: 62px;
-}
-
-.onboarding-orbit-dot {
-  position: absolute;
-  display: grid;
-  width: 34px;
-  height: 34px;
-  place-items: center;
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius-2);
-  background: var(--node-surface);
-  box-shadow: var(--node-shadow-soft);
-  font-size: 1rem;
-  animation: onboardingFloat 4.8s ease-in-out infinite;
-}
-
-.onboarding-orbit-dot--ai {
-  top: 2px;
-  left: 70px;
-}
-
-.onboarding-orbit-dot--capture {
-  right: 4px;
-  top: 82px;
-  animation-delay: -1.4s;
-}
-
-.onboarding-orbit-dot--spark {
-  bottom: 12px;
-  left: 22px;
-  animation-delay: -2.5s;
+.onboarding-brand-mark img {
+  width: 50px;
+  height: 50px;
 }
 
 .onboarding-kicker {
@@ -1410,7 +1333,7 @@ button {
 }
 
 .onboarding-hero h2 {
-  max-width: 12ch;
+  max-width: 18ch;
   margin: 8px 0 0;
   color: var(--text-main);
   font-size: clamp(1.8rem, 4vw, 2.8rem);
@@ -1418,17 +1341,10 @@ button {
   letter-spacing: 0;
 }
 
-.onboarding-hero p,
-.onboarding-step-card p {
-  margin: 0;
-  color: var(--text-soft);
-  line-height: 1.45;
-}
-
-.onboarding-hero p {
-  max-width: 32ch;
-  margin-top: 14px;
-  font-size: var(--text-body);
+/* The two sentences are the two lines. Left to wrap on width alone the break
+   lands mid-sentence ("Start calm. Add / power later."). */
+.onboarding-hero h2 span {
+  display: block;
 }
 
 .onboarding-status-row {
@@ -1575,44 +1491,6 @@ button {
   gap: var(--space-2);
 }
 
-.onboarding-step-card {
-  display: grid;
-  min-width: 0;
-  padding: 14px;
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius-3);
-  background:
-    transparent,
-    color-mix(in srgb, var(--surface-inspector), transparent 12%);
-  gap: 10px;
-}
-
-.onboarding-step-card--primary {
-  border-color: color-mix(in srgb, var(--accent-cyan), transparent 72%);
-}
-
-.onboarding-step-head {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 10px;
-}
-
-.onboarding-step-head strong {
-  display: block;
-  color: var(--text-main);
-  font-size: var(--text-title);
-}
-
-.onboarding-step-head small {
-  display: block;
-  overflow: hidden;
-  color: var(--text-muted);
-  font-size: var(--text-small);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .onboarding-step-icon {
   display: grid;
   width: 34px;
@@ -1621,109 +1499,9 @@ button {
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-3);
   background: var(--glass-active);
-  font-size: 1.02rem;
+  color: var(--accent-cyan);
 }
 
-.onboarding-detail {
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius-3);
-  background: var(--inset-field);
-}
-
-.onboarding-detail summary {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  min-height: 38px;
-  padding: 0 12px;
-  color: var(--text-soft);
-  cursor: pointer;
-  font-size: var(--text-small);
-  font-weight: 800;
-  list-style: none;
-}
-
-.onboarding-detail summary::-webkit-details-marker {
-  display: none;
-}
-
-.onboarding-detail summary::after {
-  color: var(--text-muted);
-  content: "+";
-  font-size: 1rem;
-}
-
-.onboarding-detail[open] summary::after {
-  content: "–";
-}
-
-.onboarding-detail[open] {
-  padding-bottom: 10px;
-}
-
-.onboarding-detail:not([open]) > :not(summary) {
-  display: none;
-}
-
-.onboarding-detail--quiet {
-  background: transparent;
-}
-
-.onboarding-mini-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  padding: 0 10px;
-  gap: 7px;
-}
-
-.onboarding-mini-row span {
-  color: var(--text-main);
-  font-weight: 800;
-}
-
-.onboarding-mini-row small {
-  grid-column: 1;
-  color: var(--text-muted);
-}
-
-@keyframes onboardingBreathe {
-  0%,
-  100% {
-    transform: scale(1);
-  }
-  50% {
-    transform: scale(1.035);
-  }
-}
-
-@keyframes onboardingFloat {
-  0%,
-  100% {
-    transform: translate3d(0, 0, 0);
-  }
-  50% {
-    transform: translate3d(0, -7px, 0);
-  }
-}
-
-@keyframes onboardingSpin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-@keyframes onboardingTwinkle {
-  0%,
-  100% {
-    opacity: 0.26;
-    transform: scale(0.86) rotate(0deg);
-  }
-  50% {
-    opacity: 0.72;
-    transform: scale(1.08) rotate(16deg);
-  }
-}
 
 @media (max-width: 860px) {
   .onboarding-shell {
