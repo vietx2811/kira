@@ -51,6 +51,7 @@ Mọi report kết thúc task, gửi user hay gửi Orchestrator, chia 3 phần 
 - Ghi commit SHA đã kiểm chứng vào report.
 - Khi audit tìm giá trị sai, **đừng đưa giá trị đang audit vào danh sách cho phép** (từng che mất các button 14px).
 - Chỉ nói một thứ "chạy được" khi đã thật sự chạy nó. Browser preview **không có Tauri runtime**: đường native (AI provider, `osascript`, sidecar) phải test trong app thật.
+- **Trước khi tin một kết quả test, chứng minh app đang chạy đúng là code bạn định test**, ví dụ một thay đổi hay probe của chính bạn có mặt trong trang. Tái lập được một lỗi 2 lần chưa chứng minh gì nếu cả 2 lần đều chạy nhầm code.
 - Tên nút, tên command lấy từ memory hay tài liệu thì grep lại trước khi dùng. Memory từng ghi một nút "Recheck" và một command `claude_code_status` đều không tồn tại.
 - Trước khi tin một màu hay giá trị đọc từ `getComputedStyle`, kiểm tra biến `var()` có thật sự được khai báo. Biến không tồn tại khiến thuộc tính rơi về giá trị kế thừa, nên con số đo được là ngẫu nhiên (từng xảy ra với `--text-faint`).
 
@@ -67,4 +68,5 @@ Mọi `font-size` phải là token: `--text-mini` 10px, `--text-small` 11px, `--
 
 - `main.tsx` không Fast Refresh được: mỗi lần sửa, HMR reload toàn bộ và **reset state app** (panel, popover đang mở sẽ đóng). Nó cũng in lỗi `createRoot() on a container that has already been passed to createRoot()`. Lỗi này chỉ xuất hiện trên đường HMR; xác nhận bằng một lần reload sạch.
 - Dev server: `.claude/launch.json` cấu hình `kira-desktop`. Port 5173 thường đã bị thread khác chiếm; `autoPort` sẽ chọn port khác, đừng tắt tiến trình không phải của mình.
+- **`preview_start` luôn chạy ở tree chính, kể cả khi session đang đứng trong worktree.** Config không có `cwd`, và `pnpm --filter` lấy workspace từ nơi process được khởi chạy (đã thấy trong `preview_logs`). Muốn test code của worktree: chạy tay `npx vite --host 127.0.0.1 --port <port>` ngay trong `<worktree>/apps/desktop`, rồi `navigate` thẳng tới port đó. Test nhầm tree chính từng tạo ra một "bug undo" không có thật.
 - App native: `cargo run` chạy binary trần không có Info.plist, nên hệ thống không nhận ra app và không điều khiển được bằng accessibility. Cần bundle thật. Build frontend trước (`npx tsc -b && npx vite build` trong `apps/desktop`), rồi build bundle mà bỏ qua `beforeBuildCommand`, vì lệnh đó chạy cả `xcodebuild` cho Safari extension, rất chậm: `npx tauri build --debug --bundles app --config '{"build":{"beforeBuildCommand":""}}'`. Bundle này có cùng bundle id với KIRA đã cài, nên tắt nó khi test xong.
