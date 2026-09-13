@@ -12766,6 +12766,10 @@ function buildProjectAppearanceStyle(appearance: ProjectAppearance): React.CSSPr
   const dark = tokens.mode === 'dark'
   const glassActiveAlpha = dark ? 0.24 : 0.22
   const glassActiveBackgrounds = glassActiveComposites(tokens, glassActiveAlpha)
+  // Floating popovers share one surface and one strong hairline; the glass-strong
+  // pair reuses them so a popover can't drift from its siblings.
+  const nodeSurfaceSelected = colorWithAlpha(tokens.nodeSelected, dark ? 0.94 : 0.9)
+  const borderStrong = dark ? 'rgb(255 255 255 / 0.13)' : colorWithAlpha(tokens.textMain, 0.18)
   return {
     '--bg-base': tokens.base,
     '--bg-canvas': tokens.canvasSurface,
@@ -12776,7 +12780,7 @@ function buildProjectAppearanceStyle(appearance: ProjectAppearance): React.CSSPr
     '--surface-inspector': tokens.surfaceInspector,
     '--surface-inset': tokens.surfaceInset,
     '--node-surface': colorWithAlpha(tokens.nodeSurface, dark ? 0.82 : 0.78),
-    '--node-surface-selected': colorWithAlpha(tokens.nodeSelected, dark ? 0.94 : 0.9),
+    '--node-surface-selected': nodeSurfaceSelected,
     '--node-border': dark ? 'rgb(255 255 255 / 0.045)' : colorWithAlpha(tokens.textMain, 0.11),
     '--node-shadow': dark ? '0 18px 48px rgb(0 0 0 / 0.35)' : `0 10px 28px ${colorWithAlpha(tokens.textMain, 0.13)}`,
     '--node-shadow-soft': `0 0 0 1px ${colorWithAlpha(tokens.accentStrong, dark ? 0.1 : 0.16)}`,
@@ -12787,6 +12791,8 @@ function buildProjectAppearanceStyle(appearance: ProjectAppearance): React.CSSPr
     '--glass-drawer': dark ? colorWithAlpha(tokens.surfaceDrawer, 0.88) : colorWithAlpha(tokens.surfaceDrawer, 0.9),
     '--glass-content': dark ? colorWithAlpha(tokens.base, 0.22) : colorWithAlpha(tokens.base, 0.28),
     '--glass-inspector': dark ? colorWithAlpha(tokens.surfaceInspector, 0.86) : colorWithAlpha(tokens.surfaceInspector, 0.9),
+    '--glass-strong': nodeSurfaceSelected,
+    '--glass-border-strong': borderStrong,
     '--glass-hover': dark ? 'rgb(255 255 255 / 0.055)' : 'rgb(34 31 26 / 0.055)',
     '--glass-active': colorWithAlpha(accent, glassActiveAlpha),
     '--text-on-glass-active': softestReadableText(tokens.textSoft, tokens.textMain, glassActiveBackgrounds),
@@ -12795,7 +12801,7 @@ function buildProjectAppearanceStyle(appearance: ProjectAppearance): React.CSSPr
     '--separator-hairline': dark ? 'rgb(255 255 255 / 0.052)' : colorWithAlpha(tokens.textMain, 0.1),
     '--inset-field': dark ? 'rgb(0 0 0 / 0.12)' : 'rgb(255 255 255 / 0.58)',
     '--border-soft': dark ? 'rgb(255 255 255 / 0.06)' : colorWithAlpha(tokens.textMain, 0.1),
-    '--border-strong': dark ? 'rgb(255 255 255 / 0.13)' : colorWithAlpha(tokens.textMain, 0.18),
+    '--border-strong': borderStrong,
     '--text-main': tokens.textMain,
     '--text-soft': tokens.textSoft,
     '--text-muted': tokens.textMuted,

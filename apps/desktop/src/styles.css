@@ -45,6 +45,11 @@
   --glass-chrome: var(--surface-2);
   --glass-content: var(--surface-1);
   --glass-inspector: var(--material-inspector);
+  /* Static fallback only: an alias resolves here at :root, so it would not see
+     .app-shell's per-project tokens. buildProjectAppearanceStyle() sets the
+     themed values. */
+  --glass-strong: var(--node-surface-selected);
+  --glass-border-strong: var(--border-strong);
   --glass-hover: rgb(255 255 255 / 0.055);
   --glass-active: var(--accent-faint);
   /* Text on --glass-active. buildProjectAppearanceStyle() recomputes these per
