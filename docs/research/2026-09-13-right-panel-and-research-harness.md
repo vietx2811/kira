@@ -346,3 +346,12 @@ Thứ tự khuyến nghị: **Openverse trước** (không cần key, license r�
 - Giá search API bên thứ ba (Brave, Tavily, Exa) và thông tin Cursor, NotebookLM, ChatGPT Canvas lấy từ nguồn phụ, chưa đối chiếu trang chính thức.
 - Số giới hạn Openverse và Are.na chưa tìm được.
 - Ước lượng số dòng là suy luận, chưa có spec chi tiết.
+
+## Cập nhật 2026-09-13: phụ lục OSS
+
+Xem [2026-09-13-right-panel-harness-oss.md](2026-09-13-right-panel-harness-oss.md). Kết luận A và B giữ nguyên hướng. Điều chỉnh:
+- A MVP dựng trên assistant-ui primitives + Immer patches + jsdiff.
+- Ingest dùng xberg + Readability/Turndown thay vì tự viết.
+- MCP server dùng rmcp.
+- Nếu phase 2 cần tool loop thì dùng Vercel AI SDK trong sidecar Bun, không tự viết.
+- Thêm quyết định D11–D14 và 4 spike.
