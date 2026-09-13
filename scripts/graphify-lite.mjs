@@ -443,6 +443,231 @@ say('is-editor-empty) will still land in the "own" bucket above — this list is
 say()
 
 // ─────────────────────────────────────────────────────────────────────────
+// 5. Invalid multi-layer background declarations (colors only allowed in
+//    the last layer; bare colors in any layer of background-image)
+// ─────────────────────────────────────────────────────────────────────────
+
+function replaceComments(css) {
+  // Replace comments with same length of spaces/newlines so offsets match.
+  let result = ''
+  let i = 0
+  while (i < css.length) {
+    if (css[i] === '/' && css[i + 1] === '*') {
+      // Start of comment
+      let j = i + 2
+      while (j < css.length - 1) {
+        if (css[j] === '*' && css[j + 1] === '/') {
+          // End of comment
+          for (let k = i; k <= j + 1; k++) {
+            result += css[k] === '\n' ? '\n' : ' '
+          }
+          i = j + 2
+          break
+        }
+        j++
+      }
+      if (j >= css.length - 1) {
+        // Unclosed comment
+        for (let k = i; k < css.length; k++) {
+          result += css[k] === '\n' ? '\n' : ' '
+        }
+        break
+      }
+    } else {
+      result += css[i]
+      i++
+    }
+  }
+  return result
+}
+
+function parseBackgroundLayers(declarationText) {
+  // Split a background/background-image value into layers by top-level commas.
+  // Respects parenthesis nesting (e.g., color-mix(in srgb, a, b) is one token).
+  const layers = []
+  let current = ''
+  let depth = 0
+
+  for (let i = 0; i < declarationText.length; i++) {
+    const ch = declarationText[i]
+    if (ch === '(') depth++
+    else if (ch === ')') depth--
+    else if (ch === ',' && depth === 0) {
+      layers.push(current.trim())
+      current = ''
+      continue
+    }
+    current += ch
+  }
+  if (current.trim()) layers.push(current.trim())
+
+  return layers
+}
+
+function isColorValue(layer) {
+  // Returns: true = is a color, false = is an image, null = ambiguous (bare var).
+  const trimmed = layer.trim().toLowerCase()
+
+  // Keywords that are colors (excluding 'none' and gradient/image keywords)
+  if (trimmed === 'transparent' || trimmed === 'currentcolor') return true
+
+  // Hex color
+  if (/^#[0-9a-f]{3,8}$/.test(trimmed)) return true
+
+  // CSS named colors (sampling common ones; browsers support 140+)
+  const namedColors = new Set([
+    'red', 'green', 'blue', 'black', 'white', 'yellow', 'cyan', 'magenta',
+    'gray', 'silver', 'maroon', 'navy', 'olive', 'purple', 'teal', 'lime',
+    'aqua', 'orange', 'brown', 'pink', 'gold', 'indigo', 'turquoise',
+    'violet', 'salmon', 'coral', 'khaki', 'lavender', 'bisque', 'honeydew'
+  ])
+  if (namedColors.has(trimmed)) return true
+
+  // Color functions: rgb(), rgba(), hsl(), hsla(), hwb(), lab(), lch(), oklab(), oklch(), color(), color-mix()
+  if (/^(?:rgb|rgba|hsl|hsla|hwb|lab|lch|oklab|oklch|color|color-mix)\s*\(/i.test(layer)) return true
+
+  // Bare var(--name) with no other tokens: ambiguous
+  if (/^var\s*\(\s*--[a-zA-Z0-9-]+\s*\)$/.test(layer)) return null
+
+  // Everything else: gradients, url(), image-set(), position/size keywords, 'none', variables with fallback, etc.
+  return false
+}
+
+function extractBackgroundDeclarations(css) {
+  // Use stack-based parsing to handle nested blocks (@media, @supports, etc).
+  // Returns array of {selector, property, propertyOffset, value}.
+  const findings = []
+  const stack = [] // Stack of {selector, openBraceIdx, children: [[start, end]]}
+  let lastBoundary = 0 // index after the last `{`, `}` or `;`
+
+  for (let i = 0; i < css.length; i++) {
+    const ch = css[i]
+
+    if (ch === '{') {
+      // The prelude (selector group or at-rule) starts after the previous boundary.
+      const prelude = css.slice(lastBoundary, i).trim().replace(/\s+/g, ' ')
+      const parent = stack[stack.length - 1]
+      const selector = parent ? `${parent.selector} > ${prelude}` : prelude
+      stack.push({ selector, openBraceIdx: i, children: [] })
+      lastBoundary = i + 1
+    } else if (ch === ';') {
+      lastBoundary = i + 1
+    } else if (ch === '}') {
+      lastBoundary = i + 1
+      if (stack.length === 0) continue
+      const block = stack.pop()
+      const blockStart = block.openBraceIdx + 1
+      const parent = stack[stack.length - 1]
+      if (parent) parent.children.push([block.openBraceIdx, i + 1])
+
+      // Only this block's own declarations: blank out nested child blocks
+      // (same length, so offsets still map to the original file).
+      let blockContent = css.slice(blockStart, i)
+      for (const [start, end] of block.children) {
+        const a = start - blockStart
+        const b = end - blockStart
+        blockContent = blockContent.slice(0, a) + ' '.repeat(b - a) + blockContent.slice(b)
+      }
+
+      // `background` / `background-image` as a whole property name, not the
+      // tail of a custom property like `--x-background`.
+      const bgRe = /(?<![\w-])(background-image|background)\s*:\s*([^;]*);/g
+      let m
+      while ((m = bgRe.exec(blockContent))) {
+        findings.push({
+          selector: block.selector,
+          property: m[1],
+          propertyOffset: blockStart + m.index,
+          value: m[2].trim()
+        })
+      }
+    }
+  }
+
+  return findings
+}
+
+say('## 5. Invalid multi-layer background declarations (color only allowed in last layer)')
+say()
+
+const backgroundFindings = []
+const cssWithCommentSpaces = replaceComments(stylesCss)
+const bgDecls = extractBackgroundDeclarations(cssWithCommentSpaces)
+
+for (const decl of bgDecls) {
+  const layers = parseBackgroundLayers(decl.value)
+  const isBackgroundImage = decl.property === 'background-image'
+
+  // Calculate line number from the property offset
+  const line = stylesCss.slice(0, decl.propertyOffset).split('\n').length
+
+  // For background: shorthand, colors only allowed in last layer
+  // For background-image:, colors not allowed in any layer (but bare vars are warnings)
+  for (let i = 0; i < layers.length; i++) {
+    const layer = layers[i]
+    const colorType = isColorValue(layer)
+
+    if (colorType === true) {
+      if (isBackgroundImage) {
+        backgroundFindings.push({
+          type: 'warning',
+          selector: decl.selector,
+          line,
+          layer,
+          index: i,
+          property: decl.property,
+          severity: `${decl.property} layer ${i} is a bare color (not valid; background-image layers must be images)`
+        })
+      } else if (i < layers.length - 1) {
+        backgroundFindings.push({
+          type: 'warning',
+          selector: decl.selector,
+          line,
+          layer,
+          index: i,
+          property: decl.property,
+          severity: `non-last layer is a color (browser silently drops entire declaration)`
+        })
+      }
+    } else if (colorType === null) {
+      // Bare var in non-last layer
+      if (!isBackgroundImage && i < layers.length - 1) {
+        backgroundFindings.push({
+          type: 'warning',
+          selector: decl.selector,
+          line,
+          layer,
+          index: i,
+          property: decl.property,
+          severity: `non-last layer is a bare var() (valid only if it resolves to an image)`
+        })
+      } else if (isBackgroundImage) {
+        backgroundFindings.push({
+          type: 'warning',
+          selector: decl.selector,
+          line,
+          layer,
+          index: i,
+          property: decl.property,
+          severity: `background-image layer is a bare var() (valid only if it resolves to an image, not a color)`
+        })
+      }
+    }
+  }
+}
+
+if (backgroundFindings.length) {
+  say(`WARNINGS (${backgroundFindings.length}):`)
+  for (const f of backgroundFindings) {
+    say(`  - ${f.selector} (styles.css:${f.line}): ${f.severity}`)
+    say(`      layer ${f.index}: ${f.layer}`)
+  }
+} else {
+  say('WARNINGS (0): no invalid multi-layer background declarations found.')
+}
+say()
+
+// ─────────────────────────────────────────────────────────────────────────
 
 say(`Commit: ${commitSha()}`)
 say(`Exit code: ${hasError ? 2 : 0}`)
