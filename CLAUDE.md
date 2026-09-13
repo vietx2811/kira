@@ -31,6 +31,7 @@ Orchestrator chọn model và effort cho thread khác bằng `set_session_model`
 
 - `SendMessage` chỉ **xếp hàng**; "success" không có nghĩa đã được đọc, và session idle **có thể không tự thức dậy**.
 - Cần session idle **làm ngay**: dùng `mcp__ccd_session_mgmt__send_message` với `session_id`. `delivered` = lượt đã bắt đầu; `queued` = đang chờ sau việc hiện tại. `delivered` **vẫn có thể thất bại** (vd hết hạn mức sử dụng): xác nhận qua transcript.
+- **Báo cáo kết thúc task gửi Orchestrator luôn bằng `mcp__ccd_session_mgmt__send_message`**, không bằng `SendMessage`: tin xếp hàng có thể không bao giờ tới.
 - `session_id` lấy từ `list_sessions`. Tên trong `ListAgents` **khác** title trong `list_sessions`: xác nhận đúng session bằng transcript (`list_events`). Kiểm tra tin đã xử lý chưa: `isRunning` / `lastActivityAt`, hoặc tìm tin trong transcript.
 
 ## Git: mỗi task một worktree
@@ -61,7 +62,8 @@ Mọi report kết thúc task chia 3 phần, theo thứ tự:
    - Đếm phần tử theo class: popover render sẵn vẫn nằm trong DOM dù đang ẩn, nên giới hạn `:scope > …` hoặc lọc phần tử hiển thị.
    - Đo contrast: tính cả nền của chính phần tử chứa chữ, nhân `opacity` tổ tiên và alpha của màu chữ, bỏ chữ bị che (`elementFromPoint`) hoặc `opacity` ~0. `elementsFromPoint` bỏ qua phần tử `pointer-events: none`: gắn tạm `* { pointer-events: auto !important }`. Surface trong suốt một phần làm contrast phụ thuộc nội dung bên dưới: đo trên nền xấu nhất.
    - Browser pane đang ẩn thì `innerWidth`/`innerHeight` = 0: `resize_window` trước khi đo hình học. `javascript_tool` giới hạn 45 giây nhưng promise vẫn chạy tiếp trong trang: chia nhỏ, đừng chạy chồng.
-   - Nút toggle hay đổi nhãn (Open ↔ Close): đóng theo trạng thái thật và assert đã đóng.
+   - Nút toggle hay đổi nhãn (Open ↔ Close): đóng theo trạng thái thật và assert đã đóng. Có phần tử luôn nằm trong DOM kể cả khi đóng (vd `.kira-dock` chỉ thu nhỏ): kiểm trạng thái mở bằng nội dung bên trong (ô nhập), không bằng sự có mặt của phần tử.
+   - Browser pane ẩn làm transition/animation đứng giữa chừng, `getComputedStyle` trả màu dở dang: gắn tạm `*,*::before,*::after{transition:none!important;animation-duration:0s!important}` trước khi đo. Click theo `ref` thay vì tọa độ khi phần tử đang animate.
    - `grep` trên máy này là **ugrep**, bỏ qua `--include` và quét cả file khác loại: dùng `/usr/bin/grep` hoặc liệt kê file tường minh.
 4. **Tên nút, tên command lấy từ memory hay tài liệu: grep lại trước khi dùng.**
 5. **Trước khi báo xong một nhánh đụng `main.tsx`, `styles.css` hoặc `lib.rs`: chạy `node scripts/graphify-lite.mjs` trong worktree của nhánh đó.** Exit 2 là có lỗi (invoke chưa đăng ký, biến CSS chưa khai báo). Script đọc repo nơi chính nó nằm, nên chạy bản trong worktree đang kiểm, và đối chiếu dòng `Commit:` ở cuối.
@@ -89,3 +91,4 @@ Mọi `font-size` là token: `--text-mini` 10px, `--text-small` 11px, `--text-bo
 - **Dev server** `kira-desktop` (`.claude/launch.json`): port 5173 thường bị thread khác chiếm, `autoPort` sẽ chọn port khác; đừng tắt tiến trình không phải của mình.
 - **`preview_start` luôn chạy ở tree chính**, kể cả khi session đứng trong worktree (config không có `cwd`). Test code worktree: chạy tay `npx vite --host 127.0.0.1 --port <port>` trong `<worktree>/apps/desktop`, rồi `navigate` tới port đó.
 - **App native**: `cargo run` chạy binary trần không có Info.plist, nên không điều khiển được bằng accessibility. Cần bundle thật: build frontend (`npx tsc -b && npx vite build` trong `apps/desktop`), rồi `npx tauri build --debug --bundles app --config '{"build":{"beforeBuildCommand":""}}'` (bỏ `beforeBuildCommand` vì nó chạy `xcodebuild` rất chậm). Bundle có cùng bundle id với KIRA đã cài: tắt khi test xong.
+  - Build trong worktree: symlink tạm `apps/codex-helper/node_modules` và `apps/extension/dist` từ tree chính (xoá sau khi build: git coi symlink là untracked), và bỏ Safari appex bằng `--config '{"build":{"beforeBuildCommand":""},"bundle":{"macOS":{"files":{"PlugIns/KIRA Safari Extension.appex":null}}}}'` (thiếu DerivedData thì fail, và appex cùng bundle id có thể đăng ký đè extension của bản đã cài).
