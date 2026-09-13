@@ -15,6 +15,8 @@ Tên session có thể đổi, nên tìm tên hiện tại bằng `ListAgents` c
 
 Thêm hoặc đổi vai trò thì cập nhật mục này qua Orchestrator.
 
+**Bài học và luật dùng chung: báo Orchestrator để đưa vào file này. Không tự ghi vào memory.** Thread trong worktree không thấy memory, và một sự thật về code ghi trong memory sẽ lỗi thời ngay khi code đổi. Memory chỉ dành cho bối cảnh chi tiết mà file này chỉ tóm tắt.
+
 ## Git: mỗi task một worktree
 
 - Bắt đầu task: tạo worktree + branch từ `main` mới nhất, ví dụ `git worktree add .claude/worktrees/<task> -b <vai-tro>/<task> main` (hoặc tool `EnterWorktree`). `.claude/worktrees/` đã được ignore.
@@ -43,6 +45,7 @@ Mọi report kết thúc task, gửi user hay gửi Orchestrator, chia 3 phần 
 - Khi audit tìm giá trị sai, **đừng đưa giá trị đang audit vào danh sách cho phép** (từng che mất các button 14px).
 - Chỉ nói một thứ "chạy được" khi đã thật sự chạy nó. Browser preview **không có Tauri runtime**: đường native (AI provider, `osascript`, sidecar) phải test trong app thật.
 - Tên nút, tên command lấy từ memory hay tài liệu thì grep lại trước khi dùng. Memory từng ghi một nút "Recheck" và một command `claude_code_status` đều không tồn tại.
+- Trước khi tin một màu hay giá trị đọc từ `getComputedStyle`, kiểm tra biến `var()` có thật sự được khai báo. Biến không tồn tại khiến thuộc tính rơi về giá trị kế thừa, nên con số đo được là ngẫu nhiên (từng xảy ra với `--text-faint`).
 
 ## `styles.css`: type scale
 
