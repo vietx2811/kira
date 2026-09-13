@@ -432,6 +432,40 @@ say()
 //    the last layer; bare colors in any layer of background-image)
 // ─────────────────────────────────────────────────────────────────────────
 
+function replaceComments(css) {
+  // Replace comments with same length of spaces/newlines so offsets match.
+  let result = ''
+  let i = 0
+  while (i < css.length) {
+    if (css[i] === '/' && css[i + 1] === '*') {
+      // Start of comment
+      let j = i + 2
+      while (j < css.length - 1) {
+        if (css[j] === '*' && css[j + 1] === '/') {
+          // End of comment
+          for (let k = i; k <= j + 1; k++) {
+            result += css[k] === '\n' ? '\n' : ' '
+          }
+          i = j + 2
+          break
+        }
+        j++
+      }
+      if (j >= css.length - 1) {
+        // Unclosed comment
+        for (let k = i; k < css.length; k++) {
+          result += css[k] === '\n' ? '\n' : ' '
+        }
+        break
+      }
+    } else {
+      result += css[i]
+      i++
+    }
+  }
+  return result
+}
+
 function parseBackgroundLayers(declarationText) {
   // Split a background/background-image value into layers by top-level commas.
   // Respects parenthesis nesting (e.g., color-mix(in srgb, a, b) is one token).
@@ -485,41 +519,44 @@ function isColorValue(layer) {
 }
 
 function extractBackgroundDeclarations(css) {
-  // Extract all `background:` and `background-image:` rules with their selectors.
-  // Returns array of {selector, property, value, startLine}.
+  // Use stack-based parsing to handle nested blocks (@media, @supports, etc).
+  // Returns array of {selector, property, propertyOffset, value}.
   const findings = []
-
-  // Find all rules (braces)
-  let depth = 0
-  let ruleStart = -1
-  let ruleEnd = -1
+  const stack = [] // Stack of {selector, openBraceIdx}
+  let lastCloseBrace = 0
 
   for (let i = 0; i < css.length; i++) {
     const ch = css[i]
+
     if (ch === '{') {
-      if (depth === 0) ruleStart = i
-      depth++
+      // Opening brace: collect selector from after last } (or 0) to here
+      const selectorText = css.slice(lastCloseBrace, i)
+      let selector = selectorText.trim().replace(/\s+/g, ' ')
+
+      stack.push({ selector, openBraceIdx: i })
     } else if (ch === '}') {
-      depth--
-      if (depth === 0) ruleEnd = i
-      // Process this rule
-      const selector = css.slice(0, ruleStart).split('\n').pop()
-      const ruleBody = css.slice(ruleStart + 1, ruleEnd)
+      if (stack.length > 0) {
+        // Closing brace: process declarations in this block
+        const block = stack.pop()
+        const blockStart = block.openBraceIdx + 1
+        const blockEnd = i
 
-      // Find background: or background-image: in this rule
-      const bgRe = /(?:^|\n)\s*(background|background-image)\s*:\s*([^;]*(?:\n[^;]*)*)/gm
-      let m
-      while ((m = bgRe.exec(ruleBody))) {
-        const property = m[1]
-        const value = m[2]
-        const lineInRule = css.slice(0, ruleStart + m.index).split('\n').length
-
-        findings.push({
-          selector: selector.trim(),
-          property,
-          value,
-          startLine: lineInRule
-        })
+        // Find background: or background-image: declarations using regex
+        const blockContent = css.slice(blockStart, blockEnd)
+        const bgRe = /(background|background-image)\s*:\s*([^;]*(?:\n[^;]*)*);/g
+        let m
+        while ((m = bgRe.exec(blockContent))) {
+          const property = m[1]
+          const value = m[2].trim()
+          const propertyOffset = blockStart + m.index + property.length + 1
+          findings.push({
+            selector: block.selector,
+            property,
+            propertyOffset,
+            value
+          })
+        }
+        lastCloseBrace = i + 1
       }
     }
   }
@@ -531,29 +568,15 @@ say('## 5. Invalid multi-layer background declarations (color only allowed in la
 say()
 
 const backgroundFindings = []
-const bgDecls = extractBackgroundDeclarations(cssNoComments)
+const cssWithCommentSpaces = replaceComments(stylesCss)
+const bgDecls = extractBackgroundDeclarations(cssWithCommentSpaces)
 
 for (const decl of bgDecls) {
   const layers = parseBackgroundLayers(decl.value)
   const isBackgroundImage = decl.property === 'background-image'
 
-  // Map line number from cssNoComments back to original stylesCss
-  // by finding the selector in the original file
-  let origLine = decl.startLine
-  if (decl.selector) {
-    const selectorIdx = stylesCss.indexOf(decl.selector)
-    if (selectorIdx !== -1) {
-      origLine = stylesCss.slice(0, selectorIdx).split('\n').length
-      // Find the background: declaration within this rule
-      const ruleStart = stylesCss.indexOf('{', selectorIdx)
-      const ruleEnd = stylesCss.indexOf('}', ruleStart)
-      const ruleBody = stylesCss.slice(ruleStart, ruleEnd)
-      const bgMatch = ruleBody.match(new RegExp(`(background|background-image)\\s*:`))
-      if (bgMatch) {
-        origLine = stylesCss.slice(0, ruleStart + bgMatch.index).split('\n').length + 1
-      }
-    }
-  }
+  // Calculate line number from the property offset
+  const line = stylesCss.slice(0, decl.propertyOffset).split('\n').length
 
   // For background: shorthand, colors only allowed in last layer
   // For background-image:, colors not allowed in any layer (but bare vars are warnings)
@@ -566,7 +589,7 @@ for (const decl of bgDecls) {
         backgroundFindings.push({
           type: 'warning',
           selector: decl.selector,
-          line: origLine,
+          line,
           layer,
           index: i,
           property: decl.property,
@@ -576,7 +599,7 @@ for (const decl of bgDecls) {
         backgroundFindings.push({
           type: 'warning',
           selector: decl.selector,
-          line: origLine,
+          line,
           layer,
           index: i,
           property: decl.property,
@@ -589,7 +612,7 @@ for (const decl of bgDecls) {
         backgroundFindings.push({
           type: 'warning',
           selector: decl.selector,
-          line: origLine,
+          line,
           layer,
           index: i,
           property: decl.property,
@@ -599,7 +622,7 @@ for (const decl of bgDecls) {
         backgroundFindings.push({
           type: 'warning',
           selector: decl.selector,
-          line: origLine,
+          line,
           layer,
           index: i,
           property: decl.property,
