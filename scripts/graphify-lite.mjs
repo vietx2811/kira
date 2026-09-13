@@ -8,6 +8,11 @@
 //
 // No dependencies beyond Node's stdlib. Run: node scripts/graphify-lite.mjs
 // Exit code 0 = clean, 2 = at least one error-level finding.
+//
+// --strict: promotes section 5's findings (colors in a non-last
+// background layer) from warnings to errors, so the process exits 2
+// when any are present. Without --strict, section 5 findings stay
+// warnings and never affect the exit code (the default behaviour).
 
 import fs from 'node:fs'
 import path from 'node:path'
@@ -16,6 +21,7 @@ import { fileURLToPath } from 'node:url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const repoRoot = path.resolve(__dirname, '..')
+const strictMode = process.argv.includes('--strict')
 
 const MAIN_TSX = path.join(repoRoot, 'apps/desktop/src/main.tsx')
 const STYLES_CSS = path.join(repoRoot, 'apps/desktop/src/styles.css')
@@ -413,11 +419,47 @@ function extractClassNameLiteralsAndPrefixes(ts) {
   return { literals, prefixes }
 }
 
+function walkSourceFiles(rootDir) {
+  // Recursively collects every .ts/.tsx file under rootDir, skipping any
+  // node_modules directory at any depth. Returns paths relative to repoRoot,
+  // sorted for stable, diffable output.
+  const results = []
+  function walk(dir) {
+    let entries
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true })
+    } catch {
+      return
+    }
+    for (const entry of entries) {
+      if (entry.name === 'node_modules') continue
+      const full = path.join(dir, entry.name)
+      if (entry.isDirectory()) {
+        walk(full)
+      } else if (entry.isFile() && (full.endsWith('.ts') || full.endsWith('.tsx'))) {
+        results.push(full)
+      }
+    }
+  }
+  walk(rootDir)
+  return results.sort().map((p) => path.relative(repoRoot, p))
+}
+
 say('## 4. CSS class <-> className candidates (informational only — not an error)')
 say()
 
+const DESKTOP_SRC_DIR = path.join(repoRoot, 'apps/desktop/src')
+const scannedFiles = walkSourceFiles(DESKTOP_SRC_DIR)
+
 const cssClasses = extractSelectorClassNames(cssNoComments)
-const { literals: tsClassLiterals, prefixes: tsClassPrefixes } = extractClassNameLiteralsAndPrefixes(mainTsx)
+const tsClassLiterals = new Set()
+const tsClassPrefixes = new Set()
+for (const relPath of scannedFiles) {
+  const contents = readFileOrExit(path.join(repoRoot, relPath))
+  const { literals, prefixes } = extractClassNameLiteralsAndPrefixes(contents)
+  for (const l of literals) tsClassLiterals.add(l)
+  for (const p of prefixes) tsClassPrefixes.add(p)
+}
 
 const candidates = []
 for (const cls of cssClasses) {
@@ -431,8 +473,11 @@ for (const cls of cssClasses) {
 const ownCandidates = candidates.filter((c) => !c.likelyThirdParty)
 const thirdPartyCandidates = candidates.filter((c) => c.likelyThirdParty)
 
+say(`Source files scanned under apps/desktop/src (${scannedFiles.length}):`)
+for (const f of scannedFiles) say(`  - ${f}`)
+say()
 say(`CSS selector classes found: ${cssClasses.size}`)
-say(`Not matched to a literal or dynamic-prefix className in main.tsx: ${candidates.length}`)
+say(`Not matched to a literal or dynamic-prefix className in apps/desktop/src: ${candidates.length}`)
 say(`  - likely this app's own (review for dead CSS): ${ownCandidates.length}`)
 for (const c of ownCandidates) say(`      .${c.cls}`)
 say(`  - likely third-party (BEM "__" naming, e.g. react-colorful): ${thirdPartyCandidates.length}`)
@@ -514,12 +559,39 @@ function isColorValue(layer) {
   // Hex color
   if (/^#[0-9a-f]{3,8}$/.test(trimmed)) return true
 
-  // CSS named colors (sampling common ones; browsers support 140+)
+  // Full CSS named-color set (148 keywords, CSS Color Module Level 4,
+  // aliceblue..yellowgreen incl. rebeccapurple). 'transparent' and
+  // 'currentcolor' are handled above, not in this list.
   const namedColors = new Set([
-    'red', 'green', 'blue', 'black', 'white', 'yellow', 'cyan', 'magenta',
-    'gray', 'silver', 'maroon', 'navy', 'olive', 'purple', 'teal', 'lime',
-    'aqua', 'orange', 'brown', 'pink', 'gold', 'indigo', 'turquoise',
-    'violet', 'salmon', 'coral', 'khaki', 'lavender', 'bisque', 'honeydew'
+    'aliceblue', 'antiquewhite', 'aqua', 'aquamarine', 'azure', 'beige',
+    'bisque', 'black', 'blanchedalmond', 'blue', 'blueviolet', 'brown',
+    'burlywood', 'cadetblue', 'chartreuse', 'chocolate', 'coral',
+    'cornflowerblue', 'cornsilk', 'crimson', 'cyan', 'darkblue', 'darkcyan',
+    'darkgoldenrod', 'darkgray', 'darkgreen', 'darkgrey', 'darkkhaki',
+    'darkmagenta', 'darkolivegreen', 'darkorange', 'darkorchid', 'darkred',
+    'darksalmon', 'darkseagreen', 'darkslateblue', 'darkslategray',
+    'darkslategrey', 'darkturquoise', 'darkviolet', 'deeppink',
+    'deepskyblue', 'dimgray', 'dimgrey', 'dodgerblue', 'firebrick',
+    'floralwhite', 'forestgreen', 'fuchsia', 'gainsboro', 'ghostwhite',
+    'gold', 'goldenrod', 'gray', 'green', 'greenyellow', 'grey', 'honeydew',
+    'hotpink', 'indianred', 'indigo', 'ivory', 'khaki', 'lavender',
+    'lavenderblush', 'lawngreen', 'lemonchiffon', 'lightblue', 'lightcoral',
+    'lightcyan', 'lightgoldenrodyellow', 'lightgray', 'lightgreen',
+    'lightgrey', 'lightpink', 'lightsalmon', 'lightseagreen',
+    'lightskyblue', 'lightslategray', 'lightslategrey', 'lightsteelblue',
+    'lightyellow', 'lime', 'limegreen', 'linen', 'magenta', 'maroon',
+    'mediumaquamarine', 'mediumblue', 'mediumorchid', 'mediumpurple',
+    'mediumseagreen', 'mediumslateblue', 'mediumspringgreen',
+    'mediumturquoise', 'mediumvioletred', 'midnightblue', 'mintcream',
+    'mistyrose', 'moccasin', 'navajowhite', 'navy', 'oldlace', 'olive',
+    'olivedrab', 'orange', 'orangered', 'orchid', 'palegoldenrod',
+    'palegreen', 'paleturquoise', 'palevioletred', 'papayawhip',
+    'peachpuff', 'peru', 'pink', 'plum', 'powderblue', 'purple',
+    'rebeccapurple', 'red', 'rosybrown', 'royalblue', 'saddlebrown',
+    'salmon', 'sandybrown', 'seagreen', 'seashell', 'sienna', 'silver',
+    'skyblue', 'slateblue', 'slategray', 'slategrey', 'snow', 'springgreen',
+    'steelblue', 'tan', 'teal', 'thistle', 'tomato', 'turquoise', 'violet',
+    'wheat', 'white', 'whitesmoke', 'yellow', 'yellowgreen'
   ])
   if (namedColors.has(trimmed)) return true
 
@@ -657,7 +729,9 @@ for (const decl of bgDecls) {
 }
 
 if (backgroundFindings.length) {
-  say(`WARNINGS (${backgroundFindings.length}):`)
+  if (strictMode) hasError = true
+  const label = strictMode ? 'ERRORS' : 'WARNINGS'
+  say(`${label} (${backgroundFindings.length})${strictMode ? ' [--strict: promoted from warnings]' : ''}:`)
   for (const f of backgroundFindings) {
     say(`  - ${f.selector} (styles.css:${f.line}): ${f.severity}`)
     say(`      layer ${f.index}: ${f.layer}`)
