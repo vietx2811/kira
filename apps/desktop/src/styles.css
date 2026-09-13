@@ -2213,8 +2213,11 @@ small {
   color: var(--text-soft);
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: var(--text-mini);
   line-height: normal;
+}
+
+.mini-tag-chip {
+  font-size: var(--text-small);
 }
 
 .mini-tag-chip,
@@ -2246,6 +2249,7 @@ button.mini-tags-more:focus-visible {
   border: 1px solid rgb(255 255 255 / 0.08);
   background: rgb(255 255 255 / 0.035);
   color: var(--text-muted);
+  font-size: var(--text-mini);
   font-variant-numeric: tabular-nums;
 }
 
