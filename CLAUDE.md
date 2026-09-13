@@ -52,6 +52,8 @@ Mọi report kết thúc task, gửi user hay gửi Orchestrator, chia 3 phần 
 - Khi audit tìm giá trị sai, **đừng đưa giá trị đang audit vào danh sách cho phép** (từng che mất các button 14px).
 - Chỉ nói một thứ "chạy được" khi đã thật sự chạy nó. Browser preview **không có Tauri runtime**: đường native (AI provider, `osascript`, sidecar) phải test trong app thật.
 - **Trước khi tin một kết quả test, chứng minh app đang chạy đúng là code bạn định test**, ví dụ một thay đổi hay probe của chính bạn có mặt trong trang. Tái lập được một lỗi 2 lần chưa chứng minh gì nếu cả 2 lần đều chạy nhầm code.
+- **Kết quả "không có" hay "0" chưa chứng minh là không có.** Kèm một đối chứng cho thấy phép kiểm tra đọc được dữ liệu thật (vd đếm số dòng file đã đọc). Trong zsh, `$VAR:abc` bị hiểu thành modifier nên phải viết `${VAR}:abc`. `grep -c` đếm **dòng**, không đếm số lần xuất hiện; CSS do vite trả về nằm trên một dòng, nên dùng `grep -o … | wc -l`.
+- **Script quét CSS phải tách selector nhóm** (`.a, .b { … }`). Gán rule cho dòng selector cuối cùng sẽ bỏ sót các selector phía trên. Lỗi này từng giấu `.onboarding-orbit-ring::before` và để `.mini-tag-chip` (nhãn tag chức năng) kẹt ở 10px.
 - Tên nút, tên command lấy từ memory hay tài liệu thì grep lại trước khi dùng. Memory từng ghi một nút "Recheck" và một command `claude_code_status` đều không tồn tại.
 - Trước khi tin một màu hay giá trị đọc từ `getComputedStyle`, kiểm tra biến `var()` có thật sự được khai báo. Biến không tồn tại khiến thuộc tính rơi về giá trị kế thừa, nên con số đo được là ngẫu nhiên (từng xảy ra với `--text-faint`).
 
