@@ -21,4 +21,4 @@ Nơi lưu các báo cáo nghiên cứu của thread **Researcher** (session `vix
 
 | Ngày | File | Chủ đề | Trạng thái |
 |---|---|---|---|
-| — | — | — | — |
+| 2026-09-13 | [2026-09-13-graphify-code-graph.md](2026-09-13-graphify-code-graph.md) | Đánh giá graphify (code knowledge graph) vs graphify-lite | Kết luận: làm graphify-lite |
