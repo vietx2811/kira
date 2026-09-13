@@ -1,80 +1,68 @@
 # CLAUDE.md: KIRA (vixio)
 
-Mọi thread Claude làm việc trong repo này đều tự nạp file này. Luật dùng chung đặt ở đây, không để trong memory: thread chạy trong worktree có project dir riêng và **không thấy memory của tree chính** (đã kiểm chứng 2026-09-13).
-
-Luật design và sản phẩm: xem `DESIGN.md` và `PRODUCT.md`. Không chép lại ở đây để tránh hai nơi lệch nhau.
+Mọi thread Claude trong repo này tự nạp file này. Luật dùng chung nằm ở đây, không nằm trong memory: thread chạy trong worktree có project dir riêng và **không thấy memory của tree chính**. Luật design và sản phẩm: xem `DESIGN.md`, `PRODUCT.md` (không chép lại).
 
 ## Vai trò
 
-Tên session có thể đổi, nên tìm tên hiện tại bằng `ListAgents` chứ đừng hardcode.
+Tên session có thể đổi: tìm tên hiện tại bằng `ListAgents`, đừng hardcode.
 
-- **Orchestrator**: điều phối, giao việc, là người **duy nhất merge vào `main` và push**, giữ memory dùng chung.
+- **Orchestrator**: điều phối, giao việc, **người duy nhất merge vào `main` và push**, giữ memory dùng chung.
 - **UI/UX**: critique và thiết kế giao diện.
-- **Researcher**: nghiên cứu, lưu báo cáo ở `docs/research/` theo quy ước trong `docs/research/README.md`. Không sửa code app.
+- **Researcher**: nghiên cứu, lưu báo cáo ở `docs/research/` theo `docs/research/README.md`. Không sửa code app.
 - **Worker**: triển khai việc được giao.
 
-Thêm hoặc đổi vai trò thì cập nhật mục này qua Orchestrator.
-
-**Bài học và luật dùng chung: báo Orchestrator để đưa vào file này. Không tự ghi vào memory.** Thread trong worktree không thấy memory, và một sự thật về code ghi trong memory sẽ lỗi thời ngay khi code đổi. Memory chỉ dành cho bối cảnh chi tiết mà file này chỉ tóm tắt.
+Đổi vai trò, hoặc có bài học dùng chung: **báo Orchestrator để đưa vào file này, không tự ghi memory** (memory ghi sự thật về code sẽ lỗi thời khi code đổi).
 
 ## Nhắn tin giữa các thread
 
-- `SendMessage` chỉ **xếp hàng**, và kết quả "success" không có nghĩa tin đã được đọc. Một session tương tác đang idle **có thể không tự thức dậy** để xử lý: đã xảy ra với Researcher (brief nằm đó không ai đọc) và vixio-25 (không trả lời cả ngày).
-- Cần session idle **bắt đầu làm ngay** (giao việc, bàn giao): dùng `mcp__ccd_session_mgmt__send_message` với `session_id`. Kết quả `delivered` nghĩa là lượt của session đó đã bắt đầu; `queued` là đang chờ sau việc hiện tại.
-- `session_id` lấy từ `list_sessions`. Tên trong `ListAgents` (vd `vixio-31`) **khác** title trong `list_sessions` (vd "Researcher Agent Thread"), nên xác nhận đúng session bằng cách đọc transcript qua `list_events`, đừng đoán theo tên.
-- Muốn biết tin đã được xử lý chưa: xem `isRunning` / `lastActivityAt` trong `list_sessions`, hoặc tìm tin đó trong transcript.
+- `SendMessage` chỉ **xếp hàng**; "success" không có nghĩa đã được đọc, và session idle **có thể không tự thức dậy**.
+- Cần session idle **làm ngay**: dùng `mcp__ccd_session_mgmt__send_message` với `session_id`. `delivered` = lượt đã bắt đầu; `queued` = đang chờ sau việc hiện tại.
+- `session_id` lấy từ `list_sessions`. Tên trong `ListAgents` **khác** title trong `list_sessions`: xác nhận đúng session bằng transcript (`list_events`). Kiểm tra tin đã xử lý chưa: `isRunning` / `lastActivityAt`, hoặc tìm tin trong transcript.
 
 ## Git: mỗi task một worktree
 
-- Bắt đầu task: tạo worktree + branch từ `main` mới nhất, ví dụ `git worktree add .claude/worktrees/<task> -b <vai-tro>/<task> main` (hoặc tool `EnterWorktree`). `.claude/worktrees/` đã được ignore.
-- **Không commit hay push thẳng lên `main`.** Commit trên branch của mình, rồi báo Orchestrator để merge.
-- Tree chính (branch `main` tại gốc repo) dành cho Orchestrator.
-- Task xong và đã merge: xoá worktree và branch.
-
-Worktree đổi conflict từ *ghi đè lẫn nhau lúc đang sửa* thành *conflict lúc merge*: rõ ràng, không mất việc, nhưng **không biến mất**. Vì vậy vẫn phải claim file nóng (dưới đây).
+- Bắt đầu task: `git worktree add .claude/worktrees/<task> -b <vai-tro>/<task> main` (hoặc `EnterWorktree`). `.claude/worktrees/` đã được ignore.
+- **Không commit hay push thẳng lên `main`.** Commit trên branch của mình, báo Orchestrator merge. Tree chính dành cho Orchestrator.
+- Đã merge: xoá worktree và branch.
+- Worktree chỉ dời conflict sang lúc merge, **không xoá được conflict**, nên vẫn phải claim file nóng.
 
 ## File nóng: claim trước khi sửa
 
-Gần như toàn bộ frontend nằm trong `apps/desktop/src/main.tsx` và `apps/desktop/src/styles.css`; backend native nằm trong `apps/desktop/src-tauri/src/lib.rs`. Trước khi sửa một trong ba file này, nhắn Orchestrator vùng định sửa và chờ xác nhận. Sửa xong thì báo nhả.
+`apps/desktop/src/main.tsx`, `apps/desktop/src/styles.css` (gần như toàn bộ frontend) và `apps/desktop/src-tauri/src/lib.rs` (backend native). Nhắn Orchestrator vùng định sửa, chờ xác nhận; xong thì báo nhả.
 
 ## Định dạng report
 
-Mọi report kết thúc task, gửi user hay gửi Orchestrator, chia 3 phần theo thứ tự:
-
+Mọi report kết thúc task chia 3 phần, theo thứ tự:
 1. **Đã làm**: việc đã làm và đã verify.
-2. **Vấn đề phát hiện / tồn đọng**: vấn đề gặp phải (kể cả lỗi của chính mình) và mọi thứ còn dở: commit chưa push, tiến trình còn chạy, đường chưa verify, quyết định đang chờ user.
-3. **Đề xuất**: bước tiếp theo, dưới dạng đề xuất để user điều chỉnh, không phải kế hoạch đã chốt.
+2. **Vấn đề phát hiện / tồn đọng**: vấn đề gặp phải, kể cả lỗi của chính mình, và mọi thứ còn dở (commit chưa push, tiến trình còn chạy, đường chưa verify, quyết định chờ user).
+3. **Đề xuất**: bước tiếp theo, dạng đề xuất để user điều chỉnh.
 
 ## Verify
 
-- Kiểm chứng một phát hiện **trên commit SHA tại thời điểm phát hiện**, không phải working tree hiện tại: thread khác có thể đã sửa rồi. Chạy `git log -S "<chuỗi>"` và `git show <sha>` trước khi kết luận một phát hiện là sai.
-- Ghi commit SHA đã kiểm chứng vào report.
-- Khi audit tìm giá trị sai, **đừng đưa giá trị đang audit vào danh sách cho phép** (từng che mất các button 14px).
-- Chỉ nói một thứ "chạy được" khi đã thật sự chạy nó. Browser preview **không có Tauri runtime**: đường native (AI provider, `osascript`, sidecar) phải test trong app thật.
-- **Trước khi tin một kết quả test, chứng minh app đang chạy đúng là code bạn định test**, ví dụ một thay đổi hay probe của chính bạn có mặt trong trang. Tái lập được một lỗi 2 lần chưa chứng minh gì nếu cả 2 lần đều chạy nhầm code.
-- **Kết quả "không có" hay "0" chưa chứng minh là không có.** Kèm một đối chứng cho thấy phép kiểm tra đọc được dữ liệu thật (vd đếm số dòng file đã đọc). Trong zsh, `$VAR:abc` bị hiểu thành modifier nên phải viết `${VAR}:abc`. `grep -c` đếm **dòng**, không đếm số lần xuất hiện; CSS do vite trả về nằm trên một dòng, nên dùng `grep -o … | wc -l`.
-- **Script quét CSS phải tách selector nhóm** (`.a, .b { … }`). Gán rule cho dòng selector cuối cùng sẽ bỏ sót các selector phía trên. Lỗi này từng giấu `.onboarding-orbit-ring::before` và để `.mini-tag-chip` (nhãn tag chức năng) kẹt ở 10px.
-- **Đếm phần tử theo class trên DOM**: component có popover render sẵn (vd danh sách "xem thêm tag") vẫn nằm trong DOM dù đang ẩn. Giới hạn vào con trực tiếp (`:scope > …`) hoặc lọc phần tử đang hiển thị.
-- Tên nút, tên command lấy từ memory hay tài liệu thì grep lại trước khi dùng. Memory từng ghi một nút "Recheck" và một command `claude_code_status` đều không tồn tại.
-- Trước khi tin một màu hay giá trị đọc từ `getComputedStyle`, kiểm tra biến `var()` có thật sự được khai báo. Biến không tồn tại khiến thuộc tính rơi về giá trị kế thừa, nên con số đo được là ngẫu nhiên (từng xảy ra với `--text-faint`).
+1. **Kiểm đúng mục tiêu.** Kiểm chứng phát hiện trên **commit SHA lúc phát hiện**, không phải working tree (`git log -S "<chuỗi>"`, `git show <sha>`), và ghi SHA vào report. Trước khi tin kết quả test, **chứng minh app đang chạy đúng code định test** (vd probe của chính bạn có mặt). Browser preview **không có Tauri runtime**: đường native (AI provider, `osascript`, sidecar) phải test trong app thật.
+2. **"Không có" hay "0" chưa chứng minh là không có.** Kèm đối chứng cho thấy phép kiểm đọc được dữ liệu thật. Đừng đưa giá trị đang audit vào danh sách cho phép. Trong zsh viết `${VAR}:abc`, vì `$VAR:abc` bị hiểu là modifier. `grep -c` đếm **dòng**: CSS từ vite nằm trên một dòng, dùng `grep -o … | wc -l`.
+3. **Biết mình đang đo cái gì.**
+   - Giá trị từ `getComputedStyle`: kiểm tra `var()` có thật sự được khai báo (biến không tồn tại sẽ rơi về giá trị kế thừa). `buildProjectAppearanceStyle()` ghi đè token màu bằng inline style theo từng project, nên hex trong `:root` không phải lúc nào cũng là màu đang render.
+   - Script quét CSS phải **tách selector nhóm** (`.a, .b { … }`).
+   - Đếm phần tử theo class: popover render sẵn vẫn nằm trong DOM dù đang ẩn, nên giới hạn `:scope > …` hoặc lọc phần tử hiển thị.
+4. **Tên nút, tên command lấy từ memory hay tài liệu: grep lại trước khi dùng.**
 
 ## `styles.css`: type scale
 
-Mọi `font-size` phải là token: `--text-mini` 10px, `--text-small` 11px, `--text-body` 13px, `--text-title` 15px, `--text-large` 20px.
-
-- Chữ **chức năng** (nhãn nút, trạng thái, chip, tag, form control) tối thiểu `--text-small` (11px).
-- `--text-mini` (10px) chỉ dành cho chữ **phụ trợ** thật sự nhỏ: số thứ tự bước dạng badge, số đếm "+N", mã hex mono trong ô màu. Không dùng cho nhãn hay trạng thái nào người dùng cần đọc để thao tác.
-- Ngoại lệ duy nhất ngoài token: 2 display heading dùng `clamp()` (onboarding hero, slide title).
-- Cần cỡ mới thì thêm bậc vào scale, đừng viết giá trị dùng một lần. Không để phần tử nào inherit 14px từ root, vì 14px không phải một bậc.
+Mọi `font-size` là token: `--text-mini` 10px, `--text-small` 11px, `--text-body` 13px, `--text-title` 15px, `--text-large` 20px.
+- Chữ **chức năng** (nhãn nút, trạng thái, chip, tag, form control): tối thiểu `--text-small` (11px).
+- `--text-mini` (10px) chỉ cho chữ **phụ trợ**: số thứ tự bước dạng badge, số đếm "+N", mã hex mono trong ô màu. Không dùng cho nhãn hay trạng thái người dùng cần đọc để thao tác.
+- Ngoại lệ ngoài token duy nhất: 2 display heading `clamp()` (onboarding hero, slide title).
+- Cần cỡ mới thì thêm bậc vào scale, đừng viết giá trị dùng một lần. Không để phần tử nào inherit 14px từ root.
 
 ## Ràng buộc đã chốt
 
-- **Claude Code provider**: CLI của user tự lo đăng nhập và token. KIRA không render login UI, không đọc hay lưu token; đăng nhập chỉ bằng cách mở Terminal chạy `claude auth login`. Không thêm OAuth hay device-code trong app kiểu Codex: user đã từ chối.
-- **Copy hiển thị cho user**: không dùng em dash, đổi thành dấu phẩy, hai chấm hoặc dấu chấm (theo các bản critique trong `.impeccable/critique/`). Prompt template gửi cho LLM không bị ràng buộc này.
+- **Claude Code provider**: CLI của user tự lo đăng nhập và token. KIRA không render login UI, không đọc hay lưu token; đăng nhập chỉ bằng mở Terminal chạy `claude auth login`. Không thêm OAuth hay device-code trong app: user đã từ chối.
+- **Copy hiển thị cho user**: không em dash, dùng dấu phẩy, hai chấm hoặc dấu chấm (theo `.impeccable/critique/`). Prompt template gửi LLM không bị ràng buộc này.
 
 ## Gotcha khi dev
 
-- `main.tsx` không Fast Refresh được: mỗi lần sửa, HMR reload toàn bộ và **reset state app** (panel, popover đang mở sẽ đóng). Nó cũng in lỗi `createRoot() on a container that has already been passed to createRoot()`. Lỗi này chỉ xuất hiện trên đường HMR; xác nhận bằng một lần reload sạch.
-- Dev server: `.claude/launch.json` cấu hình `kira-desktop`. Port 5173 thường đã bị thread khác chiếm; `autoPort` sẽ chọn port khác, đừng tắt tiến trình không phải của mình.
-- **`preview_start` luôn chạy ở tree chính, kể cả khi session đang đứng trong worktree.** Config không có `cwd`, và `pnpm --filter` lấy workspace từ nơi process được khởi chạy (đã thấy trong `preview_logs`). Muốn test code của worktree: chạy tay `npx vite --host 127.0.0.1 --port <port>` ngay trong `<worktree>/apps/desktop`, rồi `navigate` thẳng tới port đó. Test nhầm tree chính từng tạo ra một "bug undo" không có thật.
-- App native: `cargo run` chạy binary trần không có Info.plist, nên hệ thống không nhận ra app và không điều khiển được bằng accessibility. Cần bundle thật. Build frontend trước (`npx tsc -b && npx vite build` trong `apps/desktop`), rồi build bundle mà bỏ qua `beforeBuildCommand`, vì lệnh đó chạy cả `xcodebuild` cho Safari extension, rất chậm: `npx tauri build --debug --bundles app --config '{"build":{"beforeBuildCommand":""}}'`. Bundle này có cùng bundle id với KIRA đã cài, nên tắt nó khi test xong.
+- **`main.tsx` không Fast Refresh được**: mỗi lần sửa, HMR reload toàn bộ và **reset state app**, kèm lỗi console `createRoot() on a container that has already been passed`. Lỗi đó chỉ có trên đường HMR; xác nhận bằng reload sạch.
+- **Dev server** `kira-desktop` (`.claude/launch.json`): port 5173 thường bị thread khác chiếm, `autoPort` sẽ chọn port khác; đừng tắt tiến trình không phải của mình.
+- **`preview_start` luôn chạy ở tree chính**, kể cả khi session đứng trong worktree (config không có `cwd`). Test code worktree: chạy tay `npx vite --host 127.0.0.1 --port <port>` trong `<worktree>/apps/desktop`, rồi `navigate` tới port đó.
+- **App native**: `cargo run` chạy binary trần không có Info.plist, nên không điều khiển được bằng accessibility. Cần bundle thật: build frontend (`npx tsc -b && npx vite build` trong `apps/desktop`), rồi `npx tauri build --debug --bundles app --config '{"build":{"beforeBuildCommand":""}}'` (bỏ `beforeBuildCommand` vì nó chạy `xcodebuild` rất chậm). Bundle có cùng bundle id với KIRA đã cài: tắt khi test xong.
