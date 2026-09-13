@@ -210,3 +210,7 @@ Claude Code CLI: giữ claude -p; phase 3 thêm --mcp-config trỏ vào rmcp ser
 - Không cài, không chạy thử package nào. Nhận định năng lực dựa trên docs và README (một số đọc qua tóm tắt tự động).
 - Số sao và ngày push chụp ngày 2026-09-13 qua GitHub API. Một số license `NOASSERTION` đã đọc trực tiếp file `LICENSE`. Riêng `tavily-mcp` không đọc được.
 - Nhận định về xberg lấy từ kết quả tìm kiếm + README, chưa đọc mã.
+
+## Cập nhật 2026-09-14
+
+D11 đã chốt: **dùng assistant-ui**. Phần chất lượng thiết kế (skill, OSS design system, liquid glass) tách sang [2026-09-14-design-quality-skills-oss.md](2026-09-14-design-quality-skills-oss.md).

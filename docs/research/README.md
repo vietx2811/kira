@@ -24,3 +24,4 @@ Nơi lưu các báo cáo nghiên cứu của thread **Researcher** (session `vix
 | 2026-09-13 | [2026-09-13-graphify-code-graph.md](2026-09-13-graphify-code-graph.md) | Đánh giá graphify (code knowledge graph) vs graphify-lite | Kết luận: làm graphify-lite |
 | 2026-09-13 | [2026-09-13-right-panel-and-research-harness.md](2026-09-13-right-panel-and-research-harness.md) | Panel phải (chat AI + Changes) và harness/skill nghiên cứu | Chờ user chốt 10 quyết định (§D) |
 | 2026-09-13 | [2026-09-13-right-panel-harness-oss.md](2026-09-13-right-panel-harness-oss.md) | Phụ lục: OSS tích hợp cho panel phải và harness | 4 spike chờ duyệt, D11–D14 |
+| 2026-09-14 | [2026-09-14-design-quality-skills-oss.md](2026-09-14-design-quality-skills-oss.md) | Nâng chất lượng thiết kế: skill nào, OSS nào, và liquid glass | D11 chốt dùng assistant-ui; D15–D19 chờ Orchestrator |
