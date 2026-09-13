@@ -2095,6 +2095,10 @@ function withDefaultAiProviders(providers: AiProviderProfile[]): AiProviderProfi
   return missing.length > 0 ? [...providers, ...missing] : providers
 }
 
+// Light mode is wired end to end but not offered yet; flip once every surface
+// has been verified in light.
+const SHOW_COLOR_MODE_TOGGLE = false
+
 const projectAccentPresets: Array<{ id: ProjectAccentPreset; label: string; color: string }> = [
   { id: 'cyan', label: 'Cyan', color: '#84cdbc' },
   { id: 'amber', label: 'Amber', color: '#dfae67' },
@@ -2200,6 +2204,7 @@ function FileWorkspace({
   const storageKey = fileId === DEFAULT_FILE_ID ? baseStorageKey : `${baseStorageKey}:${fileId}`
   const [projectMetadata, setProjectMetadata] = useState(initialProject.project)
   const [projectAppearance, setProjectAppearance] = useState(initialProject.appearance)
+  const shellColorMode = inferCanvasColorMode(projectAppearance.canvasColor)
   const [ideas, setIdeas] = useState(initialProject.ideas)
   const [images, setImages] = useState(initialProject.images)
   const [palettes, setPalettes] = useState(initialProject.palettes)
@@ -2380,8 +2385,9 @@ function FileWorkspace({
     }
     const appWindow = getCurrentWindow()
     // KIRA owns its chrome appearance. Leaving this unset makes macOS flip
-    // native controls and vibrancy whenever the system appearance changes.
-    void appWindow.setTheme('dark').catch(() => undefined)
+    // native controls and vibrancy whenever the system appearance changes, so
+    // pin it to the project's mode (the same value the shell renders).
+    void appWindow.setTheme(shellColorMode).catch(() => undefined)
     void appWindow
       .setEffects({
         effects: [Effect.UnderWindowBackground],
@@ -2394,7 +2400,7 @@ function FileWorkspace({
         setGlassStatus('fallback')
         // Window effects are platform-dependent; transparent CSS remains the fallback.
       })
-  }, [isActive])
+  }, [isActive, shellColorMode])
 
   const outlineSections = useMemo(
     () => latestOutlineDraft
@@ -5766,7 +5772,7 @@ function FileWorkspace({
   if (!isActive) return null
 
   return (
-    <main className="app-shell" data-glass-state={glassStatus} data-color-mode={inferCanvasColorMode(projectAppearance.canvasColor)} style={shellThemeStyle} onPaste={capturePastedReference}>
+    <main className="app-shell" data-glass-state={glassStatus} data-color-mode={shellColorMode} style={shellThemeStyle} onPaste={capturePastedReference}>
       {tabBar}
       <section
         className="workspace"
@@ -6731,6 +6737,18 @@ function ProjectSettingsPopover({
         />
         <div className={isProjectColorOpen ? 'project-color-editor is-open' : 'project-color-editor'}>
           <div className="project-color-editor-content">
+            {SHOW_COLOR_MODE_TOGGLE && (
+              <Segmented
+                ariaLabel="Color mode"
+                variant="radio"
+                value={appearance.colorMode}
+                onChange={(colorMode) => onProjectAppearanceChange({ colorMode })}
+                options={[
+                  { value: 'dark', label: 'Dark' },
+                  { value: 'light', label: 'Light' },
+                ]}
+              />
+            )}
             <div className="accent-color-recommendations" aria-label="Accent colors">
               {projectAccentPresets.filter((preset) => preset.id !== 'custom').map((preset) => (
                 <button
@@ -12768,7 +12786,7 @@ function buildProjectAppearanceStyle(appearance: ProjectAppearance): React.CSSPr
   const glassActiveBackgrounds = glassActiveComposites(tokens, glassActiveAlpha)
   // Floating popovers share one surface and one strong hairline; the glass-strong
   // pair reuses them so a popover can't drift from its siblings.
-  const nodeSurfaceSelected = colorWithAlpha(tokens.nodeSelected, dark ? 0.94 : 0.9)
+  const nodeSurfaceSelected = colorWithAlpha(tokens.nodeSelected, POPOVER_SURFACE_ALPHA[tokens.mode])
   const borderStrong = dark ? 'rgb(255 255 255 / 0.13)' : colorWithAlpha(tokens.textMain, 0.18)
   return {
     '--bg-base': tokens.base,
@@ -12779,7 +12797,7 @@ function buildProjectAppearanceStyle(appearance: ProjectAppearance): React.CSSPr
     '--surface-drawer': tokens.surfaceDrawer,
     '--surface-inspector': tokens.surfaceInspector,
     '--surface-inset': tokens.surfaceInset,
-    '--node-surface': colorWithAlpha(tokens.nodeSurface, dark ? 0.82 : 0.78),
+    '--node-surface': colorWithAlpha(tokens.nodeSurface, NODE_SURFACE_ALPHA[tokens.mode]),
     '--node-surface-selected': nodeSurfaceSelected,
     '--node-border': dark ? 'rgb(255 255 255 / 0.045)' : colorWithAlpha(tokens.textMain, 0.11),
     '--node-shadow': dark ? '0 18px 48px rgb(0 0 0 / 0.35)' : `0 10px 28px ${colorWithAlpha(tokens.textMain, 0.13)}`,
@@ -12809,7 +12827,8 @@ function buildProjectAppearanceStyle(appearance: ProjectAppearance): React.CSSPr
     '--accent-strong': tokens.accentStrong,
     '--accent-weak': colorWithAlpha(tokens.accentStrong, dark ? 0.28 : 0.22),
     '--accent-faint': colorWithAlpha(tokens.accentStrong, dark ? 0.12 : 0.1),
-    '--accent-amber': tokens.accentAlt,
+    '--accent-amber': readableAccentOn(tokens.accentAlt, tokens.readingSurfaces, dark, TEXT_MUTED_MIN_CONTRAST),
+    '--danger': readableAccentOn(DANGER_COLOR, tokens.readingSurfaces, dark, TEXT_MUTED_MIN_CONTRAST),
     '--accent-sage': colorWithAlpha(accent, 0.76),
     '--shell-shadow': dark
       ? 'inset 0 1px 0 rgb(255 255 255 / 0.08)'
@@ -12825,6 +12844,18 @@ function buildProjectAppearanceStyle(appearance: ProjectAppearance): React.CSSPr
   } as React.CSSProperties
 }
 
+// Text on light surfaces has a narrow lightness budget (roughly L* 13 to 38 to
+// stay AA), so the soft/muted tones are floored against the surfaces text
+// really sits on instead of mixed at a fixed ratio. Muted keeps a 0.1 margin
+// over 4.5 because floating surfaces composite slightly darker than the model.
+const TEXT_SOFT_MIN_CONTRAST = 7
+const TEXT_MUTED_MIN_CONTRAST = 4.6
+const NODE_SURFACE_ALPHA = { dark: 0.82, light: 0.78 }
+// Popovers carry reading text, so light mode makes them opaque: even at 0.97
+// a dark thumbnail underneath pulled muted labels below AA.
+const POPOVER_SURFACE_ALPHA = { dark: 0.94, light: 1 }
+const DANGER_COLOR = '#d98779'
+
 function projectColorTokens(appearance: Pick<ProjectAppearance, 'canvasColor' | 'accentColor'> & Partial<Pick<ProjectAppearance, 'colorMode'>>) {
   const accentSeed = normalizeHexInput(appearance.accentColor || deriveAccentFromCanvas(appearance.canvasColor))
   const preferredMode = appearance.colorMode ?? inferCanvasColorMode(appearance.canvasColor)
@@ -12834,9 +12865,21 @@ function projectColorTokens(appearance: Pick<ProjectAppearance, 'canvasColor' | 
   const dark = mode === 'dark'
   const accentToken = deriveAccentTokenFromAccent(accentSeed, canvas)
   const textMain = readableTextColor(canvas, dark)
+  const readingSurfaces = [
+    palette.base,
+    palette.canvasSurface,
+    palette.surface1,
+    palette.surface2,
+    palette.surfaceDrawer,
+    palette.surfaceInspector,
+    palette.surfaceInset,
+    mixColor(palette.nodeSurface, palette.canvasSurface, 1 - NODE_SURFACE_ALPHA[mode]),
+    mixColor(palette.nodeSelected, palette.canvasSurface, 1 - POPOVER_SURFACE_ALPHA[mode]),
+  ]
   return {
     mode,
     canvas,
+    readingSurfaces,
     canvasSurface: palette.canvasSurface,
     accent: accentToken.color,
     accentStrong: accentToken.strong,
@@ -12854,9 +12897,20 @@ function projectColorTokens(appearance: Pick<ProjectAppearance, 'canvasColor' | 
     nodeSurface: palette.nodeSurface,
     nodeSelected: palette.nodeSelected,
     textMain,
-    textSoft: mixReadableText(textMain, canvas, dark ? 0.26 : 0.34),
-    textMuted: mixReadableText(textMain, canvas, dark ? 0.48 : 0.55),
+    textSoft: flooredTextMix(textMain, canvas, dark ? 0.26 : 0.34, readingSurfaces, TEXT_SOFT_MIN_CONTRAST),
+    textMuted: flooredTextMix(textMain, canvas, dark ? 0.48 : 0.55, readingSurfaces, TEXT_MUTED_MIN_CONTRAST),
   }
+}
+
+// Starts from the designed mix and only pulls toward the main text color when
+// some reading surface would fall below the floor, so a theme that already
+// clears it keeps its exact tone.
+function flooredTextMix(main: string, background: string, backgroundWeight: number, surfaces: string[], floor: number) {
+  for (let weight = backgroundWeight; weight > 0; weight -= 0.005) {
+    const candidate = mixReadableText(main, background, weight)
+    if (minContrastRatio(candidate, surfaces) >= floor) return candidate
+  }
+  return main
 }
 
 function inferCanvasColorMode(color: string): ProjectColorMode {
