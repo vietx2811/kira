@@ -1,0 +1,436 @@
+#!/usr/bin/env node
+// graphify-lite: cross-references the three seams a single-language tool
+// (or plain grep) misses in this repo — TS `invoke()` <-> Rust
+// `generate_handler!` <-> `#[tauri::command]` fns, undeclared CSS custom
+// properties, and AI-provider type <-> Rust dispatch. See
+// docs/research/2026-09-13-graphify-code-graph.md for why this exists
+// instead of adopting the `graphify` tool.
+//
+// No dependencies beyond Node's stdlib. Run: node scripts/graphify-lite.mjs
+// Exit code 0 = clean, 2 = at least one error-level finding.
+
+import fs from 'node:fs'
+import path from 'node:path'
+import { execSync } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+const repoRoot = path.resolve(__dirname, '..')
+
+const MAIN_TSX = path.join(repoRoot, 'apps/desktop/src/main.tsx')
+const STYLES_CSS = path.join(repoRoot, 'apps/desktop/src/styles.css')
+const LIB_RS = path.join(repoRoot, 'apps/desktop/src-tauri/src/lib.rs')
+
+function readFileOrExit(filePath) {
+  try {
+    return fs.readFileSync(filePath, 'utf8')
+  } catch (err) {
+    console.error(`Cannot read ${filePath}: ${err.message}`)
+    process.exit(1)
+  }
+}
+
+function commitSha() {
+  try {
+    return execSync('git rev-parse HEAD', { cwd: repoRoot }).toString().trim()
+  } catch {
+    return 'unknown (not a git checkout, or git unavailable)'
+  }
+}
+
+const mainTsx = readFileOrExit(MAIN_TSX)
+const stylesCss = readFileOrExit(STYLES_CSS)
+const libRs = readFileOrExit(LIB_RS)
+
+let hasError = false
+const lines = []
+function say(line = '') {
+  lines.push(line)
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// 1. Tauri command map: invoke() <-> generate_handler![...] <-> #[tauri::command]
+// ─────────────────────────────────────────────────────────────────────────
+
+function extractGeneratedHandlerNames(rs) {
+  const marker = 'tauri::generate_handler!['
+  const start = rs.indexOf(marker)
+  if (start === -1) {
+    throw new Error('tauri::generate_handler![...] not found in lib.rs')
+  }
+  const openBracket = start + marker.length - 1
+  let depth = 0
+  let end = -1
+  for (let i = openBracket; i < rs.length; i++) {
+    if (rs[i] === '[') depth++
+    else if (rs[i] === ']') {
+      depth--
+      if (depth === 0) {
+        end = i
+        break
+      }
+    }
+  }
+  if (end === -1) throw new Error('generate_handler![...] never closes')
+  const body = rs.slice(openBracket + 1, end)
+  return body
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+}
+
+function extractCommandFunctions(rs) {
+  // Allows other attributes (e.g. #[allow(...)]) to sit between the
+  // #[tauri::command] marker and the fn line, and an optional pub/async.
+  const re = /#\[tauri::command\](?:\s*\n\s*#\[[^\]]*\])*\s*\n\s*(?:pub\s+)?(?:async\s+)?fn\s+([a-zA-Z0-9_]+)\s*\(/g
+  const names = []
+  let m
+  while ((m = re.exec(rs))) names.push(m[1])
+  return names
+}
+
+function extractInvokedNames(ts) {
+  // Only counts a literal that appears as the FIRST token after the
+  // opening paren (skipping the optional <Generic> and whitespace) — this
+  // deliberately does NOT resolve a ternary/computed first argument, e.g.
+  // `invoke<string | null>(projectPath ? 'a' : 'b', ...)`. Those calls
+  // surface as "registered but not invoked" warnings below instead of a
+  // false literal match, matching how a real static reader would fail on
+  // a non-literal expression rather than guessing.
+  const re = /\binvoke\s*(?:<[^>()]*>)?\s*\(\s*['"`]([a-zA-Z0-9_]+)['"`]/g
+  const names = new Set()
+  let m
+  while ((m = re.exec(ts))) names.add(m[1])
+  return names
+}
+
+function countInvokeCallSites(ts) {
+  const re = /\binvoke\s*(?:<[^>()]*>)?\s*\(/g
+  let count = 0
+  while (re.exec(ts)) count++
+  return count
+}
+
+say('## 1. Tauri command map')
+say()
+
+let registered, commandFns, invoked
+try {
+  registered = extractGeneratedHandlerNames(libRs)
+  commandFns = extractCommandFunctions(libRs)
+  invoked = extractInvokedNames(mainTsx)
+} catch (err) {
+  console.error(`Tauri command map: ${err.message}`)
+  process.exit(1)
+}
+
+const registeredSet = new Set(registered)
+const commandFnSet = new Set(commandFns)
+const totalInvokeSites = countInvokeCallSites(mainTsx)
+
+say(`registered (generate_handler!): ${registered.length}`)
+say(`#[tauri::command] functions:    ${commandFns.length}`)
+say(`invoke() literal call sites:    ${totalInvokeSites} total, ${invoked.size} distinct literal names`)
+say()
+
+const tauriErrors = []
+const tauriWarnings = []
+
+for (const name of invoked) {
+  if (!registeredSet.has(name)) {
+    tauriErrors.push(`invoked '${name}' has no entry in generate_handler![...]`)
+  }
+}
+for (const name of registered) {
+  if (!commandFnSet.has(name)) {
+    tauriErrors.push(`registered '${name}' has no matching #[tauri::command] fn`)
+  }
+}
+for (const name of commandFns) {
+  if (!registeredSet.has(name)) {
+    tauriErrors.push(`#[tauri::command] fn '${name}' is never registered in generate_handler![...]`)
+  }
+}
+for (const name of registered) {
+  if (!invoked.has(name)) {
+    tauriWarnings.push(`'${name}' is registered and has a command fn, but no literal invoke('${name}') was found in main.tsx (may be called via a non-literal expression, from Rust itself, or by the OS opening a file)`)
+  }
+}
+
+if (tauriErrors.length) {
+  hasError = true
+  say(`ERRORS (${tauriErrors.length}):`)
+  for (const e of tauriErrors) say(`  - ${e}`)
+} else {
+  say('ERRORS (0): every invoked name is registered, every registered name has a command fn.')
+}
+say()
+if (tauriWarnings.length) {
+  say(`WARNINGS (${tauriWarnings.length}):`)
+  for (const w of tauriWarnings) say(`  - ${w}`)
+} else {
+  say('WARNINGS (0).')
+}
+say()
+
+// ─────────────────────────────────────────────────────────────────────────
+// 2. Undeclared CSS custom properties
+// ─────────────────────────────────────────────────────────────────────────
+
+function stripCssComments(css) {
+  return css.replace(/\/\*[\s\S]*?\*\//g, '')
+}
+
+function extractDeclaredCssVars(css) {
+  // A colon immediately after `--name` only ever occurs at a declaration
+  // site; var(--name) / var(--name, fallback) usages never have a colon
+  // there, so this needs no selector-awareness to avoid false matches.
+  const re = /--([a-zA-Z0-9-]+)\s*:/g
+  const declared = new Set()
+  let m
+  while ((m = re.exec(css))) declared.add(m[1])
+  return declared
+}
+
+function extractUsedCssVars(css) {
+  // Only a var(--x) with NO fallback argument is unsafe if --x is never
+  // declared: the browser has nothing to fall back to and the property
+  // resolves to its inherited/initial value. var(--x, fallback) is
+  // deliberately excluded even when --x is undeclared, per the "no
+  // fallback" scoping in docs/research/2026-09-13-graphify-code-graph.md —
+  // several real tokens (--canvas-right-inset, --grid-hot-x/-y set via
+  // element.style.setProperty, --font-mono) are undeclared-by-design and
+  // rely on their fallback, confirmed against c839d1e.
+  // A paren-depth scan (not a single regex) is required because the
+  // fallback argument can itself contain a function with commas, e.g.
+  // var(--x, color-mix(in srgb, red, blue)) — a naive "first comma before
+  // the next )" would misidentify that inner comma as the top-level one.
+  const used = new Map() // name -> first match index, for locating a sample usage
+  const openRe = /var\(\s*--([a-zA-Z0-9-]+)/g
+  let m
+  while ((m = openRe.exec(css))) {
+    const name = m[1]
+    let depth = 1 // we're already inside the `var(` that matched
+    let hasTopLevelComma = false
+    let i = openRe.lastIndex
+    for (; i < css.length && depth > 0; i++) {
+      const ch = css[i]
+      if (ch === '(') depth++
+      else if (ch === ')') depth--
+      else if (ch === ',' && depth === 1) hasTopLevelComma = true
+    }
+    if (!hasTopLevelComma && !used.has(name)) used.set(name, m.index)
+  }
+  return used
+}
+
+function extractJsSetCssVars(ts) {
+  // buildProjectAppearanceStyle() (and any sibling function following the
+  // same shape) returns an object literal keyed by CSS custom-property
+  // names, applied as inline style per project. A var() resolved only
+  // through this path has no :root declaration and must not be flagged.
+  const names = new Set()
+  const re = /['"`](--[a-zA-Z0-9-]+)['"`]\s*:/g
+  let m
+  while ((m = re.exec(ts))) names.add(m[1].slice(2))
+  return names
+}
+
+function lineNumberAt(text, index) {
+  return text.slice(0, index).split('\n').length
+}
+
+say('## 2. Undeclared CSS custom properties (fallback-less var(--x) with no :root declaration and no JS-set fallback)')
+say()
+
+const cssNoComments = stripCssComments(stylesCss)
+const declaredCssVars = extractDeclaredCssVars(cssNoComments)
+const usedCssVars = extractUsedCssVars(cssNoComments)
+const jsSetVars = extractJsSetCssVars(mainTsx)
+
+say(`declared in styles.css :root: ${declaredCssVars.size}`)
+say(`set from JS (buildProjectAppearanceStyle-style): ${jsSetVars.size}`)
+say(`distinct fallback-less var(--x) usages in styles.css: ${usedCssVars.size}`)
+say()
+
+const cssErrors = []
+for (const [name, idx] of usedCssVars) {
+  if (!declaredCssVars.has(name) && !jsSetVars.has(name)) {
+    const line = lineNumberAt(cssNoComments, idx)
+    cssErrors.push(`--${name} used at styles.css:${line}, never declared in :root or set from JS`)
+  }
+}
+
+if (cssErrors.length) {
+  hasError = true
+  say(`ERRORS (${cssErrors.length}):`)
+  for (const e of cssErrors) say(`  - ${e}`)
+} else {
+  say('ERRORS (0): every used custom property is declared in :root or set from JS.')
+}
+say()
+
+// ─────────────────────────────────────────────────────────────────────────
+// 3. AI provider type <-> Rust dispatch map (informational — no pass/fail
+//    criteria was specified for this one; report only)
+// ─────────────────────────────────────────────────────────────────────────
+
+function extractProviderTypeUnion(ts) {
+  const marker = 'type AiProviderType ='
+  const start = ts.indexOf(marker)
+  if (start === -1) return []
+  // The union is a sequence of `| 'literal'` lines ending at the first
+  // line that doesn't start (after whitespace) with `|`.
+  const rest = ts.slice(start + marker.length)
+  const re = /\|\s*'([a-zA-Z0-9_]+)'/g
+  const out = []
+  let m
+  // Stop once we hit something that is clearly past the union (a `type`
+  // keyword or two consecutive newlines with no leading `|`), approximated
+  // here by only scanning the first ~40 lines after the marker.
+  const window = rest.split('\n').slice(0, 40).join('\n')
+  while ((m = re.exec(window))) out.push(m[1])
+  return out
+}
+
+function providerDispatchedInRust(rs, type) {
+  const eqRe = new RegExp(`provider_type\\s*==\\s*"${type}"`)
+  const matchArmRe = new RegExp(`"${type}"\\s*(?:\\||=>)`)
+  return eqRe.test(rs) || matchArmRe.test(rs)
+}
+
+say('## 3. AI provider type <-> Rust dispatch (informational, human review — no error/warning criteria set)')
+say()
+
+const providerTypes = extractProviderTypeUnion(mainTsx)
+if (providerTypes.length === 0) {
+  say('Could not locate `type AiProviderType = ...` in main.tsx — skipped.')
+} else {
+  say(`AiProviderType union: ${providerTypes.length} types`)
+  for (const type of providerTypes) {
+    const dispatched = providerDispatchedInRust(libRs, type)
+    say(`  - ${type}: ${dispatched ? 'dispatched in lib.rs' : 'NOT referenced in lib.rs (review)'}`)
+  }
+}
+say()
+
+// ─────────────────────────────────────────────────────────────────────────
+// 4. CSS class <-> className candidate map (informational only, per spec:
+//    "chỉ xuất danh sách để người duyệt, không tính là lỗi")
+// ─────────────────────────────────────────────────────────────────────────
+
+function extractSelectorClassNames(css) {
+  // Walk brace depth so a `.class` token is only counted when it appears
+  // in selector position (text before a `{` that opens a new rule), never
+  // inside a declaration's value (e.g. `0.5em`, a color, a url()). This
+  // also naturally handles grouped selectors (`.a, .b { ... }`) because a
+  // class token is a class token regardless of where a comma later split
+  // the group — no comma-splitting needed to find the full set.
+  const classes = new Set()
+  let depth = 0
+  let selectorBuf = ''
+  for (let i = 0; i < css.length; i++) {
+    const ch = css[i]
+    if (ch === '{') {
+      if (depth === 0) {
+        for (const m of selectorBuf.matchAll(/\.([a-zA-Z_-][a-zA-Z0-9_-]*)/g)) {
+          classes.add(m[1])
+        }
+      }
+      depth++
+      selectorBuf = ''
+    } else if (ch === '}') {
+      depth = Math.max(0, depth - 1)
+      selectorBuf = ''
+    } else if (depth === 0) {
+      selectorBuf += ch
+    }
+  }
+  return classes
+}
+
+function extractClassNameLiteralsAndPrefixes(ts) {
+  const literals = new Set()
+  const prefixes = new Set()
+  // className="a b c" (also class= for any non-JSX/plain-HTML strings)
+  const staticRe = /class(?:Name)?=["']([^"'{}]+)["']/g
+  let m
+  while ((m = staticRe.exec(ts))) {
+    for (const token of m[1].split(/\s+/).filter(Boolean)) literals.add(token)
+  }
+  // className={`literal ${expr} more-literal--${expr2}`} and
+  // className={cond ? 'a' : 'b'} — pull every quoted/backtick string
+  // found inside a className={...} expression, plus any `prefix--`
+  // segment immediately preceding a `${` interpolation.
+  //
+  // The container brace can't be found with a lazy `\{([\s\S]*?)\}` regex:
+  // a template literal's own `${expr}` interpolation contains a `}` that
+  // isn't the container's closing brace, so a non-greedy match truncates
+  // mid-expression and silently drops everything after the first `${...}`
+  // (this is exactly how `.image-list` and `.segmented` — both real,
+  // present classes — went missing on the first pass). A depth-counting
+  // scan is required instead.
+  const openTag = 'className={'
+  let searchFrom = 0
+  while (true) {
+    const start = ts.indexOf(openTag, searchFrom)
+    if (start === -1) break
+    const exprStart = start + openTag.length
+    let depth = 1
+    let i = exprStart
+    for (; i < ts.length && depth > 0; i++) {
+      if (ts[i] === '{') depth++
+      else if (ts[i] === '}') depth--
+    }
+    const expr = ts.slice(exprStart, i - 1)
+    searchFrom = i
+
+    for (const lit of expr.matchAll(/['"`]([^'"`]*)['"`]/g)) {
+      for (const token of lit[1].split(/\s+/).filter(Boolean)) {
+        if (token.includes('${')) continue
+        literals.add(token)
+      }
+    }
+    for (const pre of expr.matchAll(/([a-zA-Z0-9_-]+)\$\{/g)) {
+      prefixes.add(pre[1])
+    }
+  }
+  return { literals, prefixes }
+}
+
+say('## 4. CSS class <-> className candidates (informational only — not an error)')
+say()
+
+const cssClasses = extractSelectorClassNames(cssNoComments)
+const { literals: tsClassLiterals, prefixes: tsClassPrefixes } = extractClassNameLiteralsAndPrefixes(mainTsx)
+
+const candidates = []
+for (const cls of cssClasses) {
+  if (tsClassLiterals.has(cls)) continue
+  const matchesPrefix = [...tsClassPrefixes].some((p) => cls.startsWith(p))
+  if (matchesPrefix) continue
+  const likelyThirdParty = cls.includes('__')
+  candidates.push({ cls, likelyThirdParty })
+}
+
+const ownCandidates = candidates.filter((c) => !c.likelyThirdParty)
+const thirdPartyCandidates = candidates.filter((c) => c.likelyThirdParty)
+
+say(`CSS selector classes found: ${cssClasses.size}`)
+say(`Not matched to a literal or dynamic-prefix className in main.tsx: ${candidates.length}`)
+say(`  - likely this app's own (review for dead CSS): ${ownCandidates.length}`)
+for (const c of ownCandidates) say(`      .${c.cls}`)
+say(`  - likely third-party (BEM "__" naming, e.g. react-colorful): ${thirdPartyCandidates.length}`)
+for (const c of thirdPartyCandidates) say(`      .${c.cls}`)
+say()
+say('Caveat: a class only ever set by a library at runtime without a "__" in its name (e.g. Tiptap\'s')
+say('is-editor-empty) will still land in the "own" bucket above — this list is unreviewed input, not a verdict.')
+say()
+
+// ─────────────────────────────────────────────────────────────────────────
+
+say(`Commit: ${commitSha()}`)
+say(`Exit code: ${hasError ? 2 : 0}`)
+
+console.log(lines.join('\n'))
+process.exit(hasError ? 2 : 0)
