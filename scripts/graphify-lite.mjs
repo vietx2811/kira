@@ -428,6 +428,200 @@ say('is-editor-empty) will still land in the "own" bucket above — this list is
 say()
 
 // ─────────────────────────────────────────────────────────────────────────
+// 5. Invalid multi-layer background declarations (colors only allowed in
+//    the last layer; bare colors in any layer of background-image)
+// ─────────────────────────────────────────────────────────────────────────
+
+function parseBackgroundLayers(declarationText) {
+  // Split a background/background-image value into layers by top-level commas.
+  // Respects parenthesis nesting (e.g., color-mix(in srgb, a, b) is one token).
+  const layers = []
+  let current = ''
+  let depth = 0
+
+  for (let i = 0; i < declarationText.length; i++) {
+    const ch = declarationText[i]
+    if (ch === '(') depth++
+    else if (ch === ')') depth--
+    else if (ch === ',' && depth === 0) {
+      layers.push(current.trim())
+      current = ''
+      continue
+    }
+    current += ch
+  }
+  if (current.trim()) layers.push(current.trim())
+
+  return layers
+}
+
+function isColorValue(layer) {
+  // Returns: true = is a color, false = is an image, null = ambiguous (bare var).
+  const trimmed = layer.trim().toLowerCase()
+
+  // Keywords that are colors (excluding 'none' and gradient/image keywords)
+  if (trimmed === 'transparent' || trimmed === 'currentcolor') return true
+
+  // Hex color
+  if (/^#[0-9a-f]{3,8}$/.test(trimmed)) return true
+
+  // CSS named colors (sampling common ones; browsers support 140+)
+  const namedColors = new Set([
+    'red', 'green', 'blue', 'black', 'white', 'yellow', 'cyan', 'magenta',
+    'gray', 'silver', 'maroon', 'navy', 'olive', 'purple', 'teal', 'lime',
+    'aqua', 'orange', 'brown', 'pink', 'gold', 'indigo', 'turquoise',
+    'violet', 'salmon', 'coral', 'khaki', 'lavender', 'bisque', 'honeydew'
+  ])
+  if (namedColors.has(trimmed)) return true
+
+  // Color functions: rgb(), rgba(), hsl(), hsla(), hwb(), lab(), lch(), oklab(), oklch(), color(), color-mix()
+  if (/^(?:rgb|rgba|hsl|hsla|hwb|lab|lch|oklab|oklch|color|color-mix)\s*\(/i.test(layer)) return true
+
+  // Bare var(--name) with no other tokens: ambiguous
+  if (/^var\s*\(\s*--[a-zA-Z0-9-]+\s*\)$/.test(layer)) return null
+
+  // Everything else: gradients, url(), image-set(), position/size keywords, 'none', variables with fallback, etc.
+  return false
+}
+
+function extractBackgroundDeclarations(css) {
+  // Extract all `background:` and `background-image:` rules with their selectors.
+  // Returns array of {selector, property, value, startLine}.
+  const findings = []
+
+  // Find all rules (braces)
+  let depth = 0
+  let ruleStart = -1
+  let ruleEnd = -1
+
+  for (let i = 0; i < css.length; i++) {
+    const ch = css[i]
+    if (ch === '{') {
+      if (depth === 0) ruleStart = i
+      depth++
+    } else if (ch === '}') {
+      depth--
+      if (depth === 0) ruleEnd = i
+      // Process this rule
+      const selector = css.slice(0, ruleStart).split('\n').pop()
+      const ruleBody = css.slice(ruleStart + 1, ruleEnd)
+
+      // Find background: or background-image: in this rule
+      const bgRe = /(?:^|\n)\s*(background|background-image)\s*:\s*([^;]*(?:\n[^;]*)*)/gm
+      let m
+      while ((m = bgRe.exec(ruleBody))) {
+        const property = m[1]
+        const value = m[2]
+        const lineInRule = css.slice(0, ruleStart + m.index).split('\n').length
+
+        findings.push({
+          selector: selector.trim(),
+          property,
+          value,
+          startLine: lineInRule
+        })
+      }
+    }
+  }
+
+  return findings
+}
+
+say('## 5. Invalid multi-layer background declarations (color only allowed in last layer)')
+say()
+
+const backgroundFindings = []
+const bgDecls = extractBackgroundDeclarations(cssNoComments)
+
+for (const decl of bgDecls) {
+  const layers = parseBackgroundLayers(decl.value)
+  const isBackgroundImage = decl.property === 'background-image'
+
+  // Map line number from cssNoComments back to original stylesCss
+  // by finding the selector in the original file
+  let origLine = decl.startLine
+  if (decl.selector) {
+    const selectorIdx = stylesCss.indexOf(decl.selector)
+    if (selectorIdx !== -1) {
+      origLine = stylesCss.slice(0, selectorIdx).split('\n').length
+      // Find the background: declaration within this rule
+      const ruleStart = stylesCss.indexOf('{', selectorIdx)
+      const ruleEnd = stylesCss.indexOf('}', ruleStart)
+      const ruleBody = stylesCss.slice(ruleStart, ruleEnd)
+      const bgMatch = ruleBody.match(new RegExp(`(background|background-image)\\s*:`))
+      if (bgMatch) {
+        origLine = stylesCss.slice(0, ruleStart + bgMatch.index).split('\n').length + 1
+      }
+    }
+  }
+
+  // For background: shorthand, colors only allowed in last layer
+  // For background-image:, colors not allowed in any layer (but bare vars are warnings)
+  for (let i = 0; i < layers.length; i++) {
+    const layer = layers[i]
+    const colorType = isColorValue(layer)
+
+    if (colorType === true) {
+      if (isBackgroundImage) {
+        backgroundFindings.push({
+          type: 'warning',
+          selector: decl.selector,
+          line: origLine,
+          layer,
+          index: i,
+          property: decl.property,
+          severity: `${decl.property} layer ${i} is a bare color (not valid; background-image layers must be images)`
+        })
+      } else if (i < layers.length - 1) {
+        backgroundFindings.push({
+          type: 'warning',
+          selector: decl.selector,
+          line: origLine,
+          layer,
+          index: i,
+          property: decl.property,
+          severity: `non-last layer is a color (browser silently drops entire declaration)`
+        })
+      }
+    } else if (colorType === null) {
+      // Bare var in non-last layer
+      if (!isBackgroundImage && i < layers.length - 1) {
+        backgroundFindings.push({
+          type: 'warning',
+          selector: decl.selector,
+          line: origLine,
+          layer,
+          index: i,
+          property: decl.property,
+          severity: `non-last layer is a bare var() (valid only if it resolves to an image)`
+        })
+      } else if (isBackgroundImage) {
+        backgroundFindings.push({
+          type: 'warning',
+          selector: decl.selector,
+          line: origLine,
+          layer,
+          index: i,
+          property: decl.property,
+          severity: `background-image layer is a bare var() (valid only if it resolves to an image, not a color)`
+        })
+      }
+    }
+  }
+}
+
+if (backgroundFindings.length) {
+  say(`WARNINGS (${backgroundFindings.length}):`)
+  for (const f of backgroundFindings) {
+    say(`  - ${f.selector} (styles.css:${f.line}): ${f.severity}`)
+    say(`      layer ${f.index}: ${f.layer}`)
+  }
+} else {
+  say('WARNINGS (0): no invalid multi-layer background declarations found.')
+}
+say()
+
+// ─────────────────────────────────────────────────────────────────────────
 
 say(`Commit: ${commitSha()}`)
 say(`Exit code: ${hasError ? 2 : 0}`)
