@@ -1862,7 +1862,7 @@ function DockSelect({
             </li>
           ))}
         </ul>,
-        document.body,
+        themedPortalTarget(),
       )}
     </>
   )
@@ -10071,7 +10071,7 @@ function GraphCanvas({
               <NodeMetadata node={node} />
             </div>
           </div>,
-          document.body,
+          themedPortalTarget(),
         )}
       </div>
     )
@@ -13247,6 +13247,16 @@ function cssTokenColor(token: string, fallback: string) {
   if (typeof document === 'undefined') return fallback
   const host = document.querySelector('.app-shell') ?? document.documentElement
   return getComputedStyle(host).getPropertyValue(token).trim() || fallback
+}
+
+// buildProjectAppearanceStyle() writes the per-project color tokens as an
+// inline style on .app-shell, not on :root, so a portal mounted straight
+// onto document.body (outside that subtree) never inherits them and falls
+// back to :root's defaults regardless of the active project's theme.
+// Portaling into .app-shell instead keeps it in the cascade. Matches
+// cssTokenColor()'s existing .app-shell-first lookup above.
+function themedPortalTarget(): Element {
+  return document.querySelector('.app-shell') ?? document.documentElement
 }
 
 function deleteDialogCopy(pendingDelete: PendingDelete) {

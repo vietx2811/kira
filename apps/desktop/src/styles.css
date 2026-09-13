@@ -1399,8 +1399,13 @@ button {
   padding: 16px 18px;
   border: 1px solid color-mix(in srgb, var(--accent-cyan), transparent 62%);
   border-radius: var(--radius-3);
+  /* A flat color is only valid as the LAST background layer; an earlier
+     layer must be paintable as an image, so the cyan wash is wrapped in a
+     same-color-stop linear-gradient() to legally sit above --glass-active.
+     Without this the whole `background` shorthand is invalid and the
+     browser drops it entirely, leaving the button with no fill at all. */
   background:
-    color-mix(in srgb, var(--accent-cyan), transparent 90%),
+    linear-gradient(color-mix(in srgb, var(--accent-cyan), transparent 90%), color-mix(in srgb, var(--accent-cyan), transparent 90%)),
     var(--glass-active);
   color: var(--text-main);
   cursor: pointer;
@@ -2883,8 +2888,11 @@ button.mini-tags-more:focus-visible {
   padding: 13px 16px;
   border: 1px solid color-mix(in srgb, var(--accent-cyan), transparent 62%);
   border-radius: var(--radius-3);
+  /* Same fix as .onboarding-primary-cta: a flat color can only be the LAST
+     background layer, so the cyan wash needs a same-color-stop
+     linear-gradient() wrapper to legally layer above --glass-active. */
   background:
-    color-mix(in srgb, var(--accent-cyan), transparent 90%),
+    linear-gradient(color-mix(in srgb, var(--accent-cyan), transparent 90%), color-mix(in srgb, var(--accent-cyan), transparent 90%)),
     var(--glass-active);
   color: var(--text-main);
   cursor: pointer;
