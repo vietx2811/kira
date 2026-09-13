@@ -413,11 +413,47 @@ function extractClassNameLiteralsAndPrefixes(ts) {
   return { literals, prefixes }
 }
 
+function walkSourceFiles(rootDir) {
+  // Recursively collects every .ts/.tsx file under rootDir, skipping any
+  // node_modules directory at any depth. Returns paths relative to repoRoot,
+  // sorted for stable, diffable output.
+  const results = []
+  function walk(dir) {
+    let entries
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true })
+    } catch {
+      return
+    }
+    for (const entry of entries) {
+      if (entry.name === 'node_modules') continue
+      const full = path.join(dir, entry.name)
+      if (entry.isDirectory()) {
+        walk(full)
+      } else if (entry.isFile() && (full.endsWith('.ts') || full.endsWith('.tsx'))) {
+        results.push(full)
+      }
+    }
+  }
+  walk(rootDir)
+  return results.sort().map((p) => path.relative(repoRoot, p))
+}
+
 say('## 4. CSS class <-> className candidates (informational only — not an error)')
 say()
 
+const DESKTOP_SRC_DIR = path.join(repoRoot, 'apps/desktop/src')
+const scannedFiles = walkSourceFiles(DESKTOP_SRC_DIR)
+
 const cssClasses = extractSelectorClassNames(cssNoComments)
-const { literals: tsClassLiterals, prefixes: tsClassPrefixes } = extractClassNameLiteralsAndPrefixes(mainTsx)
+const tsClassLiterals = new Set()
+const tsClassPrefixes = new Set()
+for (const relPath of scannedFiles) {
+  const contents = readFileOrExit(path.join(repoRoot, relPath))
+  const { literals, prefixes } = extractClassNameLiteralsAndPrefixes(contents)
+  for (const l of literals) tsClassLiterals.add(l)
+  for (const p of prefixes) tsClassPrefixes.add(p)
+}
 
 const candidates = []
 for (const cls of cssClasses) {
@@ -431,8 +467,11 @@ for (const cls of cssClasses) {
 const ownCandidates = candidates.filter((c) => !c.likelyThirdParty)
 const thirdPartyCandidates = candidates.filter((c) => c.likelyThirdParty)
 
+say(`Source files scanned under apps/desktop/src (${scannedFiles.length}):`)
+for (const f of scannedFiles) say(`  - ${f}`)
+say()
 say(`CSS selector classes found: ${cssClasses.size}`)
-say(`Not matched to a literal or dynamic-prefix className in main.tsx: ${candidates.length}`)
+say(`Not matched to a literal or dynamic-prefix className in apps/desktop/src: ${candidates.length}`)
 say(`  - likely this app's own (review for dead CSS): ${ownCandidates.length}`)
 for (const c of ownCandidates) say(`      .${c.cls}`)
 say(`  - likely third-party (BEM "__" naming, e.g. react-colorful): ${thirdPartyCandidates.length}`)
