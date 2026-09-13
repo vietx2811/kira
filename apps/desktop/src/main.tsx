@@ -12806,7 +12806,11 @@ function buildProjectAppearanceStyle(appearance: ProjectAppearance): React.CSSPr
     '--node-shadow-hover': dark ? '0 12px 34px rgb(0 0 0 / 0.3)' : `0 10px 26px ${colorWithAlpha(tokens.textMain, 0.14)}`,
     '--window-border': dark ? 'rgb(255 255 255 / 0.08)' : colorWithAlpha(tokens.textMain, 0.08),
     '--glass-sidebar': dark ? colorWithAlpha(tokens.surface1, 0.32) : colorWithAlpha(tokens.surface1, 0.34),
-    '--glass-drawer': dark ? colorWithAlpha(tokens.surfaceDrawer, 0.88) : colorWithAlpha(tokens.surfaceDrawer, 0.9),
+    '--glass-drawer': colorWithAlpha(tokens.surfaceDrawer, DRAWER_GLASS_ALPHA[tokens.mode]),
+    // Only meaningful in the native glass state, where the window chrome is the
+    // one surface that lets the window material through.
+    '--material-chrome-glass': colorWithAlpha(tokens.base, CHROME_GLASS_ALPHA[tokens.mode]),
+    '--scrim': dark ? 'rgb(0 0 0 / 0.62)' : colorWithAlpha(tokens.textMain, 0.38),
     '--glass-content': dark ? colorWithAlpha(tokens.base, 0.22) : colorWithAlpha(tokens.base, 0.28),
     '--glass-inspector': dark ? colorWithAlpha(tokens.surfaceInspector, 0.86) : colorWithAlpha(tokens.surfaceInspector, 0.9),
     '--glass-strong': nodeSurfaceSelected,
@@ -12855,6 +12859,15 @@ const NODE_SURFACE_ALPHA = { dark: 0.82, light: 0.78 }
 // a dark thumbnail underneath pulled muted labels below AA.
 const POPOVER_SURFACE_ALPHA = { dark: 0.94, light: 1 }
 const DANGER_COLOR = '#d98779'
+// The native window material is a blurred, mode tinted view of the desktop, so
+// it never strays far from the mode's own tone. These are the worst values
+// sampled on the debug bundle over a bright desktop: the lightest the dark
+// material gets, and the darkest the light one gets. Text that sits on glass
+// chrome is floored against the surface composited over them, so a bright
+// wallpaper cannot push a label under AA.
+const WINDOW_MATERIAL_WORST = { dark: '#6f7478', light: '#8f979c' }
+const CHROME_GLASS_ALPHA = { dark: 0.76, light: 0.78 }
+const DRAWER_GLASS_ALPHA = { dark: 0.74, light: 0.78 }
 
 function projectColorTokens(appearance: Pick<ProjectAppearance, 'canvasColor' | 'accentColor'> & Partial<Pick<ProjectAppearance, 'colorMode'>>) {
   const accentSeed = normalizeHexInput(appearance.accentColor || deriveAccentFromCanvas(appearance.canvasColor))
@@ -12875,6 +12888,8 @@ function projectColorTokens(appearance: Pick<ProjectAppearance, 'canvasColor' | 
     palette.surfaceInset,
     mixColor(palette.nodeSurface, palette.canvasSurface, 1 - NODE_SURFACE_ALPHA[mode]),
     mixColor(palette.nodeSelected, palette.canvasSurface, 1 - POPOVER_SURFACE_ALPHA[mode]),
+    mixColor(palette.base, WINDOW_MATERIAL_WORST[mode], 1 - CHROME_GLASS_ALPHA[mode]),
+    mixColor(palette.surfaceDrawer, WINDOW_MATERIAL_WORST[mode], 1 - DRAWER_GLASS_ALPHA[mode]),
   ]
   return {
     mode,
