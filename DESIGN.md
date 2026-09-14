@@ -237,7 +237,7 @@ Utility surfaces (settings, capture, provider connections) follow one shared idi
 - Primary and secondary are separated by lightness and material, not by tint: ink block versus paper sheet *(đổi 2026-09-15)*
 - Hairline dividers over boxed cards for lists of similar items
 - Status (installed / not detected / needs action) always stated in words, never color-only
-- One primary per view; each row's main action is a secondary sheet, further actions are quiet *(đổi 2026-09-15: một primary mỗi view là luật bắt buộc, lý do ở §6)*
+- One primary per view; each row's main action is a secondary sheet, further actions are quiet *(đổi 2026-09-15: một primary mỗi view là luật bắt buộc, lý do ở §7)*
 - Structure is flat and layered by tone; only filled controls, floating chrome and canvas nodes carry shadow *(đổi 2026-09-15: bóng giấy trên nút có nền)*
 
 ## 2. Design Principles & UX Guidelines
@@ -267,7 +267,7 @@ Selectively layer skeuomorphic material onto the existing flat/minimal foundatio
 - **Principle:** keep the flat/minimal foundation for overall structure, but selectively reintroduce physical cues (depth, material, motion) to increase affordance and emotional warmth, without reverting to 2000s-style skeuomorphism (heavy texture, glossy shine, visual overload).
 - **Techniques:** soft shadow + subtle gradient suggesting depth; subtle texture (fabric, paper, brushed metal) used sparingly on backgrounds/containers; a light 3D-lift effect for important nodes/buttons; smooth micro-interactions with feedback on hover/drag/drop.
 - **Reference:** Apple's "Liquid Glass" (iOS 26 / visionOS), a flat/minimal base combined with a translucent glass layer and light refraction, giving a material feel without visual clutter.
-- **Applied to Kira:** controls are ink and paper (§6); nodes get subtle elevation/shadow to distinguish importance levels; dragging or connecting a node adds micro-motion plus a dynamic shadow (the feeling of "holding" a physical node); color swatches in popovers get subtle gradient/depth instead of flat color fills.
+- **Applied to Kira:** controls are ink and paper (§7); nodes get subtle elevation/shadow to distinguish importance levels; dragging or connecting a node adds micro-motion plus a dynamic shadow (the feeling of "holding" a physical node); color swatches in popovers get subtle gradient/depth instead of flat color fills.
 - **Important:** this principle sits at a different layer than 2.1/2.2: 2.1/2.2 decide *when* information appears, 2.3 decides *how* an element looks and responds once it appears. Texture and shadow must never be used to obscure or conflict with the Progressive Disclosure principle in 2.1.
 
 ### 2.4 Neo-Skeuomorphism specifics for the Toolrail & Node Types
@@ -275,9 +275,9 @@ Selectively layer skeuomorphic material onto the existing flat/minimal foundatio
 Drawing on Muse's (Ink & Switch) philosophy, a "canvas for ideas" app in the same category as Kira: the physical interface (a real desk) is messy, informal, free, and personal, while the digital interface tends to be tidy, arranged, structured, and sterile. Kira should actively narrow this gap with selective tactile cues, **without** trading away Minimal Chrome (avoid stuffing in extra toolbars/buttons; only content and genuinely necessary tools, per the Progressive Disclosure spirit in 2.1).
 
 **Toolrail:**
-- Toolrail icons are drawn in-house as small colored stickers with body, color per node kind and an ink cut-line (§6 Tool rail). They are the one place in the chrome where color is expressive rather than semantic. *(đổi 2026-09-15: chốt vẽ riêng 12 icon SVG thay phosphor ở rail và lucide ở zoom, R2 §D.)*
+- Toolrail icons are drawn in-house as small colored stickers with body, color per node kind and an ink cut-line (§7 Tool rail). They are the one place in the chrome where color is expressive rather than semantic. *(đổi 2026-09-15: chốt vẽ riêng 12 icon SVG thay phosphor ở rail và lucide ở zoom, R2 §D.)*
 - **Two icon families, on purpose:** rail tools are *instruments* (colored, with body, they lift when hovered); glyphs inside the UI (buttons with labels, panels, menus, Settings) are *type* and stay Lucide line icons, never colored, never shaded. *(đổi 2026-09-15: user chốt hai họ icon có chủ đích.)*
-- **Monochrome option:** a user setting renders the rail icons single-tone for people who judge color all day. Same geometry, only CSS variables change (§6). *(đổi 2026-09-15: rủi ro "icon màu cạnh ảnh reference", R2 §F.)*
+- **Monochrome option:** a user setting renders the rail icons single-tone for people who judge color all day. Same geometry, only CSS variables change (§7). *(đổi 2026-09-15: rủi ro "icon màu cạnh ảnh reference", R2 §F.)*
 - Still honors Minimal Chrome: the Toolrail shows only primary icons, no default text labels (tooltips on hover with name and shortcut, per the Discoverability principle in 2.2), avoiding turning the Toolrail into a heavy block competing with the canvas for attention.
 
 **Node types (skeuomorphic treatment differentiated by content type):**
@@ -323,7 +323,7 @@ All hex values below are the default **Cyan** preset. Surfaces, text and accent 
 - **Danger** (`--danger`, dark `#d98779`, light `#8a4035`): destructive/error states only. On a paper sheet the danger button uses the lifted `control-danger-text` (`#e59587` dark) for contrast.
 
 ### Named Rules
-**The One Accent Rule.** Teal-cyan is the only color allowed to mean "selected on the canvas," "focused" or "good." Everything else that needs to signal state borrows amber (attention) or danger (error) as text color only, never as a new background or a second brand color. Controls express their own selected state in ink (§6), not in teal. *(đổi 2026-09-15: thu hẹp nghĩa của teal; vòng 1 đếm 29 phần tử mang teal khi chọn một node, teal mất nghĩa "đang chọn", R1 P2-7.)*
+**The One Accent Rule.** Teal-cyan is the only color allowed to mean "selected on the canvas," "focused" or "good." Everything else that needs to signal state borrows amber (attention) or danger (error) as text color only, never as a new background or a second brand color. Controls express their own selected state in ink (§7), not in teal. *(đổi 2026-09-15: thu hẹp nghĩa của teal; vòng 1 đếm 29 phần tử mang teal khi chọn một node, teal mất nghĩa "đang chọn", R1 P2-7.)*
 
 **The Node-Kind Color Rule.** A second, sanctioned color group exists **only inside the rail's create-node icons**: sky `#8cc5ea`, sun `#ffcf5c`, leaf `#6aab77`, rose `#e5728a`, amber `#eea43a`, teal `#4fb49c`, fold `#d6a92f` (S:207), plus the idea, note and palette body gradients (S:209-211). These colors identify *what kind of node a tool makes*; they never mean state, never appear on buttons, panels, text or nodes, and disappear entirely under the monochrome option. The icon teal `#4fb49c` is a sticker color, not `--accent-cyan`. *(đổi 2026-09-15: icon rail có màu thật theo loại node, R2 §B.2, §E.)*
 
@@ -350,7 +350,36 @@ All hex values below are the default **Cyan** preset. Surfaces, text and accent 
 ### Named Rules
 **The Weight-Not-Size Rule.** Hierarchy between a row's title and its status/detail line is carried by color (`--text-main` vs `--text-muted`) and a smaller size, never by inventing a new font weight beyond 400/560/680/800. 560 is reserved for control labels. *(đổi 2026-09-15: thêm 560.)*
 
-## 5. Elevation
+## 5. Layout & Grouping
+
+*(mục mới 2026-09-15: user đặt mục tiêu "cấp độ Figma", cấm pattern ô frame, dùng khoảng cách và line. Trước đó DESIGN.md không có luật riêng cho grouping, nên mỗi màn tự bịa cách nhóm; §7 Components chỉ nói về từng control, không nói cách xếp chúng cạnh nhau.)*
+
+KIRA đã đúng luật này ở một chỗ và sai ở nhiều chỗ khác trong cùng một app, nên trước hết đây là luật **thống nhất lại**, không phải luật mới hoàn toàn.
+
+### Named Rules
+
+**The Space-and-Line-First Rule.** Nhóm nội dung liên quan bằng khoảng cách (`--space-*`) và, khi cần một ranh giới nhìn thấy được, bằng `1px` hairline (`--border-soft` hoặc `--separator-hairline`). Đây là công cụ **mặc định**. Card (nền riêng + viền + bo góc) là ngoại lệ phải tự biện minh, không phải điểm khởi đầu.
+
+**The Object Card Rule.** Card chỉ bọc quanh một **vật thể thật**, thứ người dùng kéo, thả, hoặc bấm chọn như một đơn vị: node trên canvas, ảnh trong Thư viện, một mục ChangeSet đang mở trong panel phải (`docs/design/right-panel/`), một hàng provider đang là mục tiêu thao tác. Card **không** bọc quanh một nhóm cấu hình, một section trong dialog, hay một cụm checkbox: những thứ đó dùng section header cộng hairline (§7 Components, mục List Rows, đã có luật con tương đương cho danh sách; luật này mở rộng ra toàn app).
+
+**The No-Nested-Card Rule (bắt buộc).** Một card không bao giờ chứa một card khác. Vi phạm thật đang có trong code (`apps/desktop/src/styles.css`, đọc tại `a00af07`): `.provider-card` và `.settings-panel` dùng chung một rule vẽ khung (viền, bo góc, nền `--surface-drawer`, dòng 5534), nên **mọi** section trong Settings, kể cả "Language" và "Local" ở tab General vốn không cần ranh giới, đều tự động thành một card xếp chồng. Bên trong tab AI Providers, `.settings-control-strip` (dòng 5232) và `.provider-task-toggle` (dòng 5701) vẽ thêm khung riêng của chính chúng, cho ra card trong card trong card: `.settings-shell` (khung dialog) > section AI Providers > `.provider-card--detail` > các cụm chip có viền bên trong. Đây là hiện trạng cần sửa, không phải mẫu để noi theo.
+- **Đối chứng làm đúng, cùng file:** `.node-details-section` (`styles.css:3763`) chỉ có `display: grid; gap: 8px`, không viền riêng; các nhóm TAGS, PALETTE, SOURCE, HISTORY trong popover chi tiết node (`docs/research/art-direction/current/04-node-details-dark.jpg`) đứng cạnh nhau bằng khoảng cách và nhãn hoa, không bằng khung.
+
+**The One Density Rule.** Mỗi màn hình có một mật độ thông tin đã định trước khi thêm nội dung, không phải "thêm cho tới khi hết chỗ". Đặc tả bố cục từng surface (`docs/design/layout-spec.md`) phải nói rõ số mục tối đa hiển thị mặc định và cái gì chuyển vào "Nâng cao" hoặc một disclosure. Tab AI Providers hiện vi phạm rõ nhất: routing strip, danh sách provider, form chi tiết, hai nhóm checkbox (Tagging, Canvas generation), Routing preview, Secrets, Usage và Onboarding cùng hiện trên một màn không cuộn dừng (R1 P2-5, `crop-e-settings-hierarchy.jpg`).
+
+**The Plain-Language Rule.** Copy hướng tới người không đọc code: không lộ id nội bộ, tên model thô không kèm giải thích, số liệu kỹ thuật (token, ms, byte) không kèm đơn vị người hiểu được, hay JSON. Vi phạm thật: dock Kira hiện `~{tokenEstimate} tokens` (`main.tsx:10324`) không giải thích gì thêm; đổi thành một chỉ báo còn dư chỗ hay không (chữ, không phải số kỹ thuật trần). Ngoại lệ: một giá trị mà chính người dùng phải copy hay đối chiếu ra ngoài app (đường dẫn cài extension, mã lỗi để báo bug) được giữ nguyên dạng kỹ thuật nhưng phải có nhãn nói rõ đó là gì.
+
+### Ví dụ đúng và sai
+
+| | Sai (hiện trạng) | Đúng |
+|---|---|---|
+| Nhóm section trong dialog | Mỗi section một card xếp chồng (`.settings-panel`, Settings mọi tab) | Section header (`##`-weight) cộng `1px` hairline phía trên, không nền riêng, giống `.node-details-section` |
+| Panel thuộc tính, tham chiếu Figma UI3 | không áp dụng | "The design panel in UI3 has been reorganized to group controls more logically" theo tác vụ, không theo loại control; property label có thể bật/tắt để gọn hơn cho người quen việc ("Turn on labels to quickly understand what each control does, or turn them off"), theo Figma Blog, *Behind our Redesign: UI3*, 26/6/2024, Ryhan Hassan, Joel Miller, KC Oh. Panel dùng khoảng nổi và toolbar mảnh ở đáy canvas thay vì đóng khung, đúng tinh thần luật này |
+| Checkbox trong nhóm | Mỗi checkbox một chip có viền (`.provider-task-toggle`), đọc như nút | Checkbox chuẩn cộng nhãn, xếp hàng bằng grid, không viền riêng từng ô |
+| Số liệu kỹ thuật | `~420 tokens` trần trong dock composer | "Còn dư chỗ" / "Gần đầy" bằng chữ, số kỹ thuật chỉ hiện khi bấm xem chi tiết |
+| Card thật (giữ nguyên) | không áp dụng | Node trên canvas, ảnh trong Thư viện, mục ChangeSet đang mở: đây là vật thể, card đúng chỗ |
+
+## 6. Elevation
 
 Structure is flat. KIRA conveys the depth of *surfaces* through tonal layering (base, surface-1, surface-2) and hairline borders, not drop shadows. Shadow is reserved for three things: controls that have a fill (a paper sheet or an ink block sits *on* the surface), floating chrome above the canvas, and canvas nodes. *(đổi 2026-09-15: thêm bóng giấy cho nút có nền, R2 §E; cấu trúc và danh sách vẫn phẳng.)*
 
@@ -371,7 +400,7 @@ Structure is flat. KIRA conveys the depth of *surfaces* through tonal layering (
 
 **The Material-On-Chrome Rule.** Translucency and `backdrop-filter` live only on floating chrome that sits over the canvas (rail, view switcher, zoom, Kira button). Panels, dialogs, popovers and every button stay opaque. No glass as decoration. *(giữ nguyên luật cũ, nêu thành luật riêng 2026-09-15.)*
 
-## 6. Components
+## 7. Components
 
 Values in this section come from the chosen specimen. `S:<n>` means line *n* of `docs/research/art-direction/v2/controls-v2.html`; `R2 §x` is `docs/research/2026-09-14-art-direction-controls-v2.md`; `R1` is `docs/research/2026-09-14-art-direction.md`. The implementation recipe (full state CSS, icon structure, how to measure) is the project skill `.claude/skills/kira-controls/`.
 
@@ -424,7 +453,7 @@ Sources: S:115-142. Contrast measured on rendered pixels, 34 cells per sheet: lo
 ### Chips
 - **Style:** `background: var(--glass-hover)`, pill radius (999px), `color: var(--text-soft)`, `--text-small`. Used for compact inline status ("Providers 2/4").
 
-## 7. Do's and Don'ts
+## 8. Do's and Don'ts
 
 ### Do:
 - **Do** render lists of similar connectable things (browser extensions, AI providers) as one hairline-divided list (`border-soft` container + `border-top` rows), matching the existing Providers list pattern.
