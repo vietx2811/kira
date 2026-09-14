@@ -81,6 +81,13 @@ Mọi `font-size` là token: `--text-mini` 10px, `--text-small` 11px, `--text-bo
 - Ngoại lệ ngoài token duy nhất: 2 display heading `clamp()` (onboarding hero, slide title).
 - Cần cỡ mới thì thêm bậc vào scale, đừng viết giá trị dùng một lần. Không để phần tử nào inherit 14px từ root.
 
+## Skill thiết kế
+
+User chốt 2026-09-14: dùng **impeccable** (mode Operate) làm sàn chất lượng và **design-taste-frontend** cho định hướng thẩm mỹ.
+- Chỉnh núm của design-taste-frontend cho app công cụ, không dùng mặc định (8/6/4, thẩm mỹ trang marketing): `DESIGN_VARIANCE 3`, `MOTION_INTENSITY 3`, `VISUAL_DENSITY 6`.
+- Khi mâu thuẫn, thứ tự ưu tiên: `DESIGN.md` > impeccable > design-taste-frontend. Không đổi bố cục theo từng màn: app phải nhất quán.
+- Không dùng `high-end-visual-design` (bắt buộc mỗi lần một layout khác, trái với product UI).
+
 ## Ràng buộc đã chốt
 
 - **Claude Code provider**: CLI của user tự lo đăng nhập và token. KIRA không render login UI, không đọc hay lưu token; đăng nhập chỉ bằng mở Terminal chạy `claude auth login`. Không thêm OAuth hay device-code trong app: user đã từ chối.
