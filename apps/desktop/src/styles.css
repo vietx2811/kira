@@ -8118,6 +8118,7 @@ textarea {
   align-items: center;
   height: 32px;
   padding: 0 var(--space-3);
+  border: 1px solid transparent;
   border-radius: var(--radius-2);
   /* 10%, not 14%: at 14% the light-mode danger text measured 4.49:1. */
   background: color-mix(in srgb, var(--danger) 10%, transparent);
@@ -8125,8 +8126,12 @@ textarea {
   cursor: pointer;
 }
 
+/* A tint bump here (the old 16%) pulls the light-mode fill toward --danger's
+   own dark text color and LOWERS contrast as it climbs (4.68 at 10% down to
+   4.27 at 16%), the opposite of what a hover state should do. Fill and text
+   stay exactly at the base ratio; the border is the hover cue instead. */
 .danger-button:hover {
-  background: color-mix(in srgb, var(--danger) 16%, transparent);
+  border-color: color-mix(in srgb, var(--danger) 45%, transparent);
   color: var(--danger);
 }
 
