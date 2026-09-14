@@ -41,7 +41,7 @@ Orchestrator chọn model và effort cho thread khác bằng `set_session_model`
 
 - Bắt đầu task: `git worktree add .claude/worktrees/<task> -b <vai-tro>/<task> main` (hoặc `EnterWorktree`). `.claude/worktrees/` đã được ignore.
 - **Không commit hay push thẳng lên `main`.** Commit trên branch của mình, báo Orchestrator merge. Tree chính dành cho Orchestrator.
-- Đã merge: xoá worktree và branch.
+- Đã merge: xoá worktree và branch. Riêng **agent nền do Orchestrator tạo** (Agent tool, `isolation: worktree`): giữ worktree tới khi user chốt báo cáo của nó, vì xoá rồi thì không nhắn tiếp được và phải lập agent mới từ đầu.
 - Worktree chỉ dời conflict sang lúc merge, **không xoá được conflict**, nên vẫn phải claim file nóng.
 
 ## File nóng: claim trước khi sửa
