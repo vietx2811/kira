@@ -5922,14 +5922,22 @@ button.mini-tags-more:focus-visible {
 
 .danger-inline-button {
   min-height: 28px;
-  padding: 0 var(--space-2);
-  border: 0;
+  /* The 1px transparent border is paid out of the padding so the hover
+     border below does not widen the button or shift its row. */
+  padding: 0 calc(var(--space-2) - 1px);
+  border: 1px solid transparent;
   border-radius: var(--radius-1);
   /* 10%, not 14%: at 14% the light-mode danger text measured 4.49:1. */
   background: color-mix(in srgb, var(--danger) 10%, transparent);
   color: var(--danger);
   cursor: pointer;
   font-size: var(--text-small);
+}
+
+/* Same cue as .danger-button:hover: a tint bump would lower light-mode
+   contrast, so fill and text stay at the base ratio and the border shows. */
+.danger-inline-button:hover {
+  border-color: color-mix(in srgb, var(--danger) 45%, transparent);
 }
 
 .provider-task-groups {
