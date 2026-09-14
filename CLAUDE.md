@@ -21,11 +21,12 @@ Orchestrator chọn model và effort cho thread khác bằng `set_session_model`
 
 | Loại việc | Model | Effort |
 |---|---|---|
-| Điều phối, kiểm chứng trước khi merge, phán đoán xuyên thread | Opus 5 | high |
-| Nghiên cứu mở, đánh giá tool hay nguồn ngoài | Opus 5 | high |
-| Critique và thiết kế UI, logic theme, việc nặng phán đoán | Opus 5 | high |
-| Triển khai code theo spec đã rõ | Sonnet 5 | xhigh |
-| Việc máy móc, không cần phán đoán, **không đọc `main.tsx`** (context chỉ 200K) | Haiku 4.5 | low / medium |
+| Triển khai code theo spec, sửa lỗi, viết tài liệu theo khung có sẵn | Sonnet 5 | high |
+| Critique, đặc tả bố cục, nghiên cứu có khung câu hỏi rõ | Sonnet 5 | high (medium nếu chỉ tổng hợp) |
+| Việc máy móc: đếm, grep, đo contrast theo script, dọn file; **không đọc `main.tsx`** (context 200K) | Haiku 4.5 | low / medium |
+| Quyết định thẩm mỹ gốc (hướng phong cách mới), phán đoán xuyên thread khó, việc Sonnet đã làm lại quá 1 lần | Opus 5 | high |
+
+**Tiết kiệm token (user yêu cầu 2026-09-15):** mặc định Sonnet; Opus chỉ khi bảng trên nói vậy; **không dùng xhigh** trừ khi bế tắc. Ảnh chụp để kiểm: JPEG, scale 0.5, chỉ khung cần xem. Brief ngắn, trỏ tới file thay vì chép lại. Không chạy lại phép đo mà thread đã báo đủ số và cách đo; Orchestrator chỉ kiểm tĩnh (diff, test, `--strict`) và spot-check 1 màn khi rủi ro cao.
 
 **Fable 5.1** là mức nâng cấp: chỉ dùng khi việc khó nhất vẫn bế tắc ở Opus, hoặc khi user yêu cầu (đắt gấp đôi Opus, lượt chạy lâu hơn). Đánh giá chi phí theo **việc hoàn thành**, không theo từng lượt: model rẻ mà phải làm lại thì không rẻ.
 
