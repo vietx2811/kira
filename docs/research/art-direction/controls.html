@@ -1,0 +1,378 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KIRA control specimen</title>
+<style>
+/* Static tokens copied from apps/desktop/src/styles.css :root at 83455db. */
+:root {
+  --radius-1: 4px; --radius-2: 6px; --radius-3: 8px; --radius-4: 12px; --radius-5: 20px;
+  --text-mini: 10px; --text-small: 11px; --text-body: 13px; --text-title: 15px; --text-large: 20px;
+  --control-h-sm: 26px; --control-h-md: 32px;
+  --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px;
+  --duration-fast: 120ms; --duration-base: 160ms; --ease-soft: ease; --ease-out-soft: cubic-bezier(0.16, 1, 0.3, 1);
+  --font-sans: -apple-system, blinkmacsystemfont, ui-sans-serif, system-ui, "Segoe UI", sans-serif;
+  font-family: var(--font-sans); font-size: 14px; line-height: 1.45;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: #1a1c1c; color: #eee; font-size: var(--text-body); }
+.page-head { padding: 20px 24px 8px; color: #d9d9d6; }
+.page-head h1 { margin: 0 0 4px; font-size: var(--text-large); font-weight: 680; }
+.page-head p { margin: 0; max-width: 90ch; color: #a9aaa6; font-size: var(--text-small); }
+
+/* ---------- Proposed new tokens (declared where .app-shell tokens live) ---------- */
+.theme {
+  --control-h-xs: 22px;
+  --control-h-lg: 36px;
+  --control-weight: 500;
+  --glass-chrome: var(--surface-2);
+  --material-drawer: var(--surface-drawer);
+  --control-radius-sm: var(--radius-2);
+  --control-radius-md: var(--radius-3);
+  --focus-outline: 2px solid var(--accent-cyan);
+  --glass-active-pressed: color-mix(in srgb, var(--accent-cyan) 16%, transparent);
+  --press-scale: 0.98;
+  background: var(--bg-base);
+  color: var(--text-main);
+  padding: 20px 24px 28px;
+}
+.theme-dark {
+  --control-fill: rgb(255 255 255 / 0.06);
+  --control-fill-hover: rgb(255 255 255 / 0.1);
+  --control-fill-pressed: rgb(255 255 255 / 0.03);
+  --control-border: rgb(255 255 255 / 0.1);
+  --control-border-hover: rgb(255 255 255 / 0.18);
+  --control-highlight: inset 0 1px 0 rgb(255 255 255 / 0.06);
+  --seg-track: rgb(255 255 255 / 0.05);
+  --seg-thumb: rgb(255 255 255 / 0.11);
+  --material-toolbar: rgb(15 22 25 / 0.93);
+  --worst-under-glass: #ffffff;
+}
+.theme-light {
+  --control-fill: rgb(255 255 255 / 0.55);
+  --control-fill-hover: rgb(255 255 255 / 0.85);
+  --control-fill-pressed: rgb(255 255 255 / 0.3);
+  --control-border: rgb(35 33 29 / 0.14);
+  --control-border-hover: rgb(35 33 29 / 0.24);
+  --control-highlight: 0 1px 1px rgb(35 33 29 / 0.06);
+  --seg-track: rgb(35 33 29 / 0.06);
+  --seg-thumb: rgb(255 255 255 / 0.92);
+  --material-toolbar: rgb(239 243 243 / 0.9);
+  --worst-under-glass: #000000;
+}
+.theme-head h2 { margin: 0 0 12px; font-size: var(--text-title); font-weight: 680; }
+.theme-head h2 span { margin-left: 8px; color: var(--text-muted); font-size: var(--text-small); font-weight: 400; }
+.size-head { margin: 18px 0 6px; color: var(--text-soft); font-size: var(--text-small); font-weight: 680; }
+.grid { background: var(--surface-1); border: 1px solid var(--border-soft); border-radius: var(--radius-4); padding: 8px 14px 14px; }
+.row { display: grid; grid-template-columns: 230px repeat(7, minmax(120px, 1fr)); align-items: center; gap: 6px; padding: 6px 0; border-top: 1px solid var(--border-soft); }
+.row-labels { border-top: 0; }
+.row-head strong { display: block; font-size: var(--text-small); font-weight: 680; }
+.row-head small { display: block; color: var(--text-muted); font-size: var(--text-small); line-height: 1.3; }
+.state-label { color: var(--text-muted); font-size: var(--text-small); font-weight: 680; text-align: center; }
+.cell { display: grid; justify-items: center; gap: 4px; padding: 8px 4px; }
+.cell-canvas { background: var(--bg-canvas); border-radius: var(--radius-3); }
+.na-text { color: var(--text-muted); font-size: var(--text-small); text-align: center; }
+.ratio { min-height: 14px; color: var(--text-muted); font: var(--text-mini)/1.2 ui-monospace, SFMono-Regular, monospace; text-align: center; }
+.ratio.fail { color: var(--danger); }
+
+/* ---------- Proposed control system ---------- */
+.k-btn {
+  position: relative; display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid transparent; background: transparent; color: var(--text-soft);
+  font: inherit; font-weight: var(--control-weight); white-space: nowrap; cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-soft), border-color var(--duration-fast) var(--ease-soft), color var(--duration-fast) var(--ease-soft), transform var(--duration-fast) var(--ease-out-soft);
+}
+.k-btn svg { flex: 0 0 auto; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.k-md { height: var(--control-h-md); padding: 0 11px; gap: 6px; border-radius: var(--control-radius-md); font-size: var(--text-body); }
+.k-md svg, .k-md .k-spin { width: 16px; height: 16px; }
+.k-sm { height: var(--control-h-sm); padding: 0 7px; gap: 4px; border-radius: var(--control-radius-sm); font-size: var(--text-small); }
+.k-sm svg, .k-sm .k-spin { width: 14px; height: 14px; }
+.k-icon-only.k-md { width: var(--control-h-md); padding: 0; }
+.k-icon-only.k-sm { width: var(--control-h-sm); padding: 0; }
+.k-btn.is-pressed { transform: scale(var(--press-scale)); }
+.k-btn.is-focus, .k-seg-opt.is-focus { outline: var(--focus-outline); outline-offset: 2px; }
+.k-btn:disabled { cursor: default; }
+.k-btn.is-loading { cursor: progress; }
+.k-spin { display: inline-block; border: 1.5px solid currentColor; border-right-color: transparent; border-radius: 50%; }
+
+/* Quiet */
+.k-quiet.is-hover { background: var(--glass-hover); color: var(--text-main); }
+.k-quiet.is-pressed { background: var(--control-fill-pressed); color: var(--text-main); }
+.k-quiet.is-selected { background: var(--glass-active); color: var(--accent-on-glass-active); }
+.k-quiet:disabled { color: var(--text-muted); }
+
+/* Secondary */
+.k-secondary { background: var(--control-fill); border-color: var(--control-border); color: var(--text-main); box-shadow: var(--control-highlight); }
+.k-secondary.is-hover { background: var(--control-fill-hover); border-color: var(--control-border-hover); }
+.k-secondary.is-pressed { background: var(--control-fill-pressed); box-shadow: none; }
+.k-secondary.is-selected { background: var(--glass-active); border-color: color-mix(in srgb, var(--accent-cyan), transparent 62%); color: var(--accent-on-glass-active); }
+.k-secondary:disabled { background: transparent; border-color: var(--border-soft); color: var(--text-muted); box-shadow: none; }
+
+/* Primary: tinted per DESIGN.md. Hover shows the border, pressed lowers the tint so text contrast only rises. */
+.k-primary { background: var(--glass-active); border-color: color-mix(in srgb, var(--accent-cyan), transparent 62%); color: var(--accent-on-glass-active); }
+.k-primary.is-hover { border-color: color-mix(in srgb, var(--accent-cyan), transparent 20%); box-shadow: var(--control-highlight); }
+.k-primary.is-pressed { background: var(--glass-active-pressed); }
+.k-primary:disabled { background: transparent; border-color: var(--border-soft); color: var(--text-muted); }
+
+/* Danger */
+.k-danger { background: color-mix(in srgb, var(--danger) 10%, transparent); color: var(--danger); }
+.k-danger.is-hover { border-color: color-mix(in srgb, var(--danger) 45%, transparent); }
+.k-danger.is-pressed { background: color-mix(in srgb, var(--danger) 5%, transparent); border-color: color-mix(in srgb, var(--danger) 45%, transparent); }
+.k-danger:disabled { background: transparent; color: var(--text-muted); }
+
+/* Toolbar group on chrome material */
+.k-toolbar-group { display: inline-flex; padding: 4px; border: 1px solid var(--border-soft); border-radius: var(--radius-4); background: var(--material-toolbar); box-shadow: var(--shell-shadow), var(--panel-shadow); -webkit-backdrop-filter: blur(24px) saturate(1.4); backdrop-filter: blur(24px) saturate(1.4); }
+.k-tool { width: var(--control-h-lg); height: var(--control-h-lg); padding: 0; border-radius: var(--radius-3); color: var(--text-soft); }
+.k-tool svg, .k-tool .k-spin { width: 18px; height: 18px; }
+.k-tool.is-hover { background: var(--glass-hover); color: var(--text-main); }
+.k-tool.is-pressed { background: var(--control-fill-pressed); color: var(--text-main); }
+.k-tool.is-selected { background: var(--glass-active); color: var(--accent-on-glass-active); }
+.k-tool:disabled { color: var(--text-muted); }
+
+/* Segmented */
+.k-seg { display: inline-flex; padding: 2px; gap: 2px; border-radius: var(--radius-3); background: var(--seg-track); }
+.k-seg-opt { height: 24px; padding: 0 10px; border: 0; border-radius: var(--radius-2); background: transparent; color: var(--text-soft); font: inherit; font-size: var(--text-small); font-weight: var(--control-weight); cursor: pointer; }
+.k-seg-opt.is-selected { background: var(--seg-thumb); color: var(--text-main); box-shadow: var(--control-highlight); }
+.k-seg-opt.is-hover { color: var(--text-main); background: var(--glass-hover); }
+.k-seg-opt.is-pressed { color: var(--text-main); background: var(--control-fill-pressed); }
+.k-seg-opt:disabled { color: var(--text-muted); cursor: default; }
+
+/* Chip */
+.k-chip { height: var(--control-h-xs); padding: 0 8px; gap: 4px; border-radius: 999px; background: var(--glass-hover); color: var(--text-soft); font-size: var(--text-small); }
+.k-chip svg, .k-chip .k-spin { width: 12px; height: 12px; }
+.k-chip.is-hover { background: var(--control-fill-hover); color: var(--text-main); }
+.k-chip.is-pressed { background: var(--control-fill-pressed); color: var(--text-main); }
+.k-chip.is-selected { background: var(--glass-active); color: var(--accent-on-glass-active); }
+.k-chip:disabled { background: transparent; border-color: var(--border-soft); color: var(--text-muted); }
+
+/* ---------- Current app CSS (copied, for comparison) ---------- */
+.cur-quiet, .cur-primary { display: inline-flex; align-items: center; height: 32px; padding: 0 var(--space-3); gap: var(--space-2); border-radius: var(--radius-2); font: inherit; font-size: var(--text-body); cursor: pointer; }
+.cur-quiet { border: 0; background: rgb(255 255 255 / 0.035); color: var(--text-soft); }
+.theme-light .cur-quiet { background: rgb(255 255 255 / 0.035); }
+.cur-quiet.cur-hover { background: var(--accent-strong); color: var(--bg-base); }
+.cur-primary { border: 1px solid color-mix(in srgb, var(--accent-cyan), transparent 62%); background: var(--glass-active); color: var(--accent-on-glass-active); font-weight: 500; }
+.cur-primary.cur-hover { background: var(--accent-weak); color: var(--accent-on-glass-active); }
+.cur-focus { outline: 2px solid transparent; outline-offset: 2px; box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-cyan), transparent 62%); }
+</style>
+</head>
+<body>
+<div class="page-head">
+  <h1>KIRA control specimen</h1>
+  <p>Đề xuất hệ control cho hướng "Glass chrome, paper content". Màu là token thật đọc từ .app-shell của app đang chạy (commit 83455db, preset cyan). Trạng thái được ép bằng class để chụp tĩnh. Số dưới mỗi ô: contrast chữ trên nền đã composite, rồi contrast vòng focus với nền kề (chỉ ô focus). Ô toolbar ghi thêm giá trị xấu nhất khi vật liệu nằm trên ảnh trắng (dark) hoặc đen (light).</p>
+</div>
+
+<section class="theme theme-dark" data-mode="dark" style="--bg-base: #020303; --bg-canvas: #040808; --surface-1: #080e0e; --surface-2: #0f1619; --surface-3: #192124; --surface-drawer: #060c0c; --surface-inspector: #070d0d; --surface-inset: #0d1315; --node-surface: rgb(15 21 23 / 0.82); --node-surface-selected: rgb(22 29 32 / 0.94); --node-border: rgb(255 255 255 / 0.045); --node-shadow: 0 18px 48px rgb(0 0 0 / 0.35); --node-shadow-soft: 0 0 0 1px rgb(127 200 183 / 0.1); --node-shadow-rest: 0 6px 20px rgb(0 0 0 / 0.22); --node-shadow-hover: 0 12px 34px rgb(0 0 0 / 0.3); --window-border: rgb(255 255 255 / 0.08); --glass-sidebar: rgb(8 14 14 / 0.32); --glass-drawer: rgb(6 12 12 / 0.74); --material-chrome-glass: rgb(2 3 3 / 0.76); --scrim: rgb(0 0 0 / 0.62); --glass-content: rgb(2 3 3 / 0.22); --glass-inspector: rgb(7 13 13 / 0.86); --glass-strong: rgb(22 29 32 / 0.94); --glass-border-strong: rgb(255 255 255 / 0.13); --glass-hover: rgb(255 255 255 / 0.055); --glass-active: rgb(127 200 183 / 0.24); --text-on-glass-active: #b5b4af; --accent-on-glass-active: #7fc8b7; --accent-alt-on-glass-active: #dfae67; --separator-hairline: rgb(255 255 255 / 0.052); --inset-field: rgb(0 0 0 / 0.12); --border-soft: rgb(255 255 255 / 0.06); --border-strong: rgb(255 255 255 / 0.13); --text-main: #f4f1ea; --text-soft: #b5b4af; --text-muted: #8e8e8a; --accent-cyan: #7fc8b7; --accent-strong: #7fc8b7; --accent-weak: rgb(127 200 183 / 0.28); --accent-faint: rgb(127 200 183 / 0.12); --accent-amber: #dfae67; --danger: #d98779; --accent-sage: rgb(127 200 183 / 0.76); --shell-shadow: inset 0 1px 0 rgb(255 255 255 / 0.08); --panel-shadow: 0 20px 70px rgb(0 0 0 / 0.28); --edge-shadow: drop-shadow(0 6px 14px rgb(0 0 0 / 0.18)); --edge-stroke: rgb(255 255 255 / 0.3); --edge-stroke-soft: rgb(255 255 255 / 0.12);">
+  <header class="theme-head">
+    <h2>Dark <span>preset cyan, token lấy nguyên văn từ style inline của .app-shell</span></h2>
+  </header>
+  <div class="grid">
+    <div class="row row-labels"><div class="row-head"></div><div class="state-label">Default</div><div class="state-label">Hover</div><div class="state-label">Pressed</div><div class="state-label">Focus-visible</div><div class="state-label">Selected</div><div class="state-label">Disabled</div><div class="state-label">Loading</div></div>
+    <h3 class="size-head">Regular: 32px, radius 8, icon 16, gap 6, --text-body / 500</h3>
+    
+    <div class="row">
+      <div class="row-head"><strong>Primary</strong><small>Một hành động cam kết mỗi view. Tint, không phủ đặc.</small></div>
+      <div class="cell"><button type="button" class="k-btn k-primary k-md is-default"    ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7"/></svg><span class="k-label">Save key</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-primary k-md is-hover"    ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7"/></svg><span class="k-label">Save key</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-primary k-md is-pressed"    ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7"/></svg><span class="k-label">Save key</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-primary k-md is-focus"    ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7"/></svg><span class="k-label">Save key</span></button><output class="ratio"></output></div><div class="cell na"><span class="na-text">n/a: không phải toggle</span></div><div class="cell"><button type="button" class="k-btn k-primary k-md is-disabled" disabled   ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7"/></svg><span class="k-label">Save key</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-primary k-md is-loading"  aria-busy="true"  ><span class="k-spin" aria-hidden="true"></span><span class="k-label">Save key</span></button><output class="ratio"></output></div>
+    </div>
+    <div class="row">
+      <div class="row-head"><strong>Secondary</strong><small>Nút có viền trung tính cho hành động phụ đứng cạnh primary.</small></div>
+      <div class="cell"><button type="button" class="k-btn k-secondary k-md is-default"    ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 13V3M4 7l4-4 4 4"/></svg><span class="k-label">Export</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-secondary k-md is-hover"    ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 13V3M4 7l4-4 4 4"/></svg><span class="k-label">Export</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-secondary k-md is-pressed"    ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 13V3M4 7l4-4 4 4"/></svg><span class="k-label">Export</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-secondary k-md is-focus"    ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 13V3M4 7l4-4 4 4"/></svg><span class="k-label">Export</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-secondary k-md is-selected"    aria-pressed="true"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 13V3M4 7l4-4 4 4"/></svg><span class="k-label">Export</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-secondary k-md is-disabled" disabled   ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 13V3M4 7l4-4 4 4"/></svg><span class="k-label">Export</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-secondary k-md is-loading"  aria-busy="true"  ><span class="k-spin" aria-hidden="true"></span><span class="k-label">Export</span></button><output class="ratio"></output></div>
+    </div>
+    <div class="row">
+      <div class="row-head"><strong>Quiet</strong><small>Mặc định cho mọi hành động tiện ích. Hover là nền trung tính, không đảo màu.</small></div>
+      <div class="cell"><button type="button" class="k-btn k-quiet k-md is-default"    ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg><span class="k-label">Rebuild</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-quiet k-md is-hover"    ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg><span class="k-label">Rebuild</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-quiet k-md is-pressed"    ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg><span class="k-label">Rebuild</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-quiet k-md is-focus"    ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg><span class="k-label">Rebuild</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-quiet k-md is-selected"    aria-pressed="true"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg><span class="k-label">Rebuild</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-quiet k-md is-disabled" disabled   ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg><span class="k-label">Rebuild</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-quiet k-md is-loading"  aria-busy="true"  ><span class="k-spin" aria-hidden="true"></span><span class="k-label">Rebuild</span></button><output class="ratio"></output></div>
+    </div>
+    <div class="row">
+      <div class="row-head"><strong>Danger</strong><small>Chữ và tint đỏ, hover chỉ hiện viền để giữ contrast.</small></div>
+      <div class="cell"><button type="button" class="k-btn k-danger k-md is-default"    ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.7 8.5h5.6l.7-8.5"/></svg><span class="k-label">Delete profile</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-danger k-md is-hover"    ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.7 8.5h5.6l.7-8.5"/></svg><span class="k-label">Delete profile</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-danger k-md is-pressed"    ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.7 8.5h5.6l.7-8.5"/></svg><span class="k-label">Delete profile</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-danger k-md is-focus"    ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.7 8.5h5.6l.7-8.5"/></svg><span class="k-label">Delete profile</span></button><output class="ratio"></output></div><div class="cell na"><span class="na-text">n/a: không phải toggle</span></div><div class="cell"><button type="button" class="k-btn k-danger k-md is-disabled" disabled   ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.7 8.5h5.6l.7-8.5"/></svg><span class="k-label">Delete profile</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-danger k-md is-loading"  aria-busy="true"  ><span class="k-spin" aria-hidden="true"></span><span class="k-label">Delete profile</span></button><output class="ratio"></output></div>
+    </div>
+    <div class="row">
+      <div class="row-head"><strong>Icon-only</strong><small>Vuông, cùng trạng thái với Quiet. Luôn có aria-label và tooltip.</small></div>
+      <div class="cell"><button type="button" class="k-btn k-quiet k-md is-default k-icon-only"   aria-label="Link nodes" ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M7 9l2-2M6 11l-1 1a2.1 2.1 0 0 1-3-3l2-2a2.1 2.1 0 0 1 3 0M10 5l1-1a2.1 2.1 0 0 1 3 3l-2 2a2.1 2.1 0 0 1-3 0"/></svg></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-quiet k-md is-hover k-icon-only"   aria-label="Link nodes" ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M7 9l2-2M6 11l-1 1a2.1 2.1 0 0 1-3-3l2-2a2.1 2.1 0 0 1 3 0M10 5l1-1a2.1 2.1 0 0 1 3 3l-2 2a2.1 2.1 0 0 1-3 0"/></svg></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-quiet k-md is-pressed k-icon-only"   aria-label="Link nodes" ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M7 9l2-2M6 11l-1 1a2.1 2.1 0 0 1-3-3l2-2a2.1 2.1 0 0 1 3 0M10 5l1-1a2.1 2.1 0 0 1 3 3l-2 2a2.1 2.1 0 0 1-3 0"/></svg></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-quiet k-md is-focus k-icon-only"   aria-label="Link nodes" ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M7 9l2-2M6 11l-1 1a2.1 2.1 0 0 1-3-3l2-2a2.1 2.1 0 0 1 3 0M10 5l1-1a2.1 2.1 0 0 1 3 3l-2 2a2.1 2.1 0 0 1-3 0"/></svg></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-quiet k-md is-selected k-icon-only"   aria-label="Link nodes" aria-pressed="true"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M7 9l2-2M6 11l-1 1a2.1 2.1 0 0 1-3-3l2-2a2.1 2.1 0 0 1 3 0M10 5l1-1a2.1 2.1 0 0 1 3 3l-2 2a2.1 2.1 0 0 1-3 0"/></svg></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-quiet k-md is-disabled k-icon-only" disabled  aria-label="Link nodes" ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M7 9l2-2M6 11l-1 1a2.1 2.1 0 0 1-3-3l2-2a2.1 2.1 0 0 1 3 0M10 5l1-1a2.1 2.1 0 0 1 3 3l-2 2a2.1 2.1 0 0 1-3 0"/></svg></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-quiet k-md is-loading k-icon-only"  aria-busy="true" aria-label="Link nodes" ><span class="k-spin" aria-hidden="true"></span></button><output class="ratio"></output></div>
+    </div>
+    <h3 class="size-head">Compact: 26px, radius 6, icon 14, gap 4, --text-small / 500</h3>
+    
+    <div class="row">
+      <div class="row-head"><strong>Primary</strong><small>Một hành động cam kết mỗi view. Tint, không phủ đặc.</small></div>
+      <div class="cell"><button type="button" class="k-btn k-primary k-sm is-default"    ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7"/></svg><span class="k-label">Save key</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-primary k-sm is-hover"    ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7"/></svg><span class="k-label">Save key</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-primary k-sm is-pressed"    ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7"/></svg><span class="k-label">Save key</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-primary k-sm is-focus"    ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7"/></svg><span class="k-label">Save key</span></button><output class="ratio"></output></div><div class="cell na"><span class="na-text">n/a: không phải toggle</span></div><div class="cell"><button type="button" class="k-btn k-primary k-sm is-disabled" disabled   ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7"/></svg><span class="k-label">Save key</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-primary k-sm is-loading"  aria-busy="true"  ><span class="k-spin" aria-hidden="true"></span><span class="k-label">Save key</span></button><output class="ratio"></output></div>
+    </div>
+    <div class="row">
+      <div class="row-head"><strong>Secondary</strong><small>Nút có viền trung tính cho hành động phụ đứng cạnh primary.</small></div>
+      <div class="cell"><button type="button" class="k-btn k-secondary k-sm is-default"    ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 13V3M4 7l4-4 4 4"/></svg><span class="k-label">Export</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-secondary k-sm is-hover"    ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 13V3M4 7l4-4 4 4"/></svg><span class="k-label">Export</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-secondary k-sm is-pressed"    ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 13V3M4 7l4-4 4 4"/></svg><span class="k-label">Export</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-secondary k-sm is-focus"    ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 13V3M4 7l4-4 4 4"/></svg><span class="k-label">Export</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-secondary k-sm is-selected"    aria-pressed="true"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 13V3M4 7l4-4 4 4"/></svg><span class="k-label">Export</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-secondary k-sm is-disabled" disabled   ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 13V3M4 7l4-4 4 4"/></svg><span class="k-label">Export</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-secondary k-sm is-loading"  aria-busy="true"  ><span class="k-spin" aria-hidden="true"></span><span class="k-label">Export</span></button><output class="ratio"></output></div>
+    </div>
+    <div class="row">
+      <div class="row-head"><strong>Quiet</strong><small>Mặc định cho mọi hành động tiện ích. Hover là nền trung tính, không đảo màu.</small></div>
+      <div class="cell"><button type="button" class="k-btn k-quiet k-sm is-default"    ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg><span class="k-label">Rebuild</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-quiet k-sm is-hover"    ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg><span class="k-label">Rebuild</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-quiet k-sm is-pressed"    ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg><span class="k-label">Rebuild</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-quiet k-sm is-focus"    ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg><span class="k-label">Rebuild</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-quiet k-sm is-selected"    aria-pressed="true"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg><span class="k-label">Rebuild</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-quiet k-sm is-disabled" disabled   ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg><span class="k-label">Rebuild</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-quiet k-sm is-loading"  aria-busy="true"  ><span class="k-spin" aria-hidden="true"></span><span class="k-label">Rebuild</span></button><output class="ratio"></output></div>
+    </div>
+    <div class="row">
+      <div class="row-head"><strong>Danger</strong><small>Chữ và tint đỏ, hover chỉ hiện viền để giữ contrast.</small></div>
+      <div class="cell"><button type="button" class="k-btn k-danger k-sm is-default"    ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.7 8.5h5.6l.7-8.5"/></svg><span class="k-label">Delete profile</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-danger k-sm is-hover"    ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.7 8.5h5.6l.7-8.5"/></svg><span class="k-label">Delete profile</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-danger k-sm is-pressed"    ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.7 8.5h5.6l.7-8.5"/></svg><span class="k-label">Delete profile</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-danger k-sm is-focus"    ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.7 8.5h5.6l.7-8.5"/></svg><span class="k-label">Delete profile</span></button><output class="ratio"></output></div><div class="cell na"><span class="na-text">n/a: không phải toggle</span></div><div class="cell"><button type="button" class="k-btn k-danger k-sm is-disabled" disabled   ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.7 8.5h5.6l.7-8.5"/></svg><span class="k-label">Delete profile</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-danger k-sm is-loading"  aria-busy="true"  ><span class="k-spin" aria-hidden="true"></span><span class="k-label">Delete profile</span></button><output class="ratio"></output></div>
+    </div>
+    <div class="row">
+      <div class="row-head"><strong>Icon-only</strong><small>Vuông, cùng trạng thái với Quiet. Luôn có aria-label và tooltip.</small></div>
+      <div class="cell"><button type="button" class="k-btn k-quiet k-sm is-default k-icon-only"   aria-label="Link nodes" ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M7 9l2-2M6 11l-1 1a2.1 2.1 0 0 1-3-3l2-2a2.1 2.1 0 0 1 3 0M10 5l1-1a2.1 2.1 0 0 1 3 3l-2 2a2.1 2.1 0 0 1-3 0"/></svg></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-quiet k-sm is-hover k-icon-only"   aria-label="Link nodes" ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M7 9l2-2M6 11l-1 1a2.1 2.1 0 0 1-3-3l2-2a2.1 2.1 0 0 1 3 0M10 5l1-1a2.1 2.1 0 0 1 3 3l-2 2a2.1 2.1 0 0 1-3 0"/></svg></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-quiet k-sm is-pressed k-icon-only"   aria-label="Link nodes" ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M7 9l2-2M6 11l-1 1a2.1 2.1 0 0 1-3-3l2-2a2.1 2.1 0 0 1 3 0M10 5l1-1a2.1 2.1 0 0 1 3 3l-2 2a2.1 2.1 0 0 1-3 0"/></svg></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-quiet k-sm is-focus k-icon-only"   aria-label="Link nodes" ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M7 9l2-2M6 11l-1 1a2.1 2.1 0 0 1-3-3l2-2a2.1 2.1 0 0 1 3 0M10 5l1-1a2.1 2.1 0 0 1 3 3l-2 2a2.1 2.1 0 0 1-3 0"/></svg></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-quiet k-sm is-selected k-icon-only"   aria-label="Link nodes" aria-pressed="true"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M7 9l2-2M6 11l-1 1a2.1 2.1 0 0 1-3-3l2-2a2.1 2.1 0 0 1 3 0M10 5l1-1a2.1 2.1 0 0 1 3 3l-2 2a2.1 2.1 0 0 1-3 0"/></svg></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-quiet k-sm is-disabled k-icon-only" disabled  aria-label="Link nodes" ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M7 9l2-2M6 11l-1 1a2.1 2.1 0 0 1-3-3l2-2a2.1 2.1 0 0 1 3 0M10 5l1-1a2.1 2.1 0 0 1 3 3l-2 2a2.1 2.1 0 0 1-3 0"/></svg></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-quiet k-sm is-loading k-icon-only"  aria-busy="true" aria-label="Link nodes" ><span class="k-spin" aria-hidden="true"></span></button><output class="ratio"></output></div>
+    </div>
+    <h3 class="size-head">Toolbar, segmented, chip</h3>
+    <div class="row">
+    <div class="row-head"><strong>Toolbar button</strong><small>36px trong nhóm nổi 44px, vật liệu chrome. Đo trên canvas và trên ảnh xấu nhất.</small></div>
+    <div class="cell cell-canvas"><div class="k-toolbar-group"><button type="button" class="k-btn k-tool is-default" aria-label="Image"  ><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="3" width="11" height="10" rx="1.5"/><path d="M3 11l3.2-3.2 2.3 2.3 1.5-1.5L13 11.5"/></svg></button></div><output class="ratio"></output></div><div class="cell cell-canvas"><div class="k-toolbar-group"><button type="button" class="k-btn k-tool is-hover" aria-label="Image"  ><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="3" width="11" height="10" rx="1.5"/><path d="M3 11l3.2-3.2 2.3 2.3 1.5-1.5L13 11.5"/></svg></button></div><output class="ratio"></output></div><div class="cell cell-canvas"><div class="k-toolbar-group"><button type="button" class="k-btn k-tool is-pressed" aria-label="Image"  ><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="3" width="11" height="10" rx="1.5"/><path d="M3 11l3.2-3.2 2.3 2.3 1.5-1.5L13 11.5"/></svg></button></div><output class="ratio"></output></div><div class="cell cell-canvas"><div class="k-toolbar-group"><button type="button" class="k-btn k-tool is-focus" aria-label="Image"  ><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="3" width="11" height="10" rx="1.5"/><path d="M3 11l3.2-3.2 2.3 2.3 1.5-1.5L13 11.5"/></svg></button></div><output class="ratio"></output></div><div class="cell cell-canvas"><div class="k-toolbar-group"><button type="button" class="k-btn k-tool is-selected" aria-label="Image"  aria-pressed="true"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="3" width="11" height="10" rx="1.5"/><path d="M3 11l3.2-3.2 2.3 2.3 1.5-1.5L13 11.5"/></svg></button></div><output class="ratio"></output></div><div class="cell cell-canvas"><div class="k-toolbar-group"><button type="button" class="k-btn k-tool is-disabled" aria-label="Image" disabled ><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="3" width="11" height="10" rx="1.5"/><path d="M3 11l3.2-3.2 2.3 2.3 1.5-1.5L13 11.5"/></svg></button></div><output class="ratio"></output></div><div class="cell cell-canvas"><div class="k-toolbar-group"><button type="button" class="k-btn k-tool is-loading" aria-label="Image"  ><span class="k-spin" aria-hidden="true"></span></button></div><output class="ratio"></output></div>
+  </div>
+    <div class="row">
+    <div class="row-head"><strong>Segmented</strong><small>Thumb nổi trung tính, không dùng accent. Trạng thái áp lên ô "Slides".</small></div>
+    <div class="cell"><div class="k-seg" role="radiogroup"><button type="button" class="k-seg-opt is-selected" >Canvas</button><button type="button" class="k-seg-opt k-target is-default" >Slides</button></div><output class="ratio"></output></div><div class="cell"><div class="k-seg" role="radiogroup"><button type="button" class="k-seg-opt is-selected" >Canvas</button><button type="button" class="k-seg-opt k-target is-hover" >Slides</button></div><output class="ratio"></output></div><div class="cell"><div class="k-seg" role="radiogroup"><button type="button" class="k-seg-opt is-selected" >Canvas</button><button type="button" class="k-seg-opt k-target is-pressed" >Slides</button></div><output class="ratio"></output></div><div class="cell"><div class="k-seg" role="radiogroup"><button type="button" class="k-seg-opt is-selected" >Canvas</button><button type="button" class="k-seg-opt k-target is-focus" >Slides</button></div><output class="ratio"></output></div><div class="cell"><div class="k-seg" role="radiogroup"><button type="button" class="k-seg-opt " >Canvas</button><button type="button" class="k-seg-opt k-target is-selected" >Slides</button></div><output class="ratio"></output></div><div class="cell"><div class="k-seg" role="radiogroup"><button type="button" class="k-seg-opt is-selected" >Canvas</button><button type="button" class="k-seg-opt k-target is-disabled is-disabled" disabled>Slides</button></div><output class="ratio"></output></div><div class="cell na"><span class="na-text">n/a: đổi view là tức thì</span></div>
+  </div>
+    <div class="row">
+    <div class="row-head"><strong>Chip / toggle</strong><small>22px, pill. Chọn thì có dấu tick, không chỉ đổi màu.</small></div>
+    <div class="cell"><button type="button" class="k-btn k-chip is-default"   ><span class="k-label">warm metal</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-chip is-hover"   ><span class="k-label">warm metal</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-chip is-pressed"   ><span class="k-label">warm metal</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-chip is-focus"   ><span class="k-label">warm metal</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-chip is-selected"  aria-pressed="true" ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7"/></svg><span class="k-label">warm metal</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-chip is-disabled" disabled  ><span class="k-label">warm metal</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-chip is-loading"   aria-busy="true"><span class="k-spin" aria-hidden="true"></span><span class="k-label">warm metal</span></button><output class="ratio"></output></div>
+  </div>
+    <h3 class="size-head">Đối chứng: control hiện tại trong app</h3>
+    
+  <div class="row">
+    <div class="row-head"><strong>Hiện tại: .quiet-button</strong><small>CSS copy từ styles.css tại 83455db. Hover đảo sang nền accent đặc.</small></div>
+    <div class="cell"><button type="button" class="cur-quiet cur-default">Rebuild</button><output class="ratio"></output></div><div class="cell"><button type="button" class="cur-quiet cur-hover">Rebuild</button><output class="ratio"></output></div><div class="cell na"><span class="na-text">không có pressed</span></div><div class="cell"><button type="button" class="cur-quiet cur-focus">Rebuild</button><output class="ratio"></output></div><div class="cell na"><span class="na-text">không có selected</span></div><div class="cell na"><span class="na-text">không có disabled</span></div><div class="cell na"><span class="na-text">không có loading</span></div>
+  </div>
+  <div class="row">
+    <div class="row-head"><strong>Hiện tại: .primary-button</strong><small>Hover tăng tint lên accent-weak.</small></div>
+    <div class="cell"><button type="button" class="cur-primary cur-default">Save key</button><output class="ratio"></output></div><div class="cell"><button type="button" class="cur-primary cur-hover">Save key</button><output class="ratio"></output></div><div class="cell na"><span class="na-text">không có pressed</span></div><div class="cell"><button type="button" class="cur-primary cur-focus">Save key</button><output class="ratio"></output></div><div class="cell na"><span class="na-text">n/a</span></div><div class="cell na"><span class="na-text">không có disabled</span></div><div class="cell na"><span class="na-text">không có loading</span></div>
+  </div>
+  </div>
+</section>
+
+<section class="theme theme-light" data-mode="light" style="--bg-base: #eff3f3; --bg-canvas: #dfe5e5; --surface-1: #d7dede; --surface-2: #cad3d5; --surface-3: #bdc6c9; --surface-drawer: #dae1e1; --surface-inspector: #d9e0df; --surface-inset: #d5dcde; --node-surface: rgb(213 220 223 / 0.78); --node-surface-selected: rgb(201 209 212 / 1); --node-border: rgb(35 33 29 / 0.11); --node-shadow: 0 10px 28px rgb(35 33 29 / 0.13); --node-shadow-soft: 0 0 0 1px rgb(0 79 66 / 0.16); --node-shadow-rest: 0 4px 14px rgb(35 33 29 / 0.1); --node-shadow-hover: 0 10px 26px rgb(35 33 29 / 0.14); --window-border: rgb(35 33 29 / 0.08); --glass-sidebar: rgb(215 222 222 / 0.34); --glass-drawer: rgb(218 225 225 / 0.78); --material-chrome-glass: rgb(239 243 243 / 0.78); --scrim: rgb(35 33 29 / 0.38); --glass-content: rgb(239 243 243 / 0.28); --glass-inspector: rgb(217 224 223 / 0.9); --glass-strong: rgb(201 209 212 / 1); --glass-border-strong: rgb(35 33 29 / 0.18); --glass-hover: rgb(34 31 26 / 0.055); --glass-active: rgb(12 96 82 / 0.22); --text-on-glass-active: #3e3d39; --accent-on-glass-active: #00473a; --accent-alt-on-glass-active: #5f3500; --separator-hairline: rgb(35 33 29 / 0.1); --inset-field: rgb(255 255 255 / 0.58); --border-soft: rgb(35 33 29 / 0.1); --border-strong: rgb(35 33 29 / 0.18); --text-main: #23211d; --text-soft: #3e3d39; --text-muted: #575855; --accent-cyan: #0c6052; --accent-strong: #004f42; --accent-weak: rgb(0 79 66 / 0.22); --accent-faint: rgb(0 79 66 / 0.1); --accent-amber: #7a4e00; --danger: #8a4035; --accent-sage: rgb(12 96 82 / 0.76); --shell-shadow: inset 0 1px 0 rgb(255 255 255 / 0.42), 0 0 0 1px rgb(35 33 29 / 0.03); --panel-shadow: 0 12px 32px rgb(35 33 29 / 0.1); --edge-shadow: drop-shadow(0 4px 10px rgb(35 33 29 / 0.12)); --edge-stroke: rgb(35 33 29 / 0.34); --edge-stroke-soft: rgb(35 33 29 / 0.16);">
+  <header class="theme-head">
+    <h2>Light <span>preset cyan, token lấy nguyên văn từ style inline của .app-shell</span></h2>
+  </header>
+  <div class="grid">
+    <div class="row row-labels"><div class="row-head"></div><div class="state-label">Default</div><div class="state-label">Hover</div><div class="state-label">Pressed</div><div class="state-label">Focus-visible</div><div class="state-label">Selected</div><div class="state-label">Disabled</div><div class="state-label">Loading</div></div>
+    <h3 class="size-head">Regular: 32px, radius 8, icon 16, gap 6, --text-body / 500</h3>
+    
+    <div class="row">
+      <div class="row-head"><strong>Primary</strong><small>Một hành động cam kết mỗi view. Tint, không phủ đặc.</small></div>
+      <div class="cell"><button type="button" class="k-btn k-primary k-md is-default"    ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7"/></svg><span class="k-label">Save key</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-primary k-md is-hover"    ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7"/></svg><span class="k-label">Save key</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-primary k-md is-pressed"    ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7"/></svg><span class="k-label">Save key</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-primary k-md is-focus"    ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7"/></svg><span class="k-label">Save key</span></button><output class="ratio"></output></div><div class="cell na"><span class="na-text">n/a: không phải toggle</span></div><div class="cell"><button type="button" class="k-btn k-primary k-md is-disabled" disabled   ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7"/></svg><span class="k-label">Save key</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-primary k-md is-loading"  aria-busy="true"  ><span class="k-spin" aria-hidden="true"></span><span class="k-label">Save key</span></button><output class="ratio"></output></div>
+    </div>
+    <div class="row">
+      <div class="row-head"><strong>Secondary</strong><small>Nút có viền trung tính cho hành động phụ đứng cạnh primary.</small></div>
+      <div class="cell"><button type="button" class="k-btn k-secondary k-md is-default"    ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 13V3M4 7l4-4 4 4"/></svg><span class="k-label">Export</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-secondary k-md is-hover"    ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 13V3M4 7l4-4 4 4"/></svg><span class="k-label">Export</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-secondary k-md is-pressed"    ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 13V3M4 7l4-4 4 4"/></svg><span class="k-label">Export</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-secondary k-md is-focus"    ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 13V3M4 7l4-4 4 4"/></svg><span class="k-label">Export</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-secondary k-md is-selected"    aria-pressed="true"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 13V3M4 7l4-4 4 4"/></svg><span class="k-label">Export</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-secondary k-md is-disabled" disabled   ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 13V3M4 7l4-4 4 4"/></svg><span class="k-label">Export</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-secondary k-md is-loading"  aria-busy="true"  ><span class="k-spin" aria-hidden="true"></span><span class="k-label">Export</span></button><output class="ratio"></output></div>
+    </div>
+    <div class="row">
+      <div class="row-head"><strong>Quiet</strong><small>Mặc định cho mọi hành động tiện ích. Hover là nền trung tính, không đảo màu.</small></div>
+      <div class="cell"><button type="button" class="k-btn k-quiet k-md is-default"    ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg><span class="k-label">Rebuild</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-quiet k-md is-hover"    ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg><span class="k-label">Rebuild</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-quiet k-md is-pressed"    ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg><span class="k-label">Rebuild</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-quiet k-md is-focus"    ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg><span class="k-label">Rebuild</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-quiet k-md is-selected"    aria-pressed="true"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg><span class="k-label">Rebuild</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-quiet k-md is-disabled" disabled   ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg><span class="k-label">Rebuild</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-quiet k-md is-loading"  aria-busy="true"  ><span class="k-spin" aria-hidden="true"></span><span class="k-label">Rebuild</span></button><output class="ratio"></output></div>
+    </div>
+    <div class="row">
+      <div class="row-head"><strong>Danger</strong><small>Chữ và tint đỏ, hover chỉ hiện viền để giữ contrast.</small></div>
+      <div class="cell"><button type="button" class="k-btn k-danger k-md is-default"    ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.7 8.5h5.6l.7-8.5"/></svg><span class="k-label">Delete profile</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-danger k-md is-hover"    ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.7 8.5h5.6l.7-8.5"/></svg><span class="k-label">Delete profile</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-danger k-md is-pressed"    ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.7 8.5h5.6l.7-8.5"/></svg><span class="k-label">Delete profile</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-danger k-md is-focus"    ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.7 8.5h5.6l.7-8.5"/></svg><span class="k-label">Delete profile</span></button><output class="ratio"></output></div><div class="cell na"><span class="na-text">n/a: không phải toggle</span></div><div class="cell"><button type="button" class="k-btn k-danger k-md is-disabled" disabled   ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.7 8.5h5.6l.7-8.5"/></svg><span class="k-label">Delete profile</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-danger k-md is-loading"  aria-busy="true"  ><span class="k-spin" aria-hidden="true"></span><span class="k-label">Delete profile</span></button><output class="ratio"></output></div>
+    </div>
+    <div class="row">
+      <div class="row-head"><strong>Icon-only</strong><small>Vuông, cùng trạng thái với Quiet. Luôn có aria-label và tooltip.</small></div>
+      <div class="cell"><button type="button" class="k-btn k-quiet k-md is-default k-icon-only"   aria-label="Link nodes" ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M7 9l2-2M6 11l-1 1a2.1 2.1 0 0 1-3-3l2-2a2.1 2.1 0 0 1 3 0M10 5l1-1a2.1 2.1 0 0 1 3 3l-2 2a2.1 2.1 0 0 1-3 0"/></svg></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-quiet k-md is-hover k-icon-only"   aria-label="Link nodes" ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M7 9l2-2M6 11l-1 1a2.1 2.1 0 0 1-3-3l2-2a2.1 2.1 0 0 1 3 0M10 5l1-1a2.1 2.1 0 0 1 3 3l-2 2a2.1 2.1 0 0 1-3 0"/></svg></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-quiet k-md is-pressed k-icon-only"   aria-label="Link nodes" ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M7 9l2-2M6 11l-1 1a2.1 2.1 0 0 1-3-3l2-2a2.1 2.1 0 0 1 3 0M10 5l1-1a2.1 2.1 0 0 1 3 3l-2 2a2.1 2.1 0 0 1-3 0"/></svg></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-quiet k-md is-focus k-icon-only"   aria-label="Link nodes" ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M7 9l2-2M6 11l-1 1a2.1 2.1 0 0 1-3-3l2-2a2.1 2.1 0 0 1 3 0M10 5l1-1a2.1 2.1 0 0 1 3 3l-2 2a2.1 2.1 0 0 1-3 0"/></svg></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-quiet k-md is-selected k-icon-only"   aria-label="Link nodes" aria-pressed="true"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M7 9l2-2M6 11l-1 1a2.1 2.1 0 0 1-3-3l2-2a2.1 2.1 0 0 1 3 0M10 5l1-1a2.1 2.1 0 0 1 3 3l-2 2a2.1 2.1 0 0 1-3 0"/></svg></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-quiet k-md is-disabled k-icon-only" disabled  aria-label="Link nodes" ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M7 9l2-2M6 11l-1 1a2.1 2.1 0 0 1-3-3l2-2a2.1 2.1 0 0 1 3 0M10 5l1-1a2.1 2.1 0 0 1 3 3l-2 2a2.1 2.1 0 0 1-3 0"/></svg></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-quiet k-md is-loading k-icon-only"  aria-busy="true" aria-label="Link nodes" ><span class="k-spin" aria-hidden="true"></span></button><output class="ratio"></output></div>
+    </div>
+    <h3 class="size-head">Compact: 26px, radius 6, icon 14, gap 4, --text-small / 500</h3>
+    
+    <div class="row">
+      <div class="row-head"><strong>Primary</strong><small>Một hành động cam kết mỗi view. Tint, không phủ đặc.</small></div>
+      <div class="cell"><button type="button" class="k-btn k-primary k-sm is-default"    ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7"/></svg><span class="k-label">Save key</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-primary k-sm is-hover"    ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7"/></svg><span class="k-label">Save key</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-primary k-sm is-pressed"    ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7"/></svg><span class="k-label">Save key</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-primary k-sm is-focus"    ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7"/></svg><span class="k-label">Save key</span></button><output class="ratio"></output></div><div class="cell na"><span class="na-text">n/a: không phải toggle</span></div><div class="cell"><button type="button" class="k-btn k-primary k-sm is-disabled" disabled   ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7"/></svg><span class="k-label">Save key</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-primary k-sm is-loading"  aria-busy="true"  ><span class="k-spin" aria-hidden="true"></span><span class="k-label">Save key</span></button><output class="ratio"></output></div>
+    </div>
+    <div class="row">
+      <div class="row-head"><strong>Secondary</strong><small>Nút có viền trung tính cho hành động phụ đứng cạnh primary.</small></div>
+      <div class="cell"><button type="button" class="k-btn k-secondary k-sm is-default"    ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 13V3M4 7l4-4 4 4"/></svg><span class="k-label">Export</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-secondary k-sm is-hover"    ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 13V3M4 7l4-4 4 4"/></svg><span class="k-label">Export</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-secondary k-sm is-pressed"    ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 13V3M4 7l4-4 4 4"/></svg><span class="k-label">Export</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-secondary k-sm is-focus"    ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 13V3M4 7l4-4 4 4"/></svg><span class="k-label">Export</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-secondary k-sm is-selected"    aria-pressed="true"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 13V3M4 7l4-4 4 4"/></svg><span class="k-label">Export</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-secondary k-sm is-disabled" disabled   ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 13V3M4 7l4-4 4 4"/></svg><span class="k-label">Export</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-secondary k-sm is-loading"  aria-busy="true"  ><span class="k-spin" aria-hidden="true"></span><span class="k-label">Export</span></button><output class="ratio"></output></div>
+    </div>
+    <div class="row">
+      <div class="row-head"><strong>Quiet</strong><small>Mặc định cho mọi hành động tiện ích. Hover là nền trung tính, không đảo màu.</small></div>
+      <div class="cell"><button type="button" class="k-btn k-quiet k-sm is-default"    ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg><span class="k-label">Rebuild</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-quiet k-sm is-hover"    ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg><span class="k-label">Rebuild</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-quiet k-sm is-pressed"    ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg><span class="k-label">Rebuild</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-quiet k-sm is-focus"    ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg><span class="k-label">Rebuild</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-quiet k-sm is-selected"    aria-pressed="true"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg><span class="k-label">Rebuild</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-quiet k-sm is-disabled" disabled   ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg><span class="k-label">Rebuild</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-quiet k-sm is-loading"  aria-busy="true"  ><span class="k-spin" aria-hidden="true"></span><span class="k-label">Rebuild</span></button><output class="ratio"></output></div>
+    </div>
+    <div class="row">
+      <div class="row-head"><strong>Danger</strong><small>Chữ và tint đỏ, hover chỉ hiện viền để giữ contrast.</small></div>
+      <div class="cell"><button type="button" class="k-btn k-danger k-sm is-default"    ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.7 8.5h5.6l.7-8.5"/></svg><span class="k-label">Delete profile</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-danger k-sm is-hover"    ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.7 8.5h5.6l.7-8.5"/></svg><span class="k-label">Delete profile</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-danger k-sm is-pressed"    ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.7 8.5h5.6l.7-8.5"/></svg><span class="k-label">Delete profile</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-danger k-sm is-focus"    ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.7 8.5h5.6l.7-8.5"/></svg><span class="k-label">Delete profile</span></button><output class="ratio"></output></div><div class="cell na"><span class="na-text">n/a: không phải toggle</span></div><div class="cell"><button type="button" class="k-btn k-danger k-sm is-disabled" disabled   ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.7 8.5h5.6l.7-8.5"/></svg><span class="k-label">Delete profile</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-danger k-sm is-loading"  aria-busy="true"  ><span class="k-spin" aria-hidden="true"></span><span class="k-label">Delete profile</span></button><output class="ratio"></output></div>
+    </div>
+    <div class="row">
+      <div class="row-head"><strong>Icon-only</strong><small>Vuông, cùng trạng thái với Quiet. Luôn có aria-label và tooltip.</small></div>
+      <div class="cell"><button type="button" class="k-btn k-quiet k-sm is-default k-icon-only"   aria-label="Link nodes" ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M7 9l2-2M6 11l-1 1a2.1 2.1 0 0 1-3-3l2-2a2.1 2.1 0 0 1 3 0M10 5l1-1a2.1 2.1 0 0 1 3 3l-2 2a2.1 2.1 0 0 1-3 0"/></svg></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-quiet k-sm is-hover k-icon-only"   aria-label="Link nodes" ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M7 9l2-2M6 11l-1 1a2.1 2.1 0 0 1-3-3l2-2a2.1 2.1 0 0 1 3 0M10 5l1-1a2.1 2.1 0 0 1 3 3l-2 2a2.1 2.1 0 0 1-3 0"/></svg></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-quiet k-sm is-pressed k-icon-only"   aria-label="Link nodes" ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M7 9l2-2M6 11l-1 1a2.1 2.1 0 0 1-3-3l2-2a2.1 2.1 0 0 1 3 0M10 5l1-1a2.1 2.1 0 0 1 3 3l-2 2a2.1 2.1 0 0 1-3 0"/></svg></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-quiet k-sm is-focus k-icon-only"   aria-label="Link nodes" ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M7 9l2-2M6 11l-1 1a2.1 2.1 0 0 1-3-3l2-2a2.1 2.1 0 0 1 3 0M10 5l1-1a2.1 2.1 0 0 1 3 3l-2 2a2.1 2.1 0 0 1-3 0"/></svg></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-quiet k-sm is-selected k-icon-only"   aria-label="Link nodes" aria-pressed="true"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M7 9l2-2M6 11l-1 1a2.1 2.1 0 0 1-3-3l2-2a2.1 2.1 0 0 1 3 0M10 5l1-1a2.1 2.1 0 0 1 3 3l-2 2a2.1 2.1 0 0 1-3 0"/></svg></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-quiet k-sm is-disabled k-icon-only" disabled  aria-label="Link nodes" ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M7 9l2-2M6 11l-1 1a2.1 2.1 0 0 1-3-3l2-2a2.1 2.1 0 0 1 3 0M10 5l1-1a2.1 2.1 0 0 1 3 3l-2 2a2.1 2.1 0 0 1-3 0"/></svg></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-quiet k-sm is-loading k-icon-only"  aria-busy="true" aria-label="Link nodes" ><span class="k-spin" aria-hidden="true"></span></button><output class="ratio"></output></div>
+    </div>
+    <h3 class="size-head">Toolbar, segmented, chip</h3>
+    <div class="row">
+    <div class="row-head"><strong>Toolbar button</strong><small>36px trong nhóm nổi 44px, vật liệu chrome. Đo trên canvas và trên ảnh xấu nhất.</small></div>
+    <div class="cell cell-canvas"><div class="k-toolbar-group"><button type="button" class="k-btn k-tool is-default" aria-label="Image"  ><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="3" width="11" height="10" rx="1.5"/><path d="M3 11l3.2-3.2 2.3 2.3 1.5-1.5L13 11.5"/></svg></button></div><output class="ratio"></output></div><div class="cell cell-canvas"><div class="k-toolbar-group"><button type="button" class="k-btn k-tool is-hover" aria-label="Image"  ><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="3" width="11" height="10" rx="1.5"/><path d="M3 11l3.2-3.2 2.3 2.3 1.5-1.5L13 11.5"/></svg></button></div><output class="ratio"></output></div><div class="cell cell-canvas"><div class="k-toolbar-group"><button type="button" class="k-btn k-tool is-pressed" aria-label="Image"  ><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="3" width="11" height="10" rx="1.5"/><path d="M3 11l3.2-3.2 2.3 2.3 1.5-1.5L13 11.5"/></svg></button></div><output class="ratio"></output></div><div class="cell cell-canvas"><div class="k-toolbar-group"><button type="button" class="k-btn k-tool is-focus" aria-label="Image"  ><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="3" width="11" height="10" rx="1.5"/><path d="M3 11l3.2-3.2 2.3 2.3 1.5-1.5L13 11.5"/></svg></button></div><output class="ratio"></output></div><div class="cell cell-canvas"><div class="k-toolbar-group"><button type="button" class="k-btn k-tool is-selected" aria-label="Image"  aria-pressed="true"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="3" width="11" height="10" rx="1.5"/><path d="M3 11l3.2-3.2 2.3 2.3 1.5-1.5L13 11.5"/></svg></button></div><output class="ratio"></output></div><div class="cell cell-canvas"><div class="k-toolbar-group"><button type="button" class="k-btn k-tool is-disabled" aria-label="Image" disabled ><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="3" width="11" height="10" rx="1.5"/><path d="M3 11l3.2-3.2 2.3 2.3 1.5-1.5L13 11.5"/></svg></button></div><output class="ratio"></output></div><div class="cell cell-canvas"><div class="k-toolbar-group"><button type="button" class="k-btn k-tool is-loading" aria-label="Image"  ><span class="k-spin" aria-hidden="true"></span></button></div><output class="ratio"></output></div>
+  </div>
+    <div class="row">
+    <div class="row-head"><strong>Segmented</strong><small>Thumb nổi trung tính, không dùng accent. Trạng thái áp lên ô "Slides".</small></div>
+    <div class="cell"><div class="k-seg" role="radiogroup"><button type="button" class="k-seg-opt is-selected" >Canvas</button><button type="button" class="k-seg-opt k-target is-default" >Slides</button></div><output class="ratio"></output></div><div class="cell"><div class="k-seg" role="radiogroup"><button type="button" class="k-seg-opt is-selected" >Canvas</button><button type="button" class="k-seg-opt k-target is-hover" >Slides</button></div><output class="ratio"></output></div><div class="cell"><div class="k-seg" role="radiogroup"><button type="button" class="k-seg-opt is-selected" >Canvas</button><button type="button" class="k-seg-opt k-target is-pressed" >Slides</button></div><output class="ratio"></output></div><div class="cell"><div class="k-seg" role="radiogroup"><button type="button" class="k-seg-opt is-selected" >Canvas</button><button type="button" class="k-seg-opt k-target is-focus" >Slides</button></div><output class="ratio"></output></div><div class="cell"><div class="k-seg" role="radiogroup"><button type="button" class="k-seg-opt " >Canvas</button><button type="button" class="k-seg-opt k-target is-selected" >Slides</button></div><output class="ratio"></output></div><div class="cell"><div class="k-seg" role="radiogroup"><button type="button" class="k-seg-opt is-selected" >Canvas</button><button type="button" class="k-seg-opt k-target is-disabled is-disabled" disabled>Slides</button></div><output class="ratio"></output></div><div class="cell na"><span class="na-text">n/a: đổi view là tức thì</span></div>
+  </div>
+    <div class="row">
+    <div class="row-head"><strong>Chip / toggle</strong><small>22px, pill. Chọn thì có dấu tick, không chỉ đổi màu.</small></div>
+    <div class="cell"><button type="button" class="k-btn k-chip is-default"   ><span class="k-label">warm metal</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-chip is-hover"   ><span class="k-label">warm metal</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-chip is-pressed"   ><span class="k-label">warm metal</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-chip is-focus"   ><span class="k-label">warm metal</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-chip is-selected"  aria-pressed="true" ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7"/></svg><span class="k-label">warm metal</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-chip is-disabled" disabled  ><span class="k-label">warm metal</span></button><output class="ratio"></output></div><div class="cell"><button type="button" class="k-btn k-chip is-loading"   aria-busy="true"><span class="k-spin" aria-hidden="true"></span><span class="k-label">warm metal</span></button><output class="ratio"></output></div>
+  </div>
+    <h3 class="size-head">Đối chứng: control hiện tại trong app</h3>
+    
+  <div class="row">
+    <div class="row-head"><strong>Hiện tại: .quiet-button</strong><small>CSS copy từ styles.css tại 83455db. Hover đảo sang nền accent đặc.</small></div>
+    <div class="cell"><button type="button" class="cur-quiet cur-default">Rebuild</button><output class="ratio"></output></div><div class="cell"><button type="button" class="cur-quiet cur-hover">Rebuild</button><output class="ratio"></output></div><div class="cell na"><span class="na-text">không có pressed</span></div><div class="cell"><button type="button" class="cur-quiet cur-focus">Rebuild</button><output class="ratio"></output></div><div class="cell na"><span class="na-text">không có selected</span></div><div class="cell na"><span class="na-text">không có disabled</span></div><div class="cell na"><span class="na-text">không có loading</span></div>
+  </div>
+  <div class="row">
+    <div class="row-head"><strong>Hiện tại: .primary-button</strong><small>Hover tăng tint lên accent-weak.</small></div>
+    <div class="cell"><button type="button" class="cur-primary cur-default">Save key</button><output class="ratio"></output></div><div class="cell"><button type="button" class="cur-primary cur-hover">Save key</button><output class="ratio"></output></div><div class="cell na"><span class="na-text">không có pressed</span></div><div class="cell"><button type="button" class="cur-primary cur-focus">Save key</button><output class="ratio"></output></div><div class="cell na"><span class="na-text">n/a</span></div><div class="cell na"><span class="na-text">không có disabled</span></div><div class="cell na"><span class="na-text">không có loading</span></div>
+  </div>
+  </div>
+</section>
+<script>
+(function () {
+  const cv = document.createElement('canvas'); cv.width = cv.height = 1
+  const ctx = cv.getContext('2d', { willReadFrequently: true })
+  function rgba(str) { ctx.clearRect(0, 0, 1, 1); ctx.fillStyle = 'rgba(0,0,0,0)'; ctx.fillStyle = str; ctx.fillRect(0, 0, 1, 1); const d = ctx.getImageData(0, 0, 1, 1).data; return [d[0], d[1], d[2], d[3] / 255] }
+  function over(top, base) { const a = top[3]; return [top[0] * a + base[0] * (1 - a), top[1] * a + base[1] * (1 - a), top[2] * a + base[2] * (1 - a), 1] }
+  function lum(c) { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4) }; return 0.2126 * f(c[0]) + 0.7152 * f(c[1]) + 0.0722 * f(c[2]) }
+  function ratio(a, b) { const l1 = lum(a), l2 = lum(b); return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05) }
+  function chain(el) { const list = []; for (let n = el; n && n.nodeType === 1; n = n.parentElement) list.unshift(n); return list }
+  function bgUnder(el, substitute) {
+    let c = [255, 255, 255, 1]
+    for (const n of chain(el)) {
+      let b = rgba(getComputedStyle(n).backgroundColor)
+      if (substitute && n.classList.contains('cell-canvas')) b = substitute
+      if (b[3] > 0) c = over(b, c)
+    }
+    return c
+  }
+  const results = []
+  for (const cell of document.querySelectorAll('.cell:not(.na)')) {
+    const target = cell.querySelector('.k-target') || cell.querySelector('button')
+    const out = cell.querySelector('output')
+    const theme = cell.closest('.theme')
+    const mode = theme.dataset.mode
+    const row = cell.parentElement.querySelector('.row-head strong').textContent
+    const size = (cell.parentElement.previousElementSibling && [...theme.querySelectorAll('.size-head')].filter(h => h.compareDocumentPosition(cell) & 4).pop() || {}).textContent || ''
+    const stateClass = [...target.classList].find(c => c.startsWith('is-') || c.startsWith('cur-')) || ''
+    const fg = rgba(getComputedStyle(target).color)
+    const bg = bgUnder(target)
+    const text = over(fg, bg)
+    const r = ratio(text, bg)
+    let label = r.toFixed(2)
+    const rec = { mode, size: size.split(':')[0], row, state: stateClass, text: +r.toFixed(2) }
+    if (cell.classList.contains('cell-canvas')) {
+      const worst = rgba(getComputedStyle(theme).getPropertyValue('--worst-under-glass').trim())
+      const bgW = bgUnder(target, worst)
+      const rw = ratio(over(fg, bgW), bgW)
+      rec.worstOverImage = +rw.toFixed(2)
+      label += ' / ' + rw.toFixed(2)
+    }
+    const cs = getComputedStyle(target)
+    const isFocus = /is-focus|cur-focus/.test(target.className)
+    if (isFocus) {
+      // ring sits outside the control, over the cell/panel background
+      const around = bgUnder(target.parentElement.classList.contains('k-toolbar-group') ? target.parentElement : cell)
+      let ringColor
+      if (cs.outlineStyle !== 'none' && rgba(cs.outlineColor)[3] > 0.01) ringColor = over(rgba(cs.outlineColor), around)
+      else { const m = cs.boxShadow.match(/(rgba?\([^)]*\)|color\([^)]*\))/); ringColor = m ? over(rgba(m[1]), around) : around }
+      const rr = ratio(ringColor, around)
+      rec.ring = +rr.toFixed(2)
+      label += ' · ring ' + rr.toFixed(2)
+      if (rr < 3) out.classList.add('fail')
+    }
+    const min = Math.min(r, rec.worstOverImage ?? r)
+    if (min < 4.5) out.classList.add('fail')
+    out.textContent = label
+    results.push(rec)
+  }
+  window.__contrast = results
+})()
+</script>
+</body>
+</html>
