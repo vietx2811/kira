@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Providers: hiện trạng và bố cục mới</title>
+<style>
+/* Token dark, copy nguyên văn từ DESIGN.md front matter (Cyan preset).
+   Material Ink & Paper copy từ .claude/skills/kira-controls/references/ink-paper.css.
+   Đây là wireframe minh hoạ bố cục, không phải specimen đo contrast: không cần đo lại,
+   chỉ cần đúng token và đúng cấu trúc lồng/không lồng để Worker đối chiếu. */
+*,*::before,*::after{box-sizing:border-box}
+html,body{margin:0}
+body{background:#1a1b1b;color:#f4f1ea;font-family:-apple-system,blinkmacsystemfont,ui-sans-serif,system-ui,"Segoe UI",sans-serif;font-size:13px;padding:32px;display:flex;flex-direction:column;gap:40px}
+h1{font-size:15px;font-weight:680;margin:0 0 4px}
+.note{color:#8e8e8a;font-size:11px;margin:0 0 16px;max-width:70ch;line-height:1.5}
+.frame{width:980px;height:720px;border:1px solid rgb(255 255 255 / .13);border-radius:8px;background:#080e0e;display:grid;grid-template-rows:auto 1fr;overflow:hidden}
+.frame-label{padding:6px 12px;font-size:11px;font-weight:680;letter-spacing:.02em;text-transform:uppercase;color:#8e8e8a;border-bottom:1px solid rgb(255 255 255 / .06)}
+.frame-label.bad{color:#e59587}
+.frame-label.good{color:#7fc8b7}
+.head{display:flex;align-items:center;gap:8px;height:44px;padding:0 16px;border-bottom:1px solid rgb(255 255 255 / .06)}
+.head h2{font-size:15px;font-weight:680;margin:0}
+.head .status{margin-left:auto;font-size:11px;color:#8e8e8a}
+.body{overflow-y:auto;padding:16px}
+h3{font-size:15px;font-weight:680;margin:0 0 4px;color:#f4f1ea}
+.micro{font-size:11px;font-weight:800;color:#8e8e8a;letter-spacing:.04em;text-transform:uppercase;margin:0 0 6px}
+small{color:#8e8e8a}
+
+/* ---- BAD: card-in-card, exact as styles.css draws it today ---- */
+.bad .card{border:1px solid rgb(255 255 255 / .06);border-radius:8px;background:#060c0c;padding:12px;margin-bottom:12px}
+.bad .strip{display:grid;grid-template-columns:1fr 1fr auto auto;gap:8px;align-items:end}
+.bad .strip label{display:grid;gap:4px;font-size:11px;color:#b5b4af}
+.bad select,.bad input{height:30px;padding:0 8px;border-radius:6px;background:#0d1315;border:1px solid rgb(255 255 255 / .06);color:#f4f1ea;font-size:13px}
+.bad .chip{border:1px solid rgb(255 255 255 / .06);border-radius:6px;padding:6px 10px;font-size:11px;color:#b5b4af}
+.bad .workbench{display:grid;grid-template-columns:210px 1fr;gap:12px;margin-top:0}
+.bad .list{border:1px solid rgb(255 255 255 / .06);border-radius:8px;overflow:hidden}
+.bad .row{padding:8px 10px;border-top:1px solid rgb(255 255 255 / .06);font-size:11px}
+.bad .row:first-child{border-top:0}
+.bad .row.on{background:rgb(127 200 183 / .12)}
+.bad .row strong{display:block;font-size:13px;color:#f4f1ea;font-weight:400}
+.bad .detail{border:1px solid rgb(255 255 255 / .06);border-radius:8px;background:#060c0c;padding:12px}
+.bad .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:10px 0}
+.bad .grid2 label{display:grid;gap:4px;font-size:11px;color:#b5b4af}
+.bad .actions{display:flex;gap:6px;margin:10px 0}
+.bad .btn{height:26px;padding:0 10px;border-radius:6px;font-size:11px;display:inline-flex;align-items:center;background:rgb(255 255 255 / .035);color:#b5b4af}
+.bad .toggles{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 12px}
+.bad .toggle{border:1px solid rgb(255 255 255 / .06);border-radius:6px;padding:5px 9px;font-size:11px;color:#b5b4af;display:inline-flex;align-items:center;gap:5px}
+.bad .toggle i{width:13px;height:13px;border:1px solid #8e8e8a;border-radius:3px;display:inline-block}
+
+/* ---- GOOD: hairline + space, one density level, Ink & Paper controls ---- */
+.good .section{padding:16px 0}
+.good .section + .section{border-top:1px solid rgb(255 255 255 / .052)}
+.good .section:first-child{padding-top:0}
+.good .routing{display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+.good .routing label{display:flex;align-items:center;gap:6px;font-size:11px;color:#b5b4af}
+.good select{height:30px;padding:0 8px;border-radius:6px;background:#0d1315;border:1px solid rgb(255 255 255 / .06);color:#f4f1ea;font-size:13px}
+.good .status-line{font-size:11px;color:#8e8e8a}
+.good .workbench{display:grid;grid-template-columns:210px 1fr;gap:16px}
+.good .list{border:1px solid rgb(255 255 255 / .06);border-radius:8px;overflow:hidden;align-self:start}
+.good .row{padding:8px 10px;border-top:1px solid rgb(255 255 255 / .06);font-size:11px}
+.good .row:first-child{border-top:0}
+.good .row.on{background:rgb(127 200 183 / .12)}
+.good .row strong{display:block;font-size:13px;color:#f4f1ea;font-weight:400}
+.good .field{display:grid;gap:4px;font-size:11px;color:#b5b4af}
+.good input{height:32px;padding:0 10px;border-radius:8px;background:#0d1315;border:1px solid rgb(255 255 255 / .06);color:#f4f1ea;font-size:13px}
+.good .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:10px 0}
+.good .actions{display:flex;gap:8px;margin:12px 0}
+.good .btn{height:32px;padding:0 12px;border-radius:8px;font-size:13px;font-weight:560;display:inline-flex;align-items:center}
+.good .btn.primary{background:#f4f1ea;color:#0f1517}
+.good .btn.secondary{background:#1c2426;border:1px solid rgb(255 255 255 / .075);color:#f4f1ea}
+.good .btn.danger{background:#1c2426;border:1px solid rgb(217 135 121 / .38);color:#e59587}
+.good .toggles{display:flex;flex-wrap:wrap;gap:14px;margin:6px 0}
+.good .toggle{display:inline-flex;align-items:center;gap:7px;font-size:13px;color:#b5b4af}
+.good .toggle i{width:16px;height:16px;border:1px solid #8e8e8a;border-radius:4px;display:inline-block}
+.good .meta{font-size:11px;color:#8e8e8a;margin-top:10px}
+.good details{margin-top:4px}
+.good summary{cursor:pointer;font-size:13px;font-weight:560;color:#f4f1ea;list-style:none;display:flex;align-items:center;gap:6px}
+.good summary::before{content:"›";display:inline-block;color:#8e8e8a}
+.good .adv-list{margin-top:10px;border:1px solid rgb(255 255 255 / .06);border-radius:8px;overflow:hidden}
+.good .adv-row{display:flex;justify-content:space-between;padding:9px 10px;border-top:1px solid rgb(255 255 255 / .06);font-size:11px}
+.good .adv-row:first-child{border-top:0}
+.good .adv-row strong{font-weight:400;color:#f4f1ea;font-size:13px}
+</style>
+</head>
+<body>
+<div>
+  <h1>AI Providers, hiện trạng (a00af07)</h1>
+  <p class="note">Đúng cấu trúc CSS hiện tại: <code>.settings-control-strip</code>, <code>.provider-card</code> và mỗi <code>.provider-task-toggle</code> đều tự vẽ khung riêng (styles.css:5232, 5534, 5701). 4 khối Routing preview/Secrets/Usage/Onboarding xếp chồng ở cuối không vẽ trong khung 720px này vì đã tràn, đúng vấn đề "một màn quá tải" nêu ở layout-spec.md §1.2.</p>
+  <div class="frame bad">
+    <div class="frame-label bad">Sai, hiện trạng</div>
+    <div class="body">
+      <div class="card strip">
+        <label>Routing<select><option>Prefer local, fallback remote</option></select></label>
+        <label>Remote<select><option>OpenAI Platform</option></select></label>
+        <div class="chip">Providers<br><strong style="color:#f4f1ea;font-size:13px">0/9</strong></div>
+        <div class="chip">Local<br><strong style="color:#f4f1ea;font-size:13px">unavailable</strong></div>
+      </div>
+      <div class="workbench">
+        <div class="list">
+          <div class="row"><strong>Apple Foundation…</strong><small>unavailable</small></div>
+          <div class="row on"><strong>OpenAI Platform</strong><small style="color:#dfae67">key missing</small></div>
+          <div class="row"><strong>Anthropic Console</strong><small style="color:#dfae67">key missing</small></div>
+        </div>
+        <div class="detail">
+          <h3>OpenAI Platform</h3>
+          <small>OpenAI, save a key before testing.</small>
+          <div class="grid2">
+            <label>Name<input value="OpenAI Platform"></label>
+            <label>Model<input value="gpt-4.1-mini"></label>
+          </div>
+          <div class="actions">
+            <span class="btn">Save key</span><span class="btn">Test</span><span class="btn">Models</span><span class="btn" style="color:#e59587">Delete profile</span>
+          </div>
+          <div class="micro">Tagging</div>
+          <div class="toggles">
+            <span class="toggle"><i></i>Tag reference</span><span class="toggle"><i></i>Classify reference</span><span class="toggle"><i></i>Find similar</span>
+          </div>
+          <div class="micro">Canvas generation</div>
+          <div class="toggles">
+            <span class="toggle"><i></i>Generate palette</span><span class="toggle"><i></i>Rebalance palette</span><span class="toggle"><i></i>Generate outline</span><span class="toggle"><i></i>Generate node</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div>
+  <h1>AI Providers, bố cục mới (đề xuất, layout-spec.md §1.3)</h1>
+  <p class="note">Không card nào bọc cấu hình. Danh sách provider giữ khung List Rows (đúng luật, đây là danh sách vật thể để chọn). Routing preview/Secrets/Usage/Onboarding gộp vào một "Nâng cao" gập mặc định ở cuối, bên trong cũng là List Rows, không phải 4 card.</p>
+  <div class="frame good">
+    <div class="frame-label good">Đúng, đề xuất</div>
+    <div class="body">
+      <div class="section routing">
+        <label>Routing<select><option>Prefer local, fallback remote</option></select></label>
+        <label>Remote<select><option>OpenAI Platform</option></select></label>
+        <span class="status-line">2 trên 9 provider đã kết nối</span>
+        <span class="status-line">Model máy: chưa dùng được</span>
+      </div>
+      <div class="section">
+        <div class="workbench">
+          <div class="list">
+            <div class="row"><strong>Apple Foundation…</strong><small>unavailable</small></div>
+            <div class="row on"><strong>OpenAI Platform</strong><small style="color:#dfae67">key missing</small></div>
+            <div class="row"><strong>Anthropic Console</strong><small style="color:#dfae67">key missing</small></div>
+          </div>
+          <div>
+            <h3>OpenAI Platform</h3>
+            <small>OpenAI, save a key before testing.</small>
+            <div class="grid2" style="margin-top:12px">
+              <div class="field">Name<input value="OpenAI Platform"></div>
+              <div class="field">Model<input value="gpt-4.1-mini"></div>
+            </div>
+            <details><summary>Advanced, auth mode, Base URL</summary></details>
+            <div class="actions">
+              <span class="btn secondary">Save key</span><span class="btn secondary">Test</span><span class="btn secondary">Models</span><span class="btn danger">Delete profile</span>
+            </div>
+            <div class="micro">Tagging</div>
+            <div class="toggles">
+              <span class="toggle"><i></i>Tag reference</span><span class="toggle"><i></i>Classify reference</span><span class="toggle"><i></i>Find similar</span>
+            </div>
+            <div class="micro">Canvas generation</div>
+            <div class="toggles">
+              <span class="toggle"><i></i>Generate palette</span><span class="toggle"><i></i>Rebalance palette</span><span class="toggle"><i></i>Generate outline</span><span class="toggle"><i></i>Generate node</span>
+            </div>
+            <div class="meta">No secret · Untested</div>
+          </div>
+        </div>
+      </div>
+      <div class="section">
+        <details>
+          <summary>Nâng cao</summary>
+          <div class="adv-list">
+            <div class="adv-row"><span>Routing preview</span><strong>8 tác vụ</strong></div>
+            <div class="adv-row"><span>Secrets đã lưu</span><strong>0</strong></div>
+            <div class="adv-row"><span>Usage</span><strong>0 lượt gọi API</strong></div>
+            <div class="adv-row"><span>Onboarding</span><strong>Xem lại / đặt lại</strong></div>
+          </div>
+        </details>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

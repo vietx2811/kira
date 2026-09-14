@@ -225,6 +225,12 @@
           <li>a11y: bỏ <code>aria-label</code> che tên hiển thị của nút đổi thread (WCAG 2.5.3); chip provenance tăng vùng bấm lên 24px; nhãn nút dock không còn hứa sai khi đang ở tab Cần bạn.</li>
           <li>Thêm 2 khung còn thiếu: §7 trạng thái sau khi Nhận (peak-end), §8 panel rỗng lúc lần đầu mở.</li>
         </ul>
+        <p style="margin-top:16px">Rà lại theo <code>DESIGN.md §5 Layout &amp; Grouping</code> (2026-09-15, luật mới: khoảng cách và hairline trước, card chỉ bọc vật thể thật, không card trong card). Không đổi quyết định bố cục nào trong 10 mục đã chốt; chỉ sửa vật liệu của 2 chỗ đang dùng khung ngoài phạm vi luật mới.</p>
+        <ul class="doc-notes">
+          <li>Mục ChangeSet khác đang thu gọn ("Palette cho biển hiệu") và mỗi nhánh curate đang thu gọn từng là một khung viền riêng đứng cạnh danh sách chính. Sửa: cùng kiểu hàng hairline như danh sách chính, ngăn bằng đường kẻ trên thay vì khung bọc.</li>
+          <li>Chi tiết run (Provider, Model, Bắt đầu, Kết quả…) từng là một khối nền lõm riêng bên trong tin nhắn. Sửa: dãy hàng ngăn hairline, cùng mẫu với nhóm SOURCE/HISTORY ở popover chi tiết node trong app thật (mẫu đã đúng luật từ trước, dùng làm tham chiếu).</li>
+          <li>Mục item đang mở (viền mực khi <code>is-focused</code>) và bong bóng chat của người dùng (nền tint, không viền) được xem lại và giữ nguyên: đây là vật thể thật đang được xem hoặc một tin nhắn trong dòng thời gian, không phải nhóm cấu hình đóng khung.</li>
+        </ul>
       </div>
     </header>
   </section>
