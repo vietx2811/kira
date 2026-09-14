@@ -67,6 +67,8 @@
         <li><a href="#s4">4. Nhãn provenance</a></li>
         <li><a href="#s5">5. Dòng trạng thái dock</a></li>
         <li><a href="#s6">6. Điểm dừng của skill</a></li>
+        <li><a href="#s7">7. Sau khi Nhận</a></li>
+        <li><a href="#s8">8. Panel rỗng, lần đầu mở</a></li>
         <li><a href="#critique">Critique</a></li>
         <li><a href="#decisions">Quyết định cần chốt</a></li>
       </ul>
@@ -84,13 +86,15 @@
     <header>
       <h2>1. Đóng và mở panel</h2>
       <div>
-        <p>Nút mở nằm ở đầu phải hàng tab tệp, hàng chrome của cửa sổ. Hàng này bên phải trống, nên nút không chồng lên cụm điều khiển của topbar (vấn đề §3.1). Con số trên nút là số thay đổi cần xử lý trên mọi run (chờ duyệt cộng đã cũ), dùng chung cho nút, tab và dock.</p>
+        <p>Nút mở nằm ở đầu phải hàng tab tệp, hàng chrome của cửa sổ. Hàng này bên phải trống, nên nút không chồng lên cụm điều khiển của topbar (vấn đề §3.1). Tab thứ hai của panel đổi tên thành <b>"Cần bạn"</b>. Con số trên nút, trên tab và ở dòng trạng thái dock là <b>một số duy nhất</b>: thay đổi chờ duyệt, cộng mục đã cũ, cộng skill đang dừng ở checkpoint.</p>
         <ul class="doc-notes">
           <li>Panel rộng 360px, cùng độ rộng và bo góc với Thư viện, nổi trên canvas như Thư viện.</li>
           <li>Khi mở, app đặt <code>--canvas-right-inset</code>: topbar, zoom, thanh công cụ và dock lùi sang trái. Canvas không đổi kích thước.</li>
           <li>Khi mở cả Thư viện và panel, thanh dưới bỏ nhãn "Sắp xếp" và hai công cụ phụ thay vì chui dưới panel.</li>
           <li>Cửa sổ hẹp hơn 1180px chỉ mở một ngăn: mở panel thì Thư viện thu lại. Khung 1024px vẽ ở trạng thái đã pan: node đang chọn nằm bên trái panel. Panel 340px, view switcher chỉ còn chữ ở mục đang chọn.</li>
           <li>Khi panel mở, dock chỉ còn nút Kira; ô nhập nằm trong panel để không có hai nơi gõ cùng lúc.</li>
+          <li>Tab "Cần bạn" không có ô nhập. Bấm nút Kira ở dock lúc đang xem tab đó thì chuyển sang Chat và focus ô nhập, thay vì hứa một ô nhập không có ở đấy.</li>
+          <li>Bấm "Mở" ở dòng trạng thái dock vào thẳng tab Cần bạn, đúng mục đang chờ. Bấm nút Kira ở hàng tab tệp thì giữ tab đã mở lần trước, không nhảy tab dưới tay người dùng.</li>
         </ul>
       </div>
     </header>
@@ -105,7 +109,7 @@
       <div>
         <p>Thread thuộc dự án, neo vào node tuỳ chọn. Bộ lọc mặc định theo node đang chọn, và luôn nói rõ đang lọc gì. Mỗi câu trả lời có dòng run gọn: trạng thái bằng chữ, provider, thời gian; mở "Chi tiết run" để xem model, kết quả, prompt.</p>
         <ul class="doc-notes">
-          <li>Kéo câu trả lời lên canvas thành node ý tưởng, nối <code>derived-from</code> với node nguồn. Nút chữ "Tạo node" nằm ngay dưới câu trả lời, làm cùng việc cho người dùng bàn phím.</li>
+          <li>Kéo câu trả lời lên canvas thành node ý tưởng, nối <code>derived-from</code> với node nguồn. Nút chữ "Tạo node" nằm ngay dưới câu trả lời, làm cùng việc cho người dùng bàn phím. Mặc định gộp 1 node; nút "Tách 3 node" bên cạnh tạo riêng từng mục trong danh sách.</li>
           <li>Bộ lọc "Liên quan node đang chọn" chỉ có ở danh sách thread. Nút xoá lọc là nút riêng.</li>
           <li>Run lỗi vẫn là một tin trong thread: nói rõ canvas chưa đổi, cho thử lại hoặc thử provider khác.</li>
         </ul>
@@ -117,14 +121,16 @@
 
   <section class="doc-section" id="s3">
     <header>
-      <h2>3. Tab Thay đổi</h2>
+      <h2>3. Tab Cần bạn</h2>
       <div>
-        <p>Mỗi run một ChangeSet, đủ 4 loại mục. Node tạo mới đã áp dụng và bỏ được. Sửa text, đổi palette, xoá node luôn chờ duyệt. Nhận hàng loạt không bao gồm xoá và mục đã cũ; xoá nằm riêng dưới "Cần duyệt riêng".</p>
+        <p>Mỗi run một ChangeSet, đủ 4 loại mục. Node tạo mới đã áp dụng và bỏ được. Sửa text, đổi palette, xoá node luôn chờ duyệt. Nhận hàng loạt không bao gồm xoá và mục đã cũ; xoá nằm riêng dưới "Cần duyệt riêng", có số đếm ngay trên nhãn nhóm.</p>
         <ul class="doc-notes">
+          <li><b>Chỉ mục đang xem mở rộng.</b> Ba mục còn lại (đã áp dụng, đã cũ, xoá) thu về 1 dòng tóm tắt kèm "Xem chi tiết", nên mục xoá không còn bị đẩy xuống dưới màn hình như bản trước.</li>
           <li>Mục đang xem được đánh dấu cả trong panel lẫn trên canvas (viền đứt quanh node). Mọi mục có "Xem trên canvas" để pan node ra khỏi vùng panel che.</li>
           <li>Diff text: gạch ngang là bỏ, gạch chân kèm nền nhạt là thêm. Không dựa vào màu.</li>
-          <li>Chữ trạng thái "Chờ duyệt" màu trung tính. Chỉ "Đã áp dụng" dùng accent. "Đã cũ" dùng icon cảnh báo và chữ đậm, vì token amber của preset cyan là xanh lạnh, dễ lẫn với accent.</li>
+          <li>Chữ trạng thái "Chờ duyệt" màu trung tính. Chỉ "Đã áp dụng"/"Đã nhận" dùng accent. "Đã cũ" dùng icon cảnh báo và chữ đậm, vì token amber của preset cyan là xanh lạnh, dễ lẫn với accent.</li>
           <li>Đã cũ: node bị sửa sau khi Kira đề xuất. Nút Nhận biến mất, thay bằng "Đề xuất lại".</li>
+          <li><b>"Từ chối" đề xuất, "Gỡ node" đã áp dụng</b>: hai việc khác nhau nên không còn dùng chung chữ "Bỏ". Gỡ một node mang nhãn "AI, đã sửa" hiện cảnh báo trước, cùng kiểu với "Đã cũ", vì gỡ sẽ mất luôn phần người dùng viết thêm.</li>
           <li>Xoá dùng nút danger và nói trước là sẽ lưu version. "Lịch sử node" và "Version trước Kira" chỉ là liên kết sang cơ chế sẵn có.</li>
         </ul>
       </div>
@@ -147,8 +153,8 @@
     <header>
       <h2>5. Dòng trạng thái ở dock</h2>
       <div>
-        <p>Khi panel đóng, dock báo một câu và một hành động, nằm sát nút Kira ở góc dưới phải, không che giữa canvas. Năm trạng thái: chờ duyệt, skill chờ bạn, đang chạy, xong, lỗi.</p>
-        <ul class="doc-notes"><li>"Xong" tự ẩn sau 6 giây. "Chờ duyệt", "skill chờ bạn" và "lỗi" ở lại tới khi người dùng xử lý.</li><li>"Skill chờ bạn" mở thẳng tab Thay đổi ở đúng điểm dừng, để pipeline không dừng im lặng khi panel đóng.</li></ul>
+        <p>Khi panel đóng, dock báo một câu và một hành động, nằm sát nút Kira ở góc dưới phải, không che giữa canvas. Năm trạng thái: cần bạn, skill chờ bạn, đang chạy, xong, lỗi.</p>
+        <ul class="doc-notes"><li>"Xong" tự ẩn sau 6 giây. "Cần bạn", "skill chờ bạn" và "lỗi" ở lại tới khi người dùng xử lý.</li><li>Chữ "cần bạn" ở dòng trạng thái khớp với tên tab, thay cho "chờ duyệt" trước đây (số liệu và chữ giờ đi cùng nhau). "Mở" ở cả hai trạng thái vào thẳng tab Cần bạn ở đúng mục hoặc điểm dừng, để pipeline không dừng im lặng khi panel đóng.</li></ul>
       </div>
     </header>
     <div class="pair is-side" data-frames="s5-dock"></div>
@@ -159,12 +165,36 @@
     <header>
       <h2>6. Điểm dừng của skill</h2>
       <div>
-        <p>Skill đang chờ nằm đầu tab Thay đổi, danh sách thay đổi vẫn ở ngay dưới. Bước hiện tại nói bằng chữ "Chờ bạn"; dừng skill là nút có chữ. Curate ảnh ghi license và tác giả dưới từng ảnh; ảnh chưa rõ quyền không được chọn sẵn. Mỗi nhánh đã giữ đều có nhóm riêng, kể cả nhánh 0 ảnh.</p>
-        <ul class="doc-notes"><li>Nhánh không có ảnh hiện "0 kết quả", kèm nguồn, query đã dùng và việc làm tiếp. Không bao giờ im lặng như lỗi creative-os.</li></ul>
+        <p>Skill đang chờ nằm đầu tab Cần bạn, danh sách thay đổi khác vẫn có lối vào ngay dưới ("Xem tab Cần bạn"). Bước hiện tại nói bằng chữ "Chờ bạn"; dừng skill là nút có chữ. Curate ảnh ghi license và tác giả dưới từng ảnh; ảnh chưa rõ quyền không được chọn sẵn. Mỗi nhánh đã giữ đều có nhóm riêng, kể cả nhánh 0 ảnh.</p>
+        <ul class="doc-notes">
+          <li>Nhánh không có ảnh hiện "0 kết quả", kèm nguồn, query đã dùng và việc làm tiếp. Không bao giờ im lặng như lỗi creative-os.</li>
+          <li><b>Một quy tắc chọn sẵn duy nhất</b>, áp cho cả 3 nhánh kể cả 2 nhánh đang thu gọn: ảnh có license rõ thì chọn sẵn, ảnh chưa rõ quyền thì không. Nút "Thêm 9 ảnh, 3 nhánh" nói rõ tổng số và phạm vi, không âm thầm bỏ qua 2 nhánh thu gọn.</li>
+        </ul>
       </div>
     </header>
     <div class="pair is-side" data-frames="s6-concept"></div>
     <div class="pair is-side" data-frames="s6-curate" style="margin-top:20px"></div>
+  </section>
+
+  <section class="doc-section" id="s7">
+    <header>
+      <h2>7. Sau khi Nhận</h2>
+      <div>
+        <p>Bấm "Nhận" trên mục sửa text: một dòng xác nhận hiện ở đầu tab, nói rõ đã nhận cái gì, kèm hoàn tác. Mục vừa nhận thu về trạng thái "Đã nhận" (dùng màu accent như "Đã áp dụng", nhưng là động từ khác vì đây là sửa nội dung có sẵn, không phải node mới). Số đếm giảm theo: 3 cần xử lý còn 2, nút Nhận hàng loạt biến mất vì không còn mục nào nhận được theo lô.</p>
+        <ul class="doc-notes"><li>Đây là khung còn thiếu ở vòng critique 2: trước đó không có khung nào cho thấy kết quả sau khi duyệt, nên ấn tượng cuối cùng (peak-end) bỏ trống.</li></ul>
+      </div>
+    </header>
+    <div class="pair is-side" data-frames="s7-accepted"></div>
+  </section>
+
+  <section class="doc-section" id="s8">
+    <header>
+      <h2>8. Panel rỗng, lần đầu mở</h2>
+      <div>
+        <p>Dự án mới, chưa có thread nào. Tab Chat dạy cách bắt đầu bằng chữ, không dùng minh hoạ lớn (đúng PRODUCT.md, tránh onboarding rườm rà). Tab Cần bạn ở trạng thái này không có số đếm, vì chưa có gì cần xử lý.</p>
+      </div>
+    </header>
+    <div class="pair is-side" data-frames="s8-empty"></div>
   </section>
 
   <section class="doc-section" id="critique">
@@ -186,18 +216,35 @@
           <li>Đã sửa theo app: token amber mới (vàng ấm, không còn xanh lạnh), hover nút xoá dùng viền thay vì tăng tint. Diff sửa text lên 13px vì là đoạn nhiều dòng.</li>
           <li>P2 còn mở: mục Thay đổi đều mở sẵn nên mục xoá rơi xuống dưới màn hình; "Bỏ" vừa là từ chối đề xuất vừa là gỡ node đã áp dụng, và gỡ một node AI đã bị sửa không có chặn; chữ "chờ duyệt" ở dock và số liệu trong một kịch bản còn lệch nhau; mặc định chọn ảnh khi curate không nhất quán và nút thêm không nói bỏ qua gì.</li>
         </ul>
+        <p style="margin-top:16px">User trả lời 4 câu hỏi mở của vòng 2 (quyết định 6-10, xem "Bổ sung sau critique vòng 2" ở mục dưới), và sau đó cả 4 P2 còn lại đều đã sửa trong bản này; không chạy lại điểm critique đầy đủ cho lượt này.</p>
+        <ul class="doc-notes">
+          <li>Mục Cần bạn (đổi tên từ "Thay đổi") giờ chỉ mở mục đang xem; ba mục còn lại thu về 1 dòng tóm tắt kèm "Xem chi tiết", nên mục xoá luôn nằm trong tầm nhìn.</li>
+          <li>"Bỏ node" tách thành "Gỡ node" (áp dụng), "Từ chối" (đề xuất) và "Giữ node" (xoá) không còn dùng chung một chữ. Gỡ node mang nhãn "AI, đã sửa" hiện cảnh báo trước, cùng kiểu với "Đã cũ".</li>
+          <li>Số liệu khớp lại: run tạo 2 node nên ChangeSet có 2 mục "Đã áp dụng", không phải 1; "đề xuất 3 thay đổi" (sửa text, palette, xoá) khớp đúng 3 mục "cần xử lý" của changeset đó.</li>
+          <li>Quy tắc chọn ảnh sẵn ("license rõ thì chọn") áp dụng cho cả nhánh đang thu gọn, không chỉ nhánh đang mở; nút thêm ảnh nói rõ tổng số và số nhánh.</li>
+          <li>a11y: bỏ <code>aria-label</code> che tên hiển thị của nút đổi thread (WCAG 2.5.3); chip provenance tăng vùng bấm lên 24px; nhãn nút dock không còn hứa sai khi đang ở tab Cần bạn.</li>
+          <li>Thêm 2 khung còn thiếu: §7 trạng thái sau khi Nhận (peak-end), §8 panel rỗng lúc lần đầu mở.</li>
+        </ul>
       </div>
     </header>
   </section>
 
   <section class="doc-section" id="decisions">
-    <header><h2>Quyết định cần user chốt</h2><p>Mockup đang theo phương án in đậm. Mỗi mục đổi được mà không đụng mô hình dữ liệu.</p></header>
+    <header><h2>Quyết định cần user chốt</h2><p>5 mục bố cục gốc, mockup đang theo phương án in đậm, chưa mục nào bị đổi ở lượt này.</p></header>
     <ol class="decisions">
       <li><strong>Panel đè hay đẩy canvas</strong><p><em>Đè</em>, như Thư viện. Chrome nổi lùi theo <code>--canvas-right-inset</code>, canvas giữ nguyên, node đang chọn bị che thì tự pan vào.</p><p>Đẩy: canvas co lại, không bao giờ che node, nhưng viewport nhảy mỗi lần mở và đóng.</p></li>
       <li><strong>Độ rộng mặc định</strong><p><em>360px</em>, bằng Thư viện, kéo mép để đổi trong khoảng 320 đến 480px, nhớ theo máy.</p><p>Cố định 360px: đơn giản hơn, nhưng ảnh curate chỉ 3 cột.</p></li>
       <li><strong>Cửa sổ hẹp</strong><p><em>Dưới 1180px chỉ một ngăn</em>: mở panel thì Thư viện thu lại, và ngược lại.</p><p>Cho mở cả hai: ở 1024px canvas còn khoảng 220px.</p></li>
       <li><strong>Ô nhập khi panel mở</strong><p><em>Ô nhập chuyển vào panel</em>, dock chỉ còn nút Kira. Luôn chỉ có một chỗ gõ.</p><p>Panel không có ô nhập, luôn gõ ở dock: tách vai rõ nhất, nhưng phải liếc giữa đáy canvas và panel.</p></li>
       <li><strong>Vị trí nút mở</strong><p><em>Đầu phải hàng tab tệp</em>, cố định với mọi view.</p><p>Cạnh nút cài đặt dự án trên topbar: gần nội dung hơn, nhưng lùi theo inset và dễ chồng lớp như §3.1.</p></li>
+    </ol>
+    <p style="margin-top:24px">5 câu hỏi mở ra sau critique vòng 2, user đã chốt (xem <code>DECISIONS.md</code> mục 6-10), đã lên mockup ở bản này:</p>
+    <ol class="decisions decisions-locked">
+      <li><strong>Tên tab và số đếm</strong><p><em>"Cần bạn"</em>, thay "Thay đổi". Số đếm là một số duy nhất: chờ duyệt + đã cũ + skill ở checkpoint, dùng chung nút Kira, tab và dòng trạng thái dock.</p></li>
+      <li><strong>Ô nhập khi ở tab Cần bạn</strong><p><em>Chuyển sang Chat và focus ô nhập</em> khi bấm nút gõ ở dock.</p></li>
+      <li><strong>"Mở" ở dòng dock vs nút Kira</strong><p><em>"Mở" vào thẳng Cần bạn đúng mục</em>; nút Kira ở hàng tab tệp giữ tab đã mở lần trước.</p></li>
+      <li><strong>Thư viện khi mở Kira ở cửa sổ rộng</strong><p><em>Không tự thu</em>, kể cả mở từ thao tác duyệt. Chỉ thu dưới 1180px như mục bố cục 3.</p></li>
+      <li><strong>Kéo câu trả lời lên canvas</strong><p><em>Mặc định 1 node gộp</em>, có nút "Tách 3 node" để tạo riêng từng mục.</p></li>
     </ol>
   </section>
 </div>

@@ -43,37 +43,45 @@ const swatches = (cols, changed = []) => `<div class="swatches${changed.length ?
 
 const GRAD_DEFS = `<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs><linearGradient id="kira-grad" x1="0" y1="1" x2="1" y2="0"><stop offset="0%" stop-color="#f0c07f"/><stop offset="52%" stop-color="#d79fc0"/><stop offset="100%" stop-color="#a5a6ea"/></linearGradient></defs></svg>`
 
-/* One count everywhere: items that still need a decision, across all
-   changesets (pending plus stale). Applied items are not counted. */
+/* One count everywhere per DECISIONS.md #6: items that still need a
+   decision, across all changesets (pending plus stale), PLUS 1 while a
+   skill sits paused at a checkpoint. shell() computes the checkpoint bump;
+   this constant is only the changeset-side total. */
 const NEEDS_DECISION = 4
+const SKILL_CHECKPOINT_BUMP = 1
 
 /* ---------- shell ---------- */
 
-function shell({ theme, w, h, library = true, panel = null, panelWidth = 360, pending = NEEDS_DECISION, dock = 'orb', canvas = 'board', narrow = false, review = false, id }) {
+function shell({ theme, w, h, library = true, panel = null, panelWidth = 360, pending, dock = 'orb', canvas = 'board', narrow = false, review = false, id }) {
+  const skillActive = panel === 'pipe-concept' || panel === 'pipe-curate'
+  // DECISIONS.md #6: one number for the toggle, the tab and the dock line.
+  const count = pending ?? (NEEDS_DECISION + (skillActive ? SKILL_CHECKPOINT_BUMP : 0))
   const cls = ['kf', `t-${theme}`, library ? '' : 'no-library', panel ? 'has-panel' : '', narrow ? 'is-narrow' : ''].join(' ')
   return `
   <div class="${cls}" style="--fw:${w}px;--fh:${h}px;--kira-panel-width:${panelWidth}px" data-frame="${id}">
     ${GRAD_DEFS}
     ${canvasLayer(canvas, { w, narrow, review })}
-    ${tabBar({ panel, pending })}
+    ${tabBar({ panel, pending: count })}
     ${rail({ library })}
     ${library ? libraryDrawer() : ''}
     ${topbar({ narrow })}
     ${zoom()}
-    ${bottomBar({ dock, pending, narrow, panel })}
-    ${panel ? kiraPanel(panel) : ''}
+    ${bottomBar({ dock, pending: count, narrow, panel })}
+    ${panel ? kiraPanel(panel, count) : ''}
   </div>`
 }
 
 function tabBar({ panel, pending }) {
-  const label = panel ? 'Đóng panel Kira' : `Mở panel Kira, ${pending} thay đổi cần xử lý`
+  // DECISIONS.md #8: this button keeps whichever tab was open last time,
+  // unlike the dock status line's "Mở" which always jumps to Cần bạn.
+  const label = panel ? 'Đóng panel Kira' : `Mở panel Kira${pending ? `, ${pending} mục cần bạn` : ''}`
   return `
   <header class="file-tab-bar" aria-label="Tệp đang mở">
     <div class="traffic" aria-hidden="true"><i></i><i></i><i></i></div>
     <button class="file-tab is-active"><span class="dot"></span>Hanoi noir coffee</button>
     <button class="file-tab">Bảng màu quán</button>
     <button class="file-tab-add" aria-label="Tệp mới">${icon('plus', 'sm')}</button>
-    <button class="panel-toggle ${panel ? 'is-active' : ''}" aria-pressed="${panel ? 'true' : 'false'}" aria-label="${label}" title="Panel Kira (⌥⌘K)">
+    <button class="panel-toggle ${panel ? 'is-active' : ''}" aria-pressed="${panel ? 'true' : 'false'}" aria-label="${label}" title="Panel Kira (⌥⌘K), giữ tab đang mở">
       ${icon('panel-right')}<span>Kira</span>${pending ? `<span class="count">${pending}</span>` : ''}
     </button>
   </header>`
@@ -129,11 +137,13 @@ function zoom() {
 
 function dockStatus(kind, pending) {
   if (kind === 'status') {
-    return `<div class="dock-status" role="status">${icon('git-branch', 'sm')}<span><b>${pending} thay đổi</b> chờ duyệt</span><button class="link-button" aria-label="Mở panel Kira ở tab Thay đổi">Mở</button></div>`
+    // DECISIONS.md #6+#8: same word ("cần bạn") as the tab name, same count
+    // as the toggle; "Mở" jumps straight to Cần bạn at the pending item.
+    return `<div class="dock-status" role="status">${icon('git-branch', 'sm')}<span><b>${pending} mục</b> cần bạn</span><button class="link-button" aria-label="Mở panel Kira ở tab Cần bạn, đúng mục đang chờ">Mở</button></div>`
   }
   if (kind === 'skill') {
     // A paused pipeline must never stall silently while the panel is closed.
-    return `<div class="dock-status" role="status">${icon('workflow', 'sm')}<span><b>Skill chờ bạn</b> <span class="sep">·</span> Duyệt nhánh concept</span><button class="link-button" aria-label="Mở panel Kira ở điểm dừng của skill">Mở</button></div>`
+    return `<div class="dock-status" role="status">${icon('workflow', 'sm')}<span><b>Skill chờ bạn</b> <span class="sep">·</span> Duyệt nhánh concept</span><button class="link-button" aria-label="Mở panel Kira ở tab Cần bạn, đúng điểm dừng của skill">Mở</button></div>`
   }
   if (kind === 'running') {
     return `<div class="dock-status" role="status">${icon('clock', 'sm')}<span>Kira đang chạy <span class="sep">·</span> Tách nhánh concept <span class="sep">·</span> <span class="num">12 giây</span></span><button class="link-button">Dừng</button></div>`
@@ -148,6 +158,14 @@ function dockStatus(kind, pending) {
 }
 
 function bottomBar({ dock, pending, narrow, panel }) {
+  // DECISIONS.md #7: the dock orb only promises to focus an input when the
+  // panel is already showing Chat. On Cần bạn (no composer there) it says
+  // what actually happens: switch to Chat first.
+  const orbLabel = !panel
+    ? 'Hỏi Kira'
+    : panel === 'changes' || panel.startsWith('pipe')
+      ? 'Chuyển sang Chat và đưa con trỏ vào ô nhập'
+      : 'Đưa con trỏ vào ô nhập của panel'
   return `
   <div class="bottom-bar">
     <div class="bottom-left">
@@ -165,7 +183,7 @@ function bottomBar({ dock, pending, narrow, panel }) {
       </div>
       <div class="kira-dock-wrap">
         ${panel ? '' : dockStatus(dock, pending)}
-        <button class="kira-dock" aria-label="${panel ? 'Đưa con trỏ vào ô nhập của panel' : 'Hỏi Kira'}">${kiraMark()}</button>
+        <button class="kira-dock" aria-label="${orbLabel}">${kiraMark()}</button>
       </div>
     </div>
   </div>`
@@ -219,17 +237,19 @@ function canvasLayer(kind, { w, narrow, review }) {
 
 /* ---------- panel ---------- */
 
-function kiraPanel(view) {
+function kiraPanel(view, pending = NEEDS_DECISION) {
   const tab = view.startsWith('changes') || view.startsWith('pipe') ? 'changes' : 'chat'
   const body = {
     chat: chatThread(false),
     'chat-run': chatThread(true),
     threads: threadList(),
-    changes: changesView(),
+    changes: changesView({}),
+    'changes-accepted': changesView({ accepted: true }),
+    empty: emptyChat(),
     'pipe-concept': pipelineConcept(),
     'pipe-curate': pipelineCurate(),
   }[view]
-  const foot = tab === 'chat' && view !== 'threads' ? composer() : ''
+  const foot = tab === 'chat' && view !== 'threads' && view !== 'empty' ? composer() : ''
   return `
   <aside class="kira-panel" aria-label="Kira">
     <div class="kp-head">
@@ -239,7 +259,7 @@ function kiraPanel(view) {
       </div>
       <div class="segmented kp-tabs" role="tablist" aria-label="Nội dung panel">
         <button role="tab" aria-selected="${tab === 'chat'}" class="${tab === 'chat' ? 'is-active' : ''}">${icon('message-square', 'sm')}Chat</button>
-        <button role="tab" aria-selected="${tab === 'changes'}" class="${tab === 'changes' ? 'is-active' : ''}">${icon('git-branch', 'sm')}Thay đổi <span class="count">${NEEDS_DECISION}</span></button>
+        <button role="tab" aria-selected="${tab === 'changes'}" class="${tab === 'changes' ? 'is-active' : ''}">${icon('git-branch', 'sm')}Cần bạn ${pending ? `<span class="count">${pending}</span>` : ''}</button>
       </div>
     </div>
     <div class="kp-body">${body}</div>
@@ -250,7 +270,7 @@ function kiraPanel(view) {
 function chatTools() {
   return `
   <div class="chat-tools">
-    <button class="thread-switch" aria-haspopup="listbox" aria-label="Tất cả thread">
+    <button class="thread-switch" aria-haspopup="listbox">
       <span><strong>Tách nhánh concept Hanoi noir</strong><span class="row-sub">14 tin · cập nhật 14:32</span></span><span class="switch-all">Tất cả${icon('chevron-down', 'xs')}</span>
     </button>
   </div>`
@@ -285,6 +305,15 @@ function threadList() {
   <ul class="list">${rest.map(row).join('')}</ul>`
 }
 
+function emptyChat() {
+  return `
+  <div class="kp-empty">
+    ${icon('message-square', 'lg')}
+    <h4>Chưa có thread nào</h4>
+    <p>Chọn một node rồi hỏi Kira ở dock dưới canvas. Thread mới tự neo vào node đang chọn.</p>
+  </div>`
+}
+
 function chatThread(dragging) {
   return `
   ${chatTools()}
@@ -309,8 +338,9 @@ function chatThread(dragging) {
     <div class="answer-actions" role="toolbar" aria-label="Đưa câu trả lời lên canvas">
       ${dragging
         ? `<span class="drag-state">${icon('grip-vertical', 'xs')}Đang kéo lên canvas. Esc để huỷ.</span>`
-        : `<span class="grip" title="Kéo lên canvas">${icon('grip-vertical', 'xs')}</span><button class="quiet-button sm">${icon('plus', 'xs')}Tạo node</button><span class="row-sub">hoặc kéo thả lên canvas</span>`}
+        : `<span class="grip" title="Kéo lên canvas">${icon('grip-vertical', 'xs')}</span><button class="quiet-button sm">${icon('plus', 'xs')}Tạo node</button><button class="link-button sm">Tách 3 node</button>`}
     </div>
+    ${dragging ? '' : `<p class="answer-hint">Mặc định gộp 1 node. "Tách 3 node" tạo riêng từng mục trong danh sách.</p>`}
     <div class="run-line">
       <span class="state-ok">${icon('check', 'xs')}Xong</span><span>Claude Code · 8,4 giây</span>
       <button class="disclosure" aria-expanded="${dragging}">Chi tiết run${icon('chevron-down', 'xs')}</button>
@@ -321,7 +351,7 @@ function chatThread(dragging) {
       <div><dt>Model</dt><dd class="mono">claude-sonnet-5</dd></div>
       <div><dt>Bắt đầu</dt><dd class="num">14:31:52 · 8,4 giây</dd></div>
       <div><dt>Trạng thái</dt><dd><span class="state-ok">${icon('check', 'xs')}Xong</span></dd></div>
-      <div><dt>Kết quả</dt><dd>Tạo 2 node, đề xuất 2 thay đổi <button class="link-button sm">Mở Thay đổi</button></dd></div>
+      <div><dt>Kết quả</dt><dd>Tạo 2 node, đề xuất 3 thay đổi <button class="link-button sm">Mở Cần bạn</button></dd></div>
       <div><dt>Prompt</dt><dd><span class="mono prompt">You are assisting an art director. Split the selected idea "Hanoi noir: quán cà phê đêm" into 3 concept branches, each buildable as its own moodboard…</span><button class="link-button sm">Xem đầy đủ</button></dd></div>
     </dl>` : ''}
   </div>
@@ -345,66 +375,116 @@ function composer() {
   <div class="composer-meta"><span>Ngữ cảnh: 1 node, 2 ảnh</span><span>Claude Code</span></div>`
 }
 
-function changesView() {
-  return `
-  <p class="cs-summary"><span><b>${NEEDS_DECISION}</b> cần xử lý</span><span class="muted">·</span><span>1 đã áp dụng</span></p>
+function changesView({ accepted = false }) {
+  const toast = accepted ? `
+  <div class="accept-toast" role="status">${icon('check', 'sm')}<span>Đã nhận: <b>Sửa text</b> "Hanoi noir: quán cà phê đêm"</span><button class="link-button sm">Hoàn tác ⌘Z</button></div>` : ''
 
-  <section class="changeset" aria-label="Thay đổi từ run Tách nhánh concept">
-    <div class="cs-head">
-      <h4>Tách nhánh concept Hanoi noir</h4>
-      <span class="row-sub">Claude Code · 14:32 · 3 cần xử lý</span>
-    </div>
-    <div class="cs-actions">
-      <button class="quiet-button sm">${icon('check', 'xs')}Nhận 1 sửa text</button>
-      <button class="quiet-button sm">Bỏ các đề xuất</button>
-      <button class="link-button sm" title="Version Kira lưu trước lần nhận gần nhất">${icon('history', 'xs')}Version trước Kira</button>
-    </div>
-    <p class="cs-rule">Nhận hàng loạt không bao gồm xoá và mục đã cũ.</p>
+  const bulkActions = accepted
+    ? `<button class="quiet-button sm">Bỏ các đề xuất</button>`
+    : `<button class="quiet-button sm">${icon('check', 'xs')}Nhận 1 sửa text</button>
+       <button class="quiet-button sm">Bỏ các đề xuất</button>`
 
-    <ul class="list">
-      <li class="item is-applied">
+  const summary = accepted
+    ? `<p class="cs-summary"><span><b>2</b> cần xử lý</span><span class="muted">·</span><span><b>2</b> đã áp dụng</span><span class="muted">·</span><span><b>1</b> đã nhận</span></p>`
+    : `<p class="cs-summary"><span><b>${NEEDS_DECISION}</b> cần xử lý</span><span class="muted">·</span><span><b>2</b> đã áp dụng</span></p>`
+
+  // Applied item 1: a plain AI creation, no guard needed.
+  const appliedPlain = `
+      <li class="item">
         <span class="op">${icon('plus', 'xs')}</span>
         <div class="item-line"><div><span class="item-kind">Tạo node</span><span class="item-target">Quầy bar ánh đồng</span></div>
           <span class="item-status state-ok">${icon('check', 'xs')}Đã áp dụng</span></div>
         <div class="item-body">
-          <div class="item-foot"><button class="link-button sm">${icon('locate-fixed', 'xs')}Xem trên canvas</button><div class="acts"><button class="quiet-button sm">Bỏ node</button></div></div>
+          <div class="item-foot"><button class="link-button sm">${icon('locate-fixed', 'xs')}Xem trên canvas</button><div class="acts"><button class="quiet-button sm">Gỡ node</button></div></div>
         </div>
-      </li>
+      </li>`
 
+  // Applied item 2: the node carries "AI, đã sửa", so removing it needs the
+  // same kind of guard as a stale edit, not a bare button.
+  const appliedGuarded = `
+      <li class="item">
+        <span class="op">${icon('plus', 'xs')}</span>
+        <div class="item-line"><div><span class="item-kind">Tạo node</span><span class="item-target">Phố cổ sau mưa</span></div>
+          <span class="item-status state-ok">${icon('check', 'xs')}Đã áp dụng</span></div>
+        <div class="item-body">
+          <p class="stale-note">${icon('triangle-alert', 'xs')}<span><b>Bạn đã sửa nội dung node này</b> sau khi Kira tạo. Gỡ sẽ xoá cả phần bạn viết thêm.</span></p>
+          <div class="item-foot"><button class="link-button sm">${icon('locate-fixed', 'xs')}Xem trên canvas</button><div class="acts"><button class="quiet-button sm">Gỡ node</button></div></div>
+        </div>
+      </li>`
+
+  // The sửa-text item: expanded and focused before Nhận, collapsed and
+  // marked "Đã nhận" after. Only one item is ever expanded at a time, so
+  // the delete item below never falls below the fold.
+  const textItem = accepted ? `
+      <li class="item">
+        <span class="op">${icon('pencil', 'xs')}</span>
+        <div class="item-line"><div><span class="item-kind">Sửa text</span><span class="item-target">Hanoi noir: quán cà phê đêm</span></div>
+          <span class="item-status state-ok">${icon('check', 'xs')}Đã nhận</span></div>
+        <div class="item-body">
+          <div class="item-foot"><button class="disclosure" aria-expanded="false">Xem nội dung đã nhận${icon('chevron-down', 'xs')}</button><span></span></div>
+        </div>
+      </li>` : `
       <li class="item is-focused" aria-current="true">
         <span class="op">${icon('pencil', 'xs')}</span>
         <div class="item-line"><div><span class="item-kind">Sửa text</span><span class="item-target">Hanoi noir: quán cà phê đêm</span></div>
           <span class="item-status state-wait">Chờ duyệt</span></div>
         <div class="item-body">
           <p class="diff">Ánh vàng thấp, gỗ tối, <del>kính mờ hơi nước</del> <ins>kính mờ và đồng xước</ins>. Khách ngồi quay lưng ra phố<ins>, quầy là nguồn sáng duy nhất</ins>.</p>
-          <div class="item-foot"><span class="item-links"><button class="link-button sm">${icon('locate-fixed', 'xs')}Đang hiện trên canvas</button><button class="link-button sm">${icon('history', 'xs')}Lịch sử node</button></span><div class="acts"><button class="quiet-button sm">Bỏ</button><button class="primary-button sm">Nhận</button></div></div>
+          <div class="item-foot"><span class="item-links"><button class="link-button sm">${icon('locate-fixed', 'xs')}Đang hiện trên canvas</button><button class="link-button sm">${icon('history', 'xs')}Lịch sử node</button></span><div class="acts"><button class="quiet-button sm">Từ chối</button><button class="primary-button sm">Nhận</button></div></div>
         </div>
-      </li>
+      </li>`
 
+  // The palette item: collapsed by default (per the "only the focused item
+  // opens" rule), with the stale reasoning summarised in one line.
+  const paletteItem = `
       <li class="item is-stale">
         <span class="op">${icon('palette', 'xs')}</span>
         <div class="item-line"><div><span class="item-kind">Đổi palette</span><span class="item-target">Đêm Hàng Buồm</span></div>
           <span class="item-status state-attn">${icon('triangle-alert', 'xs')}Đã cũ</span></div>
         <div class="item-body">
-          <div class="pal-compare"><span class="lbl">Trước</span>${swatches(PAL_BEFORE)}<span class="lbl">Sau</span>${swatches(PAL_AFTER, [1, 2, 4])}<span></span><span class="row-sub">3 màu đổi, đánh dấu dưới ô</span></div>
-          <p class="stale-note">${icon('triangle-alert', 'xs')}<span><b>Bạn đã sửa palette lúc 14:40</b>, sau khi Kira đề xuất. Nhận bây giờ sẽ ghi đè chỉnh sửa đó, nên chỉ còn Đề xuất lại hoặc Bỏ.</span></p>
-          <div class="item-foot"><span class="item-links"><button class="link-button sm">${icon('locate-fixed', 'xs')}Xem trên canvas</button></span><div class="acts"><button class="quiet-button sm">Bỏ</button><button class="quiet-button sm">${icon('refresh-cw', 'xs')}Đề xuất lại</button></div></div>
+          <p class="item-summary-line">${icon('triangle-alert', 'xs')}Bạn đã sửa palette lúc 14:40, sau khi Kira đề xuất.</p>
+          <div class="item-foot"><button class="disclosure" aria-expanded="false">Xem chi tiết${icon('chevron-down', 'xs')}</button><div class="acts"><button class="quiet-button sm">Từ chối</button><button class="quiet-button sm">${icon('refresh-cw', 'xs')}Đề xuất lại</button></div></div>
         </div>
-      </li>
-    </ul>
+      </li>`
 
-    <div class="group-label"><span>Cần duyệt riêng</span></div>
-    <ul class="list">
+  // The delete item: collapsed too, so it never sits below the fold behind
+  // three fully expanded items above it.
+  const deleteItem = `
       <li class="item">
         <span class="op is-delete">${icon('trash-2', 'xs')}</span>
         <div class="item-line"><div><span class="item-kind is-delete">Xoá node</span><span class="item-target">Ghi chú cũ về ánh đèn</span></div>
           <span class="item-status state-wait">Chờ duyệt</span></div>
         <div class="item-body">
-          <div class="delete-preview">${icon('lightbulb', 'xs')}<s>Ghi chú cũ về ánh đèn</s><span>· 2 liên kết sẽ mất</span></div>
-          <div class="item-foot"><span class="item-links"><button class="link-button sm">${icon('locate-fixed', 'xs')}Xem trên canvas</button></span><div class="acts"><button class="quiet-button sm">Giữ node</button><button class="danger-button sm">Xoá node</button></div></div>
-          <p class="item-note">Kira lưu version trước khi xoá. Hoàn tác bằng ⌘Z.</p>
+          <p class="item-summary-line">2 liên kết sẽ mất. Kira lưu version trước khi xoá.</p>
+          <div class="item-foot"><button class="disclosure" aria-expanded="false">Xem chi tiết${icon('chevron-down', 'xs')}</button><div class="acts"><button class="quiet-button sm">Giữ node</button><button class="danger-button sm">Xoá node</button></div></div>
         </div>
-      </li>
+      </li>`
+
+  return `
+  ${toast}
+  ${summary}
+
+  <section class="changeset" aria-label="Thay đổi từ run Tách nhánh concept">
+    <div class="cs-head">
+      <h4>Tách nhánh concept Hanoi noir</h4>
+      <span class="row-sub">Claude Code · 14:32 · ${accepted ? '2 cần xử lý' : '3 cần xử lý'}</span>
+    </div>
+    <div class="cs-actions">
+      ${bulkActions}
+      <button class="link-button sm" title="Version Kira lưu trước lần nhận gần nhất">${icon('history', 'xs')}Version trước Kira</button>
+    </div>
+    <p class="cs-rule">Nhận hàng loạt không bao gồm xoá và mục đã cũ.</p>
+
+    <ul class="list">
+      ${appliedPlain}
+      ${appliedGuarded}
+      ${textItem}
+      ${paletteItem}
+    </ul>
+
+    <div class="group-label"><span>Cần duyệt riêng</span><span class="num">1</span></div>
+    <ul class="list">
+      ${deleteItem}
     </ul>
   </section>
 
@@ -412,7 +492,7 @@ function changesView() {
     <button class="cs-collapsed"><span><strong>Palette cho biển hiệu</strong><span class="row-sub">OpenAI · hôm qua · 1 cần xử lý</span></span>${icon('chevron-down', 'sm')}</button>
   </section>
 
-  <button class="handled" aria-expanded="false"><span>Đã xử lý · 4 mục</span>${icon('chevron-down', 'sm')}</button>`
+  <button class="handled" aria-expanded="false"><span>Đã xử lý · ${accepted ? '5' : '4'} mục</span>${icon('chevron-down', 'sm')}</button>`
 }
 
 function pipeSteps(stage) {
@@ -436,7 +516,7 @@ function pipeHead() {
 }
 
 function queueAfterSkill() {
-  return `<button class="cs-collapsed queue-link"><span><strong>Thay đổi chờ duyệt</strong><span class="row-sub">${NEEDS_DECISION} cần xử lý trong 2 run</span></span>${icon('chevron-down', 'sm')}</button>`
+  return `<button class="cs-collapsed queue-link"><span><strong>Xem tab Cần bạn</strong><span class="row-sub">${NEEDS_DECISION} mục khác đang chờ, trong 2 run</span></span>${icon('chevron-down', 'sm')}</button>`
 }
 
 const check = (on, label) => `<input class="check" type="checkbox" ${on ? 'checked' : ''} aria-label="${label}">`
@@ -464,10 +544,14 @@ function pipelineConcept() {
 }
 
 function pipelineCurate() {
+  // Same rule everywhere: a clear licence is preselected, an unclear one is
+  // not. Applied consistently, the group that's expanded (6 photos) and the
+  // two still collapsed (3 and 2 photos) all follow it, so the commit button
+  // can state a real, honest total instead of only what's on screen.
   const items = [
     ['facade', 'CC BY 4.0', 'Minh Trần', true],
     ['alley', 'CC0', 'Openverse', true],
-    ['window', 'CC BY-SA 4.0', 'Lê Hoa', false],
+    ['window', 'CC BY-SA 4.0', 'Lê Hoa', true],
     ['lantern', 'CC BY 4.0', 'Khuê Phạm', true],
     ['steam', 'Chưa rõ quyền', 'Nguồn không ghi', false, true],
     ['tile', 'CC0', 'Openverse', true],
@@ -478,10 +562,10 @@ function pipelineCurate() {
     ${pipeSteps('curate')}
     <div class="checkpoint" aria-label="Điểm dừng: curate ảnh">
       <h5>Chọn ảnh đưa lên canvas</h5>
-      <p>License và tác giả được ghi vào từng node ảnh. Ảnh chưa rõ quyền không được chọn sẵn.</p>
+      <p>License và tác giả được ghi vào từng node ảnh. Ảnh chưa rõ quyền không được chọn sẵn, ở mọi nhánh.</p>
 
       <div class="cur-group">
-        <div class="cur-group-head"><strong>Phố cổ sau mưa</strong><span class="row-sub num">4 chọn / 6 ảnh</span></div>
+        <div class="cur-group-head"><strong>Phố cổ sau mưa</strong><span class="row-sub num">5 chọn / 6 ảnh</span></div>
         <div class="thumbs">
           ${items.map(([k, lic, by, on, unknown]) => `<figure class="thumb ${on ? 'is-on' : ''}">${check(on, `${lic}, ${by}`)}<div class="frame">${thumb(k)}</div><figcaption><span class="lic ${unknown ? 'unknown' : ''}">${unknown ? icon('triangle-alert', 'xs') : ''}${lic}</span><span class="by">${by}</span></figcaption></figure>`).join('')}
         </div>
@@ -497,11 +581,11 @@ function pipelineCurate() {
       </div>
 
       <div class="cur-group">
-        <button class="cur-collapsed"><strong>Hơi nước và kính mờ</strong><span class="row-sub num">0 chọn / 3 ảnh</span>${icon('chevron-down', 'sm')}</button>
-        <button class="cur-collapsed"><strong>Biển hiệu neon cũ</strong><span class="row-sub num">0 chọn / 2 ảnh</span>${icon('chevron-down', 'sm')}</button>
+        <button class="cur-collapsed"><strong>Hơi nước và kính mờ</strong><span class="row-sub num">2 chọn / 3 ảnh</span>${icon('chevron-down', 'sm')}</button>
+        <button class="cur-collapsed"><strong>Biển hiệu neon cũ</strong><span class="row-sub num">2 chọn / 2 ảnh</span>${icon('chevron-down', 'sm')}</button>
       </div>
 
-      <div class="cp-actions"><button class="primary-button sm">Thêm 4 ảnh lên canvas</button><button class="quiet-button sm">Bỏ qua bước này</button></div>
+      <div class="cp-actions"><button class="primary-button sm">Thêm 9 ảnh, 3 nhánh</button><button class="quiet-button sm">Bỏ qua bước này</button></div>
     </div>
   </section>
   ${queueAfterSkill()}`
@@ -552,12 +636,14 @@ const FRAMES = {
   's1-narrow': (t) => shell({ theme: t, w: 1024, h: 720, panel: 'chat', panelWidth: 340, library: false, narrow: true, id: `s1-narrow-${t}` }),
   's2-threads': (t) => shell({ theme: t, w: W, h: H, panel: 'threads', id: `s2-threads-${t}` }),
   's2-run': (t) => withDrag(shell({ theme: t, w: W, h: H, panel: 'chat-run', id: `s2-run-${t}` })),
-  's3-changes': (t) => shell({ theme: t, w: W, h: 1000, panel: 'changes', review: true, id: `s3-changes-${t}` }),
+  's3-changes': (t) => shell({ theme: t, w: W, h: 1300, panel: 'changes', review: true, id: `s3-changes-${t}` }),
   's4-badges': (t) => badgeCrop(t),
   's5-dock': (t) => shell({ theme: t, w: W, h: H, dock: 'status', id: `s5-dock-${t}` }),
   's5-variants': (t) => dockCrop(t),
   's6-concept': (t) => shell({ theme: t, w: W, h: H, panel: 'pipe-concept', id: `s6-concept-${t}` }),
-  's6-curate': (t) => shell({ theme: t, w: W, h: 1000, panel: 'pipe-curate', id: `s6-curate-${t}` }),
+  's6-curate': (t) => shell({ theme: t, w: W, h: 1150, panel: 'pipe-curate', id: `s6-curate-${t}` }),
+  's7-accepted': (t) => shell({ theme: t, w: W, h: 1200, panel: 'changes-accepted', pending: 3, id: `s7-accepted-${t}` }),
+  's8-empty': (t) => shell({ theme: t, w: W, h: H, panel: 'empty', pending: 0, id: `s8-empty-${t}` }),
 }
 
 function withDrag(html) {
