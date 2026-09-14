@@ -243,8 +243,8 @@ function kiraPanel(view, pending = NEEDS_DECISION) {
     chat: chatThread(false),
     'chat-run': chatThread(true),
     threads: threadList(),
-    changes: changesView({}),
-    'changes-accepted': changesView({ accepted: true }),
+    changes: changesView({ pending }),
+    'changes-accepted': changesView({ accepted: true, pending }),
     empty: emptyChat(),
     'pipe-concept': pipelineConcept(),
     'pipe-curate': pipelineCurate(),
@@ -375,7 +375,7 @@ function composer() {
   <div class="composer-meta"><span>Ngữ cảnh: 1 node, 2 ảnh</span><span>Claude Code</span></div>`
 }
 
-function changesView({ accepted = false }) {
+function changesView({ accepted = false, pending = NEEDS_DECISION }) {
   const toast = accepted ? `
   <div class="accept-toast" role="status">${icon('check', 'sm')}<span>Đã nhận: <b>Sửa text</b> "Hanoi noir: quán cà phê đêm"</span><button class="link-button sm">Hoàn tác ⌘Z</button></div>` : ''
 
@@ -384,9 +384,12 @@ function changesView({ accepted = false }) {
     : `<button class="quiet-button sm">${icon('check', 'xs')}Nhận 1 sửa text</button>
        <button class="quiet-button sm">Bỏ các đề xuất</button>`
 
+  // This top line is the SAME global count as the Kira button and the Cần
+  // bạn tab (DECISIONS.md #6), so it always renders the `pending` prop
+  // rather than a second hardcoded number that can drift from it.
   const summary = accepted
-    ? `<p class="cs-summary"><span><b>2</b> cần xử lý</span><span class="muted">·</span><span><b>2</b> đã áp dụng</span><span class="muted">·</span><span><b>1</b> đã nhận</span></p>`
-    : `<p class="cs-summary"><span><b>${NEEDS_DECISION}</b> cần xử lý</span><span class="muted">·</span><span><b>2</b> đã áp dụng</span></p>`
+    ? `<p class="cs-summary"><span><b>${pending}</b> cần xử lý</span><span class="muted">·</span><span><b>2</b> đã áp dụng</span><span class="muted">·</span><span><b>1</b> đã nhận</span></p>`
+    : `<p class="cs-summary"><span><b>${pending}</b> cần xử lý</span><span class="muted">·</span><span><b>2</b> đã áp dụng</span></p>`
 
   // Applied item 1: a plain AI creation, no guard needed.
   const appliedPlain = `
