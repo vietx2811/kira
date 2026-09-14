@@ -10,6 +10,7 @@ Tên session có thể đổi: tìm tên hiện tại bằng `ListAgents`, đừ
 - **UI/UX**: critique và thiết kế giao diện.
 - **Researcher**: nghiên cứu, lưu báo cáo ở `docs/research/` theo `docs/research/README.md`. Không sửa code app.
 - **Worker**: triển khai việc được giao (frontend, script, tooling).
+- **Art Director**: khảo sát thẩm mỹ và định hướng phong cách (tổng thể, hệ control, nút bấm) theo chuẩn app canvas desktop. Viết báo cáo và specimen trong `docs/research/`, không sửa code app; UI/UX và Worker hiện thực hoá sau khi user chốt.
 - **Native/Backend**: `src-tauri/` (`lib.rs`, command Tauri, sidecar, đường native macOS). Tách khỏi `main.tsx` nên hầu như không tranh chấp file với UI/UX và Worker.
 
 Đổi vai trò, hoặc có bài học dùng chung: **báo Orchestrator để đưa vào file này, không tự ghi memory** (memory ghi sự thật về code sẽ lỗi thời khi code đổi).
