@@ -147,8 +147,8 @@
     <header>
       <h2>5. Dòng trạng thái ở dock</h2>
       <div>
-        <p>Khi panel đóng, dock báo một câu và một hành động, nằm sát nút Kira ở góc dưới phải, không che giữa canvas. Bốn trạng thái: chờ duyệt, đang chạy, xong, lỗi.</p>
-        <ul class="doc-notes"><li>"Xong" tự ẩn sau 6 giây. "Chờ duyệt" và "lỗi" ở lại tới khi người dùng xử lý.</li></ul>
+        <p>Khi panel đóng, dock báo một câu và một hành động, nằm sát nút Kira ở góc dưới phải, không che giữa canvas. Năm trạng thái: chờ duyệt, skill chờ bạn, đang chạy, xong, lỗi.</p>
+        <ul class="doc-notes"><li>"Xong" tự ẩn sau 6 giây. "Chờ duyệt", "skill chờ bạn" và "lỗi" ở lại tới khi người dùng xử lý.</li><li>"Skill chờ bạn" mở thẳng tab Thay đổi ở đúng điểm dừng, để pipeline không dừng im lặng khi panel đóng.</li></ul>
       </div>
     </header>
     <div class="pair is-side" data-frames="s5-dock"></div>
@@ -179,6 +179,12 @@
           <li>P2: số đếm lệch giữa nút, tab, danh sách thread; skill che danh sách thay đổi. Sửa: một định nghĩa số đếm, mọi ChangeSet đều hiện, skill là thẻ đầu tab kèm lối về danh sách.</li>
           <li>P2: Chat dựa vào icon và từ dịch sát. Sửa: nút chữ "Tạo node", "Thread mới", lọc "Liên quan node đang chọn", tác giả ảnh hiện sẵn.</li>
           <li>Detector: đoạn văn nhiều dòng ở 11px đã nâng lên 13px; nhãn một dòng giữ 11px theo type scale. Cảnh báo che chữ trên canvas dưới panel là cố ý (panel đè canvas).</li>
+        </ul>
+        <p style="margin-top:16px">Vòng 2, chấm trên bản đã sửa: <b>28/40</b> (vòng 1: 25/40). Không có P0. Kiểm thêm bằng skill <code>design-taste-frontend</code> (núm 3/3/6): không emoji, không dash, không animation tự chạy.</p>
+        <ul class="doc-notes">
+          <li>P1 (đã sửa): skill dừng ở điểm chờ không có dấu hiệu nào khi panel đóng. Dock có thêm trạng thái "Skill chờ bạn", ở lại tới khi xử lý.</li>
+          <li>Đã sửa theo app: token amber mới (vàng ấm, không còn xanh lạnh), hover nút xoá dùng viền thay vì tăng tint. Diff sửa text lên 13px vì là đoạn nhiều dòng.</li>
+          <li>P2 còn mở: mục Thay đổi đều mở sẵn nên mục xoá rơi xuống dưới màn hình; "Bỏ" vừa là từ chối đề xuất vừa là gỡ node đã áp dụng, và gỡ một node AI đã bị sửa không có chặn; chữ "chờ duyệt" ở dock và số liệu trong một kịch bản còn lệch nhau; mặc định chọn ảnh khi curate không nhất quán và nút thêm không nói bỏ qua gì.</li>
         </ul>
       </div>
     </header>
