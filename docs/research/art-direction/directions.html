@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KIRA style directions</title>
+<style>
+/* Dark tokens: values from .app-shell inline style, preset cyan, commit 83455db. */
+:root {
+  --bg-base: #020303; --bg-canvas: #040808; --surface-1: #080e0e; --surface-2: #0f1619; --surface-3: #192124;
+  --surface-drawer: #060c0c; --border-soft: rgb(255 255 255 / 0.06); --border-strong: rgb(255 255 255 / 0.13);
+  --glass-hover: rgb(255 255 255 / 0.055); --glass-active: rgb(127 200 183 / 0.24); --accent-on-glass-active: #7fc8b7;
+  --text-main: #f4f1ea; --text-soft: #b5b4af; --text-muted: #8e8e8a; --accent-cyan: #7fc8b7; --accent-amber: #dfae67;
+  --radius-2: 6px; --radius-3: 8px; --radius-4: 12px; --radius-5: 20px;
+  --text-small: 11px; --text-body: 13px; --text-title: 15px; --text-large: 20px;
+  --font-sans: -apple-system, blinkmacsystemfont, ui-sans-serif, system-ui, "Segoe UI", sans-serif;
+  font-family: var(--font-sans); font-size: 14px; line-height: 1.45;
+}
+* { box-sizing: border-box; }
+body { margin: 0; padding: 20px 24px 28px; background: #151717; color: var(--text-main); font-size: var(--text-body); }
+h1 { margin: 0 0 4px; font-size: var(--text-large); font-weight: 680; }
+.lede { margin: 0 0 16px; color: var(--text-soft); font-size: var(--text-small); max-width: 100ch; }
+.dirs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.dir h2 { margin: 0; font-size: var(--text-title); font-weight: 680; }
+.dir .thesis { margin: 2px 0 10px; color: var(--text-soft); font-size: var(--text-small); min-height: 32px; }
+.dir.rec h2::after { content: "Khuyến nghị"; margin-left: 8px; padding: 1px 8px; border-radius: 999px; background: var(--glass-active); color: var(--accent-on-glass-active); font-size: var(--text-small); font-weight: 500; vertical-align: 2px; }
+ol.notes { margin: 10px 0 0; padding-left: 18px; color: var(--text-soft); font-size: var(--text-small); }
+ol.notes li { margin: 2px 0; }
+
+/* shared mini-app frame */
+.win { position: relative; height: 380px; overflow: hidden; border-radius: 14px; border: 1px solid rgb(255 255 255 / 0.1); }
+.tabs { display: flex; align-items: center; gap: 6px; height: 34px; padding: 0 10px 0 64px; font-size: var(--text-small); }
+.lights { position: absolute; top: 12px; left: 12px; display: flex; gap: 6px; }
+.lights i { width: 10px; height: 10px; border-radius: 50%; background: rgb(255 255 255 / 0.18); }
+.tab { padding: 3px 10px; border-radius: var(--radius-2); }
+.canvas { position: absolute; top: 34px; left: 0; right: 0; bottom: 0; }
+.node { position: absolute; width: 92px; padding: 5px; border-radius: 6px; font-size: var(--text-small); }
+.node .img { height: 70px; border-radius: 4px; }
+.node .cap { padding: 4px 2px 0; }
+.idea { position: absolute; width: 128px; padding: 8px 10px; border-radius: 8px; font-size: var(--text-small); }
+.panel { position: absolute; top: 8px; right: 8px; bottom: 8px; width: 132px; padding: 10px; }
+.panel h4 { margin: 0 0 8px; font-size: var(--text-small); font-weight: 680; }
+.panel .row { display: flex; gap: 4px; margin-top: 10px; }
+.btn { display: inline-flex; align-items: center; justify-content: center; height: 26px; padding: 0 7px; white-space: nowrap; border: 1px solid transparent; font: inherit; font-size: var(--text-small); font-weight: 500; }
+.toolbar { position: absolute; left: 34%; bottom: 12px; display: flex; gap: 2px; padding: 4px; transform: translateX(-50%); }
+.tool { width: 30px; height: 30px; display: grid; place-items: center; }
+.tool svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.callout { position: absolute; z-index: 5; display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; background: #f4f1ea; color: #020303; font-size: 10px; font-weight: 700; box-shadow: 0 0 0 2px #020303; }
+.photo1 { background: linear-gradient(160deg, #cfe3ef 0%, #6f93b3 45%, #26374a 100%); }
+.photo2 { background: linear-gradient(20deg, #3a2a22 0%, #a4674a 55%, #e9c49a 100%); }
+.photo3 { background: linear-gradient(120deg, #f2efe6 0%, #d8d2c3 60%, #9c9584 100%); }
+.edge { position: absolute; height: 1px; background: rgb(255 255 255 / 0.22); transform-origin: left center; }
+
+/* ---------- A: Tuned instrument ---------- */
+.A .win { background: var(--bg-base); }
+.A .tab.on { background: rgb(255 255 255 / 0.07); }
+.A .canvas { background: var(--bg-canvas); border-top: 1px solid var(--border-soft); }
+.A .node { background: var(--surface-1); border: 1px solid var(--border-soft); }
+.A .idea { background: var(--surface-1); border: 1px solid var(--border-soft); }
+.A .idea.sel { box-shadow: 0 0 0 1.5px var(--accent-cyan); }
+.A .panel { background: var(--surface-drawer); border: 1px solid var(--border-soft); border-radius: var(--radius-4); }
+.A .btn { border-radius: 6px; }
+.A .btn.pri { background: var(--glass-active); border-color: rgb(127 200 183 / 0.38); color: var(--accent-on-glass-active); }
+.A .btn.q { color: var(--text-soft); background: var(--glass-hover); }
+.A .toolbar { background: var(--surface-2); border: 1px solid var(--border-soft); border-radius: var(--radius-3); }
+.A .tool { border-radius: 6px; color: var(--text-soft); }
+.A .tool.on { background: rgb(255 255 255 / 0.1); color: var(--text-main); }
+
+/* ---------- B: Glass chrome, paper content ---------- */
+.B .win { background: linear-gradient(135deg, #1c2a2c, #0b1011 60%); }
+.B .tabs { background: rgb(2 3 3 / 0.55); -webkit-backdrop-filter: blur(20px) saturate(1.4); backdrop-filter: blur(20px) saturate(1.4); }
+.B .tab.on { background: rgb(255 255 255 / 0.1); box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.08); }
+.B .canvas { left: 6px; right: 6px; bottom: 6px; background: var(--bg-canvas); border-radius: 12px; }
+.B .node { background: rgb(15 21 23); border: 1px solid rgb(255 255 255 / 0.05); box-shadow: 0 6px 20px rgb(0 0 0 / 0.3); }
+.B .idea { background: rgb(15 21 23); border: 1px solid rgb(255 255 255 / 0.05); box-shadow: 0 6px 20px rgb(0 0 0 / 0.3); }
+.B .idea.sel { box-shadow: 0 0 0 1.5px var(--accent-cyan), 0 6px 20px rgb(0 0 0 / 0.3); }
+.B .panel { background: var(--surface-1); border: 1px solid var(--border-soft); border-radius: 12px; box-shadow: 0 20px 60px rgb(0 0 0 / 0.35); }
+.B .panel .head { margin: -10px -10px 8px; padding: 10px; border-radius: 12px 12px 0 0; border-bottom: 1px solid var(--border-soft); }
+.B .btn { border-radius: 6px; }
+.B .btn.pri { background: var(--glass-active); border-color: rgb(127 200 183 / 0.38); color: var(--accent-on-glass-active); }
+.B .btn.sec { background: rgb(255 255 255 / 0.06); border-color: rgb(255 255 255 / 0.1); color: var(--text-main); box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.06); }
+.B .toolbar { background: rgb(15 22 25 / 0.93); border: 1px solid rgb(255 255 255 / 0.1); border-radius: 12px; box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.1), 0 16px 40px rgb(0 0 0 / 0.4); -webkit-backdrop-filter: blur(24px) saturate(1.4); backdrop-filter: blur(24px) saturate(1.4); }
+.B .tool { border-radius: 8px; color: var(--text-soft); }
+.B .tool.on { background: var(--glass-active); color: var(--accent-on-glass-active); }
+.B .zoom { position: absolute; right: 152px; bottom: 12px; display: flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; border-radius: 999px; background: rgb(15 22 25 / 0.93); border: 1px solid rgb(255 255 255 / 0.1); box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.1); -webkit-backdrop-filter: blur(24px); backdrop-filter: blur(24px); color: var(--text-soft); font-size: var(--text-small); }
+
+/* ---------- C: Studio desk ---------- */
+.C .win { background: #1a1815; }
+.C .tabs { background: #1a1815; }
+.C .tab.on { background: #2a2722; color: #efe8da; }
+.C .canvas { background: radial-gradient(rgb(255 240 210 / 0.06) 1px, transparent 1px) 0 0 / 14px 14px, #23201b; }
+.C .node { background: #f4efe4; color: #2b2822; padding: 5px 5px 8px; box-shadow: 0 2px 0 rgb(0 0 0 / 0.25), 0 10px 24px rgb(0 0 0 / 0.35); transform: rotate(-1.5deg); }
+.C .node.r2 { transform: rotate(1.2deg); }
+.C .idea { background: #e8d9a8; color: #2b2822; border-radius: 3px; font-family: "Bradley Hand", "Noteworthy", cursive; font-size: var(--text-body); box-shadow: 0 8px 18px rgb(0 0 0 / 0.35); }
+.C .idea.sel { outline: 2px solid #e0b36a; outline-offset: 3px; }
+.C .panel { background: #2a2722; border: 1px solid rgb(255 240 210 / 0.08); border-radius: 10px; color: #efe8da; }
+.C .btn { border-radius: 7px; }
+.C .btn.pri { background: linear-gradient(#e7bf7a, #d4a55c); color: #2b2011; box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.4), 0 1px 0 rgb(0 0 0 / 0.4); }
+.C .btn.q { background: linear-gradient(#3a362f, #312d27); color: #e6dfd0; box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.08), 0 1px 0 rgb(0 0 0 / 0.5); }
+.C .toolbar { background: linear-gradient(#34302a, #2a2722); border: 1px solid rgb(255 240 210 / 0.1); border-radius: 12px; box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.08), 0 12px 30px rgb(0 0 0 / 0.45); }
+.C .tool { border-radius: 8px; color: #c9c0ae; }
+.C .tool.on { background: #1d1a16; box-shadow: inset 0 1px 3px rgb(0 0 0 / 0.6); color: #e7bf7a; }
+.C .tool.k1 { color: #e0b36a; } .C .tool.k2 { color: #9fb58a; } .C .tool.k3 { color: #d59a86; }
+</style>
+</head>
+<body>
+<h1>KIRA: 3 hướng phong cách</h1>
+<p class="lede">Mock tĩnh cùng một lát cắt app (tab tệp, canvas có 2 ảnh và 1 ý tưởng đang chọn, panel phải, thanh công cụ dưới). Ảnh là gradient trừu tượng, không phải tài sản của sản phẩm nào. Số tròn trên mock khớp với ghi chú bên dưới.</p>
+<div class="dirs">
+
+  <section class="dir A">
+    <h2>A. Tuned Instrument</h2>
+    <p class="thesis">Giữ nguyên thế giới phẳng hiện tại, chỉ siết lại: một thang control, bề mặt đọc chữ đặc, accent dùng ít đi.</p>
+    <div class="win">
+      <div class="lights"><i></i><i></i><i></i></div>
+      <div class="tabs"><span class="tab on">Brand research</span><span class="tab" style="color: var(--text-muted)">Menu v2</span></div>
+      <div class="canvas">
+        <div class="node" style="left: 24px; top: 40px"><div class="img photo1"></div><div class="cap">stone threshold</div></div>
+        <div class="node" style="left: 24px; top: 170px"><div class="img photo2"></div><div class="cap">warm metal</div></div>
+        <div class="edge" style="left: 118px; top: 88px; width: 70px; transform: rotate(18deg)"></div>
+        <div class="idea sel" style="left: 150px; top: 100px">Objects that invite attention through restraint.</div>
+        <div class="panel"><h4>Kira</h4><div style="color: var(--text-muted); font-size: 11px">2 thay đổi chờ duyệt</div><div class="row"><button class="btn pri">Duyệt</button><button class="btn q">Bỏ qua</button></div></div>
+        <div class="toolbar" style="margin-left: -80px">
+          <span class="tool on"><svg viewBox="0 0 16 16"><path d="M4 2.5l8 5-3.6.9L7 12z"/></svg></span>
+          <span class="tool"><svg viewBox="0 0 16 16"><rect x="2.5" y="3" width="11" height="10" rx="1.5"/></svg></span>
+          <span class="tool"><svg viewBox="0 0 16 16"><path d="M3 8h10M8 3v10"/></svg></span>
+        </div>
+      </div>
+      <span class="callout" style="left: 140px; top: 124px">1</span>
+      <span class="callout" style="left: 300px; top: 80px">2</span>
+      <span class="callout" style="left: 80px; top: 344px">3</span>
+    </div>
+    <ol class="notes">
+      <li>Chọn node: một viền accent 1.5px, không chồng thêm fill.</li>
+      <li>Panel phải nền đặc surface-drawer, hết cảnh "nhìn xuyên" canvas.</li>
+      <li>Tool đang chọn dùng fill trung tính, accent chỉ còn cho primary và selection.</li>
+    </ol>
+  </section>
+
+  <section class="dir B rec">
+    <h2>B. Glass Chrome, Paper Content</h2>
+    <p class="thesis">Control nổi là một lớp vật liệu riêng (blur, highlight mép trên), nội dung và panel đọc chữ luôn đặc.</p>
+    <div class="win">
+      <div class="lights"><i></i><i></i><i></i></div>
+      <div class="tabs"><span class="tab on">Brand research</span><span class="tab" style="color: var(--text-muted)">Menu v2</span></div>
+      <div class="canvas">
+        <div class="node" style="left: 24px; top: 40px"><div class="img photo1"></div><div class="cap">stone threshold</div></div>
+        <div class="node" style="left: 96px; top: 238px"><div class="img photo3"></div><div class="cap">paper field</div></div>
+        <div class="edge" style="left: 118px; top: 88px; width: 70px; transform: rotate(18deg)"></div>
+        <div class="idea sel" style="left: 150px; top: 100px">Objects that invite attention through restraint.</div>
+        <div class="panel"><div class="head"><h4 style="margin: 0">Kira</h4></div><div style="color: var(--text-muted); font-size: 11px">2 thay đổi chờ duyệt</div><div class="row"><button class="btn pri">Duyệt</button><button class="btn sec">Bỏ qua</button></div></div>
+        <div class="toolbar" style="margin-left: -80px">
+          <span class="tool on"><svg viewBox="0 0 16 16"><path d="M4 2.5l8 5-3.6.9L7 12z"/></svg></span>
+          <span class="tool"><svg viewBox="0 0 16 16"><rect x="2.5" y="3" width="11" height="10" rx="1.5"/></svg></span>
+          <span class="tool"><svg viewBox="0 0 16 16"><path d="M3 8h10M8 3v10"/></svg></span>
+        </div>
+        <div class="zoom">100%</div>
+      </div>
+      <span class="callout" style="left: 40px; top: 8px">1</span>
+      <span class="callout" style="left: 70px; top: 344px">2</span>
+      <span class="callout" style="left: 300px; top: 50px">3</span>
+      <span class="callout" style="left: 232px; top: 330px">4</span>
+    </div>
+    <ol class="notes">
+      <li>Tab bar và rail: vật liệu cửa sổ native (đã có UnderWindowBackground).</li>
+      <li>Thanh công cụ nổi trên canvas: blur 24px, highlight 1px mép trên, radius 12 đồng tâm với nút radius 8. Ảnh trôi bên dưới vẫn thấy.</li>
+      <li>Panel phải và popover đặc: chữ không bao giờ phụ thuộc thứ bên dưới.</li>
+      <li>Zoom là một viên nhóm riêng, cùng vật liệu, không phải khối thứ hai.</li>
+    </ol>
+  </section>
+
+  <section class="dir C">
+    <h2>C. Studio Desk</h2>
+    <p class="thesis">Đẩy DESIGN.md 2.3/2.4 tới cùng: bàn làm việc giấy ấm, control dạng phím bấm có khối, icon tool có màu.</p>
+    <div class="win">
+      <div class="lights"><i></i><i></i><i></i></div>
+      <div class="tabs"><span class="tab on">Brand research</span><span class="tab" style="color: #8d8574">Menu v2</span></div>
+      <div class="canvas">
+        <div class="node" style="left: 24px; top: 40px"><div class="img photo1"></div><div class="cap">stone threshold</div></div>
+        <div class="node r2" style="left: 40px; top: 200px"><div class="img photo2"></div><div class="cap">warm metal</div></div>
+        <div class="edge" style="left: 118px; top: 88px; width: 70px; transform: rotate(18deg); background: rgb(255 240 210 / 0.25)"></div>
+        <div class="idea sel" style="left: 150px; top: 100px">Objects that invite attention through restraint.</div>
+        <div class="panel"><h4>Kira</h4><div style="color: #a79f8e; font-size: 11px">2 thay đổi chờ duyệt</div><div class="row"><button class="btn pri">Duyệt</button><button class="btn q">Bỏ qua</button></div></div>
+        <div class="toolbar" style="margin-left: -80px">
+          <span class="tool on"><svg viewBox="0 0 16 16"><path d="M4 2.5l8 5-3.6.9L7 12z"/></svg></span>
+          <span class="tool k1"><svg viewBox="0 0 16 16"><path d="M6 12.5h4M5 9.5a4 4 0 1 1 6 0c-.6.6-1 1.2-1 2H6c0-.8-.4-1.4-1-2z"/></svg></span>
+          <span class="tool k2"><svg viewBox="0 0 16 16"><rect x="2.5" y="3" width="11" height="10" rx="1.5"/></svg></span>
+          <span class="tool k3"><svg viewBox="0 0 16 16"><path d="M3 8h10M8 3v10"/></svg></span>
+        </div>
+      </div>
+      <span class="callout" style="left: 14px; top: 76px">1</span>
+      <span class="callout" style="left: 136px; top: 124px">2</span>
+      <span class="callout" style="left: 300px; top: 120px">3</span>
+      <span class="callout" style="left: 60px; top: 344px">4</span>
+    </div>
+    <ol class="notes">
+      <li>Ảnh dạng polaroid xoay nhẹ, nền canvas giấy ấm.</li>
+      <li>Idea là sticky note, chữ viết tay.</li>
+      <li>Primary là phím amber có khối: phá One Accent Rule, cần đổi DESIGN.md.</li>
+      <li>Tool có màu theo loại node, nút đang chọn lún xuống.</li>
+    </ol>
+  </section>
+</div>
+</body>
+</html>
