@@ -25,4 +25,5 @@ Nơi lưu các báo cáo nghiên cứu của thread **Researcher** (session `vix
 | 2026-09-13 | [2026-09-13-right-panel-and-research-harness.md](2026-09-13-right-panel-and-research-harness.md) | Panel phải (chat AI + Changes) và harness/skill nghiên cứu | Chờ user chốt 10 quyết định (§D) |
 | 2026-09-13 | [2026-09-13-right-panel-harness-oss.md](2026-09-13-right-panel-harness-oss.md) | Phụ lục: OSS tích hợp cho panel phải và harness | 4 spike chờ duyệt, D11–D14 |
 | 2026-09-14 | [2026-09-14-design-quality-skills-oss.md](2026-09-14-design-quality-skills-oss.md) | Nâng chất lượng thiết kế: skill nào, OSS nào, và liquid glass | D11 chốt dùng assistant-ui; D15–D19 chờ Orchestrator |
-| 2026-09-14 | [2026-09-14-art-direction.md](2026-09-14-art-direction.md) | Art direction: audit thẩm mỹ, phong cách canvas app 2026, hệ control (specimen trong `art-direction/`) | 7 quyết định chờ user |
+| 2026-09-14 | [2026-09-14-art-direction.md](2026-09-14-art-direction.md) | Art direction: audit thẩm mỹ, phong cách canvas app 2026, hệ control (specimen trong `art-direction/`) | User chốt hướng B và làm hệ nút trước; hệ control vòng 1 bị từ chối, đang làm vòng 2 |
+| 2026-09-14 | [2026-09-14-oss-harness.md](2026-09-14-oss-harness.md) | Harness agent OSS làm lõi nghiên cứu? | Khuyến nghị AI SDK trong sidecar ở phase 2; H1–H9 chờ user |
