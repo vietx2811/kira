@@ -1,0 +1,314 @@
+{
+ "compare-all-both": {
+  "n": 48,
+  "minText": 5.18,
+  "minTextId": "m20",
+  "rings": 0,
+  "minRing": null,
+  "rails": {
+   "ctx": {
+    "worst": "link",
+    "p80": 4.02,
+    "sel": [
+     "select:5.79",
+     "select:6.74",
+     "select:11.99",
+     "select:10.21",
+     "select:16.73",
+     "select:15.27",
+     "select:5.71",
+     "select:6.24"
+    ]
+   }
+  },
+  "fails": []
+ },
+ "sheet-mach-dark": {
+  "n": 34,
+  "minText": 4.92,
+  "minTextId": "m19",
+  "rings": 5,
+  "minRing": 4.59,
+  "rails": {
+   "1": {
+    "worst": "diagram",
+    "p80": 4.31,
+    "sel": [
+     "select:12.71"
+    ]
+   },
+   "2": {
+    "worst": "diagram",
+    "p80": 4.3,
+    "sel": [
+     "link:12.80"
+    ]
+   },
+   "3": {
+    "worst": "diagram",
+    "p80": 3.5,
+    "sel": [
+     "select:10.31"
+    ]
+   }
+  },
+  "fails": []
+ },
+ "sheet-mach-light": {
+  "n": 34,
+  "minText": 4.87,
+  "minTextId": "m5",
+  "rings": 5,
+  "minRing": 3.32,
+  "rails": {
+   "1": {
+    "worst": "image",
+    "p80": 4.98,
+    "sel": [
+     "select:9.65"
+    ]
+   },
+   "2": {
+    "worst": "image",
+    "p80": 4.98,
+    "sel": [
+     "link:9.16"
+    ]
+   },
+   "3": {
+    "worst": "image",
+    "p80": 4.54,
+    "sel": [
+     "select:8.42"
+    ]
+   }
+  },
+  "fails": []
+ },
+ "sheet-ink-dark": {
+  "n": 34,
+  "minText": 5.92,
+  "minTextId": "m5",
+  "rings": 5,
+  "minRing": 8.24,
+  "rails": {
+   "1": {
+    "worst": "link",
+    "p80": 6.56,
+    "sel": [
+     "select:16.73"
+    ]
+   },
+   "2": {
+    "worst": "frame",
+    "p80": 8.12,
+    "sel": [
+     "link:16.12"
+    ]
+   },
+   "3": {
+    "worst": "link",
+    "p80": 5.34,
+    "sel": [
+     "select:16.73"
+    ]
+   }
+  },
+  "fails": []
+ },
+ "sheet-ink-light": {
+  "n": 34,
+  "minText": 5.25,
+  "minTextId": "m5",
+  "rings": 5,
+  "minRing": 3.59,
+  "rails": {
+   "1": {
+    "worst": "note",
+    "p80": 4.65,
+    "sel": [
+     "select:15.27"
+    ]
+   },
+   "2": {
+    "worst": "idea",
+    "p80": 4.48,
+    "sel": [
+     "link:7.09"
+    ]
+   },
+   "3": {
+    "worst": "note",
+    "p80": 4.3,
+    "sel": [
+     "select:15.27"
+    ]
+   }
+  },
+  "fails": []
+ },
+ "sheet-lens-dark": {
+  "n": 34,
+  "minText": 4.99,
+  "minTextId": "m3",
+  "rings": 5,
+  "minRing": 6.98,
+  "rails": {
+   "1": {
+    "worst": "select",
+    "p80": 6.78,
+    "sel": [
+     "select:6.78"
+    ]
+   },
+   "2": {
+    "worst": "link",
+    "p80": 8.01,
+    "sel": [
+     "link:8.01"
+    ]
+   },
+   "3": {
+    "worst": "frame",
+    "p80": 5.72,
+    "sel": [
+     "select:6.78"
+    ]
+   }
+  },
+  "fails": []
+ },
+ "sheet-lens-light": {
+  "n": 34,
+  "minText": 4.76,
+  "minTextId": "m19",
+  "rings": 5,
+  "minRing": 3.76,
+  "rails": {
+   "1": {
+    "worst": "image",
+    "p80": 5.73,
+    "sel": [
+     "select:6.24"
+    ]
+   },
+   "2": {
+    "worst": "image",
+    "p80": 5.73,
+    "sel": [
+     "link:6.77"
+    ]
+   },
+   "3": {
+    "worst": "image",
+    "p80": 4.16,
+    "sel": [
+     "select:6.24"
+    ]
+   }
+  },
+  "fails": []
+ },
+ "context-mach-dark": {
+  "n": 16,
+  "minText": 5.76,
+  "minTextId": "m18",
+  "rings": 0,
+  "minRing": null,
+  "rails": {
+   "ctx": {
+    "worst": "diagram",
+    "p80": 4.2,
+    "sel": [
+     "select:12.74"
+    ]
+   }
+  },
+  "fails": []
+ },
+ "context-mach-light": {
+  "n": 16,
+  "minText": 5.11,
+  "minTextId": "m10",
+  "rings": 0,
+  "minRing": null,
+  "rails": {
+   "ctx": {
+    "worst": "image",
+    "p80": 4.98,
+    "sel": [
+     "select:9.72"
+    ]
+   }
+  },
+  "fails": []
+ },
+ "context-ink-dark": {
+  "n": 16,
+  "minText": 6.75,
+  "minTextId": "m18",
+  "rings": 0,
+  "minRing": null,
+  "rails": {
+   "ctx": {
+    "worst": "link",
+    "p80": 6.16,
+    "sel": [
+     "select:16.73"
+    ]
+   }
+  },
+  "fails": []
+ },
+ "context-ink-light": {
+  "n": 16,
+  "minText": 7.02,
+  "minTextId": "m18",
+  "rings": 0,
+  "minRing": null,
+  "rails": {
+   "ctx": {
+    "worst": "note",
+    "p80": 4.65,
+    "sel": [
+     "select:15.27"
+    ]
+   }
+  },
+  "fails": []
+ },
+ "context-lens-dark": {
+  "n": 16,
+  "minText": 5.54,
+  "minTextId": "m16",
+  "rings": 0,
+  "minRing": null,
+  "rails": {
+   "ctx": {
+    "worst": "select",
+    "p80": 6.77,
+    "sel": [
+     "select:6.77"
+    ]
+   }
+  },
+  "fails": []
+ },
+ "context-lens-light": {
+  "n": 16,
+  "minText": 5.42,
+  "minTextId": "m10",
+  "rings": 0,
+  "minRing": null,
+  "rails": {
+   "ctx": {
+    "worst": "image",
+    "p80": 5.73,
+    "sel": [
+     "select:6.24"
+    ]
+   }
+  },
+  "fails": []
+ }
+}
