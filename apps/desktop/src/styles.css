@@ -847,8 +847,12 @@ button {
 
 .primary-button {
   border: 1px solid color-mix(in srgb, var(--accent-cyan), transparent 62%);
-  background: var(--accent-cyan);
-  color: var(--bg-base); font-weight: 500;
+  /* DESIGN.md: accent-tinted background with accent text, not a solid fill.
+     --accent-on-glass-active is the floored, readable-on-top-of-glass-active
+     version of --accent-strong (same pattern as .tag-chip, .settings-nav-item
+     .is-active) so this holds contrast on every preset in both modes. */
+  background: var(--glass-active);
+  color: var(--accent-on-glass-active); font-weight: 500;
 }
 
 .package-status {
@@ -1093,10 +1097,18 @@ button {
 }
 
 .icon-button:hover,
-.quiet-button:hover,
-.primary-button:hover {
+.quiet-button:hover {
   background: var(--accent-strong);
   color: var(--bg-base);
+}
+
+/* Split from icon/quiet-button's hover: those invert to a solid fill from a
+   transparent default, but .primary-button already starts on --glass-active,
+   so hover only needs to intensify the tint, not flip to solid + inverted
+   text. */
+.primary-button:hover {
+  background: var(--accent-weak);
+  color: var(--accent-on-glass-active);
 }
 
 .workspace {
@@ -5913,7 +5925,8 @@ button.mini-tags-more:focus-visible {
   padding: 0 var(--space-2);
   border: 0;
   border-radius: var(--radius-1);
-  background: color-mix(in srgb, var(--danger) 14%, transparent);
+  /* 10%, not 14%: at 14% the light-mode danger text measured 4.49:1. */
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
   color: var(--danger);
   cursor: pointer;
   font-size: var(--text-small);
@@ -8106,13 +8119,14 @@ textarea {
   height: 32px;
   padding: 0 var(--space-3);
   border-radius: var(--radius-2);
-  background: color-mix(in srgb, var(--danger) 14%, transparent);
+  /* 10%, not 14%: at 14% the light-mode danger text measured 4.49:1. */
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
   color: var(--danger);
   cursor: pointer;
 }
 
 .danger-button:hover {
-  background: color-mix(in srgb, var(--danger) 22%, transparent);
+  background: color-mix(in srgb, var(--danger) 16%, transparent);
   color: var(--danger);
 }
 

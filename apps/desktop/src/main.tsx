@@ -12819,7 +12819,7 @@ function buildProjectAppearanceStyle(appearance: ProjectAppearance): React.CSSPr
     '--glass-active': colorWithAlpha(accent, glassActiveAlpha),
     '--text-on-glass-active': softestReadableText(tokens.textSoft, tokens.textMain, glassActiveBackgrounds),
     '--accent-on-glass-active': readableAccentOn(tokens.accentStrong, glassActiveBackgrounds, dark),
-    '--accent-alt-on-glass-active': readableAccentOn(tokens.accentAlt, glassActiveBackgrounds, dark),
+    '--accent-alt-on-glass-active': readableAccentOn(AMBER_COLOR, glassActiveBackgrounds, dark),
     '--separator-hairline': dark ? 'rgb(255 255 255 / 0.052)' : colorWithAlpha(tokens.textMain, 0.1),
     '--inset-field': dark ? 'rgb(0 0 0 / 0.12)' : 'rgb(255 255 255 / 0.58)',
     '--border-soft': dark ? 'rgb(255 255 255 / 0.06)' : colorWithAlpha(tokens.textMain, 0.1),
@@ -12831,7 +12831,7 @@ function buildProjectAppearanceStyle(appearance: ProjectAppearance): React.CSSPr
     '--accent-strong': tokens.accentStrong,
     '--accent-weak': colorWithAlpha(tokens.accentStrong, dark ? 0.28 : 0.22),
     '--accent-faint': colorWithAlpha(tokens.accentStrong, dark ? 0.12 : 0.1),
-    '--accent-amber': readableAccentOn(tokens.accentAlt, tokens.readingSurfaces, dark, TEXT_MUTED_MIN_CONTRAST),
+    '--accent-amber': readableAccentOn(AMBER_COLOR, tokens.readingSurfaces, dark, TEXT_MUTED_MIN_CONTRAST),
     '--danger': readableAccentOn(DANGER_COLOR, tokens.readingSurfaces, dark, TEXT_MUTED_MIN_CONTRAST),
     '--accent-sage': colorWithAlpha(accent, 0.76),
     '--shell-shadow': dark
@@ -12859,6 +12859,12 @@ const NODE_SURFACE_ALPHA = { dark: 0.82, light: 0.78 }
 // a dark thumbnail underneath pulled muted labels below AA.
 const POPOVER_SURFACE_ALPHA = { dark: 0.94, light: 1 }
 const DANGER_COLOR = '#d98779'
+// Fixed like DANGER_COLOR, not hue-shifted from the project's own accent:
+// the old alt-hue-shift (accent hue +48) put the cyan preset's "attention"
+// color in blue territory, close enough to --accent-cyan to misread as the
+// active/good color. A collision with the Amber preset's own accent is
+// accepted, same as DANGER_COLOR already collides with the Rose preset.
+const AMBER_COLOR = '#dfae67'
 // The native window material is a blurred, mode tinted view of the desktop, so
 // it never strays far from the mode's own tone. These are the worst values
 // sampled on the debug bundle over a bright desktop: the lightest the dark
