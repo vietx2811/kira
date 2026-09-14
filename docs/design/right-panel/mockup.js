@@ -131,6 +131,10 @@ function dockStatus(kind, pending) {
   if (kind === 'status') {
     return `<div class="dock-status" role="status">${icon('git-branch', 'sm')}<span><b>${pending} thay đổi</b> chờ duyệt</span><button class="link-button" aria-label="Mở panel Kira ở tab Thay đổi">Mở</button></div>`
   }
+  if (kind === 'skill') {
+    // A paused pipeline must never stall silently while the panel is closed.
+    return `<div class="dock-status" role="status">${icon('workflow', 'sm')}<span><b>Skill chờ bạn</b> <span class="sep">·</span> Duyệt nhánh concept</span><button class="link-button" aria-label="Mở panel Kira ở điểm dừng của skill">Mở</button></div>`
+  }
   if (kind === 'running') {
     return `<div class="dock-status" role="status">${icon('clock', 'sm')}<span>Kira đang chạy <span class="sep">·</span> Tách nhánh concept <span class="sep">·</span> <span class="num">12 giây</span></span><button class="link-button">Dừng</button></div>`
   }
@@ -529,9 +533,9 @@ function badgeCrop(theme) {
 }
 
 function dockCrop(theme) {
-  const v = ['status', 'running', 'done', 'error']
+  const v = ['status', 'skill', 'running', 'done', 'error']
   return `
-  <div class="kf t-${theme} crop" style="--fw:760px;--fh:300px;background:var(--bg-canvas)" data-frame="s5v-${theme}">
+  <div class="kf t-${theme} crop" style="--fw:760px;--fh:360px;background:var(--bg-canvas)" data-frame="s5v-${theme}">
     ${GRAD_DEFS}
     <div style="position:absolute;inset:0;display:grid;align-content:center;justify-items:end;gap:16px;padding:24px 28px">
       ${v.map((k) => `<div class="kira-dock-wrap">${dockStatus(k, NEEDS_DECISION)}<button class="kira-dock" aria-label="Hỏi Kira">${kiraMark()}</button></div>`).join('')}
