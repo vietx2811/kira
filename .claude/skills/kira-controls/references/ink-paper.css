@@ -1,0 +1,133 @@
+/* Ink & Paper: the chosen control style, extracted verbatim from the specimen.
+   Source: docs/research/art-direction/v2/controls-v2.html (commit a00af07).
+   Each block is preceded by its source line range. Do not edit values here:
+   change the specimen (and re-measure) first, then re-extract.
+
+   Mapping to the app:
+   - .t-dark / .t-light     = the project's color mode. In the app these
+                              variables must be declared on .app-shell (or
+                              inside buildProjectAppearanceStyle), never on
+                              :root, because they reference themed tokens
+                              like --text-main (CLAUDE.md, token section).
+   - .p-ink                 = the Ink & Paper personality; drop it in the app.
+   - .btn.primary/.secondary/.quiet/.danger = the four button tiers.
+   - .is-hover/.is-pressed/.is-focus/.is-selected/.is-disabled are the
+     specimen's forced states; in the app use :hover, :active,
+     :focus-visible, aria-pressed/aria-selected, [disabled].
+   - .rail/.tool/.ico       = the canvas tool rail, a rail button, a rail icon. */
+
+/* ---- S:52-61  shared control skeleton, sizes, focus, reduced motion ---- */
+.btn{appearance:none;position:relative;display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 12px;border:1px solid transparent;border-radius:var(--r,8px);background:transparent;color:var(--text-main);font-size:13px;font-weight:var(--fw,500);letter-spacing:-.003em;white-space:nowrap;cursor:pointer;
+  transition:background 120ms ease,box-shadow 120ms ease,color 120ms ease,border-color 120ms ease,transform 140ms cubic-bezier(.16,1,.3,1)}
+.btn .gl{width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.btn.sm{height:26px;padding:0 9px;font-size:11px;gap:4px;border-radius:var(--r-sm,6px)}
+.btn.sm .gl{width:13px;height:13px;stroke-width:2}
+.btn.icon{width:32px;padding:0}
+.btn.sm.icon{width:26px}
+.btn:focus-visible,.btn.is-focus{outline:2px solid var(--accent-cyan);outline-offset:2px}
+.btn[disabled],.btn.is-disabled{cursor:default}
+@media (prefers-reduced-motion:reduce){.btn,.tool,.tool .ico{transition:none}}
+
+/* ---- S:114-142  Ink & Paper buttons: tokens and the four tiers ---- */
+.p-ink{--r:8px;--r-sm:6px;--fw:560}
+.p-ink.t-dark{
+  --ink-bg:#f4f1ea;--ink-bg-h:#fffdf7;--ink-bg-p:#dcd8cf;--ink-fg:#0f1517;
+  --sheet:#1c2426;--sheet-h:#222b2d;--sheet-p:#141b1d;--sheet-edge:rgb(255 255 255 / .075);
+  --lift1:rgb(0 0 0 / .5);--lift2:rgb(0 0 0 / .55);--lift2-h:rgb(0 0 0 / .62);--paper-edge:rgb(35 33 29 / .25);
+  --patch:rgb(255 255 255 / .065);--patch-p:rgb(255 255 255 / .035);
+  --dis-edge:rgb(255 255 255 / .14);--danger-fg:#e59587;--danger-edge:rgb(217 135 121 / .38);
+}
+.p-ink.t-light{
+  --ink-bg:#23211d;--ink-bg-h:#35322c;--ink-bg-p:#12110f;--ink-fg:#f7f5f0;
+  --sheet:#fbfaf7;--sheet-h:#ffffff;--sheet-p:#eceae4;--sheet-edge:rgb(35 33 29 / .13);
+  --lift1:rgb(35 33 29 / .1);--lift2:rgb(35 33 29 / .24);--lift2-h:rgb(35 33 29 / .3);--paper-edge:rgb(255 255 255 / .12);
+  --patch:rgb(35 33 29 / .065);--patch-p:rgb(35 33 29 / .1);
+  --dis-edge:rgb(35 33 29 / .2);--danger-fg:#8a4035;--danger-edge:rgb(138 64 53 / .4);
+}
+.p-ink .btn.primary{color:var(--ink-fg);background:var(--ink-bg);box-shadow:inset 0 -1px 0 var(--paper-edge),0 1px 0 var(--lift1),0 4px 10px -3px var(--lift2)}
+.p-ink .btn.primary:hover,.p-ink .btn.primary.is-hover{background:var(--ink-bg-h);transform:translateY(-1px);box-shadow:inset 0 -1px 0 var(--paper-edge),0 2px 0 var(--lift1),0 9px 16px -5px var(--lift2-h)}
+.p-ink .btn.primary:active,.p-ink .btn.primary.is-pressed{background:var(--ink-bg-p);transform:translateY(.5px);box-shadow:none}
+.p-ink .btn.secondary,.p-ink .btn.danger{background:var(--sheet);border-color:var(--sheet-edge);box-shadow:0 1px 0 var(--lift1),0 3px 8px -2px var(--lift2)}
+.p-ink .btn.secondary:hover,.p-ink .btn.secondary.is-hover,.p-ink .btn.danger:hover,.p-ink .btn.danger.is-hover{background:var(--sheet-h);transform:translateY(-1px);box-shadow:0 2px 0 var(--lift1),0 8px 14px -4px var(--lift2-h)}
+.p-ink .btn.secondary:active,.p-ink .btn.secondary.is-pressed,.p-ink .btn.danger:active,.p-ink .btn.danger.is-pressed{background:var(--sheet-p);transform:translateY(.5px);box-shadow:none}
+.p-ink .btn.secondary.is-selected{background:var(--sheet);box-shadow:inset 0 0 0 1.5px var(--text-main);border-color:transparent}
+.p-ink .btn.danger{color:var(--danger-fg);border-color:var(--danger-edge)}
+.p-ink .btn.quiet{color:var(--text-soft)}
+.p-ink .btn.quiet:hover,.p-ink .btn.quiet.is-hover{color:var(--text-main);background:var(--patch)}
+.p-ink .btn.quiet:active,.p-ink .btn.quiet.is-pressed{color:var(--text-main);background:var(--patch-p)}
+.p-ink .btn.quiet.is-selected{color:var(--text-main);box-shadow:inset 0 -2px 0 var(--text-main);border-radius:var(--r) var(--r) 2px 2px}
+.p-ink .btn.is-disabled,.p-ink .btn.is-disabled:hover{transform:none;background:transparent;border:1px dashed var(--dis-edge);color:var(--text-muted);box-shadow:none}
+.p-ink .btn.quiet.is-disabled{border-color:transparent}
+
+/* ---- S:187-198  rail icon part classes ---- */
+.ico{display:block;overflow:visible}
+.ico .bd{stroke:var(--ink);stroke-width:var(--sw,1.5);stroke-linejoin:round;stroke-linecap:round}
+.ico .ln{fill:none;stroke:var(--ink);stroke-width:var(--sw,1.5);stroke-linecap:round;stroke-linejoin:round}
+.ico .ln2{fill:none;stroke:var(--line,var(--ink));stroke-width:1.2;stroke-linecap:round}
+.ico .lnA{fill:none;stroke:var(--c-acc);stroke-width:1.9;stroke-linecap:round}
+.ico .fk{fill:var(--ink)}
+.ico .lxo{fill:none;stroke:var(--lxo);stroke-width:3.1;stroke-linecap:round;stroke-linejoin:round}
+.ico .lxi{fill:none;stroke:var(--lxi);stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.s-hi{stop-color:var(--b-hi)} .s-lo{stop-color:var(--b-lo)}
+.s-sp{stop-color:var(--spec)} .s-sp0{stop-color:var(--spec);stop-opacity:0}
+.s-kw{stop-color:var(--kira-warm)} .s-km{stop-color:var(--kira-mid)} .s-kc{stop-color:var(--kira-cool)}
+.k-sky{fill:var(--c-sky)} .k-sun{fill:var(--c-sun)} .k-leaf{fill:var(--c-leaf)} .k-rose{fill:var(--c-rose)} .k-amb{fill:var(--c-amb)} .k-acc{fill:var(--c-acc)} .k-fold{fill:var(--c-fold)} .k-glass{fill:var(--c-glass)}
+
+/* ---- S:207-216  Ink & Paper rail icon colors ---- */
+.p-ink .ico{--lxo:#0b0f10;--lxi:#f4f1ea;--ink:#0b0f10;--line:#8a6d1c;--spec:rgb(255 255 255 / .8);--b-hi:#fbf9f4;--b-lo:#dfdad0;--c-sky:#8cc5ea;--c-sun:#ffcf5c;--c-leaf:#6aab77;--c-rose:#e5728a;--c-amb:#eea43a;--c-acc:#4fb49c;--c-fold:#d6a92f;--c-glass:rgb(255 255 255 / .1)}
+.p-ink.t-light .ico{--lxo:rgb(255 255 255 / .9);--lxi:#23211d;--ink:#23211d;--c-glass:rgb(35 33 29 / .06)}
+.p-ink .ico-palette{--b-hi:#f5e9d0;--b-lo:#d8c39a}
+.p-ink .ico-idea{--b-hi:#ffdf7a;--b-lo:#f0a52a}
+.p-ink .ico-note{--b-hi:#fdea8c;--b-lo:#f0c645}
+.p-ink.t-dark .ico-frame{--ink:#f4f1ea}
+.p-ink.t-dark .ico-zin,.p-ink.t-dark .ico-zout,.p-ink.t-dark .ico-fit{--ink:#f4f1ea;--b-hi:rgb(255 255 255 / .16);--b-lo:rgb(255 255 255 / .04)}
+.p-ink.t-light .ico-zin,.p-ink.t-light .ico-zout,.p-ink.t-light .ico-fit{--b-hi:#ffffff;--b-lo:#e9e6de}
+.p-ink.t-dark .is-selected .ico-select{--b-hi:#1b2224;--b-lo:#0b1011;--ink:#0b1011;--spec:rgb(255 255 255 / .25)}
+.p-ink.t-light .is-selected .ico-select{--b-hi:#ffffff;--b-lo:#e6e2d8;--ink:#fbf9f4}
+
+/* ---- S:225-233  rail, tool, tooltip base ---- */
+.rail{position:relative;display:inline-flex;align-items:center;gap:2px;padding:5px;-webkit-backdrop-filter:blur(24px) saturate(1.35);backdrop-filter:blur(24px) saturate(1.35)}
+.rail .sep{width:2px;height:24px;margin:0 5px;flex:none}
+.tool{appearance:none;position:relative;display:grid;place-items:center;width:42px;height:42px;border:0;padding:0;background:transparent;cursor:pointer;transition:background 120ms ease,box-shadow 120ms ease,transform 140ms cubic-bezier(.16,1,.3,1)}
+.tool .ico{width:26px;height:26px;transition:transform 140ms cubic-bezier(.16,1,.3,1),filter 140ms ease}
+.tool:focus-visible,.tool.is-focus{outline:2px solid var(--accent-cyan);outline-offset:2px}
+.tool .tip{position:absolute;bottom:calc(100% + 12px);left:50%;transform:translateX(-50%);display:flex;gap:8px;align-items:center;height:26px;padding:0 9px;border-radius:7px;white-space:nowrap;font-size:11px;font-weight:560;background:var(--tip-bg);color:var(--tip-fg);box-shadow:0 6px 16px -4px rgb(0 0 0 / .45)}
+.tool .tip kbd{font:inherit;font-weight:500;color:var(--tip-kbd)}
+.t-dark{--tip-bg:#f4f1ea;--tip-fg:#0f1517;--tip-kbd:#4a4c48}
+.t-light{--tip-bg:#23211d;--tip-fg:#f7f5f0;--tip-kbd:#c9c6bf}
+
+/* ---- S:251-264  Ink & Paper rail and tool states ---- */
+.p-ink.t-dark .rail{border-radius:16px;padding:6px;background:rgb(29 37 39 / .95);box-shadow:inset 0 1px 0 rgb(255 255 255 / .06),0 2px 4px rgb(0 0 0 / .45),0 14px 34px -8px rgb(0 0 0 / .65)}
+.p-ink.t-light .rail{border-radius:16px;padding:6px;background:rgb(251 250 247 / .96);box-shadow:inset 0 0 0 1px rgb(35 33 29 / .06),0 2px 4px rgb(35 33 29 / .1),0 14px 30px -10px rgb(35 33 29 / .32)}
+.p-ink .rail .sep{width:1px;background:var(--separator-hairline);margin:0 6px}
+.p-ink .tool{width:44px;height:44px;border-radius:12px}
+.p-ink .tool .ico{width:28px;height:28px;filter:drop-shadow(0 1px 0 rgb(0 0 0 / .35))}
+.p-ink.t-light .tool .ico{filter:drop-shadow(0 1px 0 rgb(35 33 29 / .18))}
+.p-ink .tool:hover .ico,.p-ink .tool.is-hover .ico{transform:translateY(-3px) rotate(-4deg);filter:drop-shadow(0 4px 3px rgb(0 0 0 / .45))}
+.p-ink.t-light .tool:hover .ico,.p-ink.t-light .tool.is-hover .ico{filter:drop-shadow(0 4px 3px rgb(35 33 29 / .28))}
+.p-ink .tool:hover,.p-ink .tool.is-hover{background:var(--glass-hover)}
+.p-ink .tool:active .ico,.p-ink .tool.is-pressed .ico{transform:translateY(1px) scale(.94);filter:none}
+.p-ink .tool.is-pressed{background:var(--glass-hover)}
+.p-ink .tool.is-selected{background:var(--ink-sel);box-shadow:0 1px 0 rgb(0 0 0 / .35),0 4px 10px -4px rgb(0 0 0 / .5)}
+.p-ink.t-dark{--ink-sel:#f4f1ea}
+.p-ink.t-light{--ink-sel:#23211d}
+
+/* ---- S:357-359  view switcher plate ---- */
+.seg{display:inline-flex;gap:2px;padding:4px;-webkit-backdrop-filter:blur(24px) saturate(1.35);backdrop-filter:blur(24px) saturate(1.35)}
+.p-ink .seg{border-radius:12px}
+
+/* ---- S:362-366  zoom plate ---- */
+.ctx .zoom{position:absolute;bottom:22px;right:376px;display:flex;align-items:center;gap:2px;padding:4px;-webkit-backdrop-filter:blur(24px);backdrop-filter:blur(24px)}
+.p-ink .zoom{border-radius:12px} /* S:363, Ink part of a line shared with the other personalities */
+.zoom .z{font:600 11px/1 ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--text-soft);padding:0 6px}
+.zoom .tool{width:32px;height:32px}
+.zoom .tool .ico{width:20px;height:20px}
+
+/* ---- S:371-372  Ink & Paper floating chrome plate ---- */
+.p-ink.t-dark .chrome-mat{background:rgb(29 37 39 / .95);box-shadow:inset 0 1px 0 rgb(255 255 255 / .06),0 2px 4px rgb(0 0 0 / .45),0 12px 28px -8px rgb(0 0 0 / .6)}
+.p-ink.t-light .chrome-mat{background:rgb(251 250 247 / .96);box-shadow:inset 0 0 0 1px rgb(35 33 29 / .06),0 2px 4px rgb(35 33 29 / .1),0 12px 26px -10px rgb(35 33 29 / .3)}
+
+/* ---- S:375-377  Kira button plate ---- */
+.kira-btn{display:grid;place-items:center;width:52px;height:52px;border-radius:14px}
+.kira-btn .ico{width:24px;height:24px}
+
