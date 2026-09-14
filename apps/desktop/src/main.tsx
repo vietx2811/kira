@@ -6428,7 +6428,7 @@ function App() {
               <p>This file has unsaved changes. Closing the tab discards them.</p>
             </div>
             <div className="dialog-actions">
-              <button className="quiet-button" type="button" onClick={() => setPendingCloseFileId(null)}>
+              <button className="secondary-button" type="button" onClick={() => setPendingCloseFileId(null)}>
                 Cancel
               </button>
               <button className="danger-button" type="button" onClick={() => closeFile(pendingCloseFile.id)}>
@@ -7456,11 +7456,11 @@ function SettingsView({
                           )}
                         </button>
                         <div className="codex-login__alt">
-                          <button className="quiet-button" type="button" disabled={codexLoginBusy} onClick={() => startCodexLogin('device')}>
+                          <button className="secondary-button" type="button" disabled={codexLoginBusy} onClick={() => startCodexLogin('device')}>
                             Use a sign-in code
                           </button>
                           {codexLoginBusy && (
-                            <button className="quiet-button" type="button" onClick={() => { void cancelCodexLogin() }}>Cancel</button>
+                            <button className="secondary-button" type="button" onClick={() => { void cancelCodexLogin() }}>Cancel</button>
                           )}
                         </div>
                         <details className="codex-login__details">
@@ -7547,7 +7547,7 @@ function SettingsView({
                   {activeProvider.authMode !== 'local' && activeProvider.type !== 'codex' && activeProvider.type !== 'claude_code' && (
                     <>
                       <button
-                        className={activeProvider.secretRef ? 'quiet-button provider-test-button' : 'primary-button provider-test-button'}
+                        className={activeProvider.secretRef ? 'secondary-button provider-test-button' : 'primary-button provider-test-button'}
                         type="button"
                         onClick={() => {
                           onProviderSecretSave(activeProvider.id, secretDrafts[activeProvider.id] ?? '')
@@ -7557,7 +7557,7 @@ function SettingsView({
                         Save key
                       </button>
                       {activeProvider.secretRef && (
-                        <button className="quiet-button provider-test-button" type="button" onClick={() => onProviderSecretDelete(activeProvider.id)}>
+                        <button className="secondary-button provider-test-button" type="button" onClick={() => onProviderSecretDelete(activeProvider.id)}>
                           Remove key
                         </button>
                       )}
@@ -7567,7 +7567,7 @@ function SettingsView({
                     className={
                       activeProvider.secretRef && activeProvider.authMode !== 'local'
                         ? 'primary-button provider-test-button'
-                        : 'quiet-button provider-test-button'
+                        : 'secondary-button provider-test-button'
                     }
                     type="button"
                     disabled={providerBusy?.id === activeProvider.id}
@@ -7579,7 +7579,7 @@ function SettingsView({
                     Test
                   </button>
                   <button
-                    className="quiet-button provider-test-button"
+                    className="secondary-button provider-test-button"
                     type="button"
                     disabled={providerBusy?.id === activeProvider.id}
                     onClick={() => void handleProviderModelsList(activeProvider.id)}
@@ -7698,7 +7698,7 @@ function SettingsView({
               <p>This removes the profile and its stored API key from the macOS Keychain. This can't be undone.</p>
             </div>
             <div className="dialog-actions">
-              <button className="quiet-button" type="button" onClick={() => setPendingDeleteProviderId(null)}>
+              <button className="secondary-button" type="button" onClick={() => setPendingDeleteProviderId(null)}>
                 Cancel
               </button>
               <button
@@ -12484,10 +12484,10 @@ function ReferenceCropDialog({
         </div>
         <p className="crop-dialog-hint">Drag to reframe, scroll or pinch to zoom. The original file never changes, reset anytime.</p>
         <div className="dialog-actions crop-dialog-actions">
-          <button type="button" className="quiet-button" onClick={onReset}>
+          <button type="button" className="secondary-button" onClick={onReset}>
             Reset crop
           </button>
-          <button type="button" className="quiet-button" onClick={onClose}>
+          <button type="button" className="secondary-button" onClick={onClose}>
             Cancel
           </button>
           <button type="button" className="primary-button" onClick={handleSave}>
@@ -12539,7 +12539,7 @@ function ConfirmDeleteDialog({
           <p id="delete-dialog-copy">{deleteCopy.body}</p>
         </div>
         <div className="dialog-actions">
-          <button ref={cancelRef} className="quiet-button" type="button" onClick={onCancel}>
+          <button ref={cancelRef} className="secondary-button" type="button" onClick={onCancel}>
             Cancel
           </button>
           <button className="danger-button" type="button" onClick={onConfirm}>
