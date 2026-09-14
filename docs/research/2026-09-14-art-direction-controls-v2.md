@@ -207,6 +207,14 @@ User đã nói gu của user thắng DESIGN.md và các núm taste khi mâu thu�
 4. **PNG trong `public/tool-icons/`:** nguồn gốc là gì; giữ hay xoá (đang không được dùng).
 5. **Tuỳ chọn icon đơn sắc** cho người muốn rail không màu (chỉ áp nếu chọn Ink & Paper).
 
+### User đã chốt (2026-09-15)
+
+1. Tính cách control: **Ink & Paper**.
+2. Luật §E: chấp nhận toàn bộ cột Ink & Paper.
+3. Icon rail: **vẽ riêng 12 icon SVG**, giữ Lucide cho glyph UI.
+4. PNG trong `apps/desktop/public/tool-icons/`: do user thêm ở `9d0ace5`, **giữ lại làm tham khảo**, không dùng trong app, không xoá.
+5. Có **tuỳ chọn icon đơn sắc**.
+
 ## Giới hạn
 
 - **Chrome headless, không phải WKWebView.** Gradient, `backdrop-filter`, font và `outline` có thể render khác trong app native. Chưa đo FPS của kính (Lens) và của bóng nhiều lớp trên canvas 120 node.
