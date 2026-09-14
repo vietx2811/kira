@@ -44,21 +44,26 @@
   /* Static dark fallback only — content outside .app-shell never renders a
      button, but every other themed token here carries one, so this follows
      suit. .app-shell[data-color-mode] carries the real per-mode values. */
-  --ink-bg: #f4f1ea;
-  --ink-bg-hover: #fffdf7;
-  --ink-bg-pressed: #dcd8cf;
-  --ink-fg: #0f1517;
-  --sheet-bg: #1c2426;
-  --sheet-bg-hover: #222b2d;
-  --sheet-bg-pressed: #141b1d;
-  --sheet-edge: rgb(255 255 255 / 0.075);
-  --paper-edge: rgb(35 33 29 / 0.25);
-  --paper-lift-1: rgb(0 0 0 / 0.5);
-  --paper-lift-2: rgb(0 0 0 / 0.55);
-  --paper-lift-2-hover: rgb(0 0 0 / 0.62);
-  --paper-patch: rgb(255 255 255 / 0.065);
-  --paper-patch-pressed: rgb(255 255 255 / 0.035);
+  --control-primary: #f4f1ea;
+  --control-primary-hover: #fffdf7;
+  --control-primary-pressed: #dcd8cf;
+  --control-on-primary: #0f1517;
+  --control-sheet: #1c2426;
+  --control-sheet-hover: #222b2d;
+  --control-sheet-pressed: #141b1d;
+  --control-sheet-edge: rgb(255 255 255 / 0.075);
+  --control-paper-edge: rgb(35 33 29 / 0.25);
+  --control-lift-near: rgb(0 0 0 / 0.5);
+  --control-lift-far: rgb(0 0 0 / 0.55);
+  --control-lift-far-hover: rgb(0 0 0 / 0.62);
+  --control-patch: rgb(255 255 255 / 0.065);
+  --control-patch-pressed: rgb(255 255 255 / 0.035);
   --control-disabled-edge: rgb(255 255 255 / 0.14);
+  /* Deliberately not --danger: DESIGN.md §3 keeps this fixed and lifted for
+     legibility on the paper sheet, separate from the accent-floored --danger
+     used elsewhere (tag-status, provider errors). */
+  --control-danger-text: #e59587;
+  --control-danger-edge: rgb(217 135 121 / 0.38);
   --glass-sidebar: var(--bg-base);
   --glass-drawer: var(--material-drawer);
   --glass-chrome: var(--surface-2);
@@ -382,40 +387,44 @@ button {
    is simpler than adding an unused accent parameter to the JS builder. */
 .app-shell[data-color-mode="light"] {
   color-scheme: light;
-  --ink-bg: #23211d;
-  --ink-bg-hover: #35322c;
-  --ink-bg-pressed: #12110f;
-  --ink-fg: #f7f5f0;
-  --sheet-bg: #fbfaf7;
-  --sheet-bg-hover: #ffffff;
-  --sheet-bg-pressed: #eceae4;
-  --sheet-edge: rgb(35 33 29 / 0.13);
-  --paper-edge: rgb(255 255 255 / 0.12);
-  --paper-lift-1: rgb(35 33 29 / 0.1);
-  --paper-lift-2: rgb(35 33 29 / 0.24);
-  --paper-lift-2-hover: rgb(35 33 29 / 0.3);
-  --paper-patch: rgb(35 33 29 / 0.065);
-  --paper-patch-pressed: rgb(35 33 29 / 0.1);
+  --control-primary: #23211d;
+  --control-primary-hover: #35322c;
+  --control-primary-pressed: #12110f;
+  --control-on-primary: #f7f5f0;
+  --control-sheet: #fbfaf7;
+  --control-sheet-hover: #ffffff;
+  --control-sheet-pressed: #eceae4;
+  --control-sheet-edge: rgb(35 33 29 / 0.13);
+  --control-paper-edge: rgb(255 255 255 / 0.12);
+  --control-lift-near: rgb(35 33 29 / 0.1);
+  --control-lift-far: rgb(35 33 29 / 0.24);
+  --control-lift-far-hover: rgb(35 33 29 / 0.3);
+  --control-patch: rgb(35 33 29 / 0.065);
+  --control-patch-pressed: rgb(35 33 29 / 0.1);
   --control-disabled-edge: rgb(35 33 29 / 0.2);
+  --control-danger-text: #8a4035;
+  --control-danger-edge: rgb(138 64 53 / 0.4);
 }
 
 .app-shell[data-color-mode="dark"] {
   color-scheme: dark;
-  --ink-bg: #f4f1ea;
-  --ink-bg-hover: #fffdf7;
-  --ink-bg-pressed: #dcd8cf;
-  --ink-fg: #0f1517;
-  --sheet-bg: #1c2426;
-  --sheet-bg-hover: #222b2d;
-  --sheet-bg-pressed: #141b1d;
-  --sheet-edge: rgb(255 255 255 / 0.075);
-  --paper-edge: rgb(35 33 29 / 0.25);
-  --paper-lift-1: rgb(0 0 0 / 0.5);
-  --paper-lift-2: rgb(0 0 0 / 0.55);
-  --paper-lift-2-hover: rgb(0 0 0 / 0.62);
-  --paper-patch: rgb(255 255 255 / 0.065);
-  --paper-patch-pressed: rgb(255 255 255 / 0.035);
+  --control-primary: #f4f1ea;
+  --control-primary-hover: #fffdf7;
+  --control-primary-pressed: #dcd8cf;
+  --control-on-primary: #0f1517;
+  --control-sheet: #1c2426;
+  --control-sheet-hover: #222b2d;
+  --control-sheet-pressed: #141b1d;
+  --control-sheet-edge: rgb(255 255 255 / 0.075);
+  --control-paper-edge: rgb(35 33 29 / 0.25);
+  --control-lift-near: rgb(0 0 0 / 0.5);
+  --control-lift-far: rgb(0 0 0 / 0.55);
+  --control-lift-far-hover: rgb(0 0 0 / 0.62);
+  --control-patch: rgb(255 255 255 / 0.065);
+  --control-patch-pressed: rgb(255 255 255 / 0.035);
   --control-disabled-edge: rgb(255 255 255 / 0.14);
+  --control-danger-text: #e59587;
+  --control-danger-edge: rgb(217 135 121 / 0.38);
 }
 
 /* A tab is a file (board), never a view — Canvas/3D/Slides/Outline are just
@@ -896,25 +905,25 @@ button {
    inverts brightness rather than tinting, so it can never be mistaken for
    "currently selected" (art-direction round 2, §B.2, §F). */
 .primary-button {
-  background: var(--ink-bg);
-  color: var(--ink-fg);
+  background: var(--control-primary);
+  color: var(--control-on-primary);
   box-shadow:
-    inset 0 -1px 0 var(--paper-edge),
-    0 1px 0 var(--paper-lift-1),
-    0 4px 10px -3px var(--paper-lift-2);
+    inset 0 -1px 0 var(--control-paper-edge),
+    0 1px 0 var(--control-lift-near),
+    0 4px 10px -3px var(--control-lift-far);
 }
 
 .primary-button:hover {
-  background: var(--ink-bg-hover);
+  background: var(--control-primary-hover);
   transform: translateY(-1px);
   box-shadow:
-    inset 0 -1px 0 var(--paper-edge),
-    0 2px 0 var(--paper-lift-1),
-    0 9px 16px -5px var(--paper-lift-2-hover);
+    inset 0 -1px 0 var(--control-paper-edge),
+    0 2px 0 var(--control-lift-near),
+    0 9px 16px -5px var(--control-lift-far-hover);
 }
 
 .primary-button:active {
-  background: var(--ink-bg-pressed);
+  background: var(--control-primary-pressed);
   transform: translateY(0.5px);
   box-shadow: none;
 }
@@ -939,26 +948,26 @@ button {
    primary (or next to danger, in a confirm dialog), one step down in
    emphasis from ink but still a real button, not "just text" like quiet. */
 .secondary-button {
-  border-color: var(--sheet-edge);
-  background: var(--sheet-bg);
+  border-color: var(--control-sheet-edge);
+  background: var(--control-sheet);
   color: var(--text-main);
-  box-shadow: 0 1px 0 var(--paper-lift-1), 0 3px 8px -2px var(--paper-lift-2);
+  box-shadow: 0 1px 0 var(--control-lift-near), 0 3px 8px -2px var(--control-lift-far);
 }
 
 .secondary-button:hover {
-  background: var(--sheet-bg-hover);
+  background: var(--control-sheet-hover);
   transform: translateY(-1px);
-  box-shadow: 0 2px 0 var(--paper-lift-1), 0 8px 14px -4px var(--paper-lift-2-hover);
+  box-shadow: 0 2px 0 var(--control-lift-near), 0 8px 14px -4px var(--control-lift-far-hover);
 }
 
 .secondary-button:active {
-  background: var(--sheet-bg-pressed);
+  background: var(--control-sheet-pressed);
   transform: translateY(0.5px);
   box-shadow: none;
 }
 
 .secondary-button.is-active {
-  background: var(--sheet-bg);
+  background: var(--control-sheet);
   box-shadow: inset 0 0 0 1.5px var(--text-main);
   border-color: transparent;
 }
@@ -971,6 +980,17 @@ button {
   color: var(--text-muted);
   box-shadow: none;
   cursor: default;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .icon-button,
+  .quiet-button,
+  .primary-button,
+  .secondary-button,
+  .danger-button,
+  .danger-inline-button {
+    transition: none;
+  }
 }
 
 .file-input {
@@ -1145,13 +1165,13 @@ button {
    authoritative by not being touched here. */
 .icon-button:hover,
 .quiet-button:hover {
-  background: var(--paper-patch);
+  background: var(--control-patch);
   color: var(--text-main);
 }
 
 .icon-button:active,
 .quiet-button:active {
-  background: var(--paper-patch-pressed);
+  background: var(--control-patch-pressed);
   color: var(--text-main);
 }
 
@@ -5861,14 +5881,14 @@ button.mini-tags-more:focus-visible {
 .danger-inline-button {
   min-height: 28px;
   padding: 0 var(--space-2);
-  border: 1px solid color-mix(in srgb, var(--danger), transparent 62%);
+  border: 1px solid var(--control-danger-edge);
   border-radius: var(--radius-1);
-  background: var(--sheet-bg);
-  color: var(--danger);
+  background: var(--control-sheet);
+  color: var(--control-danger-text);
   cursor: pointer;
   font-size: var(--text-small);
   font-weight: 560;
-  box-shadow: 0 1px 0 var(--paper-lift-1), 0 3px 8px -2px var(--paper-lift-2);
+  box-shadow: 0 1px 0 var(--control-lift-near), 0 3px 8px -2px var(--control-lift-far);
   transition:
     background var(--duration-fast) ease,
     box-shadow var(--duration-fast) ease,
@@ -5878,13 +5898,13 @@ button.mini-tags-more:focus-visible {
 }
 
 .danger-inline-button:hover {
-  background: var(--sheet-bg-hover);
+  background: var(--control-sheet-hover);
   transform: translateY(-1px);
-  box-shadow: 0 2px 0 var(--paper-lift-1), 0 8px 14px -4px var(--paper-lift-2-hover);
+  box-shadow: 0 2px 0 var(--control-lift-near), 0 8px 14px -4px var(--control-lift-far-hover);
 }
 
 .danger-inline-button:active {
-  background: var(--sheet-bg-pressed);
+  background: var(--control-sheet-pressed);
   transform: translateY(0.5px);
   box-shadow: none;
 }
@@ -8013,20 +8033,20 @@ textarea {
    shadow, hover/pressed motion — set on the shared selector list above),
    overriding only the border tint and text color to red. */
 .danger-button {
-  border-color: color-mix(in srgb, var(--danger), transparent 62%);
-  background: var(--sheet-bg);
-  color: var(--danger);
-  box-shadow: 0 1px 0 var(--paper-lift-1), 0 3px 8px -2px var(--paper-lift-2);
+  border-color: var(--control-danger-edge);
+  background: var(--control-sheet);
+  color: var(--control-danger-text);
+  box-shadow: 0 1px 0 var(--control-lift-near), 0 3px 8px -2px var(--control-lift-far);
 }
 
 .danger-button:hover {
-  background: var(--sheet-bg-hover);
+  background: var(--control-sheet-hover);
   transform: translateY(-1px);
-  box-shadow: 0 2px 0 var(--paper-lift-1), 0 8px 14px -4px var(--paper-lift-2-hover);
+  box-shadow: 0 2px 0 var(--control-lift-near), 0 8px 14px -4px var(--control-lift-far-hover);
 }
 
 .danger-button:active {
-  background: var(--sheet-bg-pressed);
+  background: var(--control-sheet-pressed);
   transform: translateY(0.5px);
   box-shadow: none;
 }
