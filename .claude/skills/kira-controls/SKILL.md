@@ -104,7 +104,7 @@ Mọi nút có `border: 1px solid transparent` ở gốc để cấp có viền 
 **Zoom:** plate radius `12px` (S:363), tool `32px` icon `20px` (S:365-366), số % mono 11px (S:364).
 **Nút Kira:** plate riêng `52px`, icon `24px` (S:375, S:377), đứng cạnh rail (S:626).
 
-**Giá trị ngoài thang, chưa chốt** (hỏi UI/UX trước khi code, đừng tự viết giá trị một lần): tooltip radius 7px, plate Kira radius 14px (S:375), weight 600 của số zoom (S:364), transform 140ms (S:53). Đề xuất của UI/UX: `--radius-3`, `--radius-4`, 560, `--duration-fast`.
+**Giá trị ngoài thang, đã chốt** (Orchestrator xác nhận 2026-09-15, đưa vào thang token thay vì giữ số specimen): tooltip radius 7px trong specimen (S:375) → dùng `--radius-3` (8px); plate Kira radius 14px (S:375) → `--radius-4` (12px); weight 600 của số zoom (S:364) → 560; transform 140ms (S:53) → `--duration-fast` (120ms), đổi cùng lúc với việc dùng `--ease-out-soft` đã ghi ở §7 Motion.
 
 ## 6. Icon
 
@@ -137,14 +137,14 @@ Vì sao `lxo/lxi`: nét mực đơn nằm trên plate tối chỉ đạt **1,41:
 - `--c-acc #4fb49c` là màu sticker, **không phải** `--accent-cyan`; không dùng nó ở đâu khác.
 
 ### 6.4 Tuỳ chọn đơn sắc
-Cùng SVG, chỉ đổi biến dưới một attribute trên container (ví dụ `[data-rail-icons="mono"] .ico`): các `--c-*` và `--b-hi/--b-lo` về tông trung tính của theme, giữ `--ink`, `--lxo/--lxi`, điểm phản quang. Kỹ thuật "chỉ đổi biến" đã có tiền lệ ở khối so sánh vòng 1 (S:437-440). **Specimen chưa có bảng đơn sắc cho Ink:** giá trị cụ thể phải được UI/UX dựng và đo 3:1 trên nền xấu nhất trước khi merge.
+Cùng SVG, chỉ đổi biến dưới một attribute trên container (ví dụ `[data-rail-icons="mono"] .ico`): các `--c-*` và `--b-hi/--b-lo` về tông trung tính của theme, giữ `--ink`, `--lxo/--lxi`, điểm phản quang. Kỹ thuật "chỉ đổi biến" đã có tiền lệ ở khối so sánh vòng 1 (S:437-440). **Đã chốt 2026-09-15:** specimen chưa có bảng đơn sắc cho Ink, nhưng không chặn việc code; **Worker dựng giá trị này ở pha 2** (mọi `k-*` về một tông mực theo theme, tương tự cách vòng 1 làm ở S:437-440) và tự đo ≥ 3:1 trên nền xấu nhất trước khi merge, theo đúng cách đo ở §8. Không cần UI/UX dựng bảng riêng trước.
 
 ## 7. Motion (S:53, S:61, S:227-228)
 
 - Nền, bóng, màu chữ, viền: `120ms ease` (`--duration-fast`, `--ease-soft`).
-- `transform` của nút và icon rail: `140ms cubic-bezier(0.16, 1, 0.3, 1)` (đường cong `--ease-out-soft`, không vượt đích); `filter` icon `140ms ease`.
+- `transform` của nút và icon rail: specimen dùng `140ms cubic-bezier(0.16, 1, 0.3, 1)` (S:53); **đã chốt 2026-09-15: dùng `--duration-fast` (120ms) thay 140ms**, đừng thêm bậc thang mới cho một giá trị lệch 20ms, đường cong vẫn `--ease-out-soft`, không vượt đích. `filter` icon cùng `--duration-fast` với `--ease-soft`.
 - Không spring, không overshoot cho control (`--ease-spring` chỉ cho kéo thả trên canvas; R1 P3-9). Không animate `width` hay `height`. Không animation tự chạy.
-- `prefers-reduced-motion: reduce`: bỏ transition cho nút, tool, icon (S:61). *Đề xuất UI/UX, chưa có trong specimen:* ở chế độ này bỏ luôn `rotate(-4deg)` và `translateY(-3px)` của icon rail, chỉ giữ đổi nền, vì chuyển động vẫn xảy ra tức thời.
+- `prefers-reduced-motion: reduce`: bỏ transition cho nút, tool, icon (S:61). **Đã chốt 2026-09-15:** ở chế độ này bỏ `rotate(-4deg)` và `translateY(-3px)` của icon rail khi hover, chỉ giữ đổi nền và viền; chuyển động của icon vẫn xảy ra tức thời (không transition) nên vẫn báo được trạng thái hover mà không gây chuyển động.
 
 ## 8. Contrast: ngưỡng và cách đo
 

@@ -59,7 +59,11 @@ small{color:#8e8e8a}
 .good .list{border:1px solid rgb(255 255 255 / .06);border-radius:8px;overflow:hidden;align-self:start}
 .good .row{padding:8px 10px;border-top:1px solid rgb(255 255 255 / .06);font-size:11px}
 .good .row:first-child{border-top:0}
-.good .row.on{background:rgb(127 200 183 / .12)}
+/* Selected row is ink, not teal (DESIGN.md §3 The Ink Primary Rule):
+   .provider-list-row[aria-pressed="true"] in the real app still uses
+   --glass-active (styles.css:5475), a violation this wireframe fixes. */
+.good .row.on{box-shadow:inset 3px 0 0 0 #f4f1ea}
+.good .row.on strong{font-weight:680}
 .good .row strong{display:block;font-size:13px;color:#f4f1ea;font-weight:400}
 .good .field{display:grid;gap:4px;font-size:11px;color:#b5b4af}
 .good input{height:32px;padding:0 10px;border-radius:8px;background:#0d1315;border:1px solid rgb(255 255 255 / .06);color:#f4f1ea;font-size:13px}
