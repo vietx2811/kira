@@ -85,10 +85,11 @@ Mọi `font-size` là token: `--text-mini` 10px, `--text-small` 11px, `--text-bo
 
 ## Skill thiết kế
 
-User chốt 2026-09-14: dùng **impeccable** (mode Operate) làm sàn chất lượng và **design-taste-frontend** cho định hướng thẩm mỹ.
-- Chỉnh núm của design-taste-frontend cho app công cụ, không dùng mặc định (8/6/4, thẩm mỹ trang marketing): `DESIGN_VARIANCE 3`, `MOTION_INTENSITY 3`, `VISUAL_DENSITY 6`.
-- Khi mâu thuẫn, thứ tự ưu tiên: `DESIGN.md` > impeccable > design-taste-frontend. Không đổi bố cục theo từng màn: app phải nhất quán.
-- Không dùng `high-end-visual-design` (bắt buộc mỗi lần một layout khác, trái với product UI).
+User chốt 2026-09-15 (báo cáo `docs/research/2026-09-15-design-skills-github.md`):
+- **Không dùng `design-taste-frontend`** (ép Next.js/Tailwind, chính tác giả loại product UI khỏi phạm vi) và `high-end-visual-design`.
+- Bộ skill, theo thứ tự ưu tiên khi mâu thuẫn: `DESIGN.md` > `kira-controls` (skill nội bộ trong repo, `.claude/skills/kira-controls/`) > **impeccable** (Operate, sàn chất lượng) > **apple-design** (HIG macOS: nút, toolbar, icon, Liquid Glass) > **refactoring-ui** (chỉ lấy kỹ thuật chiều sâu và bóng, **không** lấy thang spacing hay bóng của nó) > **emil-design-eng** (chỉ cảm giác nhấn và motion; không spring cho control).
+- 3 skill ngoài do user tự cài ở cấp user (`~/.claude/skills/`). Chưa có thì báo, không tự cài. `apple-design` không có license: không chép vào repo.
+- **Phong cách control đã chốt: Ink & Paper** (`docs/research/2026-09-14-art-direction-controls-v2.md`, specimen `docs/research/art-direction/v2/controls-v2.html`). Không đổi bố cục theo từng màn: app phải nhất quán.
 
 ## Ràng buộc đã chốt
 
