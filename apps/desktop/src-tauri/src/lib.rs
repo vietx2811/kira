@@ -70,6 +70,25 @@ struct ProjectSnapshot {
     links: Vec<LinkRecord>,
     #[serde(rename = "outlineDrafts")]
     outline_drafts: Vec<OutlineDraftRecord>,
+    // Opaque, like aiSettings/versionState above — Rust never needs to know
+    // the Kira right-panel data model's shape (threads/messages/runs/
+    // changeSets/skillCheckpoints/provenance), just round-trip it. See
+    // apps/desktop/src/kira/aiPanelModel.ts toSnapshot()/fromSnapshot().
+    #[serde(default, rename = "aiPanel")]
+    ai_panel: serde_json::Value,
+    // Bug fix (found while wiring aiPanel persistence): the TS
+    // ProjectSnapshot type (main.tsx) has an optional `slidesConfig` field
+    // that this struct never had a home for. Before this field existed,
+    // write_project_package_to_dir() -> write_snapshot() silently dropped
+    // it: the SQLite round trip (read_snapshot(), which read_project_package
+    // prefers whenever project.sqlite exists) had nowhere to persist or
+    // restore it, even though the raw manifest.json write kept a copy of
+    // the original JSON (irrelevant in practice: read_project_package only
+    // falls back to the manifest when project.sqlite is absent, which is
+    // never true after a real save). See the
+    // `slides_config_round_trips_through_save_and_load` test below.
+    #[serde(default, rename = "slidesConfig")]
+    slides_config: serde_json::Value,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -1189,6 +1208,8 @@ fn write_snapshot(
     write_json_collection(&tx, "versionState", &snapshot.version_state)?;
     write_json_collection(&tx, "versionHistory", &snapshot.version_history)?;
     write_json_collection(&tx, "nodeVersions", &snapshot.node_versions)?;
+    write_json_collection(&tx, "aiPanel", &snapshot.ai_panel)?;
+    write_json_collection(&tx, "slidesConfig", &snapshot.slides_config)?;
 
     tx.commit().map_err(|error| error.to_string())
 }
@@ -1246,6 +1267,8 @@ fn read_snapshot(conn: &Connection) -> Result<ProjectSnapshot, String> {
     });
     let version_history = read_json_collection(conn, "versionHistory")?.unwrap_or_default();
     let node_versions = read_json_collection(conn, "nodeVersions")?.unwrap_or_default();
+    let ai_panel = read_json_collection(conn, "aiPanel")?.unwrap_or(serde_json::Value::Null);
+    let slides_config = read_json_collection(conn, "slidesConfig")?.unwrap_or(serde_json::Value::Null);
 
     Ok(ProjectSnapshot {
         version,
@@ -1261,6 +1284,8 @@ fn read_snapshot(conn: &Connection) -> Result<ProjectSnapshot, String> {
         node_versions,
         links,
         outline_drafts,
+        ai_panel,
+        slides_config,
     })
 }
 
@@ -4699,12 +4724,19 @@ mod tests {
                     strength: "forming".to_string(),
                 }],
             }],
+            ai_panel: serde_json::json!({
+                "schemaVersion": 1,
+                "threads": [{"id": "thread-a", "title": "Thread A"}]
+            }),
+            slides_config: serde_json::json!({"aspectRatio": "16:9"}),
         };
 
         write_snapshot(&mut conn, &snapshot, &project_dir).expect("write snapshot");
         let restored = read_snapshot(&conn).expect("read snapshot");
 
         assert_eq!(restored.version, 2);
+        assert_eq!(restored.ai_panel["threads"][0]["id"], "thread-a");
+        assert_eq!(restored.slides_config["aspectRatio"], "16:9");
         assert_eq!(restored.ideas[0].title, "Idea A");
         assert_eq!(restored.ideas[0].importance, Some(3.0));
         assert_eq!(restored.ideas[0].scale, Some(1.6));
@@ -5501,6 +5533,205 @@ mod tests {
     }
 
     #[test]
+    fn ai_panel_field_round_trips_through_save_and_load() {
+        // apps/desktop/src/kira/aiPanelModel.ts toSnapshot() produces this
+        // shape. lib.rs never needs to parse it — just carry it through
+        // save (write_project_package_to_dir -> write_snapshot ->
+        // canvas_collections) and load (read_project_package ->
+        // read_snapshot, which is what wins whenever project.sqlite exists,
+        // i.e. on every real save/reload).
+        let id = timestamp_millis();
+        let project_dir = std::env::temp_dir().join(format!("kira-ai-panel-roundtrip-test-{id}.kira"));
+        let snapshot_json = serde_json::json!({
+            "version": 2,
+            "ideas": [],
+            "images": [],
+            "palettes": [],
+            "diagrams": [],
+            "placeholders": [],
+            "aiSettings": {
+                "providers": [],
+                "routingMode": "prefer_local",
+                "selectedProviderId": "openai"
+            },
+            "versionState": {
+                "schemaVersion": 1,
+                "currentBranchId": "main",
+                "branches": [{
+                    "id": "main",
+                    "name": "Main",
+                    "createdAt": "2026-09-14T00:00:00.000Z"
+                }]
+            },
+            "versionHistory": [],
+            "nodeVersions": [],
+            "links": [],
+            "outlineDrafts": [],
+            "aiPanel": {
+                "schemaVersion": 1,
+                "threads": [{
+                    "id": "thread-a",
+                    "title": "Tách nhánh concept Hanoi noir",
+                    "createdAt": "2026-09-14T14:30:00.000Z",
+                    "updatedAt": "2026-09-14T14:32:00.000Z",
+                    "anchorNodeIds": ["idea-hanoi-noir"]
+                }],
+                "changeSets": [{
+                    "id": "cs-branches",
+                    "runId": "run-branches",
+                    "threadId": "thread-a",
+                    "title": "Tách nhánh concept Hanoi noir",
+                    "createdAt": "2026-09-14T14:32:00.000Z",
+                    "items": []
+                }],
+                "provenance": {
+                    "idea:idea-brass-bar": {
+                        "aiGenerated": true,
+                        "runId": "run-branches",
+                        "threadId": "thread-a",
+                        "editedAfterGeneration": false
+                    }
+                }
+            }
+        })
+        .to_string();
+
+        write_project_package_to_dir(project_dir.clone(), snapshot_json).expect("write project package");
+        let restored = read_project_package(&project_dir)
+            .expect("read saved package")
+            .expect("restored saved snapshot");
+        let restored_json: serde_json::Value =
+            serde_json::from_str(&restored).expect("parse restored saved snapshot");
+
+        assert_eq!(restored_json["aiPanel"]["threads"][0]["id"], "thread-a");
+        assert_eq!(restored_json["aiPanel"]["changeSets"][0]["id"], "cs-branches");
+        assert_eq!(
+            restored_json["aiPanel"]["provenance"]["idea:idea-brass-bar"]["aiGenerated"],
+            true
+        );
+
+        let _ = fs::remove_dir_all(project_dir);
+    }
+
+    #[test]
+    fn snapshot_without_ai_panel_field_still_loads() {
+        // Old projects saved before the aiPanel field existed must keep
+        // loading — #[serde(default)] on ProjectSnapshot.ai_panel is what
+        // makes this work rather than a hard deserialize error.
+        let id = timestamp_millis();
+        let project_dir = std::env::temp_dir().join(format!("kira-ai-panel-absent-test-{id}.kira"));
+        let snapshot_json = serde_json::json!({
+            "version": 2,
+            "ideas": [{
+                "id": "idea-legacy",
+                "title": "Legacy project",
+                "body": "No aiPanel field at all.",
+                "status": "forming",
+                "x": 10,
+                "y": 10
+            }],
+            "images": [],
+            "palettes": [],
+            "diagrams": [],
+            "placeholders": [],
+            "aiSettings": {
+                "providers": [],
+                "routingMode": "prefer_local",
+                "selectedProviderId": "openai"
+            },
+            "versionState": {
+                "schemaVersion": 1,
+                "currentBranchId": "main",
+                "branches": [{
+                    "id": "main",
+                    "name": "Main",
+                    "createdAt": "2026-09-14T00:00:00.000Z"
+                }]
+            },
+            "versionHistory": [],
+            "nodeVersions": [],
+            "links": [],
+            "outlineDrafts": []
+        })
+        .to_string();
+
+        let info = write_project_package_to_dir(project_dir.clone(), snapshot_json)
+            .expect("write project package without aiPanel");
+        assert!(PathBuf::from(&info.path).exists());
+
+        let restored = read_project_package(&project_dir)
+            .expect("read saved package")
+            .expect("restored saved snapshot");
+        let restored_json: serde_json::Value =
+            serde_json::from_str(&restored).expect("parse restored saved snapshot");
+
+        assert_eq!(restored_json["ideas"][0]["title"], "Legacy project");
+        assert_eq!(restored_json["aiPanel"], serde_json::Value::Null);
+
+        let _ = fs::remove_dir_all(project_dir);
+    }
+
+    #[test]
+    fn slides_config_round_trips_through_save_and_load() {
+        // Bug found while wiring aiPanel persistence (task brief, "while
+        // there" note): the TS ProjectSnapshot type (main.tsx ~439-456)
+        // has an optional `slidesConfig` field, but ProjectSnapshot here
+        // had no matching field before this change. A native save's SQLite
+        // round trip (the path read_project_package always takes once
+        // project.sqlite exists — i.e. after any real save) silently
+        // dropped it. This test would fail without the `slides_config`
+        // field + its write_json_collection/read_json_collection wiring
+        // added alongside aiPanel above.
+        let id = timestamp_millis();
+        let project_dir = std::env::temp_dir().join(format!("kira-slides-config-test-{id}.kira"));
+        let snapshot_json = serde_json::json!({
+            "version": 2,
+            "ideas": [],
+            "images": [],
+            "palettes": [],
+            "diagrams": [],
+            "placeholders": [],
+            "aiSettings": {
+                "providers": [],
+                "routingMode": "prefer_local",
+                "selectedProviderId": "openai"
+            },
+            "versionState": {
+                "schemaVersion": 1,
+                "currentBranchId": "main",
+                "branches": [{
+                    "id": "main",
+                    "name": "Main",
+                    "createdAt": "2026-09-14T00:00:00.000Z"
+                }]
+            },
+            "versionHistory": [],
+            "nodeVersions": [],
+            "links": [],
+            "outlineDrafts": [],
+            "slidesConfig": {
+                "aspectRatio": "16:9",
+                "template": "editorial",
+                "transition": "fade"
+            }
+        })
+        .to_string();
+
+        write_project_package_to_dir(project_dir.clone(), snapshot_json).expect("write project package");
+        let restored = read_project_package(&project_dir)
+            .expect("read saved package")
+            .expect("restored saved snapshot");
+        let restored_json: serde_json::Value =
+            serde_json::from_str(&restored).expect("parse restored saved snapshot");
+
+        assert_eq!(restored_json["slidesConfig"]["aspectRatio"], "16:9");
+        assert_eq!(restored_json["slidesConfig"]["template"], "editorial");
+        assert_eq!(restored_json["slidesConfig"]["transition"], "fade");
+
+        let _ = fs::remove_dir_all(project_dir);
+    }
+
+    #[test]
     fn atomic_write_text_replaces_manifest_without_tmp_leftovers() {
         let id = timestamp_millis();
         let project_dir = std::env::temp_dir().join(format!("kira-atomic-write-test-{id}.kira"));
@@ -5573,6 +5804,8 @@ mod tests {
             node_versions: vec![],
             links: vec![],
             outline_drafts: vec![],
+            ai_panel: serde_json::Value::Null,
+            slides_config: serde_json::Value::Null,
         };
         write_snapshot(&mut conn, &snapshot, &project_dir).expect("write sqlite snapshot");
         fs::write(project_dir.join(MANIFEST_NAME), "{not valid json")
@@ -5637,6 +5870,8 @@ mod tests {
             node_versions: vec![],
             links: vec![],
             outline_drafts: vec![],
+            ai_panel: serde_json::Value::Null,
+            slides_config: serde_json::Value::Null,
         };
         write_snapshot(&mut conn, &snapshot, &project_dir).expect("write sqlite snapshot");
         fs::write(
