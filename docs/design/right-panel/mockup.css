@@ -258,6 +258,11 @@ body.doc {
   border-bottom: 1px solid rgb(35 33 29 / 0.14);
 }
 
+/* Locked decisions have no alternative column to show, only the confirmed
+   answer: one content column instead of two. Comes after .decisions li so
+   the override wins at equal specificity. */
+.decisions-locked li { grid-template-columns: 220px minmax(0, 1fr); }
+
 .decisions strong { font-weight: 680; }
 .decisions p { margin: 0; color: #3e3d39; }
 .decisions em { color: #0c6052; font-style: normal; font-weight: 680; }
@@ -567,13 +572,13 @@ body.solo .doc-wrap { display: none; }
    carries the meaning, so it survives grayscale. */
 .prov {
   position: absolute;
-  top: -10px;
+  top: -12px;
   right: 10px;
   z-index: 3;
   display: inline-flex;
   align-items: center;
-  height: 20px;
-  padding: 0 7px 0 6px;
+  height: 24px;
+  padding: 0 8px 0 7px;
   border: 1px solid var(--border-strong);
   border-radius: 999px;
   background: var(--surface-2);
@@ -1499,3 +1504,58 @@ body.solo .doc-wrap { display: none; }
 .run-error .acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 
 .pipe-head .quiet-button { flex: 0 0 auto; }
+
+/* ---- critique round 2: renamed tab, collapsed items, new states ---- */
+
+/* One-line summary shown on a collapsed item instead of its full body
+   (diff, palette compare, delete preview). Keeps every item to a
+   predictable height so the last one in a list is never below the fold. */
+.item-summary-line {
+  display: flex;
+  align-items: flex-start;
+  margin: 8px 0 0;
+  color: var(--text-soft);
+  gap: 6px;
+  font-size: var(--text-body);
+  line-height: 1.5;
+}
+
+.item-summary-line .ic { flex: 0 0 auto; margin-top: 3px; color: var(--text-main); }
+
+/* Confirmation after "Nhận": states what changed and offers undo, instead
+   of the change silently vanishing from the list. */
+.accept-toast {
+  display: flex;
+  align-items: center;
+  margin: 0 0 12px;
+  padding: 8px 8px 8px 12px;
+  border-radius: var(--radius-2);
+  background: var(--glass-active);
+  color: var(--text-on-glass-active);
+  gap: 8px;
+  font-size: var(--text-small);
+}
+
+.accept-toast b { color: var(--accent-on-glass-active); font-weight: 680; }
+.accept-toast .link-button { margin-left: auto; color: var(--accent-on-glass-active); }
+
+.answer-hint {
+  margin: 6px 0 0;
+  color: var(--text-muted);
+  font-size: var(--text-small);
+  line-height: 1.5;
+}
+
+/* Empty / first-open state for a tab with nothing in it yet. */
+.kp-empty {
+  display: grid;
+  justify-items: center;
+  padding: 48px 12px;
+  text-align: center;
+  color: var(--text-soft);
+  gap: 8px;
+}
+
+.kp-empty .ic { width: 28px; height: 28px; color: var(--text-muted); }
+.kp-empty h4 { margin: 4px 0 0; color: var(--text-main); font-size: var(--text-body); font-weight: 680; }
+.kp-empty p { margin: 0; max-width: 26ch; font-size: var(--text-small); line-height: 1.5; }
