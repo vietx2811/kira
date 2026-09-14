@@ -33,6 +33,7 @@ Orchestrator chọn model và effort cho thread khác bằng `set_session_model`
 - `SendMessage` chỉ **xếp hàng**; "success" không có nghĩa đã được đọc, và session idle **có thể không tự thức dậy**.
 - Cần session idle **làm ngay**: dùng `mcp__ccd_session_mgmt__send_message` với `session_id`. `delivered` = lượt đã bắt đầu; `queued` = đang chờ sau việc hiện tại. `delivered` **vẫn có thể thất bại** (vd hết hạn mức sử dụng): xác nhận qua transcript.
 - **Báo cáo kết thúc task gửi Orchestrator luôn bằng `mcp__ccd_session_mgmt__send_message`**, không bằng `SendMessage`: tin xếp hàng có thể không bao giờ tới.
+- Gửi tới session **đang chạy** thì tin `queued` và chỉ tới khi lượt đó kết thúc. Orchestrator đừng giữ một lượt quá dài khi đang chờ báo cáo; muốn đọc ngay thì xem transcript bằng `list_events`.
 - `session_id` lấy từ `list_sessions`. Tên trong `ListAgents` **khác** title trong `list_sessions`: xác nhận đúng session bằng transcript (`list_events`). Kiểm tra tin đã xử lý chưa: `isRunning` / `lastActivityAt`, hoặc tìm tin trong transcript.
 
 ## Git: mỗi task một worktree
