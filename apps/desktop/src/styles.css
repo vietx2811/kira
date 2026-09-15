@@ -34,10 +34,10 @@
   --node-shadow-rest: 0 2px 6px rgba(0, 0, 0, 0.1), 0 0 0 1px var(--border-soft);
   --node-shadow-hover: 0 4px 12px rgba(0, 0, 0, 0.2), 0 0 0 1px var(--border-strong);
   --window-border: rgb(255 255 255 / 0.08);
-  /* The window chrome and canvas gutter share the same native
-     UnderWindowBackground layer. Only floating controls and drawers add tint. */
+  /* The window is opaque (no native vibrancy material): the chrome and
+     canvas gutter both just paint --bg-base. Only floating controls and
+     drawers add tint. */
   --material-window-chrome: var(--bg-base);
-  --material-chrome-glass: var(--bg-base);
   --material-drawer: var(--surface-drawer);
   --material-inspector: var(--surface-inspector);
   --scrim: rgb(0 0 0 / 0.62);
@@ -362,13 +362,20 @@ body {
   min-width: 1180px;
   min-height: 720px;
   overflow: hidden;
-  background: transparent;
 }
 
+/* html/body/#root sit outside .app-shell, so they never see the per-project
+   theme tokens buildProjectAppearanceStyle() sets inline on .app-shell (see
+   CLAUDE.md, "styles.css: token màu theo theme") — a var() alias here would
+   freeze at the static :root value anyway. The window has no
+   vibrancy/transparency material, so this needs a real, static, dark-neutral
+   fill (matching :root's --bg-base, which is dark in both app themes) rather
+   than `transparent`, or the OS desktop would show through before React
+   mounts and in any gap around the shell. */
 html,
 body,
 #root {
-  background: transparent;
+  background: #0d0e0d;
 }
 
 button,
@@ -392,23 +399,11 @@ button {
   padding: 0;
   border: 0;
   overflow: hidden;
-  background: transparent;
-  box-shadow: none;
-}
-
-.app-shell[data-glass-state="native"] {
-  background: transparent;
-  /* The native window rides on an UnderWindowBackground material. Only the
-     window chrome lets it through: the canvas and every reading surface stay
-     on their own tokens so text contrast never depends on the wallpaper. */
-  --material-window-chrome: var(--material-chrome-glass);
-}
-
-.app-shell[data-glass-state="fallback"],
-.app-shell[data-glass-state="browser"] {
-  /* No native material behind the page here, so the shell paints its own
-     themed ground; the page canvas under it stays dark from :root. */
+  /* The window has no vibrancy/transparency material (removed 2026-09-16 —
+     it let the desktop wallpaper show through gaps around the shell), so
+     the shell always paints its own opaque, themed ground. */
   background: var(--bg-base);
+  box-shadow: none;
 }
 
 /* Aliases of per-project tokens. A var() alias resolves on the element that
@@ -743,10 +738,6 @@ button {
   background: transparent;
   box-shadow: none;
   pointer-events: none;
-}
-
-.app-shell[data-glass-state="native"] .topbar {
-  background: transparent;
 }
 
 .project-settings-popover {

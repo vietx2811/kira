@@ -1,7 +1,7 @@
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use image::{GenericImageView, ImageFormat};
 #[cfg(target_os = "macos")]
-use objc2_app_kit::{NSColor, NSWindow};
+use objc2_app_kit::NSWindow;
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 #[cfg(unix)]
@@ -4441,14 +4441,17 @@ fn project_dir(app: &AppHandle) -> Result<PathBuf, String> {
         .map_err(|error| error.to_string())
 }
 
+// The window is opaque (see tauri.conf.json: `transparent: false`,
+// `backgroundColor`), not the desktop-vibrancy chrome it used to be — this
+// only keeps the overlay title bar (traffic lights floating over the
+// topbar, already implied by `titleBarStyle: Overlay` in config) and shadow
+// explicit rather than relying on Tauri's own setup ordering.
 #[cfg(target_os = "macos")]
 fn configure_native_macos_window(window: &tauri::WebviewWindow) -> Result<(), String> {
     let ns_window = window.ns_window().map_err(|error| error.to_string())?;
 
     unsafe {
         let ns_window = &*(ns_window.cast::<NSWindow>());
-        ns_window.setOpaque(false);
-        ns_window.setBackgroundColor(Some(&NSColor::clearColor()));
         ns_window.setTitlebarAppearsTransparent(true);
         ns_window.setHasShadow(true);
     }
