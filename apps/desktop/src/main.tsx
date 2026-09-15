@@ -132,6 +132,7 @@ import {
   toSnapshot as aiPanelToSnapshot,
   visibleCheckpoints as aiPanelVisibleCheckpoints,
 } from './kira/aiPanelModel'
+import { DevRoot } from './kira/dev/DevRoot'
 import './styles.css'
 
 type Relation = 'supports' | 'contrasts' | 'example' | 'mood' | 'material' | 'reference' | 'related' | 'derived-from' | 'contains'
@@ -20563,6 +20564,6 @@ function safeDownloadName(value: string) {
 
 createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <App />
+    <DevRoot App={App} />
   </React.StrictMode>,
 )

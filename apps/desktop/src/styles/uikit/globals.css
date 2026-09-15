@@ -1,0 +1,69 @@
+/* Entry Tailwind v4 + Untitled UI React cho KIRA — PHA 0.
+   Import file này TRƯỚC ./styles.css (thứ tự cascade layer, không phải thứ
+   tự thắng-thua: CSS chưa nằm trong layer nào — toàn bộ styles.css hiện tại
+   — luôn thắng CSS nằm trong layer bất kể import trước hay sau, xem
+   docs/research/2026-09-16-tailwind-kit-migration.md §5).
+
+   KHÔNG import "tailwindcss" (bản gộp): bản gộp kéo theo preflight.css vào
+   layer(base), reset mạnh (bỏ margin mặc định, border/padding của
+   button/input/select mất style OS...) sẽ vỡ 9800+ dòng styles.css hiện có
+   viết theo giả định UA stylesheet mặc định. Import tách: theme + utilities,
+   bỏ hẳn preflight cho tới khi migrate xong toàn app (CLAUDE.md, luật đã
+   chốt trong báo cáo migrate). */
+@layer theme, base, components, utilities;
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+
+@import "./theme.css";
+@import "./bridge.css";
+
+@plugin "tailwindcss-react-aria-components";
+@plugin "tailwindcss-animate";
+
+/* KIRA đặt data-color-mode="dark"|"light" trên .app-shell (main.tsx), không
+   class .dark trên <html>. Trỏ variant `dark:` của Tailwind + custom-variant
+   `dark` mà theme.css dùng (án theo .dark-mode gốc của kit) vào đúng thuộc
+   tính đó — một cơ chế theme duy nhất, không thêm class thứ hai. */
+@custom-variant dark (&:where(.app-shell[data-color-mode="dark"], .app-shell[data-color-mode="dark"] *));
+
+@utility scrollbar-hide {
+  &::-webkit-scrollbar {
+    display: none;
+    -webkit-appearance: none;
+  }
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+@utility transition-inherit-all {
+  transition-property: inherit;
+  transition-duration: inherit;
+  transition-timing-function: inherit;
+}
+
+/* Reset tối thiểu, SCOPE VÀO .kira-uikit — không bật preflight toàn cục
+   (CLAUDE.md: preflight tắt hẳn ở pha 0). Một số component Untitled UI giả
+   định box-sizing: border-box và list/button reset mà preflight thường lo;
+   bọc riêng thay vì bật global.
+   BẮT BUỘC đặt trong @layer base (đúng layer Tailwind preflight thật dùng):
+   nếu để unlayered, reset này thắng CẢ utility class thật (vd bg-brand-solid)
+   vì CSS chưa vào layer luôn thắng CSS trong layer utilities — đã tự bắt lỗi
+   này khi Primary button render nền trong suốt dù token màu đã đúng. */
+@layer base {
+  .kira-uikit,
+  .kira-uikit * {
+    box-sizing: border-box;
+  }
+  .kira-uikit button {
+    font: inherit;
+    color: inherit;
+    background-color: transparent;
+    border-radius: 0;
+  }
+  .kira-uikit ol,
+  .kira-uikit ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+}
