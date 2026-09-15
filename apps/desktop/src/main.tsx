@@ -1828,6 +1828,64 @@ function useDismissableLayer(active: boolean, ignoreSelector: string, onDismiss:
   }, [active, ignoreSelector, onDismiss])
 }
 
+// Shared focus trap for modal dialogs (Settings, confirm/alert dialogs). While `isOpen`:
+// moves focus into the container's first focusable descendant (or the container itself,
+// which needs tabIndex={-1} for this to work) as soon as it opens, keeps Tab/Shift+Tab
+// cycling within the container instead of leaking to whatever sits underneath it, and
+// restores focus to whatever was focused right before it opened (normally the trigger
+// button) once it closes or unmounts. Esc-to-close stays owned by each dialog's own
+// handler; this hook only concerns itself with focus.
+function useFocusTrap<T extends HTMLElement>(containerRef: React.RefObject<T | null>, isOpen: boolean) {
+  const previouslyFocusedRef = useRef<HTMLElement | null>(null)
+
+  useEffect(() => {
+    if (!isOpen) return
+    const container = containerRef.current
+    if (!container) return
+
+    previouslyFocusedRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
+
+    const focusableSelector =
+      'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+    function getFocusable(): HTMLElement[] {
+      return Array.from(container!.querySelectorAll<HTMLElement>(focusableSelector))
+    }
+
+    const initialTarget = getFocusable()[0] ?? container
+    initialTarget.focus()
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key !== 'Tab') return
+      const items = getFocusable()
+      if (items.length === 0) {
+        event.preventDefault()
+        container!.focus()
+        return
+      }
+      const first = items[0]
+      const last = items[items.length - 1]
+      const active = document.activeElement
+      if (event.shiftKey) {
+        if (active === first || !container!.contains(active)) {
+          event.preventDefault()
+          last.focus()
+        }
+      } else if (active === last || !container!.contains(active)) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+
+    container.addEventListener('keydown', handleKeyDown)
+    return () => {
+      container.removeEventListener('keydown', handleKeyDown)
+      const toRestore = previouslyFocusedRef.current
+      previouslyFocusedRef.current = null
+      if (toRestore && document.contains(toRestore)) toRestore.focus()
+    }
+  }, [isOpen, containerRef])
+}
+
 type DockSelectOption = { value: string; label: string; meta?: string }
 
 // ARIA listbox with aria-activedescendant: focus stays on the trigger while the arrow keys
@@ -2636,6 +2694,8 @@ function FileWorkspace({
   // "Gỡ node" guard: set when removeAppliedAiNode refuses a node edited
   // after Kira created it, until the user confirms via the dialog.
   const [pendingRemoveNodeGuard, setPendingRemoveNodeGuard] = useState<{ nodeKind: GraphNodeKind; nodeId: string } | null>(null)
+  const removeNodeGuardDialogRef = useRef<HTMLElement>(null)
+  useFocusTrap(removeNodeGuardDialogRef, Boolean(pendingRemoveNodeGuard))
   const kiraPanelWidth = useKiraPanelWidthStore((state) => state.width)
   const setKiraPanelWidth = useKiraPanelWidthStore((state) => state.setWidth)
   const [lastSavedHash, setLastSavedHash] = useState(() => JSON.stringify(initialProject))
@@ -7282,6 +7342,8 @@ function FileWorkspace({
       {pendingRemoveNodeGuard && (
         <div className="dialog-overlay">
           <section
+            ref={removeNodeGuardDialogRef}
+            tabIndex={-1}
             aria-describedby="remove-ai-node-dialog-copy"
             aria-labelledby="remove-ai-node-dialog-title"
             aria-modal="true"
@@ -7436,6 +7498,7 @@ function App() {
   const [files, setFiles] = useState<OpenFile[]>(() => [createUntitledFile(DEFAULT_FILE_ID)])
   const [activeFileId, setActiveFileId] = useState<string>(DEFAULT_FILE_ID)
   const [pendingCloseFileId, setPendingCloseFileId] = useState<string | null>(null)
+  const closeFileDialogRef = useRef<HTMLElement>(null)
   const [showSplash, setShowSplash] = useState(true)
   // Lifted here (like `files`/`activeFileId`) because the toggle button
   // lives in the file-tab-bar row this component builds, while the panel's
@@ -7574,6 +7637,11 @@ function App() {
 
   function closeFile(id: string) {
     if (files.length <= 1) {
+      // Clear the pending-close dialog state before the early return: if the native
+      // close is blocked (not a Tauri runtime) or the user cancels it at the OS level,
+      // this function still returns here, and leaving the state set would strand the
+      // "Close without saving" dialog open with no way to dismiss it.
+      setPendingCloseFileId((current) => (current === id ? null : current))
       if (isTauriRuntime()) void getCurrentWindow().close()
       return
     }
@@ -7590,6 +7658,7 @@ function App() {
   }
 
   const pendingCloseFile = pendingCloseFileId ? files.find((file) => file.id === pendingCloseFileId) ?? null : null
+  useFocusTrap(closeFileDialogRef, Boolean(pendingCloseFile))
   const [dragOverTabId, setDragOverTabId] = useState<string | null>(null)
   const draggingTabIdRef = useRef<string | null>(null)
 
@@ -7773,7 +7842,14 @@ function App() {
       ))}
       {pendingCloseFile && (
         <div className="dialog-overlay">
-          <section aria-modal="true" className="confirm-dialog" role="alertdialog" aria-labelledby="close-file-dialog-title">
+          <section
+            ref={closeFileDialogRef}
+            tabIndex={-1}
+            aria-modal="true"
+            className="confirm-dialog"
+            role="alertdialog"
+            aria-labelledby="close-file-dialog-title"
+          >
             <div>
               <h2 id="close-file-dialog-title">Close {pendingCloseFile.title}?</h2>
               <p>This file has unsaved changes. Closing the tab discards them.</p>
@@ -8391,6 +8467,13 @@ function SettingsView({
   const pendingDeleteProvider = pendingDeleteProviderId
     ? providers.find((provider) => provider.id === pendingDeleteProviderId) ?? null
     : null
+  const deleteProviderDialogRef = useRef<HTMLElement>(null)
+  useFocusTrap(deleteProviderDialogRef, Boolean(pendingDeleteProvider))
+  const settingsShellRef = useRef<HTMLElement>(null)
+  // SettingsView only exists in the tree while the dialog is open (the parent conditionally
+  // mounts it), so the trap is simply "always on" from this component's own perspective —
+  // its cleanup runs on unmount, i.e. exactly when the dialog closes.
+  useFocusTrap(settingsShellRef, true)
   async function handleProviderTest(providerId: string) {
     setProviderBusy({ id: providerId, action: 'test' })
     try {
@@ -8506,7 +8589,7 @@ function SettingsView({
   }
 
   return (
-    <section className="settings-shell" aria-label="Settings" aria-modal="true" role="dialog">
+    <section ref={settingsShellRef} tabIndex={-1} className="settings-shell" aria-label="Settings" aria-modal="true" role="dialog">
       <nav className="settings-nav" aria-label="Settings sections">
         {settingsSections.map((section) => (
           <button
@@ -9056,7 +9139,14 @@ function SettingsView({
       </div>
       {pendingDeleteProvider && (
         <div className="dialog-overlay">
-          <section aria-modal="true" className="confirm-dialog" role="alertdialog" aria-labelledby="delete-provider-dialog-title">
+          <section
+            ref={deleteProviderDialogRef}
+            tabIndex={-1}
+            aria-modal="true"
+            className="confirm-dialog"
+            role="alertdialog"
+            aria-labelledby="delete-provider-dialog-title"
+          >
             <div>
               <h2 id="delete-provider-dialog-title">Delete {pendingDeleteProvider.name}?</h2>
               <p>This removes the profile and its stored API key from the macOS Keychain. This can't be undone.</p>
@@ -11871,31 +11961,44 @@ function GraphCanvas({
     setIsPanning(false)
   }
 
-  function handleCanvasWheel(event: React.WheelEvent<HTMLDivElement>) {
-    if (event.target instanceof Element && event.target.closest('input, textarea, select, .graph-tools-drawer, .node-context-menu, .node-arc-menu, .kira-dock')) return
-    event.preventDefault()
-    if (event.ctrlKey || event.metaKey) {
-      const rect = canvasRef.current?.getBoundingClientRect()
-      if (!rect) return
-      const pointerX = event.clientX - rect.left
-      const pointerY = event.clientY - rect.top
-      setGraphTransform((current) => {
-        const scale = clamp(Number((current.scale * Math.exp(-event.deltaY * 0.002)).toFixed(3)), 0.12, 1.8)
-        const ratio = scale / current.scale
-        return {
-          scale,
-          x: pointerX - (pointerX - current.x) * ratio,
-          y: pointerY - (pointerY - current.y) * ratio,
-        }
-      })
-      return
+  // Attached via a plain DOM listener (not React's onWheel) with { passive: false
+  // }: React registers its synthetic wheel listener at the root as passive, so
+  // event.preventDefault() inside a React onWheel handler is a silent no-op there
+  // (and logs "Unable to preventDefault inside passive event listener invocation"
+  // on every scroll). Mirrors the other wheel listener above (handleWheel for
+  // ctrl/meta + hover-over-node importance) which already does this correctly.
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+
+    function handleCanvasWheel(event: WheelEvent) {
+      if (event.target instanceof Element && event.target.closest('input, textarea, select, .graph-tools-drawer, .node-context-menu, .node-arc-menu, .kira-dock')) return
+      event.preventDefault()
+      if (event.ctrlKey || event.metaKey) {
+        const rect = canvas!.getBoundingClientRect()
+        const pointerX = event.clientX - rect.left
+        const pointerY = event.clientY - rect.top
+        setGraphTransform((current) => {
+          const scale = clamp(Number((current.scale * Math.exp(-event.deltaY * 0.002)).toFixed(3)), 0.12, 1.8)
+          const ratio = scale / current.scale
+          return {
+            scale,
+            x: pointerX - (pointerX - current.x) * ratio,
+            y: pointerY - (pointerY - current.y) * ratio,
+          }
+        })
+        return
+      }
+      setGraphTransform((current) => ({
+        ...current,
+        x: clamp(current.x - event.deltaX, -2400, 2400),
+        y: clamp(current.y - event.deltaY, -1800, 1800),
+      }))
     }
-    setGraphTransform((current) => ({
-      ...current,
-      x: clamp(current.x - event.deltaX, -2400, 2400),
-      y: clamp(current.y - event.deltaY, -1800, 1800),
-    }))
-  }
+
+    canvas.addEventListener('wheel', handleCanvasWheel, { passive: false })
+    return () => canvas.removeEventListener('wheel', handleCanvasWheel)
+  }, [])
 
   function updateCanvasGridHotspot(event: React.PointerEvent<HTMLDivElement>) {
     const rect = event.currentTarget.getBoundingClientRect()
@@ -11929,7 +12032,6 @@ function GraphCanvas({
           stopPan()
         }}
         onAuxClick={(event) => event.preventDefault()}
-        onWheel={handleCanvasWheel}
         onDragOver={handleReferenceDragOver}
         onDrop={(event) => {
           // Attached here (the untransformed, full-bleed element) rather than
@@ -11975,6 +12077,7 @@ function GraphCanvas({
               aria-label={t('tool.select', lang)}
               data-tooltip={t('tool.select', lang)}
               className={activeCanvasTool === 'select' ? 'is-active' : ''}
+              aria-pressed={activeCanvasTool === 'select'}
               onClick={() => {
                 onActiveCanvasToolChange('select')
                 onPendingLinkSourceChange(null)
@@ -13976,11 +14079,11 @@ function ConfirmDeleteDialog({
   onCancel: () => void
   onConfirm: () => void
 }) {
-  const cancelRef = useRef<HTMLButtonElement>(null)
+  const dialogRef = useRef<HTMLElement>(null)
+  useFocusTrap(dialogRef, Boolean(pendingDelete))
 
   useEffect(() => {
     if (!pendingDelete) return
-    cancelRef.current?.focus()
 
     function handleKeydown(event: KeyboardEvent) {
       if (event.key === 'Escape') onCancel()
@@ -13996,6 +14099,8 @@ function ConfirmDeleteDialog({
   return (
     <div className="dialog-overlay">
       <section
+        ref={dialogRef}
+        tabIndex={-1}
         aria-describedby="delete-dialog-copy"
         aria-labelledby="delete-dialog-title"
         aria-modal="true"
@@ -14007,7 +14112,7 @@ function ConfirmDeleteDialog({
           <p id="delete-dialog-copy">{deleteCopy.body}</p>
         </div>
         <div className="dialog-actions">
-          <button ref={cancelRef} className="secondary-button" type="button" onClick={onCancel}>
+          <button className="secondary-button" type="button" onClick={onCancel}>
             Cancel
           </button>
           <button className="danger-button" type="button" onClick={onConfirm}>
