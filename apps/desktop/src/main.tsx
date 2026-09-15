@@ -7547,7 +7547,7 @@ function SettingsView({
                   {activeProvider.authMode !== 'local' && activeProvider.type !== 'codex' && activeProvider.type !== 'claude_code' && (
                     <>
                       <button
-                        className="secondary-button provider-test-button"
+                        className={activeProvider.secretRef ? 'secondary-button provider-test-button' : 'primary-button provider-test-button'}
                         type="button"
                         onClick={() => {
                           onProviderSecretSave(activeProvider.id, secretDrafts[activeProvider.id] ?? '')
@@ -7575,7 +7575,7 @@ function SettingsView({
                     Test
                   </button>
                   <button
-                    className="secondary-button provider-test-button"
+                    className="quiet-button provider-test-button"
                     type="button"
                     disabled={providerBusy?.id === activeProvider.id}
                     onClick={() => void handleProviderModelsList(activeProvider.id)}
