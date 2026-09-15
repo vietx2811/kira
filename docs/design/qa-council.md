@@ -4,6 +4,8 @@ Mục tiêu user (2026-09-15): giao diện hoàn thiện ở cấp độ Figma U
 
 Hội đồng chạy trên **bản build thật** (vite từ `main` cho phần giao diện, bundle debug cho phần native), sau khi hệ control Ink & Paper, đợt bố cục và panel phải đã merge. Mỗi thành viên là một agent độc lập, không thấy kết luận của nhau trước khi nộp.
 
+**Model (chính sách tiết kiệm 2026-09-15):** mặc định Sonnet 5 high cho cả 8 thành viên. Opus 5 chỉ cho thành viên 1 (Art Director, quyết định thẩm mỹ gốc) và cho lượt kiểm chứng đối kháng của P0/P1. Thành viên 5 và 8 (contrast, ổn định) là việc đo theo script, có thể hạ Haiku 4.5 nếu câu hỏi đã có công cụ đo sẵn (probe trong `.app-shell`, `graphify-lite`).
+
 ## Thành viên và câu hỏi của từng người
 
 | # | Góc nhìn | Câu hỏi chính | Căn cứ |
