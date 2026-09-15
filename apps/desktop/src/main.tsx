@@ -743,6 +743,9 @@ type Lang = 'en' | 'vi'
 // concept using different keys in two places will show up as translated in
 // one place and not the other.
 const UI_STRINGS: Record<string, { en: string; vi: string }> = {
+  'idea.status.strong': { en: 'Idea strength: strong', vi: 'Độ chín ý tưởng: mạnh' },
+  'idea.status.forming': { en: 'Idea strength: forming', vi: 'Độ chín ý tưởng: đang hình thành' },
+  'idea.status.thin': { en: 'Idea strength: thin', vi: 'Độ chín ý tưởng: còn mỏng' },
   'lang.label': { en: 'Language', vi: 'Ngôn ngữ' },
   'lang.hint': { en: 'Translates navigation, library, and Kira chat. Settings, outline, and slides stay in English for now.', vi: 'Dịch điều hướng, thư viện, và trò chuyện với Kira. Cài đặt, dàn ý, và trình chiếu vẫn dùng tiếng Anh.' },
   'inspector.title': { en: 'Inspector', vi: 'Chi tiết' },
@@ -8989,66 +8992,75 @@ function SettingsView({
             )}
           </div>
         </section>
-
-        <section className="settings-section settings-route-preview">
-          <details className="settings-panel settings-disclosure">
-            <summary>
-              <h3>Routing preview</h3>
-              <span>{taskRoutes.length} tasks</span>
-            </summary>
-            <div className="task-route-list" aria-label="AI task routing preview">
-              {taskRoutes.map((route) => (
-                <div className="task-route-row" key={route.task}>
-                  <span>{aiTaskLabels[route.task]}</span>
-                  <strong>{route.providerName}</strong>
-                  <em>{route.reason}</em>
-                </div>
-              ))}
-            </div>
-          </details>
-        </section>
         </>
         )}
 
         {activeSettingsTab === 'advanced' && (
         <section className="settings-section settings-compact-disclosures">
-          <details className="settings-panel settings-disclosure" id="settings-secrets">
+          {/* User decision 2026-09-15: Routing preview (previously its own
+              disclosure under AI Providers) + Secrets + Usage + Onboarding
+              merged into one disclosure instead of four stacked cards
+              (DESIGN.md §5 One Density Rule / No-Nested-Card Rule). */}
+          <details className="settings-panel settings-disclosure" id="settings-advanced-detail">
             <summary>
-              <h3>Secrets</h3>
-              <span>{storedSecretCount} stored</span>
+              <h3>Advanced</h3>
+              <span>Routing, secrets, usage, onboarding</span>
             </summary>
-            <div className="settings-chip-grid">
-              <span><Check size={13} /> macOS Keychain</span>
-              <span><ShieldCheck size={13} /> No browser tokens</span>
-              <span><Database size={13} /> {storedSecretCount}/{remoteProviders.length} remote</span>
-            </div>
-          </details>
 
-          <details className="settings-panel settings-disclosure">
-            <summary>
-              <h3>Usage</h3>
-              <span>{billingSeparatedCount} API billed</span>
-            </summary>
-            <div className="settings-chip-grid">
-              <span><Bot size={13} /> Bring your own API key</span>
-              <span><Sparkles size={13} /> Local-first fallback</span>
-              <span><Check size={13} /> No subscription passthrough</span>
+            <div className="settings-advanced-group">
+              <div className="settings-advanced-group-head">
+                <h4>Routing preview</h4>
+                <span>{taskRoutes.length} tasks</span>
+              </div>
+              <div className="task-route-list" aria-label="AI task routing preview">
+                {taskRoutes.map((route) => (
+                  <div className="task-route-row" key={route.task}>
+                    <span>{aiTaskLabels[route.task]}</span>
+                    <strong>{route.providerName}</strong>
+                    <em>{route.reason}</em>
+                  </div>
+                ))}
+              </div>
             </div>
-          </details>
 
-          <details className="settings-panel settings-disclosure">
-            <summary>
-              <h3>Onboarding</h3>
-              <span>Replay / reset</span>
-            </summary>
-            <p>Replay first-run setup for AI providers, local fallback, and browser capture.</p>
-            <div className="settings-action-row">
-              <button className="quiet-button" type="button" onClick={onWelcomeOpen}>
-                Open Welcome.kira
-              </button>
-              <button className="quiet-button" type="button" onClick={onOnboardingReset}>
-                Reset onboarding
-              </button>
+            <div className="settings-advanced-group" id="settings-secrets">
+              <div className="settings-advanced-group-head">
+                <h4>Secrets</h4>
+                <span>{storedSecretCount} stored</span>
+              </div>
+              <div className="settings-chip-grid">
+                <span><Check size={13} /> macOS Keychain</span>
+                <span><ShieldCheck size={13} /> No browser tokens</span>
+                <span><Database size={13} /> {storedSecretCount}/{remoteProviders.length} remote</span>
+              </div>
+            </div>
+
+            <div className="settings-advanced-group">
+              <div className="settings-advanced-group-head">
+                <h4>Usage</h4>
+                <span>{billingSeparatedCount} API billed</span>
+              </div>
+              <div className="settings-chip-grid">
+                <span><Bot size={13} /> Bring your own API key</span>
+                <span><Sparkles size={13} /> Local-first fallback</span>
+                <span><Check size={13} /> No subscription passthrough</span>
+              </div>
+            </div>
+
+            <div className="settings-advanced-group">
+              <div className="settings-advanced-group-head">
+                <h4>Onboarding</h4>
+                <span>Replay / reset</span>
+              </div>
+              <p>Replay first-run setup for AI providers, local fallback, and browser capture.</p>
+              <div className="settings-action-row">
+                <button className="quiet-button" type="button" onClick={onWelcomeOpen}>
+                  Open Welcome.kira
+                </button>
+                <button className="quiet-button" type="button" onClick={onOnboardingReset}>
+                  Reset onboarding
+                </button>
+              </div>
             </div>
           </details>
         </section>
@@ -12405,7 +12417,12 @@ function GraphCanvas({
                 {renderKiraControl('idea', idea.id, idea.title)}
                 {renderDirectLinkHandle('idea', idea, idea.title)}
                 {renderProvenanceBadge('idea', idea.id)}
-                <span className={`idea-status idea-status--${idea.status}`} />
+                <span
+                  className={`idea-status idea-status--${idea.status}`}
+                  role="img"
+                  aria-label={t(`idea.status.${idea.status}`, lang)}
+                  title={t(`idea.status.${idea.status}`, lang)}
+                />
                 {/* Read-only on the canvas face — double-click (or the (i)
                     button) opens the node's overlay, the only place this
                     content is actually editable. Pointerdown is NOT stopped

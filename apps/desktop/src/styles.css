@@ -167,6 +167,13 @@
   --text-body: 13px;
   --text-title: 15px;
   --text-large: 20px;
+  /* Weight scale (DESIGN.md §4): four steps, not the ten ad hoc values that
+     had drifted into the file. --weight-control is the one every button,
+     tab, segmented option and functional label should use. */
+  --weight-body: 400;
+  --weight-control: 560;
+  --weight-title: 680;
+  --weight-label: 800;
   --control-h-sm: 26px;
   --control-h-md: 32px;
   /* Single source of truth for the shell's floating-panel geometry — the
@@ -176,6 +183,12 @@
   --shell-rail-width: 80px;
   --shell-card-inset: 6px;
   --shell-card-radius: 16px;
+  /* Reserved vertical band for the floating .topbar (top 10px + 36px height +
+     6px breathing room), shared by every document-style view (Outline,
+     Slides) so their own header/toolbar row never fights the topbar's view
+     switcher and toolbar for the same pixels — one token instead of a
+     per-view, per-breakpoint offset. */
+  --topbar-clear-height: 52px;
   /* Shared motion language — every micro-interaction in the shell picks one
      of these instead of inventing its own duration/curve. Fades and color
      swaps use --ease-soft; anything that moves/slides/pops uses
@@ -580,6 +593,7 @@ button {
   text-overflow: ellipsis;
   white-space: nowrap;
   user-select: none;
+  font-weight: var(--weight-control);
 }
 
 .file-tab-close {
@@ -783,8 +797,23 @@ button {
   grid-column: 2;
   justify-self: center;
   background: var(--glass-chrome);
-  box-shadow: var(--panel-shadow);
+  /* --panel-shadow (0 20px 70px) is for large floating panels; this is a
+     small plate in the same family as the tool rail/zoom (DESIGN.md §6,
+     §7 "View switcher and zoom plates: same plate material") — the
+     matching small-plate shadow, not the oversized panel one. */
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.06),
+    0 2px 4px rgb(0 0 0 / 0.45),
+    0 12px 28px -8px rgb(0 0 0 / 0.65);
   pointer-events: auto;
+}
+
+.app-shell[data-color-mode="light"] .content-view-switch,
+.app-shell[data-color-mode="light"] .top-inspector-button {
+  box-shadow:
+    inset 0 0 0 1px rgb(35 33 29 / 0.06),
+    0 2px 4px rgb(35 33 29 / 0.1),
+    0 12px 26px -10px rgb(35 33 29 / 0.32);
 }
 
 /* One shared segmented control (see the Segmented component in main.tsx) for
@@ -815,8 +844,14 @@ button {
   z-index: 0;
   width: calc((100% - 6px - 2px * (var(--seg-count) - 1)) / var(--seg-count));
   height: calc(100% - 6px);
-  border-radius: var(--radius-1);
-  background: var(--accent-weak);
+  border-radius: var(--radius-2);
+  /* Selected is drawn in ink, not teal (DESIGN.md §3 One Accent Rule, §7
+     Quiet-tier "selected" = ink underline). The thumb keeps its sliding
+     position/size math (the segmented control's one recognizable trait);
+     only its paint changed from a colored fill to the same inset bottom
+     rule a quiet button or tab uses when selected. */
+  background: transparent;
+  box-shadow: inset 0 -2px 0 var(--text-main);
   transform: translateX(calc(var(--seg-index) * (100% + 2px)));
   transition: transform var(--duration-base) var(--ease-spring);
   pointer-events: none;
@@ -833,18 +868,22 @@ button {
   height: var(--control-h-sm);
   padding: 0 var(--space-3);
   border: 0;
-  border-radius: var(--radius-1);
+  /* Compact tier (26px) takes --radius-2 (6px), not --radius-1 (4px) —
+     kira-controls §4. */
+  border-radius: var(--radius-2);
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
   gap: var(--space-2);
+  font-weight: var(--weight-control);
   font-size: var(--text-small);
   white-space: nowrap;
   transition: color var(--duration-base) var(--ease-soft);
 }
 
 .segmented-option.is-active {
-  color: var(--accent-strong);
+  /* Selected is ink, not teal (DESIGN.md §3 One Accent Rule). */
+  color: var(--text-main);
 }
 
 .segmented-option:hover:not(.is-active) {
@@ -861,7 +900,12 @@ button {
   width: 34px;
   border: 1px solid rgb(255 255 255 / 0.055);
   background: var(--glass-chrome);
-  box-shadow: var(--panel-shadow);
+  /* Same small-plate shadow fix as .content-view-switch, its sibling in the
+     topbar (DESIGN.md §6): not the oversized --panel-shadow. */
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.06),
+    0 2px 4px rgb(0 0 0 / 0.45),
+    0 12px 28px -8px rgb(0 0 0 / 0.65);
 }
 
 .content-toolbar-actions {
@@ -1126,6 +1170,7 @@ button {
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
+  font-weight: var(--weight-control);
   transition: background var(--duration-base) var(--ease-soft), color var(--duration-base) var(--ease-soft);
 }
 
@@ -1135,8 +1180,9 @@ button {
 }
 
 .sidebar-view-button.is-active {
-  background: var(--glass-active);
-  color: var(--accent-strong);
+  /* Selected is ink, not teal (DESIGN.md §3 One Accent Rule). */
+  background: var(--control-patch);
+  color: var(--text-main);
   box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text-main), transparent 94%);
 }
 
@@ -1147,7 +1193,7 @@ button {
   width: 3px;
   height: 20px;
   border-radius: var(--radius-2);
-  background: var(--accent-cyan);
+  background: var(--text-main);
   content: "";
   opacity: 0;
   transform: translateY(-50%) scaleY(0.4);
@@ -1313,10 +1359,15 @@ button {
 
 .drawer-edge-toggle:hover,
 .drawer-edge-toggle:focus-visible {
-  background: var(--glass-active);
+  background: var(--control-patch);
   color: var(--text-main);
   opacity: 1;
   transform: translateY(-50%) scale(1.08);
+}
+
+.drawer-edge-toggle:focus-visible {
+  outline: 2px solid var(--accent-cyan);
+  outline-offset: 2px;
 }
 
 .content-region {
@@ -1334,8 +1385,15 @@ button {
 /* Outline and Slides are document-style views, not an infinite pan canvas —
    unlike Canvas/3D, their content must reflow around the Library drawer
    instead of sitting behind it. Reuses the same drawer-width inset the
-   canvas overlays (dock, zoom controls) already account for. */
+   canvas overlays (dock, zoom controls) already account for.
+   `top` clears the floating .topbar: Canvas/3D tolerate the view switcher
+   and toolbar floating over their content (nothing else occupies that
+   band), but Outline's and Slides' own header/toolbar row used to render
+   in the same 0-46px band, overlapping the view switcher and the
+   per-view toolbar at every window width (DESIGN.md §5, fixed 2026-09-15
+   instead of patching each collision point at each breakpoint). */
 .content-region[data-reflow="true"] {
+  top: var(--topbar-clear-height);
   left: calc(var(--shell-rail-width) + var(--canvas-overlay-left-inset, 0px));
 }
 
@@ -1488,7 +1546,8 @@ button {
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-4);
   background: var(--node-surface-selected);
-  box-shadow: var(--node-shadow);
+  /* No decorative shadow (DESIGN.md §6): shadow is reserved for filled
+     controls, floating chrome and canvas nodes, not a logo mark. */
 }
 
 .onboarding-brand-mark img {
@@ -1551,6 +1610,11 @@ button {
   overflow: auto;
 }
 
+/* Secondary tier material (DESIGN.md §7), not a bespoke teal-wash CTA: this
+   dialog's one primary is "Start workspace" below (.primary-button, the One
+   Primary Rule) — "Open the guided board" is a secondary way in, so it gets
+   the same paper sheet every other secondary action uses, just laid out as
+   a row (matching .onboarding-link-row below it) instead of an inline pill. */
 .onboarding-primary-cta {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
@@ -1558,16 +1622,10 @@ button {
   gap: 14px;
   width: 100%;
   padding: 16px 18px;
-  border: 1px solid color-mix(in srgb, var(--accent-cyan), transparent 62%);
+  border: 1px solid var(--control-sheet-edge);
   border-radius: var(--radius-3);
-  /* A flat color is only valid as the LAST background layer; an earlier
-     layer must be paintable as an image, so the cyan wash is wrapped in a
-     same-color-stop linear-gradient() to legally sit above --glass-active.
-     Without this the whole `background` shorthand is invalid and the
-     browser drops it entirely, leaving the button with no fill at all. */
-  background:
-    linear-gradient(color-mix(in srgb, var(--accent-cyan), transparent 90%), color-mix(in srgb, var(--accent-cyan), transparent 90%)),
-    var(--glass-active);
+  background: var(--control-sheet);
+  box-shadow: 0 1px 0 var(--control-lift-near), 0 3px 8px -2px var(--control-lift-far);
   color: var(--text-main);
   cursor: pointer;
   text-align: left;
@@ -1577,10 +1635,17 @@ button {
     transform 160ms ease;
 }
 .onboarding-primary-cta:hover {
-  border-color: color-mix(in srgb, var(--accent-cyan), transparent 44%);
+  background: var(--control-sheet-hover);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 0 var(--control-lift-near), 0 8px 14px -4px var(--control-lift-far-hover);
+}
+.onboarding-primary-cta:active {
+  background: var(--control-sheet-pressed);
+  transform: translateY(0.5px);
+  box-shadow: none;
 }
 .onboarding-primary-cta svg {
-  color: var(--accent-strong);
+  color: var(--text-soft);
 }
 .onboarding-cta-body {
   display: grid;
@@ -1590,6 +1655,7 @@ button {
 .onboarding-cta-body strong {
   color: var(--text-main);
   font-size: var(--text-body);
+  font-weight: 560;
 }
 .onboarding-cta-body small {
   color: var(--text-soft);
@@ -1675,8 +1741,10 @@ button {
   place-items: center;
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-3);
-  background: var(--glass-active);
-  color: var(--accent-cyan);
+  /* Decorative badge, not a status or selection: ink, not teal (DESIGN.md §3
+     One Accent Rule). */
+  background: var(--control-patch);
+  color: var(--text-main);
 }
 
 
@@ -1725,8 +1793,12 @@ button {
 .inbox {
   border-right: 0;
   border-radius: var(--shell-card-radius);
-  background: var(--glass-drawer);
-  box-shadow: none;
+  /* Opaque drawer surface (DESIGN.md §6 Material-On-Chrome Rule: panels stay
+     opaque, translucency is reserved for chrome that floats over the canvas).
+     --surface-drawer is the un-alpha-blended token; --glass-drawer let canvas
+     content read through. */
+  background: var(--surface-drawer);
+  box-shadow: var(--panel-shadow);
 }
 
 .inspector {
@@ -1973,8 +2045,10 @@ small {
 }
 
 .filter-chip.is-active {
-  background: var(--glass-active);
+  /* Selected is ink, not teal (DESIGN.md §3 One Accent Rule). */
+  background: var(--control-patch);
   color: var(--text-main);
+  box-shadow: inset 0 0 0 1.5px var(--text-main);
 }
 
 .library-tools {
@@ -2572,7 +2646,8 @@ button.mini-tags-more:focus-visible {
 }
 
 .batch-bar button:hover {
-  background: var(--accent-faint);
+  /* Hover is a paper patch, not teal (DESIGN.md §3, kira-controls §2.4). */
+  background: var(--control-patch);
   color: var(--text-main);
 }
 
@@ -2595,16 +2670,11 @@ button.mini-tags-more:focus-visible {
   font-size: var(--text-body);
 }
 
-.empty-state button {
-  width: fit-content;
-  margin-top: var(--space-2);
-  padding: 6px var(--space-2);
-  border-radius: var(--radius-1);
-  background: var(--accent-faint);
-  color: var(--accent-strong);
-  cursor: pointer;
-  font-size: var(--text-small);
-}
+/* The one button here already carries className="primary-button" (JSX);
+   this override's higher specificity (element+class vs. .primary-button's
+   single class) was silently repainting it as a teal-tinted pill instead
+   of the real ink block, and tinting it teal to boot (DESIGN.md §3 One
+   Accent Rule). Removed so .primary-button renders as itself. */
 
 .drop-copy {
   position: absolute;
@@ -3002,26 +3072,26 @@ button.mini-tags-more:focus-visible {
   gap: 12px;
   width: 100%;
   padding: 13px 16px;
-  border: 1px solid color-mix(in srgb, var(--accent-cyan), transparent 62%);
+  /* Secondary paper sheet, not a teal wash (DESIGN.md §3 One Accent Rule,
+     §7 Secondary tier): teal on a button fill reads as "primary" or
+     "selected," neither of which this restore-view prompt is. */
+  border: 1px solid var(--control-sheet-edge);
   border-radius: var(--radius-3);
-  /* Same fix as .onboarding-primary-cta: a flat color can only be the LAST
-     background layer, so the cyan wash needs a same-color-stop
-     linear-gradient() wrapper to legally layer above --glass-active. */
-  background:
-    linear-gradient(color-mix(in srgb, var(--accent-cyan), transparent 90%), color-mix(in srgb, var(--accent-cyan), transparent 90%)),
-    var(--glass-active);
+  background: var(--control-sheet);
   color: var(--text-main);
   cursor: pointer;
   text-align: left;
   transition:
     border-color 160ms ease,
+    background 160ms ease,
     transform 160ms ease;
 }
 .canvas-zero-restore:hover {
-  border-color: color-mix(in srgb, var(--accent-cyan), transparent 44%);
+  border-color: var(--border-strong);
+  background: var(--control-sheet-hover);
 }
 .canvas-zero-restore svg {
-  color: var(--accent-strong);
+  color: var(--text-soft);
   flex: none;
 }
 .canvas-zero-restore-text {
@@ -3082,8 +3152,8 @@ button.mini-tags-more:focus-visible {
 
 .canvas-template-card:hover,
 .canvas-template-card:focus-visible {
-  border-color: color-mix(in srgb, var(--accent-cyan), transparent 36%);
-  background: var(--glass-active);
+  border-color: var(--border-strong);
+  background: var(--control-patch);
 }
 
 .canvas-template-card strong {
@@ -3275,7 +3345,7 @@ button.mini-tags-more:focus-visible {
 }
 
 .link-popover-endpoints button:hover {
-  background: var(--glass-active);
+  background: var(--control-patch);
   color: var(--text-main);
 }
 
@@ -3442,13 +3512,14 @@ button.mini-tags-more:focus-visible {
 }
 
 .node-rich-editor-toolbar button:hover {
-  background: var(--glass-active);
+  background: var(--control-patch);
   color: var(--text-main);
 }
 
 .node-rich-editor-toolbar button.is-active {
-  background: var(--glass-active);
-  color: var(--accent-cyan);
+  /* Selected formatting is ink, not teal (DESIGN.md §3 One Accent Rule). */
+  background: var(--control-patch);
+  color: var(--text-main);
 }
 
 /* Overlay mode: an ordinary bar sitting at the top of the editor's own
@@ -3529,7 +3600,9 @@ button.mini-tags-more:focus-visible {
 }
 
 .idea-status--thin {
-  background: var(--accent-violet);
+  /* Violet had no defined role (DESIGN.md §3 lists only teal/amber/danger);
+     "thin" is the weakest of the three states, so it takes danger. */
+  background: var(--danger);
 }
 
 /* Width is the only fixed dimension; height follows the reference's real ratio
@@ -3874,8 +3947,8 @@ button.mini-tags-more:focus-visible {
 }
 
 .node-arc-menu button:hover {
-  border-color: color-mix(in srgb, var(--accent-cyan), transparent 56%);
-  background: var(--glass-active);
+  border-color: var(--border-strong);
+  background: var(--control-patch);
   color: var(--text-main);
 }
 
@@ -3956,7 +4029,7 @@ button.mini-tags-more:focus-visible {
 }
 
 .node-toolbar button:hover {
-  background: var(--glass-active);
+  background: var(--control-patch);
   color: var(--text-main);
 }
 
@@ -3966,8 +4039,9 @@ button.mini-tags-more:focus-visible {
 }
 
 .node-toolbar button.is-active {
-  background: var(--glass-active);
-  color: var(--accent-cyan);
+  /* Selected is ink, not teal (DESIGN.md §3 One Accent Rule). */
+  background: var(--control-patch);
+  color: var(--text-main);
 }
 
 /* Full-screen scrim — clicking it (not its child panel, see the
@@ -4173,7 +4247,7 @@ button.mini-tags-more:focus-visible {
 }
 
 .tag-chip-add:hover {
-  border-color: var(--accent-cyan);
+  border-color: var(--text-main);
   color: var(--text-main);
 }
 
@@ -4213,7 +4287,7 @@ button.mini-tags-more:focus-visible {
 }
 
 .node-toolbar-file:hover {
-  background: var(--glass-active);
+  background: var(--control-patch);
   color: var(--text-main);
 }
 
@@ -4331,13 +4405,19 @@ button.mini-tags-more:focus-visible {
   border: 1px solid transparent;
   border-radius: var(--radius-2);
   background: var(--surface-inspector);
-  box-shadow: 0 2px 6px rgba(0,0,0,0.1), 0 0 0 1px var(--border-soft);
+  /* Nearest Shadow Vocabulary token (DESIGN.md §6) instead of hand-tuned
+     rgba layers outside it; the 1px ring keeps the closed 44px launcher
+     legible against the canvas since its own border is transparent
+     (real border only shows once open, to avoid a layout shift). */
+  box-shadow: var(--panel-shadow), 0 0 0 1px var(--border-soft);
   color: var(--text-main);
   transform: translate(-50%, 0);
+  /* --ease-spring is reserved for canvas drag/drop (kira-controls §7); a
+     control morph never overshoots. */
   transition:
-    width var(--duration-slow) var(--ease-spring),
-    border-radius var(--duration-slow) var(--ease-spring),
-    transform var(--duration-slow) var(--ease-spring),
+    width var(--duration-slow) var(--ease-out-soft),
+    border-radius var(--duration-slow) var(--ease-out-soft),
+    transform var(--duration-slow) var(--ease-out-soft),
     grid-template-rows var(--duration-panel) var(--ease-out-soft),
     background-color var(--duration-base) var(--ease-soft),
     border-color var(--duration-base) var(--ease-soft);
@@ -4351,17 +4431,23 @@ button.mini-tags-more:focus-visible {
   will-change: width, transform;
   background: var(--surface-inspector);
   border: 1px solid var(--border-soft);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(0, 0, 0, 0.2);
+  /* Nearest Shadow Vocabulary token (DESIGN.md §6): open dock is now a
+     large floating panel over the canvas. */
+  box-shadow: var(--panel-shadow);
   transition:
-    width var(--duration-slow) var(--ease-spring),
-    transform var(--duration-slow) var(--ease-spring),
+    width var(--duration-slow) var(--ease-out-soft),
+    transform var(--duration-slow) var(--ease-out-soft),
     border-color 140ms ease,
     box-shadow 140ms ease;
 }
 
+/* The dock autofocuses its input the instant it opens, so :focus-within is
+   the common case, not a rare one — treating it as a strong "focused" event
+   (both a border AND a ring, in teal) fought the ink-only Ink & Paper
+   language on every open. One cue (the border), in ink, is enough
+   (DESIGN.md §3 One Accent Rule). */
 .kira-dock.is-open:focus-within {
-  border-color: color-mix(in srgb, var(--accent-cyan), transparent 30%);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-cyan), transparent 45%), 0 12px 36px rgba(0, 0, 0, 0.48);
+  border-color: var(--border-strong);
 }
 
 .kira-dock.is-open.has-tray {
@@ -4510,7 +4596,8 @@ button.mini-tags-more:focus-visible {
 }
 
 .kira-dock-chip-icon {
-  color: var(--accent-cyan);
+  /* UI glyph, not a rail sticker: neutral, no color (DESIGN.md §8). */
+  color: var(--text-muted);
   flex-shrink: 0;
 }
 
@@ -4694,7 +4781,8 @@ button.mini-tags-more:focus-visible {
 
 
 .kira-dock-model-icon {
-  color: var(--accent-cyan);
+  /* UI glyph, not a rail sticker: neutral, no color (DESIGN.md §8). */
+  color: var(--text-muted);
   flex-shrink: 0;
 }
 
@@ -4732,8 +4820,9 @@ button.mini-tags-more:focus-visible {
 }
 
 .kira-dock-action-btn.is-active {
-  background: var(--accent-faint);
-  color: var(--accent-strong);
+  /* Selected is ink, not teal (DESIGN.md §3 One Accent Rule). */
+  background: var(--control-patch);
+  color: var(--text-main);
 }
 
 .kira-dock-action-btn input[type="file"] {
@@ -4743,6 +4832,9 @@ button.mini-tags-more:focus-visible {
   cursor: pointer;
 }
 
+/* Primary tier (ink block), same material as every other committing action
+   in the app (DESIGN.md §7 Buttons) — not a solid teal fill. Send is the
+   dock's one primary action. */
 .kira-dock-submit {
   display: grid;
   width: 26px;
@@ -4750,10 +4842,10 @@ button.mini-tags-more:focus-visible {
   place-items: center;
   border: 0;
   border-radius: var(--radius-1);
-  background: var(--accent-strong);
-  color: var(--bg-base);
+  background: var(--control-primary);
+  color: var(--control-on-primary);
   cursor: pointer;
-  transition: opacity 120ms ease, transform 120ms ease;
+  transition: background 120ms ease, opacity 120ms ease, transform 120ms ease;
 }
 
 .kira-dock-submit:disabled {
@@ -4762,8 +4854,13 @@ button.mini-tags-more:focus-visible {
 }
 
 .kira-dock-submit:not(:disabled):hover {
-  filter: brightness(1.08);
+  background: var(--control-primary-hover);
   transform: scale(1.04);
+}
+
+.kira-dock-submit:not(:disabled):active {
+  background: var(--control-primary-pressed);
+  transform: scale(1);
 }
 
 .kira-dock-close-btn {
@@ -4898,21 +4995,24 @@ button.mini-tags-more:focus-visible {
   overflow-y: auto;
 }
 
+/* Not .node-kira-control or the canvas chrome Kira icon, so it doesn't
+   borrow the Kira Signature palette (DESIGN.md §3): a suggested-context
+   chip is ink, like its sibling .kira-chip in the dock's context bar. */
 .kira-chip {
   display: inline-flex;
   align-items: center;
   max-width: 100%;
   padding: 4px 6px 4px 8px;
-  border: 1px solid var(--kira-border);
+  border: 1px solid var(--border-soft);
   border-radius: var(--radius-2);
-  background: var(--accent-faint);
+  background: rgb(255 255 255 / 0.04);
   color: var(--text-soft);
   font-size: var(--text-small);
   gap: 5px;
 }
 
 .kira-chip-kind {
-  color: var(--kira-text);
+  color: var(--text-muted);
   font-weight: 700;
   text-transform: uppercase;
 }
@@ -4949,8 +5049,8 @@ button.mini-tags-more:focus-visible {
 }
 
 .kira-suggestion:hover {
-  border-color: var(--kira-border);
-  background: var(--accent-faint);
+  border-color: var(--border-strong);
+  background: var(--control-patch);
 }
 
 .kira-suggestion-why {
@@ -5236,6 +5336,17 @@ button.mini-tags-more:focus-visible {
     0 14px 30px -10px rgb(35 33 29 / 0.32);
 }
 
+/* Reduce Transparency: the only two surfaces in the app that use
+   backdrop-filter (DESIGN.md §6 Material-On-Chrome Rule) fall back to an
+   opaque surface with no blur. */
+@media (prefers-reduced-transparency: reduce) {
+  .canvas-tool-rail {
+    background: var(--surface-2);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
 .canvas-tool-group {
   position: relative;
   display: inline-flex;
@@ -5267,6 +5378,7 @@ button.mini-tags-more:focus-visible {
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
+  font-weight: var(--weight-control);
   transition: background var(--duration-fast) ease, box-shadow var(--duration-fast) ease;
 }
 
@@ -5444,6 +5556,15 @@ button.mini-tags-more:focus-visible {
     0 12px 26px -10px rgb(35 33 29 / 0.32);
 }
 
+@media (prefers-reduced-transparency: reduce) {
+  .canvas-view-rail,
+  .canvas-zoom-rail {
+    background: var(--surface-2);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
 /* Secondary to the view-rail's mode switch and the create-tools rail — this
    is read-only viewport status, not a primary action cluster, so it carries
    less visual weight: dimmer fill, smaller text. */
@@ -5465,12 +5586,20 @@ button.mini-tags-more:focus-visible {
   cursor: pointer;
   gap: 5px;
   font-size: var(--text-small);
+  font-weight: var(--weight-control);
 }
 
-.canvas-view-rail-trigger:hover,
-.canvas-view-rail-trigger.is-active {
-  background: var(--glass-active);
+.canvas-view-rail-trigger:hover {
+  background: var(--control-patch);
   color: var(--text-main);
+}
+
+.canvas-view-rail-trigger.is-active {
+  /* Selected is ink, not teal (DESIGN.md §7 "view options are quiet Compact
+     buttons and the current view takes the ink underline"). */
+  color: var(--text-main);
+  box-shadow: inset 0 -2px 0 var(--text-main);
+  border-radius: 8px 8px 2px 2px;
 }
 
 .canvas-zoom-status {
@@ -5681,8 +5810,9 @@ button.mini-tags-more:focus-visible {
 }
 
 .settings-nav-item.is-active {
-  background: var(--glass-active);
-  color: var(--accent-on-glass-active);
+  /* Selected is ink, not teal (DESIGN.md §3 One Accent Rule). */
+  background: var(--control-patch);
+  color: var(--text-main);
 }
 
 .settings-scroll {
@@ -5737,16 +5867,16 @@ button.mini-tags-more:focus-visible {
   color: color-mix(in srgb, var(--danger), var(--text-main) 30%);
 }
 
+/* DESIGN.md §5 No-Nested-Card Rule: space and a hairline, not another card
+   inside .settings-shell's own border (was a second boxed card stacked
+   directly under the first, see .settings-panel above). */
 .settings-control-strip {
   display: grid;
   grid-template-columns: minmax(160px, 1fr) minmax(160px, 1fr) auto auto;
   align-items: end;
   gap: var(--space-2);
-  margin-bottom: var(--space-3);
-  padding: var(--space-2);
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius-3);
-  background: var(--surface-drawer);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--border-soft);
 }
 
 .settings-control-strip label {
@@ -6048,14 +6178,31 @@ button.mini-tags-more:focus-visible {
   color: var(--accent-alt-on-glass-active);
 }
 
-.provider-card,
-.settings-panel {
+.provider-card {
   display: grid;
   gap: var(--space-3);
   padding: var(--space-3);
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-3);
   background: var(--surface-drawer);
+}
+
+/* DESIGN.md §5 No-Nested-Card Rule: a settings section is a config group,
+   not an object — space and a hairline, not a stacked card (previously
+   shared .provider-card's box rule, so every General-tab section and the
+   AI/Advanced disclosures nested a card inside .settings-shell's own
+   border). First panel in a tab skips the hairline; it already sits under
+   the tab's own header spacing. */
+.settings-panel {
+  display: grid;
+  gap: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border-soft);
+}
+
+.settings-panel:first-child {
+  padding-top: 0;
+  border-top: 0;
 }
 
 .provider-card--detail {
@@ -6140,8 +6287,10 @@ button.mini-tags-more:focus-visible {
   gap: 3px;
   padding: 8px;
   border-radius: var(--radius-2);
-  background: var(--glass-active);
-  color: var(--text-on-glass-active);
+  /* An informational caveat, not a "connected" status: ink, not teal
+     (DESIGN.md §3 One Accent Rule). */
+  background: var(--surface-inset);
+  color: var(--text-soft);
   font-size: var(--text-small);
 }
 
@@ -6334,6 +6483,48 @@ button.mini-tags-more:focus-visible {
   border-bottom: 1px solid var(--border-soft);
 }
 
+/* User decision 2026-09-15: Routing preview (AI Providers) + Secrets +
+   Usage + Onboarding (Advanced) merged into one <details>. Each group gets
+   a header + hairline, not its own card (DESIGN.md §5, same pattern as
+   .node-details-section). */
+.settings-advanced-group {
+  display: grid;
+  gap: 6px;
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border-soft);
+}
+
+.settings-advanced-group:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.settings-advanced-group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.settings-advanced-group-head h4 {
+  margin: 0;
+  color: var(--text-main);
+  font-size: var(--text-small);
+  font-weight: 680;
+}
+
+.settings-advanced-group-head span {
+  color: var(--text-muted);
+  font-size: var(--text-small);
+}
+
+.settings-advanced-group p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-small);
+  line-height: 1.45;
+}
+
 .settings-definition-list {
   display: grid;
   gap: var(--space-2);
@@ -6503,8 +6694,11 @@ button.palette-color-segment:focus-visible code {
 
 .project-color-summary:hover,
 .project-color-summary.is-active {
-  border-color: color-mix(in srgb, var(--accent-strong), transparent 42%);
-  background: var(--glass-active);
+  /* This toggles the disclosure open/closed; it isn't the project's chosen
+     accent (the swatch dot inside already shows that), so it stays ink, not
+     teal (DESIGN.md §3 One Accent Rule). */
+  border-color: var(--border-strong);
+  background: var(--control-patch);
 }
 
 .project-color-summary,
@@ -6599,8 +6793,12 @@ button.palette-color-segment:focus-visible code {
 
 .accent-color-recommendations button:hover,
 .accent-color-recommendations button.is-active {
-  border-color: color-mix(in srgb, var(--accent-strong), transparent 40%);
-  background: var(--glass-active);
+  /* The swatch dot already shows the preset's own color; the active/hover
+     indicator itself stays ink, not the current project accent, or picking
+     a non-teal preset would still glow teal here (DESIGN.md §3 One Accent
+     Rule). */
+  border-color: var(--border-strong);
+  background: var(--control-patch);
   color: var(--text-main);
 }
 
@@ -6857,7 +7055,7 @@ button.palette-color-segment:focus-visible code {
 .slide-canvas {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(260px, 0.78fr) minmax(320px, 1fr);
+  grid-template-columns: minmax(180px, 0.78fr) minmax(220px, 1fr);
   min-width: 0;
   min-height: 0;
   padding: clamp(28px, 4vw, 58px);
@@ -6870,9 +7068,13 @@ button.palette-color-segment:focus-visible code {
   position: absolute;
   top: var(--space-4);
   right: var(--space-4);
+  left: var(--space-4);
   display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   align-items: center;
   min-height: 32px;
+  max-width: calc(100% - 2 * var(--space-4));
   padding: 3px;
   border-radius: var(--radius-2);
   background: color-mix(in srgb, var(--surface-1) 72%, transparent);
@@ -6969,12 +7171,12 @@ button.palette-color-segment:focus-visible code {
 }
 
 .slide-export-popover button:hover {
-  background: var(--glass-active);
+  background: var(--control-patch);
   color: var(--text-main);
 }
 
 .slide-export-popover button:hover small {
-  color: var(--text-on-glass-active);
+  color: var(--text-soft);
 }
 
 .slide-export-popover span {
@@ -7108,7 +7310,7 @@ button.palette-color-segment:focus-visible code {
 }
 
 .slide-customizer-row > button:hover:not(:disabled) {
-  background: var(--glass-active);
+  background: var(--control-patch);
   color: var(--text-main);
 }
 
@@ -7772,7 +7974,7 @@ button.palette-color-segment:focus-visible code {
 }
 
 .node-version-row button:hover {
-  background: var(--accent-faint);
+  background: var(--control-patch);
   color: var(--text-main);
 }
 
@@ -7846,7 +8048,7 @@ button.palette-color-segment:focus-visible code {
 }
 
 .linked-list-toggle:hover {
-  background: var(--accent-faint);
+  background: var(--control-patch);
   color: var(--text-main);
 }
 
@@ -7854,13 +8056,15 @@ button.palette-color-segment:focus-visible code {
   margin-bottom: var(--space-3);
 }
 
+/* DESIGN.md §7 Chips: background var(--glass-hover), pill radius, text-soft
+   color — not a teal-tinted pill. Tags are not a status or a selection. */
 .tag-chip {
   min-height: 24px;
   padding: 0 5px 0 8px;
-  border: 1px solid color-mix(in srgb, var(--accent-cyan), transparent 81%);
-  border-radius: var(--radius-2);
-  background: var(--accent-faint);
-  color: var(--accent-on-glass-active);
+  border: 0;
+  border-radius: 999px;
+  background: var(--glass-hover);
+  color: var(--text-soft);
   gap: 5px;
   font-size: var(--text-small);
   font-weight: 630;
@@ -7873,7 +8077,7 @@ button.palette-color-segment:focus-visible code {
   place-items: center;
   border-radius: var(--radius-2);
   background: transparent;
-  color: color-mix(in srgb, var(--accent-on-glass-active) 70%, transparent);
+  color: var(--text-muted);
   cursor: pointer;
 }
 
@@ -8208,10 +8412,16 @@ textarea {
   text-align: left;
 }
 
-.version-branches button.is-active,
 .version-branches button:hover {
-  background: var(--accent-faint);
+  background: var(--control-patch);
   color: var(--text-main);
+}
+
+.version-branches button.is-active {
+  /* Selected is ink, not teal (DESIGN.md §3 One Accent Rule). */
+  background: var(--control-patch);
+  color: var(--text-main);
+  box-shadow: inset 0 0 0 1.5px var(--text-main);
 }
 
 .version-branches button span,
@@ -8373,6 +8583,13 @@ textarea {
 
   .settings-shell {
     grid-template-columns: 1fr;
+    /* Without an explicit row track, the two implicit auto rows (nav, then
+       scroll) split the shell's leftover height between them — invisible
+       on tabs with enough content to fill the shell, but on a short tab
+       (e.g. Advanced, one collapsed disclosure) the nav row itself balloons
+       to ~45% of the dialog height, opening a large blank gap above the
+       content. Pin the nav row to its own content height instead. */
+    grid-template-rows: auto minmax(0, 1fr);
   }
 
   .settings-nav {
@@ -8650,7 +8867,11 @@ textarea {
   width: var(--kira-panel-width, 360px);
   overflow: hidden;
   border-radius: var(--shell-card-radius);
-  background: var(--glass-inspector);
+  /* Opaque panel surface (DESIGN.md §6 Material-On-Chrome Rule: panels stay
+     opaque; translucency is reserved for floating chrome over the canvas).
+     --surface-inspector is the un-alpha-blended token; --glass-inspector let
+     canvas content read through the right panel. */
+  background: var(--surface-inspector);
   box-shadow: var(--panel-shadow);
   opacity: 0;
   transform: translateX(16px) scale(0.97);
