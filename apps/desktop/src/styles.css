@@ -111,6 +111,14 @@
   --inset-field: rgb(0 0 0 / 0.12);
   --border-soft: rgb(255 255 255 / 0.06);
   --border-strong: rgb(255 255 255 / 0.13);
+  /* Flat form-field boundary (WCAG 1.4.11, >=3:1 against every reading
+     surface a field can sit on). --border-soft/--border-strong are tuned as
+     subtle card/panel dividers (6-13% overlay), nowhere near 3:1 on this
+     app's near-black surfaces (measured ~1.1-1.5:1) — a field needs its own,
+     stronger token instead of reusing those. .app-shell recomputes this per
+     project the same way it does --border-strong; this static copy is the
+     dark fallback for content outside .app-shell. */
+  --field-edge: rgb(255 255 255 / 0.4);
   --text-main: #f1eee7;
   --text-soft: #b3afa5;
   --text-muted: #8f8c80;
@@ -746,8 +754,28 @@ button {
   padding: 12px;
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-3);
-  background: var(--node-surface-selected);
+  /* Was --node-surface-selected — the token for a selected canvas node, not
+     a panel. At dark alpha that let the thumbnail underneath read through
+     the NAME/DESCRIPTION/AUTHOR fields. --surface-inspector is the same
+     opaque panel token .kira-panel/aside.inbox/the settings dialog use
+     (DESIGN.md §6 Material-On-Chrome Rule: panels stay opaque). */
+  background: var(--surface-inspector);
+  /* This is a floating popover over the canvas, not a panel docked to the
+     shell edge, so it takes the small floating-chrome-plate shadow
+     (kira-controls §5) also used by .content-view-switch/.kira-dock's
+     closed state — not --panel-shadow, sized for large floating panels. */
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.06),
+    0 2px 4px rgb(0 0 0 / 0.45),
+    0 12px 28px -8px rgb(0 0 0 / 0.65);
   pointer-events: auto;
+}
+
+.app-shell[data-color-mode="light"] .project-settings-popover {
+  box-shadow:
+    inset 0 0 0 1px rgb(35 33 29 / 0.06),
+    0 2px 4px rgb(35 33 29 / 0.1),
+    0 12px 26px -10px rgb(35 33 29 / 0.32);
 }
 
 .content-toolbar-actions,
@@ -793,7 +821,14 @@ button {
   border: 1px solid rgb(255 255 255 / 0.055);
 }
 
-.content-view-switch {
+/* Specificity bumped to .segmented.content-view-switch: the element carries
+   both classes (Segmented className prop, main.tsx), and .segmented (below,
+   later in the file, same 0,1,0 specificity otherwise) was winning the
+   cascade on `background`, leaving the view switcher plate with almost no
+   fill (contrast <2.2:1 on canvas nodes, both themes). This selector must
+   win without reordering rules, since .content-view-switch also carries
+   layout/shadow props that must stay independent of .segmented's order. */
+.segmented.content-view-switch {
   grid-column: 2;
   justify-self: center;
   background: var(--glass-chrome);
@@ -1934,7 +1969,11 @@ small {
   height: 34px;
   margin: 0 var(--space-4) var(--space-2);
   padding: 0 var(--space-3);
-  border: 0;
+  /* Was border: 0 with only a near-invisible 5.5%-alpha bottom hairline
+     (1.18:1 light) to mark the field's edge — under WCAG 1.4.11's 3:1
+     floor. --field-edge is the dedicated field-boundary token; the old
+     hairline stays as a subtle inner top highlight, not the edge itself. */
+  border: 1px solid var(--field-edge);
   border-radius: 0;
   background: var(--inset-field);
   box-shadow: inset 0 -1px 0 rgb(255 255 255 / 0.055);
@@ -2887,7 +2926,12 @@ button.mini-tags-more:focus-visible {
 
 .graph-canvas::after {
   z-index: 1;
-  background-image: radial-gradient(circle, color-mix(in srgb, var(--accent-cyan), transparent 32%) 1px, transparent 1.35px);
+  /* Was --accent-cyan: a cursor-following decorative halo, not a
+     selection/focus/status cue, so teal here breaks the One Accent Rule
+     (DESIGN.md §3). Same ink base as ::before's always-on dot grid, just
+     less transparent, so the halo still reads as "the same dots, brighter
+     near the cursor" instead of switching hue. */
+  background-image: radial-gradient(circle, color-mix(in srgb, var(--text-main), transparent 32%) 1px, transparent 1.35px);
   background-position: 0 0;
   background-size: 22px 22px;
   mask-image: radial-gradient(
@@ -3783,11 +3827,13 @@ button.mini-tags-more:focus-visible {
   transform: scale(calc(1 / var(--node-scale, 1)));
 }
 
-.idea-node.is-selected .node-kira-control .kira-mark,
-.image-node.is-selected .node-kira-control .kira-mark,
-.palette-node.is-selected .node-kira-control .kira-mark,
-.diagram-node.is-selected .node-kira-control .kira-mark,
-.placeholder-node.is-selected .node-kira-control .kira-mark {
+/* Was unconditional (every selected node's Kira control glinted forever,
+   whether or not Kira was doing anything) — kira-controls §7 bans a
+   self-running animation not tied to real state. Gated the same way
+   kira-orbit/kira-breathe gate the dock's mark below: only while this
+   KiraMark instance actually carries .is-thinking (main.tsx now passes the
+   real session state through, not just size). */
+:is(.idea-node, .image-node, .palette-node, .diagram-node, .placeholder-node).is-selected .node-kira-control .kira-mark.is-thinking {
   animation: kira-glint 7.6s linear infinite;
 }
 
@@ -3797,7 +3843,7 @@ button.mini-tags-more:focus-visible {
    transform/background and never apply. */
 :is(.idea-node, .image-node, .palette-node, .diagram-node, .placeholder-node).is-selected .node-kira-control:hover {
   background-size: 220% 220%;
-  animation: kira-sweep-travel 720ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: kira-sweep-travel 720ms var(--ease-out-soft) forwards;
   box-shadow: 0 0 0 4px transparent;
   transform: scale(calc(1.14 / var(--node-scale, 1)));
 }
@@ -3825,7 +3871,7 @@ button.mini-tags-more:focus-visible {
   pointer-events: none;
   transform: translateY(-50%) scale(calc(0.78 / var(--node-scale, 1)));
   transform-origin: center;
-  transition: opacity 120ms ease, transform 160ms cubic-bezier(0.16, 1, 0.3, 1), background 120ms ease;
+  transition: opacity 120ms ease, transform var(--duration-fast) var(--ease-out-soft), background 120ms ease;
 }
 
 .idea-node:hover .node-link-handle,
@@ -4320,8 +4366,13 @@ button.mini-tags-more:focus-visible {
   flex: 0 0 auto;
 }
 
+/* Was `animation: kira-glint 7.6s linear infinite` unconditionally — every
+   .kira-mark (dock closed + node control) glinted forever regardless of
+   whether Kira was processing anything, which kira-controls §7 bans (no
+   self-running animation not tied to real state). kira-orbit below already
+   is the correctly is-thinking-gated motion for this element; at rest the
+   satellite now simply holds still, same as .kira-mark-core already does. */
 .kira-mark-satellite {
-  animation: kira-glint 7.6s linear infinite;
   transform-origin: 18.5px 5.5px;
 }
 
@@ -4365,6 +4416,7 @@ button.mini-tags-more:focus-visible {
   .kira-mark-satellite,
   .kira-mark.is-thinking .kira-mark-satellite,
   .kira-mark.is-thinking .kira-mark-core,
+  :is(.idea-node, .image-node, .palette-node, .diagram-node, .placeholder-node).is-selected .node-kira-control .kira-mark.is-thinking,
   :is(.idea-node, .image-node, .palette-node, .diagram-node, .placeholder-node).is-selected .node-kira-control:hover,
   .kira-dock,
   .kira-dock::before,
@@ -5503,7 +5555,7 @@ button.mini-tags-more:focus-visible {
   opacity: 0;
   pointer-events: none;
   transform: translate(-50%, 4px);
-  transition: opacity 120ms ease, transform 140ms cubic-bezier(0.16, 1, 0.3, 1);
+  transition: opacity 120ms ease, transform var(--duration-fast) var(--ease-out-soft);
   white-space: nowrap;
 }
 
@@ -5714,10 +5766,21 @@ button.mini-tags-more:focus-visible {
   padding: 0 var(--space-3);
   border: 0;
   border-radius: var(--radius-1);
-  background: var(--accent-faint);
+  /* Was --accent-faint — teal is reserved for selection/focus/status
+     (DESIGN.md §3 One Accent Rule), not a plain action button's resting
+     fill. Standard quiet-tier transparent rest + patch hover. */
+  background: transparent;
   color: var(--text-main);
   cursor: pointer;
   font-size: var(--text-small);
+}
+
+.graph-organize-row button:hover {
+  background: var(--control-patch);
+}
+
+.graph-organize-row button:active {
+  background: var(--control-patch-pressed);
 }
 
 
@@ -6298,7 +6361,11 @@ button.mini-tags-more:focus-visible {
   height: 32px;
   min-width: 0;
   padding: 0 var(--space-2);
-  border: 0;
+  /* Was border: 0 — the AI Providers Name/Model/API key fields (and any
+     .settings-panel select) had no visible boundary against their own
+     --surface-inset fill, measuring ~1.05:1 in light mode (WCAG 1.4.11
+     needs >=3:1). --field-edge is the dedicated field-boundary token. */
+  border: 1px solid var(--field-edge);
   border-radius: var(--radius-1);
   background: var(--surface-inset);
   color: var(--text-main);
@@ -6334,17 +6401,21 @@ button.mini-tags-more:focus-visible {
   font-size: var(--text-small);
 }
 
+/* Was --accent-cyan / --accent-strong: teal, right on the AI Providers
+   screen where teal already means "connected" — a plain "get a key" link
+   reading as a status was the same mistake .oauth-ready-note above fixed.
+   Neutral ink instead (DESIGN.md §3 One Accent Rule). */
 .provider-key-help {
   justify-self: start;
   margin-top: 4px;
-  color: var(--accent-cyan);
+  color: var(--text-soft);
   font-size: var(--text-small);
   text-decoration: none;
-  transition: color 140ms ease;
+  transition: color var(--duration-fast) var(--ease-soft);
 }
 
 .provider-key-help:hover {
-  color: var(--accent-strong);
+  color: var(--text-main);
   text-decoration: underline;
 }
 
@@ -7270,10 +7341,23 @@ button.palette-color-segment:focus-visible code {
   margin-left: auto;
   padding: 4px 9px;
   border-radius: var(--radius-1);
-  background: var(--accent-faint);
-  color: var(--accent-strong);
+  /* Was --accent-faint bg / --accent-strong text — teal both ways, reserved
+     for selection/focus/status (DESIGN.md §3 One Accent Rule), not a plain
+     "Reset" action. Standard quiet-tier resting/hover instead. */
+  background: transparent;
+  color: var(--text-soft);
   cursor: pointer;
   font-size: var(--text-small);
+}
+
+.slide-customizer-reset:hover {
+  background: var(--control-patch);
+  color: var(--text-main);
+}
+
+.slide-customizer-reset:active {
+  background: var(--control-patch-pressed);
+  color: var(--text-main);
 }
 
 .slide-customizer-list {
@@ -7889,7 +7973,10 @@ button.palette-color-segment:focus-visible code {
   margin: 0 var(--space-4);
   padding: var(--space-4) 0;
   border: 0;
-  border-top: 1px solid rgb(255 255 255 / 0.055);
+  /* Was a hardcoded white-alpha value (0.055) that never adapted to light
+     mode. --separator-hairline is the themed divider token this already
+     matches almost exactly in dark (0.052). */
+  border-top: 1px solid var(--separator-hairline);
   border-radius: 0;
   background: transparent;
 }
@@ -8234,7 +8321,12 @@ select,
 textarea,
 .title-input {
   width: 100%;
-  border: 1px solid var(--border-soft);
+  /* Was --border-soft (a subtle card/panel divider token, ~1.1-1.5:1 on
+     this app's dark surfaces) — under WCAG 1.4.11's 3:1 floor for a form
+     field boundary. --field-edge is the dedicated field-boundary token.
+     .title-input overrides straight back to border: 0 below, unaffected —
+     it already sits inside a bordered card. */
+  border: 1px solid var(--field-edge);
   border-radius: var(--radius-2);
   background: rgb(0 0 0 / 0.18);
   color: var(--text-main);
@@ -9251,6 +9343,10 @@ textarea {
   align-items: end;
   margin-top: 12px;
   padding: 6px 6px 6px 12px;
+  /* Had no border at all (dark 1.01:1, light 1.19:1 against --inset-field —
+     well under WCAG 1.4.11's 3:1 floor). --field-edge is the dedicated
+     field-boundary token. */
+  border: 1px solid var(--field-edge);
   border-radius: var(--radius-3);
   background: var(--inset-field);
   gap: 8px;
@@ -9575,7 +9671,11 @@ textarea {
   color: var(--text-soft);
   cursor: pointer;
   gap: 4px;
-  font-size: var(--text-mini);
+  /* Was --text-mini (10px) — this is a clickable, functional label (the
+     node's provenance/source), not a badge counter or hex swatch, so the
+     type-scale floor for functional text is --text-small (11px)
+     (CLAUDE.md's type scale rule). */
+  font-size: var(--text-small);
   font-weight: var(--weight-title);
   line-height: 1;
 }

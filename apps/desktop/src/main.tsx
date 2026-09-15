@@ -11175,7 +11175,12 @@ function GraphCanvas({
           openKiraFromNode(kind, id)
         }}
       >
-        <KiraMark size={12} />
+        {/* kiraSession is GraphCanvas's own state (top of the component) —
+            the only real "Kira is processing" signal available, per
+            kira-controls §7's ban on self-running animation. kira-glint is
+            CSS-gated on .kira-mark.is-thinking (styles.css); renderKiraDock
+            below has its own local `isThinking` for the dock's own mark. */}
+        <KiraMark size={12} state={kiraSession?.status === 'thinking' ? 'thinking' : 'rest'} />
       </span>
     )
   }
@@ -14629,6 +14634,12 @@ function buildProjectAppearanceStyle(appearance: ProjectAppearance): React.CSSPr
     '--inset-field': dark ? 'rgb(0 0 0 / 0.12)' : 'rgb(255 255 255 / 0.58)',
     '--border-soft': dark ? 'rgb(255 255 255 / 0.06)' : colorWithAlpha(tokens.textMain, 0.1),
     '--border-strong': borderStrong,
+    // Flat form-field boundary (WCAG 1.4.11, >=3:1 against every reading
+    // surface a field can sit on) — deliberately much stronger than
+    // --border-soft/--border-strong above, which stay tuned as subtle
+    // card/panel dividers. 0.4 white / 0.55 ink cleared >=3:1 against every
+    // dark and light surface token measured on the default project theme.
+    '--field-edge': dark ? 'rgb(255 255 255 / 0.4)' : colorWithAlpha(tokens.textMain, 0.55),
     '--text-main': tokens.textMain,
     '--text-soft': tokens.textSoft,
     '--text-muted': tokens.textMuted,
