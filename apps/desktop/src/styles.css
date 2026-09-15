@@ -927,7 +927,7 @@ button {
   font-size: var(--text-body);
   /* 560, not the 400 body weight or 680 heading weight: control labels read
      as neither (art-direction round 2, §E). */
-  font-weight: 560;
+  font-weight: var(--weight-control);
   transition:
     background var(--duration-fast) ease,
     box-shadow var(--duration-fast) ease,
@@ -1567,7 +1567,7 @@ button {
 .onboarding-kicker {
   color: var(--accent-strong);
   font-size: var(--text-small);
-  font-weight: 900;
+  font-weight: var(--weight-label);
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
@@ -1664,7 +1664,7 @@ button {
 .onboarding-cta-body strong {
   color: var(--text-main);
   font-size: var(--text-body);
-  font-weight: 560;
+  font-weight: var(--weight-control);
 }
 .onboarding-cta-body small {
   color: var(--text-soft);
@@ -1870,7 +1870,7 @@ button {
   margin: 0 0 2px;
   color: var(--accent-cyan);
   font-size: var(--text-small);
-  font-weight: 760;
+  font-weight: var(--weight-label);
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
@@ -1884,12 +1884,12 @@ p {
 
 h1 {
   font-size: var(--text-title);
-  font-weight: 680;
+  font-weight: var(--weight-title);
 }
 
 h2 {
   font-size: var(--text-body);
-  font-weight: 680;
+  font-weight: var(--weight-title);
 }
 
 .panel-meta {
@@ -1907,13 +1907,13 @@ h2 {
   background: var(--accent-faint);
   color: var(--accent-strong);
   font-size: var(--text-small);
-  font-weight: 700;
+  font-weight: var(--weight-title);
 }
 
 h3 {
   margin-bottom: var(--space-2);
   font-size: var(--text-body);
-  font-weight: 670;
+  font-weight: var(--weight-title);
 }
 
 p {
@@ -1964,7 +1964,7 @@ small {
   cursor: pointer;
   gap: 4px;
   font-size: var(--text-small);
-  font-weight: 620;
+  font-weight: var(--weight-title);
 }
 
 .active-filter-chip span,
@@ -2421,7 +2421,7 @@ small {
 .image-row-copy strong {
   color: var(--text-main);
   font-size: var(--text-small);
-  font-weight: 630;
+  font-weight: var(--weight-title);
 }
 
 .image-row-copy small {
@@ -2541,7 +2541,7 @@ button.mini-tags-more:focus-visible {
 .mini-tags-popover > strong {
   color: var(--text-muted);
   font-size: var(--text-small);
-  font-weight: 600;
+  font-weight: var(--weight-control);
 }
 
 .mini-tags-popover-list {
@@ -2716,7 +2716,7 @@ button.mini-tags-more:focus-visible {
   color: var(--text-soft);
   gap: var(--space-2);
   font-size: var(--text-small);
-  font-weight: 720;
+  font-weight: var(--weight-title);
   letter-spacing: 0.03em;
   text-transform: uppercase;
 }
@@ -2732,7 +2732,7 @@ button.mini-tags-more:focus-visible {
   background: rgb(255 255 255 / 0.055);
   color: var(--text-muted);
   font-size: var(--text-small);
-  font-weight: 650;
+  font-weight: var(--weight-title);
   letter-spacing: 0;
   text-transform: none;
 }
@@ -2757,7 +2757,7 @@ button.mini-tags-more:focus-visible {
   color: var(--text-soft);
   cursor: pointer;
   font-size: var(--text-small);
-  font-weight: 650;
+  font-weight: var(--weight-title);
   letter-spacing: 0;
   text-transform: none;
 }
@@ -2960,7 +2960,7 @@ button.mini-tags-more:focus-visible {
   pointer-events: auto;
   align-content: center;
   font-size: var(--text-small);
-  font-weight: 650;
+  font-weight: var(--weight-title);
   gap: 1px;
   text-align: left;
 }
@@ -2980,7 +2980,7 @@ button.mini-tags-more:focus-visible {
   overflow: hidden;
   color: var(--text-muted);
   font-size: var(--text-small);
-  font-weight: 500;
+  font-weight: var(--weight-body);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -3139,7 +3139,7 @@ button.mini-tags-more:focus-visible {
   margin: 0;
   color: var(--text-main);
   font-size: var(--text-title);
-  font-weight: 640;
+  font-weight: var(--weight-title);
   letter-spacing: -0.01em;
 }
 
@@ -3666,7 +3666,7 @@ button.mini-tags-more:focus-visible {
 .placeholder-node span {
   overflow: hidden;
   font-size: var(--text-small);
-  font-weight: 650;
+  font-weight: var(--weight-title);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -4241,7 +4241,7 @@ button.mini-tags-more:focus-visible {
   gap: 6px;
   color: var(--text-soft);
   font-size: var(--text-small);
-  font-weight: 600;
+  font-weight: var(--weight-control);
   text-transform: uppercase;
   letter-spacing: 0.02em;
 }
@@ -4555,7 +4555,7 @@ button.mini-tags-more:focus-visible {
   background: rgb(255 255 255 / 0.04);
   color: var(--text-soft);
   font-size: var(--text-small);
-  font-weight: 550;
+  font-weight: var(--weight-control);
   cursor: pointer;
   transition: all 120ms ease;
 }
@@ -4659,7 +4659,7 @@ button.mini-tags-more:focus-visible {
 
 .kira-chip-kind {
   font-size: var(--text-small);
-  font-weight: 700;
+  font-weight: var(--weight-title);
   color: var(--accent-cyan);
   text-transform: uppercase;
   letter-spacing: 0.02em;
@@ -4804,7 +4804,7 @@ button.mini-tags-more:focus-visible {
   background: rgb(255 255 255 / 0.04);
   color: var(--text-soft);
   font-size: var(--text-small);
-  font-weight: 550;
+  font-weight: var(--weight-control);
   cursor: pointer;
   transition: all 120ms ease;
 }
@@ -5049,7 +5049,7 @@ button.mini-tags-more:focus-visible {
 
 .kira-chip-kind {
   color: var(--text-muted);
-  font-weight: 700;
+  font-weight: var(--weight-title);
   text-transform: uppercase;
 }
 
@@ -5153,7 +5153,7 @@ button.mini-tags-more:focus-visible {
 
 .node-context-heading strong {
   font-size: var(--text-small);
-  font-weight: 680;
+  font-weight: var(--weight-title);
 }
 
 .node-context-heading span {
@@ -5501,7 +5501,7 @@ button.mini-tags-more:focus-visible {
   color: var(--tooltip-text);
   content: attr(data-tooltip);
   font-size: var(--text-small);
-  font-weight: 560;
+  font-weight: var(--weight-control);
   opacity: 0;
   pointer-events: none;
   transform: translate(-50%, 4px);
@@ -5837,7 +5837,7 @@ button.mini-tags-more:focus-visible {
   color: var(--text-muted);
   cursor: pointer;
   font-size: var(--text-small);
-  font-weight: 620;
+  font-weight: var(--weight-title);
   text-align: left;
 }
 
@@ -5878,7 +5878,7 @@ button.mini-tags-more:focus-visible {
   margin: 0;
   color: var(--text-main);
   font-size: var(--text-title);
-  font-weight: 680;
+  font-weight: var(--weight-title);
 }
 
 .settings-header p,
@@ -5952,7 +5952,7 @@ button.mini-tags-more:focus-visible {
   overflow: hidden;
   color: var(--text-main);
   font-size: var(--text-small);
-  font-weight: 680;
+  font-weight: var(--weight-title);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -6077,7 +6077,7 @@ button.mini-tags-more:focus-visible {
   background: var(--accent-faint);
   color: var(--text-main);
   font-size: var(--text-mini);
-  font-weight: 700;
+  font-weight: var(--weight-title);
 }
 
 .capture-steps li span {
@@ -6157,7 +6157,7 @@ button.mini-tags-more:focus-visible {
 }
 
 .provider-list-row[aria-pressed="true"] strong {
-  font-weight: 680;
+  font-weight: var(--weight-title);
 }
 
 .provider-list-row[aria-pressed="true"] em,
@@ -6371,7 +6371,7 @@ button.mini-tags-more:focus-visible {
   color: var(--control-danger-text);
   cursor: pointer;
   font-size: var(--text-small);
-  font-weight: 560;
+  font-weight: var(--weight-control);
   box-shadow: 0 1px 0 var(--control-lift-near), 0 3px 8px -2px var(--control-lift-far);
   transition:
     background var(--duration-fast) ease,
@@ -6413,7 +6413,7 @@ button.mini-tags-more:focus-visible {
   margin-bottom: 6px;
   color: var(--text-muted);
   font-size: var(--text-small);
-  font-weight: 800;
+  font-weight: var(--weight-label);
   letter-spacing: 0.02em;
   text-transform: uppercase;
 }
@@ -6547,7 +6547,7 @@ button.mini-tags-more:focus-visible {
   margin: 0;
   color: var(--text-main);
   font-size: var(--text-small);
-  font-weight: 680;
+  font-weight: var(--weight-title);
 }
 
 .settings-advanced-group-head span {
@@ -6610,7 +6610,7 @@ button.mini-tags-more:focus-visible {
   overflow: hidden;
   color: var(--text-main);
   font-size: var(--text-small);
-  font-weight: 640;
+  font-weight: var(--weight-title);
   text-align: right;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -6918,7 +6918,7 @@ button.palette-color-segment:focus-visible code {
 
 .graph3d-hud span {
   color: var(--accent-cyan);
-  font-weight: 720;
+  font-weight: var(--weight-title);
 }
 
 .graph3d-hud strong {
@@ -7084,7 +7084,7 @@ button.palette-color-segment:focus-visible code {
 .slideshow-rail strong {
   overflow: hidden;
   font-size: var(--text-small);
-  font-weight: 640;
+  font-weight: var(--weight-title);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -7224,7 +7224,7 @@ button.palette-color-segment:focus-visible code {
 
 .slide-export-popover strong {
   font-size: var(--text-small);
-  font-weight: 620;
+  font-weight: var(--weight-title);
 }
 
 .slide-export-popover small {
@@ -7315,7 +7315,7 @@ button.palette-color-segment:focus-visible code {
 .slide-customizer-row strong {
   overflow: hidden;
   font-size: var(--text-small);
-  font-weight: 560;
+  font-weight: var(--weight-control);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -7365,7 +7365,7 @@ button.palette-color-segment:focus-visible code {
 
 .slide-copy span {
   font-size: var(--text-small);
-  font-weight: 760;
+  font-weight: var(--weight-label);
   text-transform: uppercase;
 }
 
@@ -7562,7 +7562,7 @@ button.palette-color-segment:focus-visible code {
   padding: var(--space-4);
   color: var(--text-soft);
   font-size: var(--text-small);
-  font-weight: 700;
+  font-weight: var(--weight-title);
   gap: var(--space-3);
 }
 
@@ -7575,7 +7575,7 @@ button.palette-color-segment:focus-visible code {
 .outline-titlebar small {
   color: var(--text-muted);
   font-size: var(--text-small);
-  font-weight: 520;
+  font-weight: var(--weight-control);
 }
 
 .outline-tools {
@@ -7655,7 +7655,7 @@ button.palette-color-segment:focus-visible code {
 
 .diagnostic-chip span {
   font-size: var(--text-small);
-  font-weight: 680;
+  font-weight: var(--weight-title);
 }
 
 .diagnostic-chip small {
@@ -7737,7 +7737,7 @@ button.palette-color-segment:focus-visible code {
 .outline-title strong {
   overflow: hidden;
   font-size: var(--text-title);
-  font-weight: 680;
+  font-weight: var(--weight-title);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -8052,7 +8052,7 @@ button.palette-color-segment:focus-visible code {
 .linked-list strong {
   overflow: hidden;
   font-size: var(--text-small);
-  font-weight: 620;
+  font-weight: var(--weight-title);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -8104,7 +8104,7 @@ button.palette-color-segment:focus-visible code {
   color: var(--text-soft);
   gap: 5px;
   font-size: var(--text-small);
-  font-weight: 630;
+  font-weight: var(--weight-title);
 }
 
 .tag-chip button {
@@ -8132,7 +8132,7 @@ button.palette-color-segment:focus-visible code {
   cursor: pointer;
   color: var(--text-muted);
   font-size: var(--text-small);
-  font-weight: 700;
+  font-weight: var(--weight-title);
 }
 
 .graph-shortcuts dl {
@@ -8157,7 +8157,7 @@ button.palette-color-segment:focus-visible code {
   background: rgb(255 255 255 / 0.06);
   color: var(--text-main);
   font-size: var(--text-small);
-  font-weight: 750;
+  font-weight: var(--weight-label);
 }
 
 .graph-shortcuts dd {
@@ -8171,7 +8171,7 @@ button.palette-color-segment:focus-visible code {
   margin: var(--space-3) 0 var(--space-2);
   color: var(--text-muted);
   font-size: var(--text-small);
-  font-weight: 700;
+  font-weight: var(--weight-title);
   letter-spacing: 0.05em;
   text-transform: uppercase;
 }
@@ -8184,7 +8184,7 @@ button.palette-color-segment:focus-visible code {
 .range-field span {
   color: var(--text-muted);
   font-size: var(--text-small);
-  font-weight: 700;
+  font-weight: var(--weight-title);
 }
 
 .range-field input {
@@ -8214,7 +8214,7 @@ select {
   background: transparent;
   color: var(--text-main);
   font-size: var(--text-body);
-  font-weight: 670;
+  font-weight: var(--weight-title);
 }
 
 textarea {
@@ -8378,7 +8378,7 @@ textarea {
   justify-content: space-between;
   color: var(--text-main);
   font-size: var(--text-body);
-  font-weight: 650;
+  font-weight: var(--weight-title);
 }
 
 .crop-dialog-header span {
@@ -8831,7 +8831,7 @@ textarea {
   cursor: pointer;
   gap: 6px;
   font-size: var(--text-small);
-  font-weight: 680;
+  font-weight: var(--weight-title);
   transition: background var(--duration-base) var(--ease-soft), color var(--duration-base) var(--ease-soft);
 }
 
@@ -8945,7 +8945,7 @@ textarea {
 .kp-title h3 {
   margin: 0;
   font-size: var(--text-title);
-  font-weight: 680;
+  font-weight: var(--weight-title);
 }
 
 .kp-title .spacer {
@@ -8988,7 +8988,7 @@ textarea {
   margin: 4px 0 0;
   color: var(--text-soft);
   font-size: var(--text-body);
-  font-weight: 680;
+  font-weight: var(--weight-title);
 }
 
 .kp-empty p {
@@ -9044,13 +9044,13 @@ textarea {
   overflow: hidden;
   color: var(--text-main);
   font-size: var(--text-body);
-  font-weight: 600;
+  font-weight: var(--weight-control);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .thread-row.is-current strong {
-  font-weight: 680;
+  font-weight: var(--weight-title);
 }
 
 .thread-row .when {
@@ -9100,7 +9100,7 @@ textarea {
 
 .msg-head b {
   color: var(--text-soft);
-  font-weight: 680;
+  font-weight: var(--weight-title);
 }
 
 .msg-user {
@@ -9135,7 +9135,7 @@ textarea {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-weight: 680;
+  font-weight: var(--weight-title);
 }
 
 .state-ok {
@@ -9286,7 +9286,7 @@ textarea {
 
 .cs-summary b {
   color: var(--text-main);
-  font-weight: 680;
+  font-weight: var(--weight-title);
 }
 
 .changeset + .changeset {
@@ -9305,7 +9305,7 @@ textarea {
 .cs-head h4 {
   margin: 0;
   font-size: var(--text-body);
-  font-weight: 680;
+  font-weight: var(--weight-title);
 }
 
 .cs-actions {
@@ -9329,7 +9329,7 @@ textarea {
   margin: 18px 0 8px;
   color: var(--text-muted);
   font-size: var(--text-small);
-  font-weight: 680;
+  font-weight: var(--weight-title);
 }
 
 .item {
@@ -9380,7 +9380,7 @@ textarea {
 
 .item-kind.is-delete {
   color: var(--danger);
-  font-weight: 680;
+  font-weight: var(--weight-title);
 }
 
 .item-target {
@@ -9388,7 +9388,7 @@ textarea {
   overflow: hidden;
   margin-top: 1px;
   font-size: var(--text-body);
-  font-weight: 680;
+  font-weight: var(--weight-title);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -9452,12 +9452,12 @@ textarea {
 
 .stale-note b {
   color: var(--text-main);
-  font-weight: 680;
+  font-weight: var(--weight-title);
 }
 
 .state-wait {
   color: var(--text-soft);
-  font-weight: 680;
+  font-weight: var(--weight-title);
 }
 
 /* The amber that would usually flag "outdated" reads too close to this
@@ -9465,7 +9465,7 @@ textarea {
    carry the meaning instead of hue (DESIGN.md §5 Ví dụ đúng và sai). */
 .state-attn {
   color: var(--text-main);
-  font-weight: 680;
+  font-weight: var(--weight-title);
 }
 
 .diff {
@@ -9538,7 +9538,7 @@ textarea {
   cursor: pointer;
   gap: 4px;
   font-size: var(--text-mini);
-  font-weight: 680;
+  font-weight: var(--weight-title);
   line-height: 1;
 }
 
