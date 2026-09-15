@@ -9006,3 +9006,285 @@ textarea {
   color: var(--text-muted);
   font-size: var(--text-small);
 }
+
+/* ================= "Cần bạn" tab (docs/design/right-panel, mockup.js
+   changesView) — kira/README.md §8. Individual items use .list's existing
+   hairline rows (Phase A); only the currently-open item (.is-focused) gets
+   a card treatment, per DESIGN.md §5 Object Card Rule ("an open ChangeSet
+   item" is a named exception). ================= */
+
+.muted {
+  color: var(--text-muted);
+}
+
+.cs-summary {
+  display: flex;
+  flex-wrap: wrap;
+  margin: 0 0 12px;
+  color: var(--text-soft);
+  gap: 4px 12px;
+  font-size: var(--text-small);
+}
+
+.cs-summary b {
+  color: var(--text-main);
+  font-weight: 680;
+}
+
+.changeset + .changeset {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-soft);
+}
+
+.cs-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  margin-bottom: 10px;
+  gap: 2px;
+}
+
+.cs-head h4 {
+  margin: 0;
+  font-size: var(--text-body);
+  font-weight: 680;
+}
+
+.cs-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  margin: 10px 0 12px;
+  gap: 6px;
+}
+
+.cs-rule {
+  margin: -4px 0 10px;
+  color: var(--text-muted);
+  font-size: var(--text-small);
+}
+
+.group-label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin: 18px 0 8px;
+  color: var(--text-muted);
+  font-size: var(--text-small);
+  font-weight: 680;
+}
+
+.item {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  padding: 12px 12px 12px 10px;
+  gap: 4px 10px;
+}
+
+.item.is-stale {
+  background: color-mix(in srgb, var(--text-main) 3%, transparent);
+}
+
+/* Ink, not teal (One Accent Rule) — the open item is a real object
+   (Object Card Rule), so it gets weight, not an accent tint. */
+.item.is-focused {
+  background: color-mix(in srgb, var(--text-main) 4%, transparent);
+  box-shadow: inset 0 0 0 1px var(--border-strong);
+}
+
+.op {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  border-radius: var(--radius-1);
+  background: color-mix(in srgb, var(--text-main) 7%, transparent);
+  color: var(--text-soft);
+}
+
+.op.is-delete {
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+  color: var(--danger);
+}
+
+.item-line {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  min-width: 0;
+  gap: 8px;
+}
+
+.item-kind {
+  color: var(--text-muted);
+  font-size: var(--text-small);
+}
+
+.item-kind.is-delete {
+  color: var(--danger);
+  font-weight: 680;
+}
+
+.item-target {
+  display: block;
+  overflow: hidden;
+  margin-top: 1px;
+  font-size: var(--text-body);
+  font-weight: 680;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.item-status {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--text-small);
+}
+
+.item-body {
+  grid-column: 2;
+  min-width: 0;
+}
+
+.item-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 10px;
+  gap: 6px;
+}
+
+.item-foot .acts {
+  display: flex;
+  gap: 6px;
+}
+
+.item-summary-line {
+  display: flex;
+  align-items: flex-start;
+  margin: 0;
+  color: var(--text-soft);
+  gap: 6px;
+  font-size: var(--text-body);
+  line-height: 1.5;
+}
+
+.item-summary-line .ic {
+  flex: 0 0 auto;
+  margin-top: 3px;
+  color: var(--text-main);
+}
+
+.stale-note {
+  display: flex;
+  align-items: flex-start;
+  margin-top: 10px;
+  color: var(--text-soft);
+  gap: 6px;
+  font-size: var(--text-body);
+  line-height: 1.5;
+}
+
+.stale-note .ic {
+  margin-top: 3px;
+  color: var(--text-main);
+}
+
+.stale-note b {
+  color: var(--text-main);
+  font-weight: 680;
+}
+
+.state-wait {
+  color: var(--text-soft);
+  font-weight: 680;
+}
+
+/* The amber that would usually flag "outdated" reads too close to this
+   preset's accent in cyan-leaning themes — weight and the warning icon
+   carry the meaning instead of hue (DESIGN.md §5 Ví dụ đúng và sai). */
+.state-attn {
+  color: var(--text-main);
+  font-weight: 680;
+}
+
+.diff {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: var(--radius-2);
+  background: var(--inset-field);
+  box-shadow: inset 0 0 0 1px var(--border-soft);
+  color: var(--text-soft);
+  font-size: var(--text-body);
+  line-height: 1.55;
+}
+
+.diff del {
+  color: var(--text-muted);
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+
+.diff ins {
+  padding: 0 2px;
+  border-radius: 2px;
+  background: var(--accent-faint);
+  color: var(--text-main);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--accent-cyan), transparent 30%);
+  text-underline-offset: 3px;
+}
+
+.pal-compare {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  align-items: center;
+  margin-top: 8px;
+  gap: 10px 8px;
+  font-size: var(--text-small);
+}
+
+.pal-compare .lbl {
+  color: var(--text-muted);
+}
+
+.pal-compare .swatches {
+  display: flex;
+  overflow: hidden;
+  height: 22px;
+  border-radius: var(--radius-1);
+}
+
+.pal-compare .swatches i {
+  flex: 1;
+}
+
+/* ================= Provenance badge on canvas nodes (mockup.js provBadge)
+   — neutral, text-carries-the-meaning per DESIGN.md §4/"không dùng màu
+   accent, không dùng dải màu Kira". ================= */
+.node-prov-badge {
+  position: absolute;
+  top: -12px;
+  right: 10px;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--text-soft);
+  cursor: pointer;
+  gap: 4px;
+  font-size: var(--text-mini);
+  font-weight: 680;
+  line-height: 1;
+}
+
+.node-prov-badge:hover {
+  color: var(--text-main);
+  border-color: color-mix(in srgb, var(--text-main) 30%, transparent);
+}
