@@ -336,6 +336,28 @@ export function removeAppliedNode(
   return { ok: true, state: { ...nextState, provenance }, operations }
 }
 
+/** Revert an applied create-node item's removal, for when the canvas
+ *  mutation removeAppliedNode caused (remove-node + clear-node-provenance)
+ *  gets undone (Cmd+Z) and would otherwise leave the "Cần bạn" item stuck
+ *  at 'removed' with no action row (renderChangeItem only renders the
+ *  "Gỡ node" button for a create-node item with status 'applied', never
+ *  'removed') — same class of bug as revertAcceptedItem fixed for accept.
+ *  Pure status change only — no canvas operations, since the caller's own
+ *  undo already restored the node itself.
+ *
+ *  Refuses items that are not create-node or not currently 'removed'. */
+export function revertRemovedItem(state: AiPanelState, changeSetId: string, itemId: string): AiModelResult {
+  const found = findItem(state, changeSetId, itemId)
+  if (!found) return { ok: false, reason: 'not-found' }
+  const { item } = found
+
+  if (item.kind !== 'create-node') return { ok: false, reason: 'wrong-kind' }
+  if (item.status !== 'removed') return { ok: false, reason: `not-removed:${item.status}` }
+
+  const next = { ...item, status: 'applied' as const }
+  return { ok: true, state: replaceItem(state, changeSetId, itemId, next), operations: [] }
+}
+
 /** Convenience wrapper: accept every bulk-acceptable item in a ChangeSet.
  *  Skips (does not throw on) items that fail between selection and accept —
  *  none should in practice since bulkAcceptable and acceptItem use the same
