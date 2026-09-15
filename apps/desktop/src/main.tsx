@@ -58,6 +58,7 @@ import {
   PanelRight,
   Paperclip,
   Pause,
+  Pencil,
   Play,
   Plus,
   RotateCcw,
@@ -98,15 +99,31 @@ import {
   type ThreadMessageLike,
 } from '@assistant-ui/react'
 import type {
+  AiCanvasOperation,
+  AiChangeItem,
+  AiChangeSet,
   AiMessage,
+  AiNodeProvenance,
   AiPanelState,
   AiRun,
   AiThread,
 } from './kira/aiPanelTypes'
+import { provenanceKey } from './kira/aiPanelTypes'
 import {
+  acceptBulk as aiPanelAcceptBulk,
+  acceptItem as aiPanelAcceptItem,
+  bulkAcceptable as aiPanelBulkAcceptable,
   createEmptyAiPanelState,
   fromSnapshot as aiPanelFromSnapshot,
+  keepNode as aiPanelKeepNode,
+  markCreateNodeItemEdited as aiPanelMarkCreateNodeItemEdited,
+  markNodeEditedAfterGeneration as aiPanelMarkNodeEditedAfterGeneration,
+  markStaleOnUserEdit as aiPanelMarkStaleOnUserEdit,
   needsYouCount as aiPanelNeedsYouCount,
+  rejectItem as aiPanelRejectItem,
+  removeAppliedNode as aiPanelRemoveAppliedNode,
+  setNodeProvenance as aiPanelSetNodeProvenance,
+  summaryLine as aiPanelSummaryLine,
   toSnapshot as aiPanelToSnapshot,
 } from './kira/aiPanelModel'
 import './styles.css'
@@ -512,6 +529,7 @@ type NodeVersionTrigger =
   | 'split'
   | 'restore'
   | 'created'
+  | 'ai_change_accepted'
 
 type NodeVersionRecord = {
   id: string
@@ -783,6 +801,40 @@ const UI_STRINGS: Record<string, { en: string; vi: string }> = {
   'kira.run.prompt': { en: 'Prompt', vi: 'Prompt' },
   'kira.dock.needsYou': { en: '{count} waiting for you', vi: '{count} mục cần bạn' },
   'kira.dock.open': { en: 'Open', vi: 'Mở' },
+  'kira.change.paletteResultSummary': { en: 'Palette change proposed', vi: 'Đề xuất đổi palette' },
+  'kira.change.needsYou': { en: 'to review', vi: 'cần xử lý' },
+  'kira.change.applied': { en: 'applied', vi: 'đã áp dụng' },
+  'kira.change.accepted': { en: 'accepted', vi: 'đã nhận' },
+  'kira.change.acceptAll': { en: 'Accept {count}', vi: 'Nhận {count}' },
+  'kira.change.rejectAll': { en: 'Reject proposals', vi: 'Bỏ các đề xuất' },
+  'kira.change.bulkRule': { en: 'Bulk accept excludes deletes and stale items.', vi: 'Nhận hàng loạt không bao gồm xoá và mục đã cũ.' },
+  'kira.change.itemCreateNode': { en: 'Create node', vi: 'Tạo node' },
+  'kira.change.itemEditText': { en: 'Edit text', vi: 'Sửa text' },
+  'kira.change.itemEditPalette': { en: 'Change palette', vi: 'Đổi palette' },
+  'kira.change.itemDeleteNode': { en: 'Delete node', vi: 'Xoá node' },
+  'kira.change.statusApplied': { en: 'Applied', vi: 'Đã áp dụng' },
+  'kira.change.statusPending': { en: 'Waiting for review', vi: 'Chờ duyệt' },
+  'kira.change.statusStale': { en: 'Outdated', vi: 'Đã cũ' },
+  'kira.change.statusAccepted': { en: 'Accepted', vi: 'Đã nhận' },
+  'kira.change.statusRejected': { en: 'Rejected', vi: 'Đã từ chối' },
+  'kira.change.statusKept': { en: 'Kept', vi: 'Đã giữ' },
+  'kira.change.statusRemoved': { en: 'Removed', vi: 'Đã gỡ' },
+  'kira.change.viewOnCanvas': { en: 'View on canvas', vi: 'Xem trên canvas' },
+  'kira.change.removeNode': { en: 'Remove node', vi: 'Gỡ node' },
+  'kira.change.reject': { en: 'Reject', vi: 'Từ chối' },
+  'kira.change.accept': { en: 'Accept', vi: 'Nhận' },
+  'kira.change.keepNode': { en: 'Keep node', vi: 'Giữ node' },
+  'kira.change.deleteNode': { en: 'Delete node', vi: 'Xoá node' },
+  'kira.change.staleNote': { en: 'You edited this node after Kira proposed this change.', vi: 'Bạn đã sửa node này sau khi Kira đề xuất.' },
+  'kira.change.editedGuard': { en: 'You edited this node after Kira created it. Removing it will also delete what you added.', vi: 'Bạn đã sửa nội dung node này sau khi Kira tạo. Gỡ sẽ xoá cả phần bạn viết thêm.' },
+  'kira.change.editedGuardConfirm': { en: 'Remove anyway', vi: 'Vẫn gỡ' },
+  'kira.change.editedGuardCancel': { en: 'Cancel', vi: 'Huỷ' },
+  'kira.change.deleteRule': { en: 'Reviewed separately', vi: 'Cần duyệt riêng' },
+  'kira.change.linksAffected': { en: '{count} links will be lost.', vi: '{count} liên kết sẽ mất.' },
+  'kira.change.before': { en: 'Before', vi: 'Trước' },
+  'kira.change.after': { en: 'After', vi: 'Sau' },
+  'kira.prov.created': { en: 'AI', vi: 'AI' },
+  'kira.prov.edited': { en: 'AI, edited', vi: 'AI, đã sửa' },
   'library.meta.item': { en: '{count} item', vi: '{count} mục' },
   'library.meta.items': { en: '{count} items', vi: '{count} mục' },
   'library.meta.suggested': { en: '{count} suggested', vi: '{count} gợi ý' },
@@ -2293,6 +2345,51 @@ function kiraMessageRole(message: AiMessage): 'user' | 'assistant' | 'system' {
   return message.role === 'system-error' ? 'system' : message.role
 }
 
+/** Word-level diff for the "Cần bạn" tab's edit-text preview (mockup.js
+ *  .diff — <del>/<ins> spans). Standard LCS-on-words DP; short node text
+ *  keeps this well within a trivial cost. */
+function diffWords(before: string, after: string): Array<{ type: 'same' | 'del' | 'ins'; text: string }> {
+  const a = before.split(/(\s+)/)
+  const b = after.split(/(\s+)/)
+  const dp: number[][] = Array.from({ length: a.length + 1 }, () => new Array(b.length + 1).fill(0))
+  for (let i = a.length - 1; i >= 0; i--) {
+    for (let j = b.length - 1; j >= 0; j--) {
+      dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1])
+    }
+  }
+  const segments: Array<{ type: 'same' | 'del' | 'ins'; text: string }> = []
+  let i = 0
+  let j = 0
+  while (i < a.length && j < b.length) {
+    if (a[i] === b[j]) {
+      segments.push({ type: 'same', text: a[i] })
+      i += 1
+      j += 1
+    } else if (dp[i + 1][j] >= dp[i][j + 1]) {
+      segments.push({ type: 'del', text: a[i] })
+      i += 1
+    } else {
+      segments.push({ type: 'ins', text: b[j] })
+      j += 1
+    }
+  }
+  while (i < a.length) {
+    segments.push({ type: 'del', text: a[i] })
+    i += 1
+  }
+  while (j < b.length) {
+    segments.push({ type: 'ins', text: b[j] })
+    j += 1
+  }
+  const merged: typeof segments = []
+  for (const segment of segments) {
+    const last = merged[merged.length - 1]
+    if (last && last.type === segment.type) last.text += segment.text
+    else merged.push({ ...segment })
+  }
+  return merged
+}
+
 function toKiraThreadMessage(message: AiMessage): ThreadMessageLike {
   return {
     role: kiraMessageRole(message),
@@ -2304,6 +2401,21 @@ function toKiraThreadMessage(message: AiMessage): ThreadMessageLike {
 
 function formatKiraClockTime(iso: string, lang: Lang): string {
   return new Date(iso).toLocaleTimeString(lang === 'vi' ? 'vi-VN' : 'en-US', { hour: '2-digit', minute: '2-digit' })
+}
+
+/** "Cần bạn" tab's edit-text preview (mockup.js .diff). Word-level, not
+ *  character-level — plenty for a node's title/content paragraph. */
+function DiffText({ before, after }: { before: string; after: string }) {
+  const segments = useMemo(() => diffWords(before, after), [before, after])
+  return (
+    <p className="diff">
+      {segments.map((segment, index) => {
+        if (segment.type === 'del') return <del key={index}>{segment.text}</del>
+        if (segment.type === 'ins') return <ins key={index}>{segment.text}</ins>
+        return <React.Fragment key={index}>{segment.text}</React.Fragment>
+      })}
+    </p>
+  )
 }
 
 function RunDetailRow({ run, lang }: { run: AiRun | undefined; lang: Lang }) {
@@ -2521,6 +2633,9 @@ function FileWorkspace({
   const [aiPanelState, setAiPanelState] = useState<AiPanelState>(() => aiPanelFromSnapshot(initialProject.aiPanel))
   const [kiraPanelTab, setKiraPanelTab] = useState<'chat' | 'needs-you'>('chat')
   const [activeKiraThreadId, setActiveKiraThreadId] = useState<string | null>(null)
+  // "Gỡ node" guard: set when removeAppliedAiNode refuses a node edited
+  // after Kira created it, until the user confirms via the dialog.
+  const [pendingRemoveNodeGuard, setPendingRemoveNodeGuard] = useState<{ nodeKind: GraphNodeKind; nodeId: string } | null>(null)
   const kiraPanelWidth = useKiraPanelWidthStore((state) => state.width)
   const setKiraPanelWidth = useKiraPanelWidthStore((state) => state.setWidth)
   const [lastSavedHash, setLastSavedHash] = useState(() => JSON.stringify(initialProject))
@@ -4045,6 +4160,32 @@ function FileWorkspace({
     if (before) {
       const after = { ...before, ...patch, ...derived, updatedAt: nowIso() }
       recordNodeVersion('idea', before, after, 'user_edit')
+      // A user edit to an AI-created node's content flips its canvas badge
+      // ("AI" -> "AI, đã sửa"), stales any pending edit-text proposal that
+      // targeted the same field, and — separately — flags the applied
+      // create-node item itself so "Gỡ node"'s guard actually triggers
+      // (kira/README.md §3; removeAppliedNode reads editedByUserAfterApply
+      // on the item, a different fact from the provenance record the first
+      // two update).
+      // NodeRichEditor fires onChange once on mount with the node's own
+      // existing content (Tiptap normalizing markdown in/out) — guard on an
+      // actual content change, not just the key being present, or every
+      // freshly created AI node would show "AI, đã sửa" before anyone
+      // touched it (caught live testing with a temporary fake-provider
+      // scaffold, since browser preview has no Tauri runtime to call a
+      // real one through).
+      if (patch.content !== undefined && patch.content !== before.content) {
+        setAiPanelState((current) => aiPanelMarkCreateNodeItemEdited(
+          aiPanelMarkStaleOnUserEdit(
+            aiPanelMarkNodeEditedAfterGeneration(current, 'idea', ideaId),
+            ideaId,
+            'content',
+            after.updatedAt!,
+          ),
+          'idea',
+          ideaId,
+        ))
+      }
     }
     setIdeas((current) => current.map((idea) => (idea.id === ideaId ? { ...idea, ...patch, ...derived, updatedAt: nowIso() } : idea)))
   }
@@ -5043,6 +5184,137 @@ function FileWorkspace({
     createNodeLink(source, { kind: 'diagram', id: diagram.id }, 'related', { skipHistory: true })
   }
 
+  // ---------------------------------------------------------------------
+  // Kira right panel — Phase B: ChangeSet approval flow (kira/README.md
+  // §3-5). createAiNode/regeneratePalette below feed AiPanelState directly
+  // (not the Chat tab's thread), so each dock-triggered action gets its own
+  // fresh, single-run thread — there is no ongoing "conversation" for a
+  // one-shot dock request the way there is for a Chat message.
+  // ---------------------------------------------------------------------
+  function findNodeRecordByKind(nodeKind: GraphNodeKind, nodeId: string) {
+    if (nodeKind === 'idea') return ideas.find((idea) => idea.id === nodeId)
+    if (nodeKind === 'image') return images.find((image) => image.id === nodeId)
+    if (nodeKind === 'palette') return palettes.find((palette) => palette.id === nodeId)
+    if (nodeKind === 'diagram') return diagrams.find((diagram) => diagram.id === nodeId)
+    return placeholders.find((placeholder) => placeholder.id === nodeId)
+  }
+
+  // Applies AiCanvasOperation[] from an accept/removeAppliedNode result.
+  // update-node-text/update-node-palette are always immediately followed by
+  // a record-node-version op in the same array (aiPanelModel.ts
+  // acceptItem) — this reads the node's CURRENT (pre-update) value as
+  // "before" right before applying, then uses it once the paired
+  // record-node-version op arrives, since recordNodeVersion needs a real
+  // before/after pair to compute its diff.
+  function applyAiCanvasOperations(operations: AiCanvasOperation[]) {
+    let pendingVersion: {
+      nodeKind: GraphNodeKind
+      before: Idea | EvidenceImage | PaletteNode | DiagramNode | PlaceholderNode
+      after: Idea | EvidenceImage | PaletteNode | DiagramNode | PlaceholderNode
+    } | null = null
+    for (const op of operations) {
+      if (op.type === 'update-node-text') {
+        const before = findNodeRecordByKind(op.nodeKind, op.nodeId)
+        if (!before) continue
+        const timestamp = nowIso()
+        const after = { ...before, [op.field]: op.text, updatedAt: timestamp }
+        if (op.nodeKind === 'idea') setIdeas((current) => current.map((idea) => (idea.id === op.nodeId ? (after as Idea) : idea)))
+        else if (op.nodeKind === 'image') setImages((current) => current.map((image) => (image.id === op.nodeId ? (after as EvidenceImage) : image)))
+        else if (op.nodeKind === 'palette') setPalettes((current) => current.map((palette) => (palette.id === op.nodeId ? (after as PaletteNode) : palette)))
+        else if (op.nodeKind === 'diagram') setDiagrams((current) => current.map((diagram) => (diagram.id === op.nodeId ? (after as DiagramNode) : diagram)))
+        else setPlaceholders((current) => current.map((placeholder) => (placeholder.id === op.nodeId ? (after as PlaceholderNode) : placeholder)))
+        pendingVersion = { nodeKind: op.nodeKind, before, after }
+      } else if (op.type === 'update-node-palette') {
+        const before = palettes.find((palette) => palette.id === op.nodeId)
+        if (!before) continue
+        const after = { ...before, colors: op.colors, updatedAt: nowIso() }
+        setPalettes((current) => current.map((palette) => (palette.id === op.nodeId ? after : palette)))
+        pendingVersion = { nodeKind: 'palette', before, after }
+      } else if (op.type === 'delete-node') {
+        // Same removal as deleteSelectedGraphNodes, minus its own
+        // pushCanvasHistory() — the caller already checkpointed once for
+        // this whole accept (kira/README.md §5: "once per accept").
+        const key = nodeSelectionKey({ kind: op.nodeKind, id: op.nodeId })
+        setIdeas((current) => current.filter((idea) => !(op.nodeKind === 'idea' && idea.id === op.nodeId)))
+        setImages((current) => current.filter((image) => !(op.nodeKind === 'image' && image.id === op.nodeId)))
+        setPalettes((current) => current.filter((palette) => !(op.nodeKind === 'palette' && palette.id === op.nodeId)))
+        setDiagrams((current) => current.filter((diagram) => !(op.nodeKind === 'diagram' && diagram.id === op.nodeId)))
+        setPlaceholders((current) => current.filter((placeholder) => !(op.nodeKind === 'placeholder' && placeholder.id === op.nodeId)))
+        setLinks((current) =>
+          current.filter((link) => {
+            const sourceKind = link.sourceKind ?? 'image'
+            const targetKind = link.targetKind ?? 'idea'
+            const sourceId = link.sourceNodeId ?? link.imageId
+            const targetId = link.targetNodeId ?? link.ideaId
+            return !(nodeSelectionKey({ kind: sourceKind, id: sourceId }) === key) && !(nodeSelectionKey({ kind: targetKind, id: targetId }) === key)
+          }),
+        )
+      } else if (op.type === 'remove-node') {
+        // Undoing an applied AI creation — no version-history bookkeeping,
+        // this isn't a user delete.
+        setIdeas((current) => current.filter((idea) => !(op.nodeKind === 'idea' && idea.id === op.nodeId)))
+        setImages((current) => current.filter((image) => !(op.nodeKind === 'image' && image.id === op.nodeId)))
+        setPalettes((current) => current.filter((palette) => !(op.nodeKind === 'palette' && palette.id === op.nodeId)))
+        setDiagrams((current) => current.filter((diagram) => !(op.nodeKind === 'diagram' && diagram.id === op.nodeId)))
+        setPlaceholders((current) => current.filter((placeholder) => !(op.nodeKind === 'placeholder' && placeholder.id === op.nodeId)))
+      } else if (op.type === 'clear-node-provenance') {
+        // No-op on canvas state — the AiPanelState returned by
+        // removeAppliedNode already dropped the provenance entry
+        // (aiPanelModel.ts removeAppliedNode); setAiPanelState(result.state)
+        // right after this loop applies that.
+      } else if (op.type === 'record-node-version') {
+        if (pendingVersion && pendingVersion.nodeKind === op.nodeKind) {
+          recordNodeVersion(pendingVersion.nodeKind, pendingVersion.before, pendingVersion.after, 'ai_change_accepted', {
+            aiGenerated: op.aiGenerated,
+            note: op.note,
+          })
+          pendingVersion = null
+        }
+      }
+    }
+  }
+
+  function acceptChangeItem(changeSetId: string, itemId: string) {
+    const result = aiPanelAcceptItem(aiPanelState, changeSetId, itemId)
+    if (!result.ok) return
+    pushCanvasHistory()
+    applyAiCanvasOperations(result.operations)
+    setAiPanelState(result.state)
+  }
+
+  function acceptChangeSetBulk(changeSetId: string) {
+    const result = aiPanelAcceptBulk(aiPanelState, changeSetId)
+    if (result.operations.length === 0) return
+    pushCanvasHistory()
+    applyAiCanvasOperations(result.operations)
+    setAiPanelState(result.state)
+  }
+
+  function rejectChangeItem(changeSetId: string, itemId: string) {
+    const result = aiPanelRejectItem(aiPanelState, changeSetId, itemId)
+    if (result.ok) setAiPanelState(result.state)
+  }
+
+  function keepDeletedNode(changeSetId: string, itemId: string) {
+    const result = aiPanelKeepNode(aiPanelState, changeSetId, itemId)
+    if (result.ok) setAiPanelState(result.state)
+  }
+
+  // "Gỡ node" — mockup guard: a node hand-edited after Kira created it asks
+  // for confirmation first (pendingRemoveNodeGuard), otherwise applies right
+  // away. force=true retries after the user confirms the guard dialog.
+  function removeAppliedAiNode(nodeKind: GraphNodeKind, nodeId: string, force = false) {
+    const result = aiPanelRemoveAppliedNode(aiPanelState, nodeKind, nodeId, { force })
+    if (!result.ok) {
+      if (result.reason === 'needs-force') setPendingRemoveNodeGuard({ nodeKind, nodeId })
+      return
+    }
+    setPendingRemoveNodeGuard(null)
+    pushCanvasHistory()
+    applyAiCanvasOperations(result.operations)
+    setAiPanelState(result.state)
+  }
+
   async function createAiNode(request: AiNodeRequest) {
     const sourceNode = request.source
       ? resolveGraphNodeRef(request.source.id, ideas, images, palettes, diagrams, placeholders)
@@ -5132,7 +5404,66 @@ function FileWorkspace({
       updatedAt: timestamp,
     }
     pushCanvasHistory()
-    recordNodeVersion('idea', undefined, idea, 'created')
+    // Only a real provider success counts as "AI-generated" for provenance —
+    // the deterministic fallback template below is not (kira/README.md §3,
+    // same distinction regeneratePalette draws for its own local-harmony
+    // fallback).
+    if (generatedBody) {
+      const runId = crypto.randomUUID()
+      const now = timestamp
+      recordNodeVersion('idea', undefined, idea, 'created', { aiGenerated: true, note: runId })
+      setAiPanelState((current) => {
+        const thread: AiThread = {
+          id: crypto.randomUUID(),
+          title: idea.title,
+          createdAt: now,
+          updatedAt: now,
+          anchorNodeIds: sourceNode ? [sourceNode.id] : [],
+        }
+        const run: AiRun = {
+          id: runId,
+          threadId: thread.id,
+          providerType: provider?.type ?? 'apple_foundation',
+          modelLabel: provider ? (provider.model && provider.model !== 'auto' ? provider.model : provider.name) : generationStatus,
+          startedAt: now,
+          finishedAt: now,
+          status: 'done',
+          promptPreview: generationPrompt,
+          resultSummary: generationStatus,
+        }
+        const changeSet: AiChangeSet = {
+          id: crypto.randomUUID(),
+          runId,
+          threadId: thread.id,
+          title: idea.title,
+          createdAt: now,
+          items: [{
+            id: crypto.randomUUID(),
+            createdAt: now,
+            kind: 'create-node',
+            status: 'applied',
+            nodeKind: 'idea',
+            nodeId: idea.id,
+            title: idea.title,
+            editedByUserAfterApply: false,
+          }],
+        }
+        const withProvenance = aiPanelSetNodeProvenance(current, 'idea', idea.id, {
+          aiGenerated: true,
+          runId,
+          threadId: thread.id,
+          editedAfterGeneration: false,
+        })
+        return {
+          ...withProvenance,
+          threads: [...withProvenance.threads, thread],
+          runs: [...withProvenance.runs, run],
+          changeSets: [...withProvenance.changeSets, changeSet],
+        }
+      })
+    } else {
+      recordNodeVersion('idea', undefined, idea, 'created')
+    }
     setIdeas((current) => [...current, idea])
     if (sourceNode) {
       const link: EvidenceLink = {
@@ -5237,11 +5568,15 @@ function FileWorkspace({
     // both task kinds, with the existing deterministic harmony math as the
     // fallback exactly as it behaved before this function could call out.
     let colors = generatePaletteHarmony(before.colors[0] ?? '#84cdbc', algorithm)
+    let aiColors: string[] | null = null
+    let provider: AiProviderProfile | undefined
+    let route: AiTaskRoute | undefined
 
     setPaletteRegeneratingId(paletteId)
     try {
-      const route = selectAiProviderForTask('rebalance_palette', aiProviders, aiRoutingMode, selectedAiProviderId)
-      const provider = route.providerId ? aiProviders.find((candidate) => candidate.id === route.providerId) : undefined
+      route = selectAiProviderForTask('rebalance_palette', aiProviders, aiRoutingMode, selectedAiProviderId)
+      const routedProviderId = route.providerId
+      provider = routedProviderId ? aiProviders.find((candidate) => candidate.id === routedProviderId) : undefined
       if (provider && provider.type !== 'apple_foundation') {
         const prompt = [
           `Suggest a cohesive "${algorithm}" color palette of exactly ${before.colors.length} hex colors, evolving this current palette: ${before.colors.join(', ')}.`,
@@ -5252,7 +5587,7 @@ function FileWorkspace({
           const parsed = parseAiJson<string[]>(result.content)
           const validColors = parsed?.filter((value) => typeof value === 'string' && /^#[0-9a-fA-F]{6}$/.test(value))
           if (validColors && validColors.length === before.colors.length) {
-            colors = validColors.map((value) => value.toLowerCase())
+            aiColors = validColors.map((value) => value.toLowerCase())
           }
         } catch {
           // Falls through to the local harmony colors already computed above.
@@ -5260,6 +5595,62 @@ function FileWorkspace({
       }
     } finally {
       setPaletteRegeneratingId(null)
+    }
+
+    // A real AI suggestion always waits for approval (DECISIONS.md #3,
+    // kira/README.md §4) — it lands as a pending edit-palette item instead
+    // of touching the canvas. Only the deterministic local-harmony fallback
+    // (no provider, or the provider call failed/returned junk) stays a
+    // plain immediate user action, exactly as it behaved before this
+    // function could call out.
+    if (aiColors) {
+      const now = nowIso()
+      const runId = crypto.randomUUID()
+      setAiPanelState((current) => {
+        const thread: AiThread = {
+          id: crypto.randomUUID(),
+          title: before.title,
+          createdAt: now,
+          updatedAt: now,
+          anchorNodeIds: [before.id],
+        }
+        const run: AiRun = {
+          id: runId,
+          threadId: thread.id,
+          providerType: provider!.type,
+          modelLabel: provider!.model && provider!.model !== 'auto' ? provider!.model : provider!.name,
+          startedAt: now,
+          finishedAt: now,
+          status: 'done',
+          promptPreview: `Regenerate palette "${before.title}" (${algorithm}).`,
+          resultSummary: t('kira.change.paletteResultSummary', lang),
+        }
+        const item: AiChangeItem = {
+          id: crypto.randomUUID(),
+          createdAt: now,
+          kind: 'edit-palette',
+          status: 'pending',
+          targetNodeId: before.id,
+          beforeColors: before.colors,
+          afterColors: aiColors!,
+        }
+        const changeSet: AiChangeSet = {
+          id: crypto.randomUUID(),
+          runId,
+          threadId: thread.id,
+          title: before.title,
+          createdAt: now,
+          items: [item],
+        }
+        return {
+          ...current,
+          threads: [...current.threads, thread],
+          runs: [...current.runs, run],
+          changeSets: [...current.changeSets, changeSet],
+        }
+      })
+      setLibraryStatus(`Kira: ${provider!.name}: ${route!.reason} — waiting in Cần bạn`)
+      return
     }
 
     pushCanvasHistory()
@@ -6269,6 +6660,256 @@ function FileWorkspace({
     )
   }
 
+  // ---------------------------------------------------------------------
+  // "Cần bạn" tab (mockup.js changesView) — kira/README.md §8. Scope cuts
+  // from the mockup, noted in the report: no per-changeset collapse (every
+  // ChangeSet renders in full), no "Đã xử lý" fold for terminal items
+  // (everything stays visible with its own status label instead — nothing
+  // hidden, just less progressive disclosure), and "View on canvas" only
+  // selects the node (no auto-pan camera move).
+  // ---------------------------------------------------------------------
+  function viewNodeOnCanvas(nodeKind: GraphNodeKind, nodeId: string) {
+    if (nodeKind === 'idea') setSelection({ type: 'idea', id: nodeId })
+    else if (nodeKind === 'image') setSelection({ type: 'image', id: nodeId })
+    else if (nodeKind === 'palette') setSelection({ type: 'palette', id: nodeId })
+    else if (nodeKind === 'diagram') setSelection({ type: 'diagram', id: nodeId })
+    else setSelection({ type: 'placeholder', id: nodeId })
+  }
+
+  function renderChangeItem(changeSet: AiChangeSet, item: AiChangeItem) {
+    if (item.kind === 'create-node') {
+      return (
+        <li className="item" key={item.id}>
+          <span className="op"><Plus size={11} /></span>
+          <div className="item-line">
+            <div>
+              <span className="item-kind">{t('kira.change.itemCreateNode', lang)}</span>
+              <span className="item-target">{item.title}</span>
+            </div>
+            <span className="item-status state-ok">
+              <Check size={11} />
+              {item.status === 'applied' ? t('kira.change.statusApplied', lang) : t('kira.change.statusRemoved', lang)}
+            </span>
+          </div>
+          {item.status === 'applied' && (
+            <div className="item-body">
+              {item.editedByUserAfterApply && (
+                <p className="stale-note"><AlertTriangle size={11} className="ic" /><span>{t('kira.change.editedGuard', lang)}</span></p>
+              )}
+              <div className="item-foot">
+                <button type="button" className="quiet-button sm" onClick={() => viewNodeOnCanvas(item.nodeKind, item.nodeId)}>
+                  <LocateFixed size={11} />
+                  {t('kira.change.viewOnCanvas', lang)}
+                </button>
+                <div className="acts">
+                  <button type="button" className="quiet-button sm" onClick={() => removeAppliedAiNode(item.nodeKind, item.nodeId)}>
+                    {t('kira.change.removeNode', lang)}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </li>
+      )
+    }
+
+    if (item.kind === 'edit-text') {
+      const isPending = item.status === 'pending'
+      const isStale = item.status === 'stale'
+      return (
+        <li className={isPending || isStale ? 'item is-focused' : 'item'} key={item.id} aria-current={isPending ? 'true' : undefined}>
+          <span className="op"><Pencil size={11} /></span>
+          <div className="item-line">
+            <div>
+              <span className="item-kind">{t('kira.change.itemEditText', lang)}</span>
+              <span className="item-target">{targetNodeTitle(item.targetNodeKind, item.targetNodeId)}</span>
+            </div>
+            <span className={isStale ? 'item-status state-attn' : isPending ? 'item-status state-wait' : 'item-status state-ok'}>
+              {isStale && <AlertTriangle size={11} />}
+              {isStale ? t('kira.change.statusStale', lang) : isPending ? t('kira.change.statusPending', lang) : t(`kira.change.status${item.status === 'accepted' ? 'Accepted' : 'Rejected'}`, lang)}
+            </span>
+          </div>
+          {(isPending || isStale) && (
+            <div className="item-body">
+              {isStale && <p className="item-summary-line"><AlertTriangle size={11} className="ic" />{t('kira.change.staleNote', lang)}</p>}
+              {isPending && <DiffText before={item.before} after={item.after} />}
+              <div className="item-foot">
+                <button type="button" className="quiet-button sm" onClick={() => viewNodeOnCanvas(item.targetNodeKind, item.targetNodeId)}>
+                  <LocateFixed size={11} />
+                  {t('kira.change.viewOnCanvas', lang)}
+                </button>
+                <div className="acts">
+                  <button type="button" className="quiet-button sm" onClick={() => rejectChangeItem(changeSet.id, item.id)}>
+                    {t('kira.change.reject', lang)}
+                  </button>
+                  {isPending && (
+                    <button type="button" className="primary-button sm" onClick={() => acceptChangeItem(changeSet.id, item.id)}>
+                      {t('kira.change.accept', lang)}
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+        </li>
+      )
+    }
+
+    if (item.kind === 'edit-palette') {
+      const isPending = item.status === 'pending'
+      const isStale = item.status === 'stale'
+      return (
+        <li className={isPending || isStale ? 'item is-focused' : 'item'} key={item.id}>
+          <span className="op"><Palette size={11} /></span>
+          <div className="item-line">
+            <div>
+              <span className="item-kind">{t('kira.change.itemEditPalette', lang)}</span>
+              <span className="item-target">{targetNodeTitle('palette', item.targetNodeId)}</span>
+            </div>
+            <span className={isStale ? 'item-status state-attn' : isPending ? 'item-status state-wait' : 'item-status state-ok'}>
+              {isStale && <AlertTriangle size={11} />}
+              {isStale ? t('kira.change.statusStale', lang) : isPending ? t('kira.change.statusPending', lang) : t(`kira.change.status${item.status === 'accepted' ? 'Accepted' : 'Rejected'}`, lang)}
+            </span>
+          </div>
+          {(isPending || isStale) && (
+            <div className="item-body">
+              {isStale && <p className="item-summary-line"><AlertTriangle size={11} className="ic" />{t('kira.change.staleNote', lang)}</p>}
+              {isPending && (
+                <div className="pal-compare">
+                  <span className="lbl">{t('kira.change.before', lang)}</span>
+                  <span className="swatches">{item.beforeColors.map((color, index) => <i key={index} style={{ background: color }} />)}</span>
+                  <span className="lbl">{t('kira.change.after', lang)}</span>
+                  <span className="swatches">{item.afterColors.map((color, index) => <i key={index} style={{ background: color }} />)}</span>
+                </div>
+              )}
+              <div className="item-foot">
+                <button type="button" className="quiet-button sm" onClick={() => viewNodeOnCanvas('palette', item.targetNodeId)}>
+                  <LocateFixed size={11} />
+                  {t('kira.change.viewOnCanvas', lang)}
+                </button>
+                <div className="acts">
+                  <button type="button" className="quiet-button sm" onClick={() => rejectChangeItem(changeSet.id, item.id)}>
+                    {t('kira.change.reject', lang)}
+                  </button>
+                  {isPending && (
+                    <button type="button" className="primary-button sm" onClick={() => acceptChangeItem(changeSet.id, item.id)}>
+                      {t('kira.change.accept', lang)}
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+        </li>
+      )
+    }
+
+    // delete-node
+    const isPending = item.status === 'pending'
+    return (
+      <li className={isPending ? 'item is-focused' : 'item'} key={item.id}>
+        <span className="op is-delete"><Trash2 size={11} /></span>
+        <div className="item-line">
+          <div>
+            <span className="item-kind is-delete">{t('kira.change.itemDeleteNode', lang)}</span>
+            <span className="item-target">{item.targetTitle}</span>
+          </div>
+          <span className={isPending ? 'item-status state-wait' : 'item-status state-ok'}>
+            {isPending ? t('kira.change.statusPending', lang) : t(`kira.change.status${item.status === 'accepted' ? 'Accepted' : 'Kept'}`, lang)}
+          </span>
+        </div>
+        {isPending && (
+          <div className="item-body">
+            {typeof item.linkCountAffected === 'number' && item.linkCountAffected > 0 && (
+              <p className="item-summary-line">{t('kira.change.linksAffected', lang, { count: String(item.linkCountAffected) })}</p>
+            )}
+            <div className="item-foot">
+              <button type="button" className="quiet-button sm" onClick={() => viewNodeOnCanvas(item.targetNodeKind, item.targetNodeId)}>
+                <LocateFixed size={11} />
+                {t('kira.change.viewOnCanvas', lang)}
+              </button>
+              <div className="acts">
+                <button type="button" className="quiet-button sm" onClick={() => keepDeletedNode(changeSet.id, item.id)}>
+                  {t('kira.change.keepNode', lang)}
+                </button>
+                <button type="button" className="danger-button sm" onClick={() => acceptChangeItem(changeSet.id, item.id)}>
+                  {t('kira.change.deleteNode', lang)}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </li>
+    )
+  }
+
+  function targetNodeTitle(nodeKind: GraphNodeKind, nodeId: string): string {
+    return findNodeRecordByKind(nodeKind, nodeId)?.title ?? nodeId
+  }
+
+  function renderChangeSetSection(changeSet: AiChangeSet) {
+    const run = aiPanelState.runs.find((candidate) => candidate.id === changeSet.runId)
+    const deleteItems = changeSet.items.filter((item): item is Extract<AiChangeItem, { kind: 'delete-node' }> => item.kind === 'delete-node')
+    const mainItems = changeSet.items.filter((item) => item.kind !== 'delete-node')
+    const bulk = aiPanelBulkAcceptable(changeSet)
+    return (
+      <section className="changeset" aria-label={changeSet.title} key={changeSet.id}>
+        <div className="cs-head">
+          <h4>{changeSet.title}</h4>
+          <span className="row-sub">{run ? `${run.modelLabel} · ${formatKiraClockTime(run.startedAt, lang)}` : formatKiraClockTime(changeSet.createdAt, lang)}</span>
+        </div>
+        {bulk.length > 0 && (
+          <div className="cs-actions">
+            <button type="button" className="quiet-button sm" onClick={() => acceptChangeSetBulk(changeSet.id)}>
+              <Check size={11} />
+              {t('kira.change.acceptAll', lang, { count: String(bulk.length) })}
+            </button>
+          </div>
+        )}
+        {mainItems.some((item) => item.kind === 'edit-text' || item.kind === 'edit-palette') && (
+          <p className="cs-rule">{t('kira.change.bulkRule', lang)}</p>
+        )}
+        {mainItems.length > 0 && <ul className="list">{mainItems.map((item) => renderChangeItem(changeSet, item))}</ul>}
+        {deleteItems.length > 0 && (
+          <>
+            <div className="group-label"><span>{t('kira.change.deleteRule', lang)}</span><span className="num">{deleteItems.length}</span></div>
+            <ul className="list">{deleteItems.map((item) => renderChangeItem(changeSet, item))}</ul>
+          </>
+        )}
+      </section>
+    )
+  }
+
+  function renderKiraChangesTab() {
+    if (aiPanelState.changeSets.length === 0) {
+      return (
+        <div className="kp-empty">
+          <Check size={22} />
+          <h4>{t('kira.panel.tabNeedsYou', lang)}</h4>
+          <p>{t('kira.panel.needsYouEmpty', lang)}</p>
+        </div>
+      )
+    }
+    const summary = aiPanelSummaryLine(aiPanelState)
+    const sortedChangeSets = [...aiPanelState.changeSets].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    return (
+      <>
+        <p className="cs-summary">
+          <span><b>{summary.needsYou}</b> {t('kira.change.needsYou', lang)}</span>
+          <span className="muted">·</span>
+          <span><b>{summary.applied}</b> {t('kira.change.applied', lang)}</span>
+          {summary.accepted > 0 && (
+            <>
+              <span className="muted">·</span>
+              <span><b>{summary.accepted}</b> {t('kira.change.accepted', lang)}</span>
+            </>
+          )}
+        </p>
+        {sortedChangeSets.map((changeSet) => renderChangeSetSection(changeSet))}
+      </>
+    )
+  }
+
   function renderKiraPanel() {
     const routeForLabel = selectAiProviderForTask('generate_node', aiProviders, aiRoutingMode, selectedAiProviderId, undefined)
     const routedProviderForLabel = routeForLabel.providerId ? aiProviders.find((provider) => provider.id === routeForLabel.providerId) : undefined
@@ -6325,11 +6966,7 @@ function FileWorkspace({
               />
             </>
           ) : (
-            <div className="kp-empty">
-              <Check size={22} />
-              <h4>{t('kira.panel.tabNeedsYou', lang)}</h4>
-              <p>{t('kira.panel.needsYouEmpty', lang)}</p>
-            </div>
+            renderKiraChangesTab()
           )}
         </div>
         <div
@@ -6627,6 +7264,11 @@ function FileWorkspace({
                 isKiraPanelOpen={isKiraPanelOpen}
                 kiraDockStatus={renderKiraPanelDockStatus()}
                 onKiraPanelOpenChat={() => setKiraPanelTab('chat')}
+                nodeProvenance={aiPanelState.provenance}
+                onOpenKiraPanelChanges={() => {
+                  onKiraPanelOpenChange(true)
+                  setKiraPanelTab('needs-you')
+                }}
               />
             )}
           </div>
@@ -6637,6 +7279,34 @@ function FileWorkspace({
         onCancel={() => setPendingDelete(null)}
         onConfirm={confirmPendingDelete}
       />
+      {pendingRemoveNodeGuard && (
+        <div className="dialog-overlay">
+          <section
+            aria-describedby="remove-ai-node-dialog-copy"
+            aria-labelledby="remove-ai-node-dialog-title"
+            aria-modal="true"
+            className="confirm-dialog"
+            role="alertdialog"
+          >
+            <div>
+              <h2 id="remove-ai-node-dialog-title">{t('kira.change.removeNode', lang)}</h2>
+              <p id="remove-ai-node-dialog-copy">{t('kira.change.editedGuard', lang)}</p>
+            </div>
+            <div className="dialog-actions">
+              <button className="secondary-button" type="button" onClick={() => setPendingRemoveNodeGuard(null)}>
+                {t('kira.change.editedGuardCancel', lang)}
+              </button>
+              <button
+                className="danger-button"
+                type="button"
+                onClick={() => removeAppliedAiNode(pendingRemoveNodeGuard.nodeKind, pendingRemoveNodeGuard.nodeId, true)}
+              >
+                {t('kira.change.editedGuardConfirm', lang)}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
       {cropTargetImageId && (() => {
         const image = images.find((candidate) => candidate.id === cropTargetImageId)
         if (!image) return null
@@ -9287,6 +9957,8 @@ function GraphCanvas({
   isKiraPanelOpen,
   kiraDockStatus,
   onKiraPanelOpenChat,
+  nodeProvenance,
+  onOpenKiraPanelChanges,
 }: {
   ideas: Idea[]
   images: EvidenceImage[]
@@ -9385,6 +10057,11 @@ function GraphCanvas({
   isKiraPanelOpen: boolean
   kiraDockStatus: React.ReactNode
   onKiraPanelOpenChat: () => void
+  // Phase B provenance badges (mockup.js provBadge) — keyed by
+  // provenanceKey(kind, id). Clicking a badge opens the panel's "Cần bạn"
+  // tab rather than the mockup's per-node popover (scope cut, see report).
+  nodeProvenance: Record<string, AiNodeProvenance>
+  onOpenKiraPanelChanges: () => void
 }) {
   const canvasRef = useRef<HTMLDivElement>(null)
   const draggingNodeRef = useRef<{
@@ -10249,6 +10926,28 @@ function GraphCanvas({
       >
         <KiraMark size={12} />
       </span>
+    )
+  }
+
+  // mockup.js provBadge — text carries the meaning ("AI" / "AI, đã sửa"),
+  // never color alone, and never the accent tint (that means canvas
+  // selection). Clicking it opens "Cần bạn" — a simpler stand-in for the
+  // mockup's per-node provenance popover (scope cut, see Phase B report).
+  function renderProvenanceBadge(kind: GraphNodeKind, id: string) {
+    const provenance = nodeProvenance[provenanceKey(kind, id)]
+    if (!provenance) return null
+    const label = provenance.editedAfterGeneration ? t('kira.prov.edited', lang) : t('kira.prov.created', lang)
+    return (
+      <button
+        type="button"
+        className="node-prov-badge"
+        aria-label={label}
+        onPointerDown={(event) => event.stopPropagation()}
+        onClick={(event) => { event.stopPropagation(); onOpenKiraPanelChanges() }}
+      >
+        {provenance.editedAfterGeneration && <Pencil size={10} />}
+        {label}
+      </button>
     )
   }
 
@@ -11705,6 +12404,7 @@ function GraphCanvas({
                 </span>
                 {renderKiraControl('idea', idea.id, idea.title)}
                 {renderDirectLinkHandle('idea', idea, idea.title)}
+                {renderProvenanceBadge('idea', idea.id)}
                 <span className={`idea-status idea-status--${idea.status}`} />
                 {/* Read-only on the canvas face — double-click (or the (i)
                     button) opens the node's overlay, the only place this
@@ -11858,6 +12558,7 @@ function GraphCanvas({
                 </span>
                 {renderKiraControl('palette', palette.id, palette.title)}
                 {renderDirectLinkHandle('palette', palette, palette.title)}
+                {renderProvenanceBadge('palette', palette.id)}
                 <PaletteColorStrip colors={palette.colors} />
                 <span className="idea-node-fields" onClick={stopInlineEditEvent}>
                   <NodeRichEditor
@@ -18326,6 +19027,7 @@ function isNodeVersionTrigger(value: unknown): value is NodeVersionTrigger {
     'split',
     'restore',
     'created',
+    'ai_change_accepted',
   ].includes(value)
 }
 
@@ -18366,6 +19068,7 @@ function nodeVersionTriggerLabel(trigger: NodeVersionTrigger) {
   if (trigger === 'image_removed') return 'Removed image'
   if (trigger === 'restore') return 'Restored node'
   if (trigger === 'created') return 'Created node'
+  if (trigger === 'ai_change_accepted') return 'Accepted AI change'
   return 'Edited node'
 }
 

@@ -317,6 +317,33 @@ export function markNodeEditedAfterGeneration(state: AiPanelState, nodeKind: Gra
   return { ...state, provenance: { ...state.provenance, [key]: { ...existing, editedAfterGeneration: true } } }
 }
 
+/** Marks the applied create-node item for (nodeKind, nodeId) as
+ *  user-edited, so removeAppliedNode's guard ("Bạn đã sửa nội dung node
+ *  này…") actually triggers — removeAppliedNode reads
+ *  item.editedByUserAfterApply, a separate fact from the provenance record
+ *  markNodeEditedAfterGeneration updates (that one only drives the canvas
+ *  badge). Call both together on a user edit to an AI-created node. No-op
+ *  if there is no matching applied item (a human-created node, or one
+ *  already marked). */
+export function markCreateNodeItemEdited(state: AiPanelState, nodeKind: GraphNodeKind, nodeId: string): AiPanelState {
+  let changed = false
+  const changeSets = state.changeSets.map((changeSet) => {
+    let changeSetChanged = false
+    const items = changeSet.items.map((item) => {
+      if (item.kind === 'create-node' && item.nodeKind === nodeKind && item.nodeId === nodeId && item.status === 'applied' && !item.editedByUserAfterApply) {
+        changeSetChanged = true
+        return { ...item, editedByUserAfterApply: true }
+      }
+      return item
+    })
+    if (!changeSetChanged) return changeSet
+    changed = true
+    return { ...changeSet, items }
+  })
+  if (!changed) return state
+  return { ...state, changeSets }
+}
+
 // ---------------------------------------------------------------------------
 // Thread filtering
 // ---------------------------------------------------------------------------

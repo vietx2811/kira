@@ -12,6 +12,7 @@ import {
   bulkAcceptable,
   createEmptyAiPanelState,
   fromSnapshot,
+  markCreateNodeItemEdited,
   markStaleOnUserEdit,
   needsYouCount,
   rejectItem,
@@ -329,6 +330,30 @@ describe('removeAppliedNode', () => {
     const item = result.state.changeSets[0]?.items.find((candidate) => candidate.id === 'item-applied-guarded')
     expect(item?.status).toBe('removed')
     expect(result.operations.some((op) => op.type === 'remove-node')).toBe(true)
+  })
+})
+
+describe('markCreateNodeItemEdited', () => {
+  test('flips editedByUserAfterApply on the matching applied create-node item', () => {
+    const state: AiPanelState = { ...createEmptyAiPanelState(), changeSets: [branchesChangeSet()] }
+    const next = markCreateNodeItemEdited(state, 'idea', 'idea-brass-bar')
+    const item = next.changeSets[0]?.items.find((candidate) => candidate.id === 'item-applied-plain')
+    expect(item?.kind === 'create-node' && item.editedByUserAfterApply).toBe(true)
+  })
+
+  test('is a no-op for a node with no matching applied item', () => {
+    const state: AiPanelState = { ...createEmptyAiPanelState(), changeSets: [branchesChangeSet()] }
+    const next = markCreateNodeItemEdited(state, 'idea', 'idea-does-not-exist')
+    expect(next).toBe(state)
+  })
+
+  test('removeAppliedNode then refuses without force after the edit is marked', () => {
+    const state: AiPanelState = { ...createEmptyAiPanelState(), changeSets: [branchesChangeSet()] }
+    const edited = markCreateNodeItemEdited(state, 'idea', 'idea-brass-bar')
+    const result = removeAppliedNode(edited, 'idea', 'idea-brass-bar')
+    expect(result.ok).toBe(false)
+    if (result.ok) throw new Error('unreachable')
+    expect(result.reason).toBe('needs-force')
   })
 })
 
