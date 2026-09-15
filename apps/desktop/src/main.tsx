@@ -4062,7 +4062,17 @@ function FileWorkspace({
       return
     }
 
-    const pastedText = (await navigator.clipboard.readText()).trim()
+    let pastedText: string
+    try {
+      pastedText = (await navigator.clipboard.readText()).trim()
+    } catch {
+      // Permission denied (or no prior user gesture the browser accepts) throws here instead of
+      // resolving. Without this catch the rejection was unhandled and the button did nothing —
+      // tell the user what happened and point at the manual path: capturePastedReference listens
+      // for Cmd+V anywhere outside an input/textarea/select, so pasting onto the canvas still works.
+      setLibraryStatus("Couldn't read clipboard — paste the URL onto the canvas with Cmd+V instead")
+      return
+    }
     const extensionCaptures = parseKiraCapturePayloads(pastedText)
     if (extensionCaptures.length > 0) {
       const references = extensionCaptures.map((capture, index) => createReferenceFromCapture(capture, images.length + index))
