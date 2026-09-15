@@ -482,6 +482,12 @@ button {
   z-index: 90;
   display: flex;
   align-items: center;
+  /* Without this, this row's CSS Grid item defaults to min-width:auto —
+     its own min-content width (file-tab-list + file-tab-add + panel-toggle)
+     — which grows the whole .app-shell grid track past the viewport at
+     narrow widths instead of letting .file-tab-list's own overflow-x:auto
+     absorb it. */
+  min-width: 0;
   min-height: 42px;
   padding: 5px var(--space-3) 5px calc(var(--shell-rail-width) + var(--shell-card-inset));
   border-bottom: 0;
@@ -8551,4 +8557,452 @@ textarea {
   margin: 0;
   font-size: var(--text-small);
   color: var(--text-muted);
+}
+
+/* ================= Kira right panel (docs/design/right-panel) =================
+   DECISIONS.md #5: toggle sits at the right end of the file-tab-bar row. Ink,
+   not teal, for the active state — same neutral tint + inset highlight as
+   .file-tab.is-active in the same row (One Accent Rule, DESIGN.md §3/§6). */
+.panel-toggle {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  height: 30px;
+  margin-left: auto;
+  padding: 0 var(--space-3);
+  border: 0;
+  border-radius: var(--radius-2);
+  background: transparent;
+  color: var(--text-soft);
+  cursor: pointer;
+  gap: 6px;
+  font-size: var(--text-small);
+  font-weight: 680;
+  transition: background var(--duration-base) var(--ease-soft), color var(--duration-base) var(--ease-soft);
+}
+
+.panel-toggle:hover {
+  color: var(--text-main);
+  background: color-mix(in srgb, var(--text-main) 5.5%, transparent);
+}
+
+.panel-toggle.is-active {
+  background: color-mix(in srgb, var(--text-main) 9%, transparent);
+  color: var(--text-main);
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.16),
+    inset 0 1px 0 rgb(255 255 255 / 0.08);
+}
+
+.panel-toggle .count {
+  display: inline-grid;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  place-items: center;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text-main) 16%, transparent);
+  color: var(--text-main);
+  font-size: var(--text-mini);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Dock-status pill, closed-panel state only (Phase A scope — skill/running/
+   error/done variants need either the skill-checkpoint UI or a run in flight
+   while the panel is closed, neither possible yet: the new composer only
+   exists inside the open panel). Sits beside the dock orb, same glass
+   material as the orb itself. */
+.kira-dock-cluster {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dock-status {
+  display: inline-flex;
+  align-items: center;
+  height: 36px;
+  padding: 0 4px 0 12px;
+  border-radius: var(--radius-2);
+  background: var(--glass-inspector);
+  box-shadow: 0 2px 6px rgb(0 0 0 / 0.1), 0 0 0 1px var(--border-soft);
+  color: var(--text-soft);
+  gap: 8px;
+  font-size: var(--text-body);
+  white-space: nowrap;
+}
+
+.dock-status .ic {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+}
+
+/* Panel shell — same floating-glass language as .inspector (DESIGN.md §5
+   Object Card Rule: a real overlay surface, not a config group). */
+.kira-panel {
+  position: absolute;
+  top: var(--shell-card-inset);
+  right: var(--shell-card-inset);
+  bottom: var(--shell-card-inset);
+  z-index: 60;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  width: var(--kira-panel-width, 360px);
+  overflow: hidden;
+  border-radius: var(--shell-card-radius);
+  background: var(--glass-inspector);
+  box-shadow: var(--panel-shadow);
+  opacity: 0;
+  transform: translateX(16px) scale(0.97);
+  transition: opacity var(--duration-panel) var(--ease-out-soft), transform var(--duration-panel) var(--ease-out-soft);
+}
+
+.kira-panel.is-entered {
+  opacity: 1;
+  transform: translateX(0) scale(1);
+}
+
+.kira-panel-resize-handle {
+  position: absolute;
+  top: 0;
+  left: -4px;
+  bottom: 0;
+  z-index: 2;
+  width: 8px;
+  cursor: col-resize;
+  background: transparent;
+}
+
+.kp-head {
+  padding: 14px 12px 10px 16px;
+}
+
+.kp-title {
+  display: flex;
+  align-items: center;
+  margin-bottom: 12px;
+  gap: 8px;
+}
+
+.kp-title h3 {
+  margin: 0;
+  font-size: var(--text-title);
+  font-weight: 680;
+}
+
+.kp-title .spacer {
+  flex: 1;
+}
+
+.kp-tabs .count {
+  display: inline-grid;
+  min-width: 16px;
+  height: 16px;
+  margin-left: 4px;
+  padding: 0 4px;
+  place-items: center;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text-main) 16%, transparent);
+  color: inherit;
+  font-size: var(--text-mini);
+  font-variant-numeric: tabular-nums;
+}
+
+.kp-body {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 12px 16px 16px;
+  overflow: hidden;
+  scrollbar-width: thin;
+}
+
+.kp-empty {
+  display: grid;
+  justify-items: center;
+  padding: 32px 16px;
+  color: var(--text-muted);
+  text-align: center;
+  gap: 6px;
+}
+
+.kp-empty h4 {
+  margin: 4px 0 0;
+  color: var(--text-soft);
+  font-size: var(--text-body);
+  font-weight: 680;
+}
+
+.kp-empty p {
+  margin: 0;
+  max-width: 240px;
+  font-size: var(--text-small);
+  line-height: 1.5;
+}
+
+/* Thread list — hairline rows, no wrapping card (DESIGN.md §5 Space-and-
+   Line-First and No-Nested-Card Rules; layout-spec.md §9 flagged the mockup's
+   boxed .list for this exact fix). Selected state is the same left-edge ink
+   mark as .provider-list-row[aria-pressed="true"], never a teal tint. */
+.kira-panel .list-tools {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 8px;
+}
+
+.kira-panel .list {
+  margin: 0 0 12px;
+  padding: 0;
+  list-style: none;
+}
+
+.kira-panel .list > li + li {
+  border-top: 1px solid var(--border-soft);
+}
+
+.thread-row {
+  display: grid;
+  width: 100%;
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: 10px var(--space-2);
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  gap: 2px 10px;
+}
+
+.thread-row:hover {
+  background: color-mix(in srgb, var(--text-main) 4%, transparent);
+}
+
+.thread-row.is-current {
+  background: transparent;
+  box-shadow: inset 3px 0 0 0 var(--text-main);
+}
+
+.thread-row strong {
+  overflow: hidden;
+  color: var(--text-main);
+  font-size: var(--text-body);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.thread-row.is-current strong {
+  font-weight: 680;
+}
+
+.thread-row .when {
+  color: var(--text-muted);
+  font-size: var(--text-small);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+/* Chat tab — assistant-ui primitives, styled entirely with these rules (no
+   library CSS exists to inherit from). */
+.kira-thread {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.kira-thread-viewport {
+  flex: 1;
+  min-height: 120px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.num {
+  font-variant-numeric: tabular-nums;
+}
+
+.row-sub {
+  color: var(--text-muted);
+  font-size: var(--text-small);
+}
+
+.msg + .msg {
+  margin-top: 16px;
+}
+
+.msg-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+  color: var(--text-muted);
+  font-size: var(--text-small);
+}
+
+.msg-head b {
+  color: var(--text-soft);
+  font-weight: 680;
+}
+
+.msg-user {
+  padding: 10px 12px;
+  border-radius: var(--radius-3);
+  background: color-mix(in srgb, var(--text-main) 6%, transparent);
+  font-size: var(--text-body);
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.msg-ai {
+  padding: 2px 0 0;
+  font-size: var(--text-body);
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
+.run-error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  padding-top: 8px;
+  gap: 6px;
+  font-size: var(--text-body);
+  line-height: 1.5;
+}
+
+.state-ok,
+.state-err,
+.state-idle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 680;
+}
+
+.state-ok {
+  color: var(--accent-strong);
+}
+
+.state-err {
+  color: var(--danger);
+}
+
+.state-idle {
+  color: var(--text-soft);
+}
+
+.run-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-top: 4px;
+  color: var(--text-muted);
+  gap: 4px 8px;
+  font-size: var(--text-small);
+}
+
+.run-disclosure svg {
+  transition: transform var(--duration-base) var(--ease-soft);
+}
+
+.run-disclosure[aria-expanded="true"] svg {
+  transform: rotate(180deg);
+}
+
+/* Metadata about a run, not an object of its own: hairline-topped rows, not a
+   recessed inset box (DESIGN.md §5) — same pattern as .node-details-section. */
+.run-detail {
+  margin: 8px 0 0;
+  padding-top: 6px;
+  border-top: 1px solid var(--border-soft);
+  font-size: var(--text-small);
+}
+
+.run-detail div {
+  display: grid;
+  grid-template-columns: 74px minmax(0, 1fr);
+  padding: 6px 0;
+  gap: 10px;
+}
+
+.run-detail div + div {
+  border-top: 1px solid var(--border-soft);
+}
+
+.run-detail dt {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.run-detail dd {
+  margin: 0;
+  color: var(--text-main);
+}
+
+.run-detail-model {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+.run-detail-prompt {
+  color: var(--text-soft);
+  overflow-wrap: anywhere;
+}
+
+.composer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  margin-top: 12px;
+  padding: 6px 6px 6px 12px;
+  border-radius: var(--radius-3);
+  background: var(--inset-field);
+  gap: 8px;
+}
+
+.composer-input {
+  min-height: 28px;
+  max-height: 160px;
+  padding: 5px 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-main);
+  font: inherit;
+  font-size: var(--text-body);
+  line-height: 1.4;
+  resize: none;
+}
+
+.composer-input::placeholder {
+  color: var(--text-muted);
+}
+
+.composer-input:focus {
+  outline: none;
+}
+
+.composer .send {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 0;
+  border-radius: var(--radius-2);
+  background: var(--control-primary);
+  color: var(--control-on-primary);
+  cursor: pointer;
+}
+
+.composer .send:disabled {
+  background: transparent;
+  color: var(--text-muted);
+  cursor: default;
+}
+
+.composer-meta {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 6px;
+  color: var(--text-muted);
+  font-size: var(--text-small);
 }

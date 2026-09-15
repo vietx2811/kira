@@ -50,10 +50,12 @@ import {
   ListTree,
   LocateFixed,
   Maximize2,
+  MessageSquare,
   Minimize2,
   MoreHorizontal,
   Network,
   Palette,
+  PanelRight,
   Paperclip,
   Pause,
   Play,
@@ -86,6 +88,27 @@ import {
 import { HexColorPicker } from 'react-colorful'
 import Cropper, { type Area as CropArea } from 'react-easy-crop'
 import { converter, formatHex } from 'culori'
+import {
+  AssistantRuntimeProvider,
+  ComposerPrimitive,
+  MessagePrimitive,
+  ThreadPrimitive,
+  useExternalStoreRuntime,
+  type AppendMessage,
+  type ThreadMessageLike,
+} from '@assistant-ui/react'
+import type {
+  AiMessage,
+  AiPanelState,
+  AiRun,
+  AiThread,
+} from './kira/aiPanelTypes'
+import {
+  createEmptyAiPanelState,
+  fromSnapshot as aiPanelFromSnapshot,
+  needsYouCount as aiPanelNeedsYouCount,
+  toSnapshot as aiPanelToSnapshot,
+} from './kira/aiPanelModel'
 import './styles.css'
 
 type Relation = 'supports' | 'contrasts' | 'example' | 'mood' | 'material' | 'reference' | 'related' | 'derived-from' | 'contains'
@@ -447,6 +470,11 @@ type ProjectSnapshot = {
   links: EvidenceLink[]
   outlineDrafts: OutlineDraft[]
   slidesConfig?: SlidesConfig
+  // Kira right-panel threads/messages/runs/changes (docs/design/right-panel).
+  // Deliberately excluded from snapshotForVersionArchive: restoring a version
+  // must not rewind chat (DECISIONS.md #4). Optional so a project saved
+  // before this field existed still satisfies the type.
+  aiPanel?: ReturnType<typeof aiPanelToSnapshot>
 }
 
 type ProjectVersionState = {
@@ -732,6 +760,29 @@ const UI_STRINGS: Record<string, { en: string; vi: string }> = {
   'kira.noProvider': { en: "I'm not connected to a model yet. Pick one in Settings and I'll start.", vi: 'Chưa kết nối mô hình nào. Hãy chọn một mô hình trong Cài đặt để bắt đầu.' },
   'kira.openAiSettings': { en: 'Open AI settings →', vi: 'Mở cài đặt AI →' },
   'kira.scopeFullBoard': { en: 'Full board', vi: 'Toàn bộ bảng' },
+  'kira.panel.open': { en: 'Open Kira panel', vi: 'Mở panel Kira' },
+  'kira.panel.close': { en: 'Close Kira panel', vi: 'Đóng panel Kira' },
+  'kira.panel.tabChat': { en: 'Chat', vi: 'Chat' },
+  'kira.panel.tabNeedsYou': { en: 'Needs you', vi: 'Cần bạn' },
+  'kira.panel.closeButton': { en: 'Close panel', vi: 'Đóng panel' },
+  'kira.panel.newThread': { en: 'New thread', vi: 'Thread mới' },
+  'kira.panel.threadFallbackTitle': { en: 'New thread', vi: 'Thread mới' },
+  'kira.panel.emptyTitle': { en: 'No threads yet', vi: 'Chưa có thread nào' },
+  'kira.panel.emptyBody': { en: 'Ask Kira something below to start a thread.', vi: 'Hỏi Kira bên dưới để bắt đầu một thread.' },
+  'kira.panel.composerPlaceholder': { en: 'Ask Kira…', vi: 'Hỏi Kira…' },
+  'kira.panel.send': { en: 'Send', vi: 'Gửi' },
+  'kira.panel.you': { en: 'You', vi: 'Bạn' },
+  'kira.panel.needsYouEmpty': { en: 'Nothing needs you yet.', vi: 'Chưa có gì cần bạn xử lý.' },
+  'kira.run.done': { en: 'Done', vi: 'Xong' },
+  'kira.run.running': { en: 'Running', vi: 'Đang chạy' },
+  'kira.run.error': { en: 'Error', vi: 'Lỗi' },
+  'kira.run.detail': { en: 'Run details', vi: 'Chi tiết run' },
+  'kira.run.provider': { en: 'Provider', vi: 'Provider' },
+  'kira.run.model': { en: 'Model', vi: 'Model' },
+  'kira.run.started': { en: 'Started', vi: 'Bắt đầu' },
+  'kira.run.prompt': { en: 'Prompt', vi: 'Prompt' },
+  'kira.dock.needsYou': { en: '{count} waiting for you', vi: '{count} mục cần bạn' },
+  'kira.dock.open': { en: 'Open', vi: 'Mở' },
   'library.meta.item': { en: '{count} item', vi: '{count} mục' },
   'library.meta.items': { en: '{count} items', vi: '{count} mục' },
   'library.meta.suggested': { en: '{count} suggested', vi: '{count} gợi ý' },
@@ -793,6 +844,39 @@ const useRailIconModeStore = create<{ mode: RailIconMode; setMode: (mode: RailIc
       // ignore persistence failures (private mode, etc.)
     }
     set({ mode })
+  },
+}))
+
+const KIRA_PANEL_MIN_WIDTH = 320
+const KIRA_PANEL_MAX_WIDTH = 480
+const KIRA_PANEL_DEFAULT_WIDTH = 360
+
+function clampKiraPanelWidth(width: number) {
+  return Math.min(KIRA_PANEL_MAX_WIDTH, Math.max(KIRA_PANEL_MIN_WIDTH, Math.round(width)))
+}
+
+function readStoredKiraPanelWidth(): number {
+  try {
+    const stored = Number(localStorage.getItem('kira:panelWidth'))
+    return Number.isFinite(stored) && stored > 0 ? clampKiraPanelWidth(stored) : KIRA_PANEL_DEFAULT_WIDTH
+  } catch {
+    return KIRA_PANEL_DEFAULT_WIDTH
+  }
+}
+
+// App-level, not project-level (DECISIONS.md bố cục #2: "kéo mép để đổi
+// trong khoảng 320-480px, nhớ theo máy") — the same person wants the same
+// panel width regardless of which project they open, like railIconMode.
+const useKiraPanelWidthStore = create<{ width: number; setWidth: (width: number) => void }>()((set) => ({
+  width: readStoredKiraPanelWidth(),
+  setWidth: (width) => {
+    const next = clampKiraPanelWidth(width)
+    try {
+      localStorage.setItem('kira:panelWidth', String(next))
+    } catch {
+      // ignore persistence failures (private mode, etc.)
+    }
+    set({ width: next })
   },
 }))
 
@@ -2186,6 +2270,189 @@ function existingProviderTypeCount(providers: AiProviderProfile[], type: AiProvi
   return providers.filter((provider) => provider.type === type).length
 }
 
+// ---------------------------------------------------------------------------
+// Kira right panel — Chat tab (docs/design/right-panel). Built on assistant-ui
+// primitives per DECISIONS.md #5 and docs/research/2026-09-15-spike-assistant-ui.md
+// (GO with caveats: no Tailwind, ExternalStoreRuntime with AiPanelState as the
+// source of truth, ARIA roles added by hand — primitives supply none).
+// ---------------------------------------------------------------------------
+
+function touchThreadUpdatedAt(state: AiPanelState, threadId: string, at: string): AiPanelState {
+  return {
+    ...state,
+    threads: state.threads.map((thread) => (thread.id === threadId ? { ...thread, updatedAt: at } : thread)),
+  }
+}
+
+function kiraChatThreadTitle(text: string, lang: Lang): string {
+  const trimmed = text.trim().replace(/\s+/g, ' ')
+  return trimmed.length > 0 ? trimmed.slice(0, 60) : t('kira.panel.threadFallbackTitle', lang)
+}
+
+function kiraMessageRole(message: AiMessage): 'user' | 'assistant' | 'system' {
+  return message.role === 'system-error' ? 'system' : message.role
+}
+
+function toKiraThreadMessage(message: AiMessage): ThreadMessageLike {
+  return {
+    role: kiraMessageRole(message),
+    id: message.id,
+    createdAt: new Date(message.createdAt),
+    content: message.text,
+  }
+}
+
+function formatKiraClockTime(iso: string, lang: Lang): string {
+  return new Date(iso).toLocaleTimeString(lang === 'vi' ? 'vi-VN' : 'en-US', { hour: '2-digit', minute: '2-digit' })
+}
+
+function RunDetailRow({ run, lang }: { run: AiRun | undefined; lang: Lang }) {
+  const [open, setOpen] = useState(false)
+  if (!run) return null
+  const elapsedMs = run.finishedAt ? new Date(run.finishedAt).getTime() - new Date(run.startedAt).getTime() : null
+  return (
+    <div className="run-line">
+      <span className={run.status === 'error' ? 'state-err' : run.status === 'running' ? 'state-idle' : 'state-ok'}>
+        {run.status === 'error' ? <AlertTriangle size={11} /> : run.status === 'running' ? null : <Check size={11} />}
+        {run.status === 'error' ? t('kira.run.error', lang) : run.status === 'running' ? t('kira.run.running', lang) : t('kira.run.done', lang)}
+      </span>
+      <span className="row-sub">
+        {run.modelLabel}
+        {elapsedMs != null ? ` · ${(elapsedMs / 1000).toFixed(1)}s` : ''}
+      </span>
+      <button type="button" className="quiet-button sm run-disclosure" aria-expanded={open} onClick={() => setOpen((current) => !current)}>
+        {t('kira.run.detail', lang)}
+        <ChevronDown size={11} />
+      </button>
+      {open && (
+        <dl className="run-detail">
+          <div><dt>{t('kira.run.provider', lang)}</dt><dd>{run.providerType}</dd></div>
+          <div><dt>{t('kira.run.model', lang)}</dt><dd className="run-detail-model">{run.modelLabel}</dd></div>
+          <div><dt>{t('kira.run.started', lang)}</dt><dd className="num">{formatKiraClockTime(run.startedAt, lang)}</dd></div>
+          <div><dt>{t('kira.run.prompt', lang)}</dt><dd className="run-detail-prompt">{run.promptPreview}</dd></div>
+        </dl>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Chat tab content: thread messages + composer, on assistant-ui's headless
+ * primitives (ThreadPrimitive/ComposerPrimitive/MessagePrimitive) driven by
+ * ExternalStoreRuntime over AiPanelState — the library never touches the
+ * network itself; `onSend` is the only call-out (spike report §3).
+ */
+function KiraChatThreadView({
+  lang,
+  aiPanelState,
+  threadId,
+  providerLabel,
+  onSend,
+}: {
+  lang: Lang
+  aiPanelState: AiPanelState
+  threadId: string
+  providerLabel: string
+  onSend: (text: string) => void | Promise<void>
+}) {
+  const messages = useMemo(
+    () => aiPanelState.messages.filter((message) => message.threadId === threadId),
+    [aiPanelState.messages, threadId],
+  )
+  const runsById = useMemo(
+    () => new Map(aiPanelState.runs.filter((run) => run.threadId === threadId).map((run) => [run.id, run] as const)),
+    [aiPanelState.runs, threadId],
+  )
+  const isRunning = useMemo(
+    () => aiPanelState.runs.some((run) => run.threadId === threadId && run.status === 'running'),
+    [aiPanelState.runs, threadId],
+  )
+  const messagesRef = useRef(messages)
+  messagesRef.current = messages
+  const convertedMessages = useMemo(() => messages.map(toKiraThreadMessage), [messages])
+
+  const onNew = useCallback(
+    async (appended: AppendMessage) => {
+      const text = appended.content
+        .filter((part): part is { type: 'text'; text: string } => part.type === 'text')
+        .map((part) => part.text)
+        .join('')
+      await onSend(text)
+    },
+    [onSend],
+  )
+
+  const runtime = useExternalStoreRuntime({
+    messages: convertedMessages,
+    isRunning,
+    onNew,
+    convertMessage: (message) => message,
+  })
+
+  return (
+    <AssistantRuntimeProvider runtime={runtime}>
+      <ThreadPrimitive.Root className="kira-thread">
+        <ThreadPrimitive.Viewport className="kira-thread-viewport" role="log" aria-live="polite" aria-label={t('kira.panel.tabChat', lang)}>
+          <ThreadPrimitive.Empty>
+            <div className="kp-empty">
+              <MessageSquare size={22} />
+              <h4>{t('kira.panel.emptyTitle', lang)}</h4>
+              <p>{t('kira.panel.emptyBody', lang)}</p>
+            </div>
+          </ThreadPrimitive.Empty>
+          <ThreadPrimitive.Messages>
+            {({ message }) => {
+              const source = messagesRef.current.find((candidate) => candidate.id === message.id)
+              const createdAt = source?.createdAt ?? new Date().toISOString()
+              const run = source?.runId ? runsById.get(source.runId) : undefined
+              if (message.role === 'user') {
+                return (
+                  <MessagePrimitive.Root className="msg">
+                    <div className="msg-head"><b>{t('kira.panel.you', lang)}</b><span className="num">{formatKiraClockTime(createdAt, lang)}</span></div>
+                    <div className="msg-user"><MessagePrimitive.Content /></div>
+                  </MessagePrimitive.Root>
+                )
+              }
+              if (message.role === 'system') {
+                return (
+                  <MessagePrimitive.Root className="msg">
+                    <div className="msg-head"><b>Kira</b><span className="num">{formatKiraClockTime(createdAt, lang)}</span></div>
+                    <div className="run-error" role="status">
+                      <span className="state-err"><AlertTriangle size={11} />{t('kira.run.error', lang)}</span>{' '}
+                      <MessagePrimitive.Content />
+                    </div>
+                  </MessagePrimitive.Root>
+                )
+              }
+              return (
+                <MessagePrimitive.Root className="msg">
+                  <div className="msg-head"><b>Kira</b><span className="num">{formatKiraClockTime(createdAt, lang)}</span></div>
+                  <div className="msg-ai"><MessagePrimitive.Content /></div>
+                  <RunDetailRow run={run} lang={lang} />
+                </MessagePrimitive.Root>
+              )
+            }}
+          </ThreadPrimitive.Messages>
+        </ThreadPrimitive.Viewport>
+        <ComposerPrimitive.Root className="composer">
+          <ComposerPrimitive.Input
+            className="composer-input"
+            placeholder={t('kira.panel.composerPlaceholder', lang)}
+            aria-label={t('kira.panel.send', lang)}
+            rows={1}
+          />
+          <ComposerPrimitive.Send className="send" aria-label={t('kira.panel.send', lang)}>
+            <ArrowUp size={14} />
+          </ComposerPrimitive.Send>
+        </ComposerPrimitive.Root>
+        <div className="composer-meta">
+          <span>{providerLabel}</span>
+        </div>
+      </ThreadPrimitive.Root>
+    </AssistantRuntimeProvider>
+  )
+}
+
 /**
  * One open file. Every instance owns its own board state, undo stack, selection
  * and camera, so switching tabs is free and undo can never cross files.
@@ -2204,6 +2471,9 @@ function FileWorkspace({
   onTransferNodeToFile,
   incomingTransfers,
   onTransfersConsumed,
+  isKiraPanelOpen,
+  onKiraPanelOpenChange,
+  onKiraNeedsYouCountChange,
 }: {
   fileId: string
   isActive: boolean
@@ -2216,6 +2486,12 @@ function FileWorkspace({
   onTransferNodeToFile: (targetFileId: string, payload: NodeTransferPayload) => void
   incomingTransfers: NodeTransferPayload[]
   onTransfersConsumed: () => void
+  // Lifted to App() (like `files`/`activeFileId`) because the panel toggle
+  // button lives in the file-tab-bar row App() builds, not inside this
+  // component — see docs/design/right-panel/DECISIONS.md #5.
+  isKiraPanelOpen: boolean
+  onKiraPanelOpenChange: (open: boolean) => void
+  onKiraNeedsYouCountChange: (count: number) => void
 }) {
   const initialProject = useMemo(() => initialSnapshot ?? readProjectSnapshot(), [initialSnapshot])
   const lang = useLangStore((state) => state.lang)
@@ -2239,6 +2515,14 @@ function FileWorkspace({
   const [nodeVersions, setNodeVersions] = useState(initialProject.nodeVersions)
   const [outlineDrafts, setOutlineDrafts] = useState(initialProject.outlineDrafts)
   const [slidesConfig, setSlidesConfig] = useState<SlidesConfig>(() => normalizeSlidesConfig(initialProject.slidesConfig))
+  // Kira right-panel data (docs/design/right-panel/DECISIONS.md). Loaded
+  // once at mount from this file's own snapshot — fromSnapshot never throws,
+  // even on a project saved before this field existed.
+  const [aiPanelState, setAiPanelState] = useState<AiPanelState>(() => aiPanelFromSnapshot(initialProject.aiPanel))
+  const [kiraPanelTab, setKiraPanelTab] = useState<'chat' | 'needs-you'>('chat')
+  const [activeKiraThreadId, setActiveKiraThreadId] = useState<string | null>(null)
+  const kiraPanelWidth = useKiraPanelWidthStore((state) => state.width)
+  const setKiraPanelWidth = useKiraPanelWidthStore((state) => state.setWidth)
   const [lastSavedHash, setLastSavedHash] = useState(() => JSON.stringify(initialProject))
   const [projectPackage, setProjectPackage] = useState<ProjectPackageInfo | null>(initialPackage)
   const [restorableSession, setRestorableSession] = useState<{ path: string | null; label: string; snapshot: ProjectSnapshot } | null>(null)
@@ -2295,6 +2579,35 @@ function FileWorkspace({
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null)
   const [isLibraryCollapsed, setIsLibraryCollapsed] = useState(false)
   const libraryPanelMountState = usePanelMountState(!isLibraryCollapsed, 200)
+  const kiraPanelMountState = usePanelMountState(isKiraPanelOpen, 200)
+  // DECISIONS.md bố cục #3: below 1180px only one drawer can be open.
+  const [windowWidth, setWindowWidth] = useState(() => (typeof window === 'undefined' ? 1440 : window.innerWidth))
+  useEffect(() => {
+    function handleResize() {
+      setWindowWidth(window.innerWidth)
+    }
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
+  const isNarrowWindow = windowWidth < 1180
+  // One effect, not two: Orchestrator caught a real race when this was split
+  // into a pair of effects each reacting to isNarrowWindow independently —
+  // opening both drawers wide, then resizing narrow in one go, had both
+  // effects read the OTHER's still-stale state in the same commit (the
+  // Library-collapse effect hadn't applied yet when the Kira-close effect
+  // read isLibraryCollapsed), so both drawers closed instead of just
+  // Library. A single effect reading both flags atomically can't race with
+  // itself. Only the direction DECISIONS.md bố cục #3 actually specifies
+  // ("mở Kira thì Thư viện thu lại") is enforced — Library never force-closes
+  // Kira; at a narrow width Library just can't reopen while Kira is open.
+  useEffect(() => {
+    if (isNarrowWindow && isKiraPanelOpen && !isLibraryCollapsed) setIsLibraryCollapsed(true)
+  }, [isKiraPanelOpen, isLibraryCollapsed, isNarrowWindow])
+  // Reported once per aiPanelState change, not computed redundantly at each
+  // of the toggle/tab/dock-status render sites (kira/README.md §"2").
+  useEffect(() => {
+    onKiraNeedsYouCountChange(aiPanelNeedsYouCount(aiPanelState))
+  }, [aiPanelState, onKiraNeedsYouCountChange])
   const [isVersionHistoryOpen, setIsVersionHistoryOpen] = useState(false)
 
   useDismissableLayer(
@@ -2329,8 +2642,8 @@ function FileWorkspace({
       providers: aiProviders,
       routingMode: aiRoutingMode,
       selectedProviderId: selectedAiProviderId,
-    }, versionHistory, versionState, nodeVersions, projectMetadata, projectAppearance, slidesConfig, frames),
-    [aiProviders, aiRoutingMode, diagrams, frames, ideas, images, links, nodeVersions, outlineDrafts, palettes, placeholders, projectAppearance, projectMetadata, selectedAiProviderId, slidesConfig, versionHistory, versionState],
+    }, versionHistory, versionState, nodeVersions, projectMetadata, projectAppearance, slidesConfig, frames, aiPanelToSnapshot(aiPanelState)),
+    [aiPanelState, aiProviders, aiRoutingMode, diagrams, frames, ideas, images, links, nodeVersions, outlineDrafts, palettes, placeholders, projectAppearance, projectMetadata, selectedAiProviderId, slidesConfig, versionHistory, versionState],
   )
   const projectHash = useMemo(() => JSON.stringify(projectSnapshot), [projectSnapshot])
   // Reported regardless of isActive — a background tab's dirty dot and title
@@ -5559,8 +5872,11 @@ function FileWorkspace({
   }
 
   function snapshotForVersionArchive(label = 'Version') {
+    // aiPanel deliberately excluded: restoring a version must not rewind
+    // chat (DECISIONS.md #4) — see kira/README.md §6.
+    const { aiPanel: _aiPanel, ...archivable } = projectSnapshot
     return {
-      ...projectSnapshot,
+      ...archivable,
       versionState,
       versionHistory: [],
       outlineDrafts,
@@ -5786,6 +6102,277 @@ function FileWorkspace({
   const canvasLeftInset = 80 + (isLibraryCollapsed ? 0 : libraryDrawerWidth)
   const canvasOverlayLeftInset = isLibraryCollapsed ? 0 : libraryDrawerWidth
   const canvasOverlayShift = canvasOverlayLeftInset / 2
+  // DECISIONS.md bố cục #1: panel overlays the canvas like Library — topbar,
+  // zoom, tool rail and dock retreat via --canvas-right-inset, already read
+  // (with a 0px fallback) at 5 call sites in styles.css.
+  const canvasRightInset = isKiraPanelOpen ? kiraPanelWidth + 24 : 0
+
+  // ---------------------------------------------------------------------
+  // Kira right panel — state glue (docs/design/right-panel/DECISIONS.md).
+  // Phase A scope only: Chat tab send/receive via the existing one-shot
+  // generateNativeAiText() call (reusing the 'generate_node' routing lane
+  // createAiNode already uses — a dedicated 'kira_chat' lane, if wanted,
+  // is a Settings-routing-table change left for a later decision). The
+  // "Cần bạn" tab's real ChangeSet/AiCanvasOperation wiring is Phase B.
+  // ---------------------------------------------------------------------
+  const kiraNeedsYouCount = aiPanelNeedsYouCount(aiPanelState)
+  const kiraActiveThread = activeKiraThreadId
+    ? aiPanelState.threads.find((thread) => thread.id === activeKiraThreadId) ?? null
+    : null
+
+  async function sendKiraChatMessage(rawText: string) {
+    const text = rawText.trim()
+    if (!text) return
+    const now = nowIso()
+    const hasThread = Boolean(kiraActiveThread)
+    const threadId = kiraActiveThread?.id ?? crypto.randomUUID()
+    const runId = crypto.randomUUID()
+    const route = selectAiProviderForTask('generate_node', aiProviders, aiRoutingMode, selectedAiProviderId, undefined)
+    const routedProvider = route.providerId ? aiProviders.find((provider) => provider.id === route.providerId) : undefined
+    const modelLabel = routedProvider
+      ? (routedProvider.model && routedProvider.model !== 'auto' ? routedProvider.model : routedProvider.name)
+      : route.reason
+
+    const newThread: AiThread | null = hasThread ? null : {
+      id: threadId,
+      title: kiraChatThreadTitle(text, lang),
+      createdAt: now,
+      updatedAt: now,
+      anchorNodeIds: [],
+    }
+    const userMessage: AiMessage = { id: crypto.randomUUID(), threadId, role: 'user', text, createdAt: now, contextNodes: [] }
+    const run: AiRun = {
+      id: runId,
+      threadId,
+      providerType: routedProvider?.type ?? 'apple_foundation',
+      modelLabel,
+      startedAt: now,
+      status: 'running',
+      promptPreview: text,
+    }
+    const threadHistory = [...(hasThread ? aiPanelState.messages.filter((message) => message.threadId === threadId) : []), userMessage]
+
+    setActiveKiraThreadId(threadId)
+    setAiPanelState((current) => {
+      const withThread = newThread ? { ...current, threads: [...current.threads, newThread] } : touchThreadUpdatedAt(current, threadId, now)
+      return { ...withThread, messages: [...withThread.messages, userMessage], runs: [...withThread.runs, run] }
+    })
+
+    if (!routedProvider) {
+      setAiPanelState((current) => ({
+        ...current,
+        messages: [...current.messages, {
+          id: crypto.randomUUID(),
+          threadId,
+          role: 'system-error',
+          text: t('kira.noProvider', lang),
+          createdAt: nowIso(),
+          runId,
+          contextNodes: [],
+        }],
+        runs: current.runs.map((candidate) => candidate.id === runId
+          ? { ...candidate, status: 'error' as const, finishedAt: nowIso(), errorMessage: t('kira.noProvider', lang) }
+          : candidate),
+      }))
+      return
+    }
+
+    const promptLines = [
+      'You are Kira, a creative workspace assistant chatting with the user inside a canvas app.',
+      'Reply conversationally and concisely, in plain prose (no markdown headings).',
+      '',
+      'Conversation so far:',
+      ...threadHistory.map((message) => `${message.role === 'user' ? 'User' : 'Kira'}: ${message.text}`),
+    ]
+
+    try {
+      const result = await generateNativeAiText(routedProvider, promptLines.join('\n'))
+      setAiPanelState((current) => ({
+        ...current,
+        messages: [...current.messages, {
+          id: crypto.randomUUID(),
+          threadId,
+          role: 'assistant',
+          text: result.content.trim(),
+          createdAt: nowIso(),
+          runId,
+          contextNodes: [],
+        }],
+        runs: current.runs.map((candidate) => candidate.id === runId
+          ? { ...candidate, status: 'done' as const, finishedAt: nowIso(), resultSummary: result.status }
+          : candidate),
+      }))
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'AI generation failed'
+      let friendly = message
+      if (routedProvider.type === 'codex' && isCodexLoggedOutError(message)) {
+        friendly = `${routedProvider.name}: sign in to Codex in Settings to continue`
+        focusProviderSetup(routedProvider.id)
+        setAiSettingsStatus('Sign in to Codex (ChatGPT) to run this AI task, then try again.')
+      }
+      setAiPanelState((current) => ({
+        ...current,
+        messages: [...current.messages, {
+          id: crypto.randomUUID(),
+          threadId,
+          role: 'system-error',
+          text: friendly,
+          createdAt: nowIso(),
+          runId,
+          contextNodes: [],
+        }],
+        runs: current.runs.map((candidate) => candidate.id === runId
+          ? { ...candidate, status: 'error' as const, finishedAt: nowIso(), errorMessage: friendly }
+          : candidate),
+      }))
+    }
+  }
+
+  function renderKiraThreadList() {
+    const sorted = [...aiPanelState.threads].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+    return (
+      <>
+        <div className="list-tools">
+          <button
+            type="button"
+            className="quiet-button sm"
+            onClick={() => {
+              setActiveKiraThreadId(null)
+              setKiraPanelTab('chat')
+            }}
+          >
+            <Plus size={11} />
+            {t('kira.panel.newThread', lang)}
+          </button>
+        </div>
+        {sorted.length > 0 && (
+          <ul className="list">
+            {sorted.map((thread) => (
+              <li key={thread.id}>
+                <button
+                  type="button"
+                  className={thread.id === activeKiraThreadId ? 'thread-row is-current' : 'thread-row'}
+                  aria-current={thread.id === activeKiraThreadId ? 'true' : undefined}
+                  onClick={() => {
+                    setActiveKiraThreadId(thread.id)
+                    setKiraPanelTab('chat')
+                  }}
+                >
+                  <strong>{thread.title}</strong>
+                  <span className="when">{formatKiraClockTime(thread.updatedAt, lang)}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </>
+    )
+  }
+
+  function renderKiraPanel() {
+    const routeForLabel = selectAiProviderForTask('generate_node', aiProviders, aiRoutingMode, selectedAiProviderId, undefined)
+    const routedProviderForLabel = routeForLabel.providerId ? aiProviders.find((provider) => provider.id === routeForLabel.providerId) : undefined
+    const providerLabel = routedProviderForLabel?.name ?? t('kira.placeholderNoProvider', lang)
+    return (
+      <div
+        className={kiraPanelMountState.entered ? 'kira-panel is-entered' : 'kira-panel'}
+        style={{ '--kira-panel-width': `${kiraPanelWidth}px` } as React.CSSProperties}
+        aria-label="Kira"
+      >
+        <div className="kp-head">
+          <div className="kp-title">
+            <h3>Kira</h3>
+            <span className="spacer" />
+            <button
+              type="button"
+              className="icon-button sm"
+              aria-label={t('kira.panel.closeButton', lang)}
+              onClick={() => onKiraPanelOpenChange(false)}
+            >
+              <X size={13} />
+            </button>
+          </div>
+          <Segmented
+            className="kp-tabs"
+            ariaLabel="Kira"
+            value={kiraPanelTab}
+            onChange={setKiraPanelTab}
+            options={[
+              { value: 'chat', label: t('kira.panel.tabChat', lang) },
+              {
+                value: 'needs-you',
+                label: (
+                  <>
+                    {t('kira.panel.tabNeedsYou', lang)}
+                    {kiraNeedsYouCount > 0 && <span className="count">{kiraNeedsYouCount}</span>}
+                  </>
+                ),
+              },
+            ]}
+          />
+        </div>
+        <div className="kp-body">
+          {kiraPanelTab === 'chat' ? (
+            <>
+              {renderKiraThreadList()}
+              <KiraChatThreadView
+                key={kiraActiveThread?.id ?? 'draft'}
+                lang={lang}
+                aiPanelState={aiPanelState}
+                threadId={kiraActiveThread?.id ?? 'draft'}
+                providerLabel={providerLabel}
+                onSend={sendKiraChatMessage}
+              />
+            </>
+          ) : (
+            <div className="kp-empty">
+              <Check size={22} />
+              <h4>{t('kira.panel.tabNeedsYou', lang)}</h4>
+              <p>{t('kira.panel.needsYouEmpty', lang)}</p>
+            </div>
+          )}
+        </div>
+        <div
+          className="kira-panel-resize-handle"
+          aria-hidden="true"
+          onPointerDown={(event) => {
+            event.preventDefault()
+            const startX = event.clientX
+            const startWidth = kiraPanelWidth
+            function handleMove(moveEvent: PointerEvent) {
+              setKiraPanelWidth(startWidth - (moveEvent.clientX - startX))
+            }
+            function handleUp() {
+              window.removeEventListener('pointermove', handleMove)
+              window.removeEventListener('pointerup', handleUp)
+            }
+            window.addEventListener('pointermove', handleMove)
+            window.addEventListener('pointerup', handleUp)
+          }}
+        />
+      </div>
+    )
+  }
+
+  function renderKiraPanelDockStatus() {
+    if (isKiraPanelOpen || kiraNeedsYouCount === 0) return null
+    return (
+      <div className="dock-status" role="status">
+        <GitBranch size={13} className="ic" />
+        <span>{t('kira.dock.needsYou', lang, { count: String(kiraNeedsYouCount) })}</span>
+        <button
+          type="button"
+          className="quiet-button sm"
+          onClick={() => {
+            onKiraPanelOpenChange(true)
+            setKiraPanelTab('needs-you')
+          }}
+        >
+          {t('kira.dock.open', lang)}
+        </button>
+      </div>
+    )
+  }
 
   // Every hook above has already run, so bailing out here costs nothing but
   // still unmounts the heavy tree below (GraphCanvas, the WebGL 3D view,
@@ -5803,6 +6390,7 @@ function FileWorkspace({
           '--canvas-left-inset': `${canvasLeftInset}px`,
           '--canvas-overlay-left-inset': `${canvasOverlayLeftInset}px`,
           '--canvas-overlay-shift': `${canvasOverlayShift}px`,
+          '--canvas-right-inset': `${canvasRightInset}px`,
         } as React.CSSProperties}
       >
         <TopBar
@@ -5878,6 +6466,7 @@ function FileWorkspace({
           onToggleCollapsed={() => setIsLibraryCollapsed((current) => !current)}
         />}
         {!isLibraryCollapsed && <div className="library-resize-handle" aria-hidden="true" onPointerDown={startLibraryDrawerResize} />}
+        {kiraPanelMountState.mounted && renderKiraPanel()}
         <div
           className="window-resize-handle window-resize-handle--south-east"
           aria-hidden="true"
@@ -6035,6 +6624,9 @@ function FileWorkspace({
                 onMoveNodeToOtherFile={moveNodeToOtherFile}
                 restorableSessionLabel={restorableSession?.label ?? null}
                 onRestoreSession={restoreLastSession}
+                isKiraPanelOpen={isKiraPanelOpen}
+                kiraDockStatus={renderKiraPanelDockStatus()}
+                onKiraPanelOpenChat={() => setKiraPanelTab('chat')}
               />
             )}
           </div>
@@ -6170,10 +6762,52 @@ function createUntitledFile(id: string, title = 'Untitled', initialSnapshot: Pro
  * FileWorkspace; this component only ever touches the thin OpenFile record.
  */
 function App() {
+  const lang = useLangStore((state) => state.lang)
   const [files, setFiles] = useState<OpenFile[]>(() => [createUntitledFile(DEFAULT_FILE_ID)])
   const [activeFileId, setActiveFileId] = useState<string>(DEFAULT_FILE_ID)
   const [pendingCloseFileId, setPendingCloseFileId] = useState<string | null>(null)
   const [showSplash, setShowSplash] = useState(true)
+  // Lifted here (like `files`/`activeFileId`) because the toggle button
+  // lives in the file-tab-bar row this component builds, while the panel's
+  // own content (threads/messages) stays inside the per-file FileWorkspace —
+  // see docs/design/right-panel/DECISIONS.md #5.
+  const [kiraPanelOpenByFile, setKiraPanelOpenByFile] = useState<Record<string, boolean>>({})
+  const [kiraNeedsYouByFile, setKiraNeedsYouByFile] = useState<Record<string, number>>({})
+  const handleKiraNeedsYouCountChange = useCallback((id: string, count: number) => {
+    setKiraNeedsYouByFile((current) => (current[id] === count ? current : { ...current, [id]: count }))
+  }, [])
+  const handleKiraPanelOpenChange = useCallback((id: string, open: boolean) => {
+    setKiraPanelOpenByFile((current) => (current[id] === open ? current : { ...current, [id]: open }))
+  }, [])
+  // A NEW inline closure per render — `(open) =>
+  // handleKiraPanelOpenChange(file.id, open)` inside the .map() below — would
+  // change identity every App() render even though handleKiraPanelOpenChange
+  // itself is stable. This bit FileWorkspace's narrow-window coordination
+  // effect once already (that effect no longer depends on this callback,
+  // consolidated to fix a real cross-effect race — see the isNarrowWindow
+  // effect below), but the pattern is still worth avoiding generally: a
+  // churning prop identity is what tripped React's "Maximum update depth
+  // exceeded" during the settling burst caught live testing at a sub-1180px
+  // width. Memoizing one closure per fileId, reused across renders, is what
+  // actually stops that churn — the bail-out above only bounds it.
+  const kiraPanelOpenChangeByFileRef = useRef(new Map<string, (open: boolean) => void>())
+  const kiraNeedsYouCountChangeByFileRef = useRef(new Map<string, (count: number) => void>())
+  function getKiraPanelOpenChangeHandler(id: string) {
+    let handler = kiraPanelOpenChangeByFileRef.current.get(id)
+    if (!handler) {
+      handler = (open: boolean) => handleKiraPanelOpenChange(id, open)
+      kiraPanelOpenChangeByFileRef.current.set(id, handler)
+    }
+    return handler
+  }
+  function getKiraNeedsYouCountChangeHandler(id: string) {
+    let handler = kiraNeedsYouCountChangeByFileRef.current.get(id)
+    if (!handler) {
+      handler = (count: number) => handleKiraNeedsYouCountChange(id, count)
+      kiraNeedsYouCountChangeByFileRef.current.set(id, handler)
+    }
+    return handler
+  }
 
   useEffect(() => {
     const timer = window.setTimeout(() => setShowSplash(false), 1050)
@@ -6331,11 +6965,17 @@ function App() {
       if (event.metaKey && event.shiftKey && !event.ctrlKey && !event.altKey && (event.key === ']' || event.key === '[')) {
         event.preventDefault()
         cycleActiveFile(event.key === ']' ? 1 : -1)
+        return
+      }
+      // mockup.js tabBar() tooltip promises ⌥⌘K ("Panel Kira (⌥⌘K)").
+      if (event.metaKey && event.altKey && !event.ctrlKey && key === 'k') {
+        event.preventDefault()
+        handleKiraPanelOpenChange(activeFileId, !(kiraPanelOpenByFile[activeFileId] ?? false))
       }
     }
     window.addEventListener('keydown', handleTabBarKeydown)
     return () => window.removeEventListener('keydown', handleTabBarKeydown)
-  }, [activeFileId, files])
+  }, [activeFileId, files, kiraPanelOpenByFile, handleKiraPanelOpenChange])
 
   const tabBar = (
     <nav
@@ -6413,6 +7053,22 @@ function App() {
       <button type="button" className="file-tab-add" aria-label="New file" title="New file" onClick={() => void requestNewFile()}>
         <Plus size={13} />
       </button>
+      <button
+        type="button"
+        className={kiraPanelOpenByFile[activeFileId] ? 'panel-toggle is-active' : 'panel-toggle'}
+        aria-pressed={kiraPanelOpenByFile[activeFileId] ?? false}
+        aria-label={
+          kiraPanelOpenByFile[activeFileId]
+            ? t('kira.panel.close', lang)
+            : t('kira.panel.open', lang)
+        }
+        title="Kira panel (⌥⌘K)"
+        onClick={() => handleKiraPanelOpenChange(activeFileId, !(kiraPanelOpenByFile[activeFileId] ?? false))}
+      >
+        <PanelRight size={13} />
+        <span>Kira</span>
+        {(kiraNeedsYouByFile[activeFileId] ?? 0) > 0 && <span className="count">{kiraNeedsYouByFile[activeFileId]}</span>}
+      </button>
     </nav>
   )
 
@@ -6440,6 +7096,9 @@ function App() {
           onTransferNodeToFile={handleTransferNodeToFile}
           incomingTransfers={pendingTransfersByFile[file.id] ?? EMPTY_NODE_TRANSFERS}
           onTransfersConsumed={() => handleTransfersConsumed(file.id)}
+          isKiraPanelOpen={kiraPanelOpenByFile[file.id] ?? false}
+          onKiraPanelOpenChange={getKiraPanelOpenChangeHandler(file.id)}
+          onKiraNeedsYouCountChange={getKiraNeedsYouCountChangeHandler(file.id)}
         />
       ))}
       {pendingCloseFile && (
@@ -8625,6 +9284,9 @@ function GraphCanvas({
   onMoveNodeToOtherFile,
   restorableSessionLabel,
   onRestoreSession,
+  isKiraPanelOpen,
+  kiraDockStatus,
+  onKiraPanelOpenChat,
 }: {
   ideas: Idea[]
   images: EvidenceImage[]
@@ -8715,6 +9377,14 @@ function GraphCanvas({
   onMoveNodeToOtherFile: (node: CanvasNodeSelection, targetFileId: string) => void
   restorableSessionLabel: string | null
   onRestoreSession: () => void
+  // Kira right panel (docs/design/right-panel/DECISIONS.md #4): the new
+  // panel's open state and dock-status pill live in FileWorkspace (they're
+  // per-project data, not canvas data), passed in here only because the old
+  // one-shot composer and the dock's `.kira-dock-cluster` slot both live in
+  // this component.
+  isKiraPanelOpen: boolean
+  kiraDockStatus: React.ReactNode
+  onKiraPanelOpenChat: () => void
 }) {
   const canvasRef = useRef<HTMLDivElement>(null)
   const draggingNodeRef = useRef<{
@@ -8931,6 +9601,13 @@ function GraphCanvas({
     shouldRestoreOrbFocusRef.current = false
     kiraOrbRef.current?.focus()
   }, [isKiraOpen])
+
+  // DECISIONS.md #4: "when the panel is open, the input lives in the panel;
+  // the dock only keeps the button" — the old one-shot composer (KiraSession)
+  // and the new panel's Chat composer must never both be reachable at once.
+  useEffect(() => {
+    if (isKiraPanelOpen && kiraSession) closeKiraSession()
+  }, [isKiraPanelOpen, kiraSession, closeKiraSession])
 
   // 25MB per file — attachments aren't sent anywhere today (see the note on
   // KiraAttachment), just held as object URLs for the chip preview, but an
@@ -10188,7 +10865,17 @@ function GraphCanvas({
             aria-expanded={false}
             data-tooltip="Kira"
             tabIndex={0}
-            onClick={() => (kiraSession ? closeKiraSession() : openKiraFromRail())}
+            onClick={() => {
+              // DECISIONS.md #4/#7: while the new panel is open, the dock's
+              // only job is routing to its composer — never the retired
+              // one-shot composer below.
+              if (isKiraPanelOpen) {
+                onKiraPanelOpenChat()
+                return
+              }
+              if (kiraSession) closeKiraSession()
+              else openKiraFromRail()
+            }}
           >
             <KiraMark size={18} state={isThinking ? 'thinking' : 'rest'} />
           </button>
@@ -10631,8 +11318,11 @@ function GraphCanvas({
           </div>
         </div>
 
-        <div className="kira-launcher-wrap">
-          {renderKiraDock()}
+        <div className="kira-dock-cluster">
+          {kiraDockStatus}
+          <div className="kira-launcher-wrap">
+            {renderKiraDock()}
+          </div>
         </div>
 
         <div className="canvas-zoom-rail" aria-label="Canvas zoom">
@@ -17073,6 +17763,7 @@ function toProjectSnapshot(
   appearance: ProjectAppearance = defaultProjectAppearance(),
   slidesConfig: SlidesConfig = defaultSlidesConfig(),
   frames: FrameNode[] = [],
+  aiPanel: ReturnType<typeof aiPanelToSnapshot> = aiPanelToSnapshot(createEmptyAiPanelState()),
 ): ProjectSnapshot {
   return {
     version: 2,
@@ -17091,6 +17782,7 @@ function toProjectSnapshot(
     links,
     outlineDrafts,
     slidesConfig,
+    aiPanel,
   }
 }
 
@@ -17527,6 +18219,9 @@ function isProjectSnapshot(value: unknown): value is ProjectSnapshot {
   snapshot.versionState = normalizeVersionState(snapshot.versionState, snapshot.versionHistory)
   snapshot.nodeVersions = normalizeNodeVersions(snapshot.nodeVersions ?? [])
   snapshot.slidesConfig = normalizeSlidesConfig(snapshot.slidesConfig)
+  // fromSnapshot never throws, even on a project saved before this field
+  // existed (undefined) or with malformed data — see kira/README.md §6.
+  snapshot.aiPanel = aiPanelToSnapshot(aiPanelFromSnapshot(snapshot.aiPanel))
   snapshot.ideas = snapshot.ideas!.map(normalizeIdea)
   snapshot.images = snapshot.images!.map((raw) => normalizeNodeContent(raw))
   snapshot.palettes = snapshot.palettes!.map((raw) => normalizeNodeContent(raw))
