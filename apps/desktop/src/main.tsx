@@ -4167,7 +4167,14 @@ function FileWorkspace({
       // (kira/README.md §3; removeAppliedNode reads editedByUserAfterApply
       // on the item, a different fact from the provenance record the first
       // two update).
-      if (patch.content !== undefined) {
+      // NodeRichEditor fires onChange once on mount with the node's own
+      // existing content (Tiptap normalizing markdown in/out) — guard on an
+      // actual content change, not just the key being present, or every
+      // freshly created AI node would show "AI, đã sửa" before anyone
+      // touched it (caught live testing with a temporary fake-provider
+      // scaffold, since browser preview has no Tauri runtime to call a
+      // real one through).
+      if (patch.content !== undefined && patch.content !== before.content) {
         setAiPanelState((current) => aiPanelMarkCreateNodeItemEdited(
           aiPanelMarkStaleOnUserEdit(
             aiPanelMarkNodeEditedAfterGeneration(current, 'idea', ideaId),
@@ -6859,7 +6866,9 @@ function FileWorkspace({
             </button>
           </div>
         )}
-        {mainItems.length > 0 && <p className="cs-rule">{t('kira.change.bulkRule', lang)}</p>}
+        {mainItems.some((item) => item.kind === 'edit-text' || item.kind === 'edit-palette') && (
+          <p className="cs-rule">{t('kira.change.bulkRule', lang)}</p>
+        )}
         {mainItems.length > 0 && <ul className="list">{mainItems.map((item) => renderChangeItem(changeSet, item))}</ul>}
         {deleteItems.length > 0 && (
           <>
