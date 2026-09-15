@@ -9196,6 +9196,47 @@ textarea {
   line-height: 1.5;
 }
 
+/* Empty-state action. The panel's escape hatch when no AI provider is
+   connected, so it has to be a real control, not the 11px status text it
+   replaced. Secondary (paper sheet), not primary: connecting a model is the
+   only thing the blocked panel can do, but it is still a detour into
+   Settings, not this panel's committing action (DESIGN.md §7, One Primary
+   Rule; kira-controls §3). Compact, like every other control in a panel. */
+.kp-empty-action {
+  margin-top: 8px;
+}
+
+/* Example prompts, shown only when a model IS connected. Quiet tier, left
+   aligned and allowed to wrap: they are a row of suggestions, not a stack of
+   competing buttons. */
+.kp-empty-examples {
+  display: grid;
+  width: 100%;
+  max-width: 260px;
+  margin-top: 10px;
+  gap: 4px;
+  justify-items: stretch;
+}
+
+.kp-empty-examples-label {
+  color: var(--text-muted);
+  font-size: var(--text-small);
+  text-align: left;
+}
+
+.kp-empty-example {
+  height: auto;
+  min-height: var(--control-h-sm);
+  justify-content: flex-start;
+  padding-block: 5px;
+  text-align: left;
+  white-space: normal;
+}
+
+.kp-empty-example > svg {
+  flex: none;
+}
+
 /* Thread list — hairline rows, no wrapping card (DESIGN.md §5 Space-and-
    Line-First and No-Nested-Card Rules; layout-spec.md §9 flagged the mockup's
    boxed .list for this exact fix). Selected state is the same left-edge ink
@@ -9465,6 +9506,18 @@ textarea {
   margin-top: 6px;
   color: var(--text-muted);
   font-size: var(--text-small);
+}
+
+/* No model connected: the row stops being a right-aligned provider label and
+   becomes a status plus a real way out. */
+.composer-meta.is-blocked {
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.composer-meta.is-blocked > span {
+  color: var(--text-soft);
 }
 
 /* ================= "Cần bạn" tab (docs/design/right-panel, mockup.js
