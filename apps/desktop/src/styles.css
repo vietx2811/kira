@@ -4,17 +4,16 @@
    `outline: none` with nothing to replace it, which today have no visible
    focus state at all.
 
-   A transparent outline, not `outline: none` — forced-colors mode strips
-   box-shadow entirely (and this box-shadow can also disappear behind
-   overflow clipping, e.g. .kira-dock or a scrolled image grid), so a
-   shadow-only ring can be invisible outright. A transparent outline renders
-   nothing in normal color modes (the box-shadow is what's seen), but the
-   browser substitutes the system high-contrast color for `transparent` in
-   forced-colors mode, so a real focus indicator survives there too. */
+   A real outline, not a box-shadow ring: the previous 3px accent-at-38%
+   ring measured 2.37:1 against surrounding surfaces, under the 3:1 floor
+   for non-text UI (art-direction round 2, §C). A solid 2px outline reads
+   at 3.3-8.2:1 across every preset and mode measured there. It also
+   participates in forced-colors mode on its own (the browser substitutes
+   the system high-contrast color for any declared outline color), so the
+   old transparent-outline-plus-shadow fallback is no longer needed. */
 :focus-visible {
-  outline: 2px solid transparent;
+  outline: 2px solid var(--accent-cyan);
   outline-offset: 2px;
-  box-shadow: var(--focus-ring);
 }
 
 :root {
@@ -42,6 +41,29 @@
   --material-drawer: var(--surface-drawer);
   --material-inspector: var(--surface-inspector);
   --scrim: rgb(0 0 0 / 0.62);
+  /* Static dark fallback only — content outside .app-shell never renders a
+     button, but every other themed token here carries one, so this follows
+     suit. .app-shell[data-color-mode] carries the real per-mode values. */
+  --control-primary: #f4f1ea;
+  --control-primary-hover: #fffdf7;
+  --control-primary-pressed: #dcd8cf;
+  --control-on-primary: #0f1517;
+  --control-sheet: #1c2426;
+  --control-sheet-hover: #222b2d;
+  --control-sheet-pressed: #141b1d;
+  --control-sheet-edge: rgb(255 255 255 / 0.075);
+  --control-paper-edge: rgb(35 33 29 / 0.25);
+  --control-lift-near: rgb(0 0 0 / 0.5);
+  --control-lift-far: rgb(0 0 0 / 0.55);
+  --control-lift-far-hover: rgb(0 0 0 / 0.62);
+  --control-patch: rgb(255 255 255 / 0.065);
+  --control-patch-pressed: rgb(255 255 255 / 0.035);
+  --control-disabled-edge: rgb(255 255 255 / 0.14);
+  /* Deliberately not --danger: DESIGN.md §3 keeps this fixed and lifted for
+     legibility on the paper sheet, separate from the accent-floored --danger
+     used elsewhere (tag-status, provider errors). */
+  --control-danger-text: #e59587;
+  --control-danger-edge: rgb(217 135 121 / 0.38);
   --glass-sidebar: var(--bg-base);
   --glass-drawer: var(--material-drawer);
   --glass-chrome: var(--surface-2);
@@ -138,7 +160,11 @@
   --duration-base: 160ms;
   --duration-panel: 200ms;
   --duration-slow: 420ms;
-  --focus-ring: 0 0 0 3px color-mix(in srgb, var(--accent-cyan), transparent 62%);
+  /* Box-shadow substitute for the 2 controls that can't take a real outline
+     (the focused element is visually hidden — see .reference-check and
+     .mini-tag-chip below). Solid, not tinted, for the same contrast reason
+     as the :focus-visible outline above. */
+  --focus-ring: 0 0 0 2px var(--accent-cyan);
   --shadow-soft: 0 20px 70px rgb(0 0 0 / 0.28);
   --shell-shadow: inset 0 1px 0 rgb(255 255 255 / 0.08);
   --panel-shadow: 0 20px 70px rgb(0 0 0 / 0.28);
@@ -342,7 +368,7 @@ button {
   --material-drawer: var(--surface-drawer);
   --material-inspector: var(--surface-inspector);
   --glass-chrome: var(--surface-2);
-  --focus-ring: 0 0 0 3px color-mix(in srgb, var(--accent-cyan), transparent 62%);
+  --focus-ring: 0 0 0 2px var(--accent-cyan);
   /* :root sets the scrollbar pair from static values; scrollbar-color inherits,
      so restating it here themes every scroll container inside the shell. */
   scrollbar-color: color-mix(in srgb, var(--text-main) 14%, transparent) transparent;
@@ -351,12 +377,54 @@ button {
   color: var(--text-main);
 }
 
+/* Ink & Paper material tokens (art-direction round 2, §B.2): primary is ink
+   (background inverted from the reading surface), secondary/danger are a
+   lifted sheet of paper. Fixed neutrals, not derived from the project's
+   accent — accent stays reserved for canvas selection and focus, per the
+   round-2 recommendation. Declared per data-color-mode rather than computed
+   in buildProjectAppearanceStyle(): every value here is dark/light-only, not
+   accent-dependent, so plain CSS keyed on the attribute the app already sets
+   is simpler than adding an unused accent parameter to the JS builder. */
 .app-shell[data-color-mode="light"] {
   color-scheme: light;
+  --control-primary: #23211d;
+  --control-primary-hover: #35322c;
+  --control-primary-pressed: #12110f;
+  --control-on-primary: #f7f5f0;
+  --control-sheet: #fbfaf7;
+  --control-sheet-hover: #ffffff;
+  --control-sheet-pressed: #eceae4;
+  --control-sheet-edge: rgb(35 33 29 / 0.13);
+  --control-paper-edge: rgb(255 255 255 / 0.12);
+  --control-lift-near: rgb(35 33 29 / 0.1);
+  --control-lift-far: rgb(35 33 29 / 0.24);
+  --control-lift-far-hover: rgb(35 33 29 / 0.3);
+  --control-patch: rgb(35 33 29 / 0.065);
+  --control-patch-pressed: rgb(35 33 29 / 0.1);
+  --control-disabled-edge: rgb(35 33 29 / 0.2);
+  --control-danger-text: #8a4035;
+  --control-danger-edge: rgb(138 64 53 / 0.4);
 }
 
 .app-shell[data-color-mode="dark"] {
   color-scheme: dark;
+  --control-primary: #f4f1ea;
+  --control-primary-hover: #fffdf7;
+  --control-primary-pressed: #dcd8cf;
+  --control-on-primary: #0f1517;
+  --control-sheet: #1c2426;
+  --control-sheet-hover: #222b2d;
+  --control-sheet-pressed: #141b1d;
+  --control-sheet-edge: rgb(255 255 255 / 0.075);
+  --control-paper-edge: rgb(35 33 29 / 0.25);
+  --control-lift-near: rgb(0 0 0 / 0.5);
+  --control-lift-far: rgb(0 0 0 / 0.55);
+  --control-lift-far-hover: rgb(0 0 0 / 0.62);
+  --control-patch: rgb(255 255 255 / 0.065);
+  --control-patch-pressed: rgb(255 255 255 / 0.035);
+  --control-disabled-edge: rgb(255 255 255 / 0.14);
+  --control-danger-text: #e59587;
+  --control-danger-edge: rgb(217 135 121 / 0.38);
 }
 
 /* A tab is a file (board), never a view — Canvas/3D/Slides/Outline are just
@@ -619,6 +687,8 @@ button {
 .section-heading,
 .quiet-button,
 .primary-button,
+.secondary-button,
+.danger-button,
 .icon-button,
 .tag-chip,
 .suggestion-chips button {
@@ -748,59 +818,179 @@ button {
 
 .icon-button,
 .quiet-button,
-.primary-button {
+.primary-button,
+.secondary-button,
+.danger-button {
   height: 32px;
-  border-radius: var(--radius-2);
+  border-radius: var(--radius-3);
   cursor: pointer;
   /* These declared no size at all and silently inherited the 14px root, which
      is not a step on the scale. Button labels are body copy. */
   font-size: var(--text-body);
+  /* 560, not the 400 body weight or 680 heading weight: control labels read
+     as neither (art-direction round 2, §E). */
+  font-weight: 560;
   transition:
-    background 160ms ease,
-    border-color 160ms ease,
-    color 160ms ease,
-    transform 160ms ease;
+    background var(--duration-fast) ease,
+    box-shadow var(--duration-fast) ease,
+    border-color var(--duration-fast) ease,
+    color var(--duration-fast) ease,
+    transform var(--duration-fast) var(--ease-out-soft);
+}
+
+.icon-button,
+.quiet-button,
+.primary-button,
+.secondary-button,
+.danger-button {
+  border: 1px solid transparent;
+}
+
+.icon-button.sm,
+.quiet-button.sm,
+.primary-button.sm,
+.secondary-button.sm,
+.danger-button.sm {
+  height: var(--control-h-sm);
+  padding: 0 9px;
+  gap: 4px;
+  border-radius: var(--radius-2);
+  font-size: var(--text-small);
 }
 
 .icon-button {
   justify-content: center;
   width: 32px;
-  border: 0;
   background: transparent;
   color: var(--text-soft);
 }
 
-.icon-button.is-active {
-  background: var(--accent-weak);
-  color: var(--accent-strong);
+.icon-button.sm {
+  width: var(--control-h-sm);
+  padding: 0;
+}
+
+/* Selected quiet/icon control (art-direction round 2, §B.2): an ink
+   underline, not an accent tint — accent stays reserved for canvas
+   selection and focus. Shared by .node-details-actionbar button.is-active
+   below, which repeats this treatment at its own smaller radius. */
+.icon-button.is-active,
+.quiet-button.is-active {
+  background: transparent;
+  color: var(--text-main);
+  box-shadow: inset 0 -2px 0 var(--text-main);
+  border-radius: var(--radius-3) var(--radius-3) 2px 2px;
+}
+
+.icon-button.sm.is-active,
+.quiet-button.sm.is-active {
+  border-radius: var(--radius-2) var(--radius-2) 2px 2px;
 }
 
 .quiet-button,
-.primary-button {
+.primary-button,
+.secondary-button,
+.danger-button {
   padding: 0 var(--space-3);
   gap: var(--space-2);
 }
 
 .quiet-button {
-  border: 0;
-  background: rgb(255 255 255 / 0.035);
+  background: transparent;
   color: var(--text-soft);
 }
 
+/* Primary: ink, not accent — a paper-white block in dark mode with near-
+   black text, inverted in light mode. The one control in the app that
+   inverts brightness rather than tinting, so it can never be mistaken for
+   "currently selected" (art-direction round 2, §B.2, §F). */
 .primary-button {
-  border: 1px solid color-mix(in srgb, var(--accent-cyan), transparent 62%);
-  /* DESIGN.md: accent-tinted background with accent text, not a solid fill.
-     --accent-on-glass-active is the floored, readable-on-top-of-glass-active
-     version of --accent-strong (same pattern as .tag-chip, .settings-nav-item
-     .is-active) so this holds contrast on every preset in both modes. */
-  background: var(--glass-active);
-  color: var(--accent-on-glass-active); font-weight: 500;
+  background: var(--control-primary);
+  color: var(--control-on-primary);
+  box-shadow:
+    inset 0 -1px 0 var(--control-paper-edge),
+    0 1px 0 var(--control-lift-near),
+    0 4px 10px -3px var(--control-lift-far);
+}
+
+.primary-button:hover {
+  background: var(--control-primary-hover);
+  transform: translateY(-1px);
+  box-shadow:
+    inset 0 -1px 0 var(--control-paper-edge),
+    0 2px 0 var(--control-lift-near),
+    0 9px 16px -5px var(--control-lift-far-hover);
+}
+
+.primary-button:active {
+  background: var(--control-primary-pressed);
+  transform: translateY(0.5px);
+  box-shadow: none;
+}
+
+.primary-button:disabled {
+  transform: none;
+  background: transparent;
+  border-style: dashed;
+  border-color: var(--control-disabled-edge);
+  color: var(--text-muted);
+  box-shadow: none;
+  cursor: default;
 }
 
 .primary-button.is-wide {
   width: calc(100% - 32px);
   justify-content: center;
   margin: var(--space-2) var(--space-4) 0;
+}
+
+/* Secondary: a sheet of paper — the alternative committing action next to
+   primary (or next to danger, in a confirm dialog), one step down in
+   emphasis from ink but still a real button, not "just text" like quiet. */
+.secondary-button {
+  border-color: var(--control-sheet-edge);
+  background: var(--control-sheet);
+  color: var(--text-main);
+  box-shadow: 0 1px 0 var(--control-lift-near), 0 3px 8px -2px var(--control-lift-far);
+}
+
+.secondary-button:hover {
+  background: var(--control-sheet-hover);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 0 var(--control-lift-near), 0 8px 14px -4px var(--control-lift-far-hover);
+}
+
+.secondary-button:active {
+  background: var(--control-sheet-pressed);
+  transform: translateY(0.5px);
+  box-shadow: none;
+}
+
+.secondary-button.is-active {
+  background: var(--control-sheet);
+  box-shadow: inset 0 0 0 1.5px var(--text-main);
+  border-color: transparent;
+}
+
+.secondary-button:disabled {
+  transform: none;
+  background: transparent;
+  border-style: dashed;
+  border-color: var(--control-disabled-edge);
+  color: var(--text-muted);
+  box-shadow: none;
+  cursor: default;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .icon-button,
+  .quiet-button,
+  .primary-button,
+  .secondary-button,
+  .danger-button,
+  .danger-inline-button {
+    transition: none;
+  }
 }
 
 .file-input {
@@ -965,19 +1155,32 @@ button {
   opacity: 0.32;
 }
 
+/* Quiet/icon hover and pressed: a neutral patch of paper, not an accent
+   invert — accent stays reserved for canvas selection and focus
+   (art-direction round 2, §B.2). is-active (ink underline, defined above
+   next to .primary-button) wins over these on specificity ties since it
+   comes later in the cascade only for the selected element's own state;
+   hover and is-active are mutually exclusive in practice (a selected tool
+   is rarely also the hover target across renders), but is-active is kept
+   authoritative by not being touched here. */
 .icon-button:hover,
 .quiet-button:hover {
-  background: var(--accent-strong);
-  color: var(--bg-base);
+  background: var(--control-patch);
+  color: var(--text-main);
 }
 
-/* Split from icon/quiet-button's hover: those invert to a solid fill from a
-   transparent default, but .primary-button already starts on --glass-active,
-   so hover only needs to intensify the tint, not flip to solid + inverted
-   text. */
-.primary-button:hover {
-  background: var(--accent-weak);
-  color: var(--accent-on-glass-active);
+.icon-button:active,
+.quiet-button:active {
+  background: var(--control-patch-pressed);
+  color: var(--text-main);
+}
+
+.icon-button:disabled,
+.quiet-button:disabled {
+  background: transparent;
+  color: var(--text-muted);
+  box-shadow: none;
+  cursor: default;
 }
 
 .workspace {
@@ -3793,14 +3996,20 @@ button.mini-tags-more:focus-visible {
   margin-left: 2px;
 }
 
+/* Was missing the reset every other button class gets, so these fell back to
+   UA button chrome — a grey ButtonFace fill on macOS/dark (art-direction
+   round 2, C.1). Same treatment as .icon-button, at this bar's own 26px. */
 .node-details-actionbar button,
 .node-details-actionbar .file-action {
   display: grid;
   place-items: center;
   width: 26px;
   height: 26px;
+  border: 0;
   border-radius: var(--radius-1);
+  background: transparent;
   color: var(--text-soft);
+  cursor: pointer;
 }
 
 .node-details-actionbar button:hover,
@@ -3809,9 +4018,19 @@ button.mini-tags-more:focus-visible {
   color: var(--text-main);
 }
 
+.node-details-actionbar button:disabled,
+.node-details-actionbar .file-action:disabled {
+  background: transparent;
+  color: var(--text-muted);
+  cursor: default;
+}
+
+/* Same ink underline as .icon-button.is-active, not the accent tint this
+   used before. */
 .node-details-actionbar button.is-active {
-  background: var(--glass-active);
-  color: var(--accent-cyan);
+  background: transparent;
+  color: var(--text-main);
+  box-shadow: inset 0 -2px 0 var(--text-main);
 }
 
 .reorderable-blocks {
@@ -5472,8 +5691,17 @@ button.mini-tags-more:focus-visible {
   border-top: 0;
 }
 
+/* Ink, not teal: The Ink Primary Rule (DESIGN.md §3) narrows accent to
+   canvas selection, focus and status text — a selected row shows it with
+   the same left-edge ink mark as a selected secondary button's 1.5px
+   outline, not a background tint. layout-spec.md line ~49. */
 .provider-list-row[aria-pressed="true"] {
-  background: var(--glass-active);
+  background: transparent;
+  box-shadow: inset 3px 0 0 0 var(--text-main);
+}
+
+.provider-list-row[aria-pressed="true"] strong {
+  font-weight: 680;
 }
 
 .provider-list-row[aria-pressed="true"] em,
@@ -5657,24 +5885,47 @@ button.mini-tags-more:focus-visible {
   gap: 6px;
 }
 
+/* Compact danger, same sheet-of-paper construction as .danger-button at its
+   own smaller size (28px / radius-1), for inline use next to provider rows. */
 .danger-inline-button {
   min-height: 28px;
-  /* The 1px transparent border is paid out of the padding so the hover
-     border below does not widen the button or shift its row. */
-  padding: 0 calc(var(--space-2) - 1px);
-  border: 1px solid transparent;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--control-danger-edge);
   border-radius: var(--radius-1);
-  /* 10%, not 14%: at 14% the light-mode danger text measured 4.49:1. */
-  background: color-mix(in srgb, var(--danger) 10%, transparent);
-  color: var(--danger);
+  background: var(--control-sheet);
+  color: var(--control-danger-text);
   cursor: pointer;
   font-size: var(--text-small);
+  font-weight: 560;
+  box-shadow: 0 1px 0 var(--control-lift-near), 0 3px 8px -2px var(--control-lift-far);
+  transition:
+    background var(--duration-fast) ease,
+    box-shadow var(--duration-fast) ease,
+    border-color var(--duration-fast) ease,
+    color var(--duration-fast) ease,
+    transform var(--duration-fast) var(--ease-out-soft);
 }
 
-/* Same cue as .danger-button:hover: a tint bump would lower light-mode
-   contrast, so fill and text stay at the base ratio and the border shows. */
 .danger-inline-button:hover {
-  border-color: color-mix(in srgb, var(--danger) 45%, transparent);
+  background: var(--control-sheet-hover);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 0 var(--control-lift-near), 0 8px 14px -4px var(--control-lift-far-hover);
+}
+
+.danger-inline-button:active {
+  background: var(--control-sheet-pressed);
+  transform: translateY(0.5px);
+  box-shadow: none;
+}
+
+.danger-inline-button:disabled {
+  transform: none;
+  background: transparent;
+  border-style: dashed;
+  border-color: var(--control-disabled-edge);
+  color: var(--text-muted);
+  box-shadow: none;
+  cursor: default;
 }
 
 .provider-task-groups {
@@ -7787,26 +8038,36 @@ textarea {
   font-size: var(--text-small);
 }
 
+/* Danger shares secondary's sheet-of-paper construction (background, lift
+   shadow, hover/pressed motion — set on the shared selector list above),
+   overriding only the border tint and text color to red. */
 .danger-button {
-  display: inline-flex;
-  align-items: center;
-  height: 32px;
-  padding: 0 var(--space-3);
-  border: 1px solid transparent;
-  border-radius: var(--radius-2);
-  /* 10%, not 14%: at 14% the light-mode danger text measured 4.49:1. */
-  background: color-mix(in srgb, var(--danger) 10%, transparent);
-  color: var(--danger);
-  cursor: pointer;
+  border-color: var(--control-danger-edge);
+  background: var(--control-sheet);
+  color: var(--control-danger-text);
+  box-shadow: 0 1px 0 var(--control-lift-near), 0 3px 8px -2px var(--control-lift-far);
 }
 
-/* A tint bump here (the old 16%) pulls the light-mode fill toward --danger's
-   own dark text color and LOWERS contrast as it climbs (4.68 at 10% down to
-   4.27 at 16%), the opposite of what a hover state should do. Fill and text
-   stay exactly at the base ratio; the border is the hover cue instead. */
 .danger-button:hover {
-  border-color: color-mix(in srgb, var(--danger) 45%, transparent);
-  color: var(--danger);
+  background: var(--control-sheet-hover);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 0 var(--control-lift-near), 0 8px 14px -4px var(--control-lift-far-hover);
+}
+
+.danger-button:active {
+  background: var(--control-sheet-pressed);
+  transform: translateY(0.5px);
+  box-shadow: none;
+}
+
+.danger-button:disabled {
+  transform: none;
+  background: transparent;
+  border-style: dashed;
+  border-color: var(--control-disabled-edge);
+  color: var(--text-muted);
+  box-shadow: none;
+  cursor: default;
 }
 
 @media (width <= 1200px) {
