@@ -11,14 +11,17 @@ import {
   acceptItem,
   bulkAcceptable,
   createEmptyAiPanelState,
+  dismissSkillCheckpoint,
   fromSnapshot,
   markCreateNodeItemEdited,
   markStaleOnUserEdit,
   needsYouCount,
   rejectItem,
   removeAppliedNode,
+  revertAcceptedItem,
   threadsForNode,
   toSnapshot,
+  visibleCheckpoints,
 } from './aiPanelModel'
 import type {
   AiChangeSet,
@@ -354,6 +357,116 @@ describe('markCreateNodeItemEdited', () => {
     expect(result.ok).toBe(false)
     if (result.ok) throw new Error('unreachable')
     expect(result.reason).toBe('needs-force')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// revertAcceptedItem — P1 fix: Cmd+Z after accepting an AI proposal was
+// leaving the "Cần bạn" item stuck on "Accepted" with no action row.
+// ---------------------------------------------------------------------------
+
+describe('revertAcceptedItem', () => {
+  test('reverts an accepted edit-text item back to stale, not pending', () => {
+    const state: AiPanelState = { ...createEmptyAiPanelState(), changeSets: [{ ...branchesChangeSet(), items: [textItem('accepted')] }] }
+    const result = revertAcceptedItem(state, 'cs-branches', 'item-text-edit')
+    expect(result.ok).toBe(true)
+    if (!result.ok) throw new Error('unreachable')
+    const item = result.state.changeSets[0]?.items[0] as AiEditTextItem
+    expect(item.status).toBe('stale')
+    // Pure status change — the canvas side was already restored by the
+    // caller's own undo, so no operations are returned here.
+    expect(result.operations).toEqual([])
+  })
+
+  test('reverts an accepted edit-palette item back to stale', () => {
+    const state: AiPanelState = { ...createEmptyAiPanelState(), changeSets: [{ ...branchesChangeSet(), items: [paletteItem('accepted')] }] }
+    const result = revertAcceptedItem(state, 'cs-branches', 'item-palette-edit')
+    expect(result.ok).toBe(true)
+    if (!result.ok) throw new Error('unreachable')
+    expect((result.state.changeSets[0]?.items[0] as AiEditPaletteItem).status).toBe('stale')
+  })
+
+  test('reverts an accepted delete-node item back to pending, not stale (no stale in DeleteItemStatus)', () => {
+    const state: AiPanelState = {
+      ...createEmptyAiPanelState(),
+      changeSets: [{ ...branchesChangeSet(), items: [{ ...deleteItem(), status: 'accepted' }] }],
+    }
+    const result = revertAcceptedItem(state, 'cs-branches', 'item-delete')
+    expect(result.ok).toBe(true)
+    if (!result.ok) throw new Error('unreachable')
+    expect((result.state.changeSets[0]?.items[0] as AiDeleteNodeItem).status).toBe('pending')
+  })
+
+  test('reverting a stale item brings it back into needsYouCount (undo actually un-orphans it)', () => {
+    const state: AiPanelState = { ...createEmptyAiPanelState(), changeSets: [{ ...branchesChangeSet(), items: [textItem('accepted')] }] }
+    expect(needsYouCount(state)).toBe(0)
+    const result = revertAcceptedItem(state, 'cs-branches', 'item-text-edit')
+    if (!result.ok) throw new Error('unreachable')
+    expect(needsYouCount(result.state)).toBe(1)
+  })
+
+  test('refuses a create-node item (acceptItem never mutates those; use removeAppliedNode)', () => {
+    const state: AiPanelState = { ...createEmptyAiPanelState(), changeSets: [branchesChangeSet()] }
+    const result = revertAcceptedItem(state, 'cs-branches', 'item-applied-plain')
+    expect(result.ok).toBe(false)
+  })
+
+  test('refuses an item that is not currently accepted', () => {
+    const state: AiPanelState = { ...createEmptyAiPanelState(), changeSets: [branchesChangeSet()] }
+    const result = revertAcceptedItem(state, 'cs-branches', 'item-text-edit') // pending, not accepted
+    expect(result.ok).toBe(false)
+    if (result.ok) throw new Error('unreachable')
+    expect(result.reason).toBe('not-accepted:pending')
+  })
+
+  test('refuses an unknown item id', () => {
+    const state: AiPanelState = { ...createEmptyAiPanelState(), changeSets: [branchesChangeSet()] }
+    const result = revertAcceptedItem(state, 'cs-branches', 'item-does-not-exist')
+    expect(result.ok).toBe(false)
+    if (result.ok) throw new Error('unreachable')
+    expect(result.reason).toBe('not-found')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// visibleCheckpoints / dismissSkillCheckpoint — P1 fix: needsYouCount folded
+// waiting skill checkpoints into the badge total, but nothing rendered them
+// in the "Cần bạn" tab.
+// ---------------------------------------------------------------------------
+
+describe('visibleCheckpoints', () => {
+  test('returns only waiting checkpoints, oldest first', () => {
+    const older: AiSkillCheckpoint = { ...skillCheckpoint('waiting'), id: 'checkpoint-older', createdAt: '2026-09-14T10:00:00.000Z' }
+    const newer: AiSkillCheckpoint = { ...skillCheckpoint('waiting'), id: 'checkpoint-newer', createdAt: '2026-09-14T15:00:00.000Z' }
+    const resolved: AiSkillCheckpoint = { ...skillCheckpoint('resolved'), id: 'checkpoint-resolved' }
+    const cancelled: AiSkillCheckpoint = { ...skillCheckpoint('cancelled'), id: 'checkpoint-cancelled' }
+    const state: AiPanelState = { ...createEmptyAiPanelState(), skillCheckpoints: [newer, resolved, older, cancelled] }
+    expect(visibleCheckpoints(state).map((checkpoint) => checkpoint.id)).toEqual(['checkpoint-older', 'checkpoint-newer'])
+  })
+
+  test('empty when there are no checkpoints at all', () => {
+    expect(visibleCheckpoints(createEmptyAiPanelState())).toEqual([])
+  })
+})
+
+describe('dismissSkillCheckpoint', () => {
+  test('moves a waiting checkpoint to cancelled, dropping it out of visibleCheckpoints and needsYouCount', () => {
+    const state: AiPanelState = { ...createEmptyAiPanelState(), skillCheckpoints: [skillCheckpoint('waiting')] }
+    expect(needsYouCount(state)).toBe(1)
+    const next = dismissSkillCheckpoint(state, 'checkpoint-concept')
+    expect(visibleCheckpoints(next)).toEqual([])
+    expect(needsYouCount(next)).toBe(0)
+    expect(next.skillCheckpoints[0]?.status).toBe('cancelled')
+  })
+
+  test('is a no-op (same state reference) for an unknown checkpoint id', () => {
+    const state: AiPanelState = { ...createEmptyAiPanelState(), skillCheckpoints: [skillCheckpoint('waiting')] }
+    expect(dismissSkillCheckpoint(state, 'checkpoint-does-not-exist')).toBe(state)
+  })
+
+  test('is a no-op for a checkpoint that is already resolved or cancelled', () => {
+    const state: AiPanelState = { ...createEmptyAiPanelState(), skillCheckpoints: [skillCheckpoint('resolved')] }
+    expect(dismissSkillCheckpoint(state, 'checkpoint-concept')).toBe(state)
   })
 })
 

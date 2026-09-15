@@ -106,6 +106,7 @@ import type {
   AiNodeProvenance,
   AiPanelState,
   AiRun,
+  AiSkillCheckpoint,
   AiThread,
 } from './kira/aiPanelTypes'
 import { provenanceKey } from './kira/aiPanelTypes'
@@ -114,6 +115,7 @@ import {
   acceptItem as aiPanelAcceptItem,
   bulkAcceptable as aiPanelBulkAcceptable,
   createEmptyAiPanelState,
+  dismissSkillCheckpoint as aiPanelDismissSkillCheckpoint,
   fromSnapshot as aiPanelFromSnapshot,
   keepNode as aiPanelKeepNode,
   markCreateNodeItemEdited as aiPanelMarkCreateNodeItemEdited,
@@ -122,9 +124,11 @@ import {
   needsYouCount as aiPanelNeedsYouCount,
   rejectItem as aiPanelRejectItem,
   removeAppliedNode as aiPanelRemoveAppliedNode,
+  revertAcceptedItem as aiPanelRevertAcceptedItem,
   setNodeProvenance as aiPanelSetNodeProvenance,
   summaryLine as aiPanelSummaryLine,
   toSnapshot as aiPanelToSnapshot,
+  visibleCheckpoints as aiPanelVisibleCheckpoints,
 } from './kira/aiPanelModel'
 import './styles.css'
 
@@ -698,9 +702,18 @@ type AiTaskRoute = {
   status: AiProviderStatus | 'local_fallback'
   reason: string
 }
+// Tags a canvas-history entry with what produced it, so undoing past it can
+// react to more than just the canvas fields. undoCanvas() reads this off the
+// entry being undone away to revert the matching "Cần bạn" item(s), which
+// acceptChangeItem()/acceptChangeSetBulk() left as 'accepted' with no action
+// row (P1: accept -> Cmd+Z orphaned the item permanently).
+type CanvasHistorySource =
+  | { kind: 'ai-accept'; changeSetId: string; itemId: string }
+  | { kind: 'ai-accept-bulk'; changeSetId: string; itemIds: string[] }
 type CanvasHistoryEntry = Pick<ProjectSnapshot, 'ideas' | 'images' | 'palettes' | 'diagrams' | 'placeholders' | 'links'> & {
   frames: FrameNode[]
   selection: Selection
+  source?: CanvasHistorySource
 }
 type CanvasHistoryStore = {
   entry: CanvasHistoryEntry | null
@@ -825,7 +838,7 @@ const UI_STRINGS: Record<string, { en: string; vi: string }> = {
   'kira.change.accept': { en: 'Accept', vi: 'Nhận' },
   'kira.change.keepNode': { en: 'Keep node', vi: 'Giữ node' },
   'kira.change.deleteNode': { en: 'Delete node', vi: 'Xoá node' },
-  'kira.change.staleNote': { en: 'You edited this node after Kira proposed this change.', vi: 'Bạn đã sửa node này sau khi Kira đề xuất.' },
+  'kira.change.staleNote': { en: 'This proposal needs another look before it can be applied.', vi: 'Đề xuất này cần xem lại trước khi có thể áp dụng.' },
   'kira.change.editedGuard': { en: 'You edited this node after Kira created it. Removing it will also delete what you added.', vi: 'Bạn đã sửa nội dung node này sau khi Kira tạo. Gỡ sẽ xoá cả phần bạn viết thêm.' },
   'kira.change.editedGuardConfirm': { en: 'Remove anyway', vi: 'Vẫn gỡ' },
   'kira.change.editedGuardCancel': { en: 'Cancel', vi: 'Huỷ' },
@@ -833,6 +846,9 @@ const UI_STRINGS: Record<string, { en: string; vi: string }> = {
   'kira.change.linksAffected': { en: '{count} links will be lost.', vi: '{count} liên kết sẽ mất.' },
   'kira.change.before': { en: 'Before', vi: 'Trước' },
   'kira.change.after': { en: 'After', vi: 'Sau' },
+  'kira.checkpoint.groupLabel': { en: 'Skill checkpoints', vi: 'Điểm dừng skill' },
+  'kira.checkpoint.statusWaiting': { en: 'Waiting for you', vi: 'Chờ bạn' },
+  'kira.checkpoint.dismiss': { en: 'Seen', vi: 'Đã xem' },
   'kira.prov.created': { en: 'AI', vi: 'AI' },
   'kira.prov.edited': { en: 'AI, edited', vi: 'AI, đã sửa' },
   'library.meta.item': { en: '{count} item', vi: '{count} mục' },
@@ -2733,6 +2749,7 @@ function FileWorkspace({
   const [cropTargetImageId, setCropTargetImageId] = useState<string | null>(null)
   const [glassStatus, setGlassStatus] = useState<GlassStatus>(() => (isTauriRuntime() ? 'fallback' : 'browser'))
   const pendingCanvasHistoryCommitRef = useRef(false)
+  const pendingCanvasHistorySourceRef = useRef<CanvasHistorySource | null>(null)
   const suppressCanvasHistoryCommitRef = useRef(false)
   const lastPrePresentContentHashRef = useRef('')
   const projectStateRef = useRef({
@@ -3222,7 +3239,9 @@ function FileWorkspace({
     }
     if (!pendingCanvasHistoryCommitRef.current) return
     pendingCanvasHistoryCommitRef.current = false
-    canvasHistoryStore.getState().setEntry(currentCanvasHistoryEntry())
+    const source = pendingCanvasHistorySourceRef.current
+    pendingCanvasHistorySourceRef.current = null
+    canvasHistoryStore.getState().setEntry(source ? { ...currentCanvasHistoryEntry(), source } : currentCanvasHistoryEntry())
   }, [diagrams, frames, ideas, images, links, palettes, placeholders, selection])
 
   function applyProjectSnapshot(snapshot: ProjectSnapshot) {
@@ -3356,16 +3375,37 @@ function FileWorkspace({
     suppressCanvasHistoryCommitRef.current = false
   }
 
-  function pushCanvasHistory() {
+  // `source` tags the entry this push will commit (once the canvas state
+  // effect above actually fires) so undoCanvas() can tell what produced it.
+  // Only acceptChangeItem/removeAppliedAiNode pass one today.
+  function pushCanvasHistory(source?: CanvasHistorySource) {
     pendingCanvasHistoryCommitRef.current = true
+    pendingCanvasHistorySourceRef.current = source ?? null
   }
 
   function undoCanvas() {
     const temporalHistory = canvasHistoryStore.temporal.getState()
     if (temporalHistory.pastStates.length === 0) return
+    // Read the entry BEFORE undo() moves it into futureStates — that's the
+    // entry an accept committed, so its `source` (if any) says which "Cần
+    // bạn" item this undo is walking back past.
+    const undoneEntry = canvasHistoryStore.getState().entry
     temporalHistory.undo()
     const entry = canvasHistoryStore.getState().entry
     if (entry) restoreCanvasHistoryEntry(entry)
+    if (undoneEntry?.source?.kind === 'ai-accept') {
+      const { changeSetId, itemId } = undoneEntry.source
+      const result = aiPanelRevertAcceptedItem(aiPanelState, changeSetId, itemId)
+      if (result.ok) setAiPanelState(result.state)
+    } else if (undoneEntry?.source?.kind === 'ai-accept-bulk') {
+      const { changeSetId, itemIds } = undoneEntry.source
+      let nextAiPanelState = aiPanelState
+      for (const itemId of itemIds) {
+        const result = aiPanelRevertAcceptedItem(nextAiPanelState, changeSetId, itemId)
+        if (result.ok) nextAiPanelState = result.state
+      }
+      if (nextAiPanelState !== aiPanelState) setAiPanelState(nextAiPanelState)
+    }
   }
 
   function redoCanvas() {
@@ -5277,7 +5317,7 @@ function FileWorkspace({
   function acceptChangeItem(changeSetId: string, itemId: string) {
     const result = aiPanelAcceptItem(aiPanelState, changeSetId, itemId)
     if (!result.ok) return
-    pushCanvasHistory()
+    pushCanvasHistory({ kind: 'ai-accept', changeSetId, itemId })
     applyAiCanvasOperations(result.operations)
     setAiPanelState(result.state)
   }
@@ -5285,7 +5325,7 @@ function FileWorkspace({
   function acceptChangeSetBulk(changeSetId: string) {
     const result = aiPanelAcceptBulk(aiPanelState, changeSetId)
     if (result.operations.length === 0) return
-    pushCanvasHistory()
+    pushCanvasHistory({ kind: 'ai-accept-bulk', changeSetId, itemIds: result.acceptedItemIds })
     applyAiCanvasOperations(result.operations)
     setAiPanelState(result.state)
   }
@@ -5298,6 +5338,14 @@ function FileWorkspace({
   function keepDeletedNode(changeSetId: string, itemId: string) {
     const result = aiPanelKeepNode(aiPanelState, changeSetId, itemId)
     if (result.ok) setAiPanelState(result.state)
+  }
+
+  // "Đã xem" on a skill checkpoint row. There is no API yet to actually stop
+  // a running skill pipeline (docs/design/right-panel/DECISIONS.md "Còn
+  // mở"), so this only clears the checkpoint out of the "Cần bạn" list and
+  // out of needsYouCount — it does not cancel the skill itself.
+  function dismissKiraCheckpoint(checkpointId: string) {
+    setAiPanelState(aiPanelDismissSkillCheckpoint(aiPanelState, checkpointId))
   }
 
   // "Gỡ node" — mockup guard: a node hand-edited after Kira created it asks
@@ -6843,6 +6891,38 @@ function FileWorkspace({
     )
   }
 
+  // A waiting skill checkpoint (e.g. a multi-step pipeline paused for
+  // review). Bug fix: needsYouCount already folded these into the badge
+  // total, but renderKiraChangesTab never rendered anything for them — the
+  // badge showed a number the tab had nothing to show. Deliberate minimal
+  // placeholder per product call below (not "exclude checkpoints from the
+  // count", since DECISIONS.md #6 wants one number that includes them):
+  // shows skill + step, and only a "Seen" dismiss action, since there is no
+  // real stop/resume API for the skill harness yet.
+  function renderSkillCheckpoint(checkpoint: AiSkillCheckpoint) {
+    return (
+      <li className="item is-focused" key={checkpoint.id} aria-current="true">
+        <span className="op"><Pause size={11} /></span>
+        <div className="item-line">
+          <div>
+            <span className="item-kind">{checkpoint.skill}</span>
+            <span className="item-target">{checkpoint.stepLabel}</span>
+          </div>
+          <span className="item-status state-wait">{t('kira.checkpoint.statusWaiting', lang)}</span>
+        </div>
+        <div className="item-body">
+          <div className="item-foot">
+            <div className="acts">
+              <button type="button" className="quiet-button sm" onClick={() => dismissKiraCheckpoint(checkpoint.id)}>
+                {t('kira.checkpoint.dismiss', lang)}
+              </button>
+            </div>
+          </div>
+        </div>
+      </li>
+    )
+  }
+
   function targetNodeTitle(nodeKind: GraphNodeKind, nodeId: string): string {
     return findNodeRecordByKind(nodeKind, nodeId)?.title ?? nodeId
   }
@@ -6881,7 +6961,8 @@ function FileWorkspace({
   }
 
   function renderKiraChangesTab() {
-    if (aiPanelState.changeSets.length === 0) {
+    const checkpoints = aiPanelVisibleCheckpoints(aiPanelState)
+    if (aiPanelState.changeSets.length === 0 && checkpoints.length === 0) {
       return (
         <div className="kp-empty">
           <Check size={22} />
@@ -6905,6 +6986,15 @@ function FileWorkspace({
             </>
           )}
         </p>
+        {checkpoints.length > 0 && (
+          <section className="changeset" aria-label={t('kira.checkpoint.groupLabel', lang)}>
+            <div className="group-label">
+              <span>{t('kira.checkpoint.groupLabel', lang)}</span>
+              <span className="num">{checkpoints.length}</span>
+            </div>
+            <ul className="list">{checkpoints.map((checkpoint) => renderSkillCheckpoint(checkpoint))}</ul>
+          </section>
+        )}
         {sortedChangeSets.map((changeSet) => renderChangeSetSection(changeSet))}
       </>
     )
