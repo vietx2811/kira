@@ -65,6 +65,40 @@ export function needsYouCount(state: AiPanelState): number {
   return itemCount + checkpointCount
 }
 
+/** Skill checkpoints currently waiting on the user, the same subset
+ *  needsYouCount folds into its total (research: a checkpoint bumps the
+ *  count per mockup.js s6). Bug: needsYouCount already counted these, but
+ *  no UI rendered them in the "Cần bạn" tab, so the badge showed a number
+ *  the tab had nothing to show for. renderKiraChangesTab uses this to
+ *  render one row per waiting checkpoint alongside the ChangeSet sections.
+ *  Oldest first, matching a pipeline's natural resolve order. */
+export function visibleCheckpoints(state: AiPanelState): AiSkillCheckpoint[] {
+  return state.skillCheckpoints
+    .filter((checkpoint) => checkpoint.status === 'waiting')
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+}
+
+/** Dismiss a waiting skill checkpoint from the "Cần bạn" list ("Đã xem" in
+ *  the UI). This does not stop the underlying skill pipeline — there is no
+ *  API for that yet (docs/design/right-panel/DECISIONS.md "Còn mở": real
+ *  skill-harness stop/cancel is undecided) — it only clears the item from
+ *  view and out of needsYouCount by moving it out of 'waiting'. Reuses the
+ *  existing 'cancelled' status rather than adding a new one: a dismissed
+ *  checkpoint is, from this module's perspective, no longer something the
+ *  user needs to act on, same as an actually-cancelled one. No-op (returns
+ *  the same state reference) if the checkpoint is not found or already
+ *  left 'waiting'. */
+export function dismissSkillCheckpoint(state: AiPanelState, checkpointId: string): AiPanelState {
+  let changed = false
+  const skillCheckpoints = state.skillCheckpoints.map((checkpoint) => {
+    if (checkpoint.id !== checkpointId || checkpoint.status !== 'waiting') return checkpoint
+    changed = true
+    return { ...checkpoint, status: 'cancelled' as const }
+  })
+  if (!changed) return state
+  return { ...state, skillCheckpoints }
+}
+
 /** mockup.js changesView: "cần xử lý" / "đã áp dụng" / "đã nhận". */
 export function summaryLine(state: AiPanelState): AiPanelSummary {
   let applied = 0
@@ -194,6 +228,42 @@ export function acceptItem(state: AiPanelState, changeSetId: string, itemId: str
   const next = { ...item, status: 'accepted' as const }
   const operations: AiCanvasOperation[] = [{ type: 'delete-node', nodeKind: item.targetNodeKind, nodeId: item.targetNodeId }]
   return { ok: true, state: replaceItem(state, changeSetId, itemId, next), operations }
+}
+
+/** Revert an item that was accepted via acceptItem, for when the canvas
+ *  mutation it caused gets undone (Cmd+Z) and would otherwise leave the
+ *  "Cần bạn" item stuck showing "Accepted" with no way to act on it again
+ *  (renderChangeItem only renders the action row for a pending or stale
+ *  item, never for an accepted one). Pure status change only — no canvas
+ *  operations are returned, since the caller's own undo already restored
+ *  the canvas side.
+ *
+ *  edit-text / edit-palette go back to 'stale', the existing status the
+ *  mockup already uses for "this proposal needs another look before it can
+ *  be applied" (offers "Từ chối", withholds a bare "Nhận" that would
+ *  silently redo the exact mutation the user just undid). delete-node has
+ *  no 'stale' in its status union (DeleteItemStatus), so it goes back to
+ *  'pending' instead, its only actionable state, restoring both "Giữ lại"
+ *  and "Xoá".
+ *
+ *  Refuses create-node items (acceptItem never mutates those — creation is
+ *  applied immediately per DECISIONS.md #2, and undone via
+ *  removeAppliedNode's own path) and items not currently 'accepted'. */
+export function revertAcceptedItem(state: AiPanelState, changeSetId: string, itemId: string): AiModelResult {
+  const found = findItem(state, changeSetId, itemId)
+  if (!found) return { ok: false, reason: 'not-found' }
+  const { item } = found
+
+  if (item.kind === 'create-node') return { ok: false, reason: 'wrong-kind' }
+  if (item.status !== 'accepted') return { ok: false, reason: `not-accepted:${item.status}` }
+
+  if (item.kind === 'delete-node') {
+    const next = { ...item, status: 'pending' as const }
+    return { ok: true, state: replaceItem(state, changeSetId, itemId, next), operations: [] }
+  }
+
+  const next = { ...item, status: 'stale' as const }
+  return { ok: true, state: replaceItem(state, changeSetId, itemId, next), operations: [] }
 }
 
 /** Reject a pending or stale edit-text / edit-palette item. Nothing was
