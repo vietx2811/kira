@@ -69,16 +69,10 @@ import {
   Tag,
   Trash2,
   Workflow,
-  ZoomIn,
   ZoomOut,
   X,
 } from 'lucide-react'
 import {
-  Cursor,
-  FlowArrow,
-  FrameCorners,
-  ImageSquare,
-  Lightbulb as LightbulbIcon,
   ListBullets,
   ListNumbers,
   LinkSimple,
@@ -772,6 +766,33 @@ const useLangStore = create<{ lang: Lang; setLang: (lang: Lang) => void }>()((se
       // ignore persistence failures (private mode, etc.)
     }
     set({ lang })
+  },
+}))
+
+type RailIconMode = 'color' | 'mono'
+
+function readStoredRailIconMode(): RailIconMode {
+  try {
+    const stored = localStorage.getItem('kira:railIcons')
+    return stored === 'mono' ? 'mono' : 'color'
+  } catch {
+    return 'color'
+  }
+}
+
+// App-level, not project-level (DESIGN.md §2.4: "a user setting renders the
+// rail icons single-tone for people who judge color all day") — the same
+// person wants this on or off regardless of which project's canvas they're
+// looking at, unlike accent/color-mode which are per-project.
+const useRailIconModeStore = create<{ mode: RailIconMode; setMode: (mode: RailIconMode) => void }>()((set) => ({
+  mode: readStoredRailIconMode(),
+  setMode: (mode) => {
+    try {
+      localStorage.setItem('kira:railIcons', mode)
+    } catch {
+      // ignore persistence failures (private mode, etc.)
+    }
+    set({ mode })
   },
 }))
 
@@ -2198,6 +2219,7 @@ function FileWorkspace({
 }) {
   const initialProject = useMemo(() => initialSnapshot ?? readProjectSnapshot(), [initialSnapshot])
   const lang = useLangStore((state) => state.lang)
+  const railIconMode = useRailIconModeStore((state) => state.mode)
   const [canvasHistoryStore] = useState(createCanvasHistoryStore)
   // Browser-mode (non-Tauri) fallback storage is namespaced per tab so a second
   // open file can't overwrite the first's autosave under the same key.
@@ -5772,7 +5794,7 @@ function FileWorkspace({
   if (!isActive) return null
 
   return (
-    <main className="app-shell" data-glass-state={glassStatus} data-color-mode={shellColorMode} style={shellThemeStyle} onPaste={capturePastedReference}>
+    <main className="app-shell" data-glass-state={glassStatus} data-color-mode={shellColorMode} data-rail-icons={railIconMode} style={shellThemeStyle} onPaste={capturePastedReference}>
       {tabBar}
       <section
         className="workspace"
@@ -7117,6 +7139,8 @@ function SettingsView({
   }, [focusNonce])
   const lang = useLangStore((state) => state.lang)
   const setLang = useLangStore((state) => state.setLang)
+  const railIconMode = useRailIconModeStore((state) => state.mode)
+  const setRailIconMode = useRailIconModeStore((state) => state.setMode)
 
   useEffect(() => {
     function handleKeydown(event: KeyboardEvent) {
@@ -7223,6 +7247,21 @@ function SettingsView({
                 options={[
                   { value: 'en', label: 'English' },
                   { value: 'vi', label: 'Tiếng Việt' },
+                ]}
+              />
+            </section>
+
+            <section className="settings-panel" aria-label="Rail icons">
+              <h3>Rail icons</h3>
+              <p>Color identifies each tool by node kind. Monochrome keeps the same drawings in a single ink tone.</p>
+              <Segmented
+                ariaLabel="Rail icons"
+                variant="radio"
+                value={railIconMode}
+                onChange={setRailIconMode}
+                options={[
+                  { value: 'color', label: 'Color' },
+                  { value: 'mono', label: 'Monochrome' },
                 ]}
               />
             </section>
@@ -10107,10 +10146,6 @@ function GraphCanvas({
     const route = selectAiProviderForTask('generate_node', aiProviders, aiRoutingMode, selectedAiProviderId, kiraSession?.providerOverrideId ?? undefined)
     const routedProvider = route.providerId ? aiProviders.find((candidate) => candidate.id === route.providerId) : undefined
     const suggestions = kiraSuggestions[anchorNode?.kind ?? 'board']
-    const contextLines = contextNodes.map((node) => formatKiraContextLine(node)).join('\n')
-    const tokenEstimate = kiraSession
-      ? estimateKiraTokens(kiraSession.prompt) + contextNodes.length * 8 + estimateKiraTokens(contextLines) + 120
-      : 0
     const isThinking = kiraSession?.status === 'thinking'
     const isError = kiraSession?.status === 'error'
     const hasTray = open && isKiraSuggestOpen
@@ -10316,9 +10351,6 @@ function GraphCanvas({
               </div>
 
               <div className="kira-dock-footer-right">
-                {tokenEstimate > 0 && (
-                  <span className="kira-dock-token-meta">~{tokenEstimate.toLocaleString()} tokens</span>
-                )}
                 <button
                   type="button"
                   className="kira-dock-submit"
@@ -10563,24 +10595,24 @@ function GraphCanvas({
                 setArcMenu(null)
               }}
             >
-              <Cursor className="tool-icon" size={19} />
+              <RailIcon name="select" />
             </button>
           </div>
           <div className="canvas-tool-group" aria-label="Create nodes">
             <button type="button" aria-label={t('tool.imagePlaceholder', lang)} data-tooltip={t('tool.imagePlaceholder', lang)} data-tool-kind="image" onClick={onCreatePlaceholder}>
-              <ImageSquare className="tool-icon" size={19} />
+              <RailIcon name="image" />
             </button>
             <button type="button" aria-label={t('tool.palette', lang)} data-tooltip={t('tool.palette', lang)} data-tool-kind="palette" onClick={onCreatePalette}>
-              <PaletteIcon className="tool-icon" size={19} />
+              <RailIcon name="palette" />
             </button>
             <button type="button" aria-label={t('tool.idea', lang)} data-tooltip={t('tool.idea', lang)} data-tool-kind="idea" onClick={onCreateIdea}>
-              <LightbulbIcon className="tool-icon" size={19} />
+              <RailIcon name="idea" />
             </button>
             <button type="button" aria-label={t('tool.sticker', lang)} data-tooltip={t('tool.sticker', lang)} data-tool-kind="sticker" onClick={onCreateSticker}>
-              <NoteIcon className="tool-icon" size={19} />
+              <RailIcon name="note" />
             </button>
             <button type="button" aria-label={t('tool.frame', lang)} data-tooltip={t('tool.frame', lang)} data-tool-kind="frame" onClick={onCreateFrame}>
-              <FrameCorners className="tool-icon" size={19} />
+              <RailIcon name="frame" />
             </button>
           </div>
           <div className="canvas-tool-group" aria-label="Import tools">
@@ -10594,7 +10626,7 @@ function GraphCanvas({
                 if (source?.trim()) void onImportMermaid(source)
               }}
             >
-              <FlowArrow className="tool-icon" size={19} />
+              <RailIcon name="diagram" />
             </button>
           </div>
         </div>
@@ -10605,14 +10637,14 @@ function GraphCanvas({
 
         <div className="canvas-zoom-rail" aria-label="Canvas zoom">
           <button type="button" aria-label="Zoom out" onClick={() => updateZoom(-0.15)}>
-            <ZoomOut size={13} />
+            <RailIcon name="zout" />
           </button>
           <span className="canvas-zoom-value">{Math.round(graphTransform.scale * 100)}%</span>
           <button type="button" aria-label="Zoom in" onClick={() => updateZoom(0.15)}>
-            <ZoomIn size={13} />
+            <RailIcon name="zin" />
           </button>
           <button type="button" aria-label="Reset canvas view" onClick={resetGraphView}>
-            <LocateFixed size={13} />
+            <RailIcon name="fit" />
           </button>
           <span className="canvas-zoom-status">
             {activeCanvasTool === 'link'
@@ -12292,6 +12324,55 @@ function ProjectDiagnostics({
         ))}
       </div>
     </div>
+  )
+}
+
+// Rail icons: one hand-drawn geometry per tool (art-direction round 2 §D,
+// controls-v2.html S:490-511), not Lucide or Phosphor. Every part is classed
+// (bd/ln/ln2/lnA/fk/lxo/lxi/k-*) so a single set of CSS variables on
+// .app-shell drives color for both themes and the monochrome option — see
+// the .ico rules in styles.css. "kira" geometry exists here for parity with
+// the specimen's 11-icon set, but the dock launcher keeps its own animated
+// KiraMark below (thinking-state pulse, deliberately not a static rail
+// icon); it is currently unused by any call site.
+type RailIconName = 'select' | 'image' | 'palette' | 'idea' | 'note' | 'frame' | 'diagram' | 'kira' | 'zin' | 'zout' | 'fit'
+
+const RAIL_ICON_GEOMETRY: Record<RailIconName, (g: string) => string> = {
+  select: (g) =>
+    `<path class="bd" fill="url(#${g}b)" d="M5.3 3.9 18.4 10.6c.8.4.7 1.5-.2 1.7l-5.2 1.3-2.6 5c-.4.8-1.6.7-1.8-.2L4 5.1c-.2-.9.6-1.6 1.3-1.2z"/><path fill="url(#${g}s)" d="M5.3 3.9 18.4 10.6c.8.4.7 1.5-.2 1.7l-5.2 1.3-2.6 5c-.4.8-1.6.7-1.8-.2L4 5.1c-.2-.9.6-1.6 1.3-1.2z"/>`,
+  image: (g) =>
+    `<rect class="bd" fill="url(#${g}b)" x="2.8" y="4.3" width="18.4" height="15.4" rx="3.2"/><rect class="k-sky" x="5" y="6.5" width="14" height="11" rx="1.6"/><circle class="k-sun" cx="9.2" cy="10" r="1.7"/><path class="k-leaf" d="M5 16.1l4.3-3.6 3 2.4 2.5-2 4.2 3.4v.1a1.6 1.6 0 0 1-1.6 1.1H6.6A1.6 1.6 0 0 1 5 16.1z"/><rect fill="url(#${g}s)" x="2.8" y="4.3" width="18.4" height="15.4" rx="3.2" opacity=".6"/>`,
+  palette: (g) =>
+    `<path class="bd" fill="url(#${g}b)" d="M12 3.4c-4.9 0-8.7 3.7-8.7 8.3 0 4.7 3.7 8.8 8.3 8.8 1.4 0 2.2-.8 2.2-1.9 0-1.3-1.2-1.7-1.2-2.9 0-1 .8-1.8 1.9-1.8h2.2c2.5 0 4.3-1.7 4.3-4.1 0-3.7-3.9-6.4-9-6.4z"/><circle class="k-amb" cx="7.6" cy="11.3" r="1.65"/><circle class="k-rose" cx="9.7" cy="7.4" r="1.65"/><circle class="k-acc" cx="14.4" cy="7.1" r="1.65"/><circle class="k-leaf" cx="8.4" cy="15.6" r="1.5"/><path fill="url(#${g}s)" d="M12 3.4c-4.9 0-8.7 3.7-8.7 8.3 0 1.2.2 2.3.7 3.3 2.5-5 7.4-8.3 13.8-9.2A10 10 0 0 0 12 3.4z"/>`,
+  idea: (g) =>
+    `<path class="bd" fill="url(#${g}b)" d="M12 2.9a6.2 6.2 0 0 0-3.8 11.1c.7.55 1.1 1.3 1.1 2.1v.7h5.4v-.7c0-.8.4-1.55 1.1-2.1A6.2 6.2 0 0 0 12 2.9z"/><path class="ln2" d="M10.4 12.4 12 14l1.6-1.6M12 14v2.6"/><rect class="fk" x="9.4" y="18" width="5.2" height="3" rx="1.2"/><ellipse fill="url(#${g}s)" cx="10" cy="7" rx="2.3" ry="3.1" transform="rotate(-28 10 7)"/>`,
+  note: (g) =>
+    `<path class="bd" fill="url(#${g}b)" d="M5.6 3.8h12.8a1.8 1.8 0 0 1 1.8 1.8V14l-6.2 6.2H5.6a1.8 1.8 0 0 1-1.8-1.8V5.6a1.8 1.8 0 0 1 1.8-1.8z"/><path class="bd k-fold" d="M14 20.2v-4.4a1.8 1.8 0 0 1 1.8-1.8h4.4z"/><path class="ln2" d="M7.4 8.4h9.2M7.4 11.4h6"/><path fill="url(#${g}s)" d="M5.6 3.8h12.8a1.8 1.8 0 0 1 1.8 1.8v2.5C14 8 9 10 3.8 13.4V5.6a1.8 1.8 0 0 1 1.8-1.8z"/>`,
+  frame: (g) =>
+    `<rect class="k-glass" x="6.5" y="6.5" width="11" height="11" rx="1.4"/><rect fill="url(#${g}s)" x="6.5" y="6.5" width="11" height="11" rx="1.4" opacity=".35"/><path class="lxo" d="M3.9 8.6V5.7a1.8 1.8 0 0 1 1.8-1.8h2.9M15.4 3.9h2.9a1.8 1.8 0 0 1 1.8 1.8v2.9M20.1 15.4v2.9a1.8 1.8 0 0 1-1.8 1.8h-2.9M8.6 20.1H5.7a1.8 1.8 0 0 1-1.8-1.8v-2.9"/><path class="lxi" style="stroke-width:2" d="M3.9 8.6V5.7a1.8 1.8 0 0 1 1.8-1.8h2.9M15.4 3.9h2.9a1.8 1.8 0 0 1 1.8 1.8v2.9M20.1 15.4v2.9a1.8 1.8 0 0 1-1.8 1.8h-2.9M8.6 20.1H5.7a1.8 1.8 0 0 1-1.8-1.8v-2.9"/>`,
+  diagram: (g) =>
+    `<path class="lxo" d="M10.3 7h2.2a2.7 2.7 0 0 1 2.7 2.7V10M10.3 17h2.2a2.7 2.7 0 0 0 2.7-2.7V14"/><path class="lnA" d="M10.3 7h2.2a2.7 2.7 0 0 1 2.7 2.7V10M10.3 17h2.2a2.7 2.7 0 0 0 2.7-2.7V14"/><rect class="bd" fill="url(#${g}b)" x="3.3" y="3.8" width="7" height="6.4" rx="1.8"/><rect class="bd" fill="url(#${g}b)" x="3.3" y="13.8" width="7" height="6.4" rx="1.8"/><rect class="bd k-acc" x="13.7" y="8.8" width="7" height="6.4" rx="1.8"/><rect fill="url(#${g}s)" x="3.3" y="3.8" width="7" height="6.4" rx="1.8"/>`,
+  kira: (g) =>
+    `<defs><linearGradient id="${g}k" x1="0" y1="0" x2="1" y2="1"><stop offset="0" class="s-kw"/><stop offset=".55" class="s-km"/><stop offset="1" class="s-kc"/></linearGradient></defs><path class="bd" fill="url(#${g}k)" d="M11 2.8c.7 4.6 3.1 7 7.7 7.7-4.6.7-7 3.1-7.7 7.7-.7-4.6-3.1-7-7.7-7.7 4.6-.7 7-3.1 7.7-7.7z"/><path class="bd" fill="url(#${g}k)" d="M18.2 15.2c.3 1.9 1.3 2.9 3.2 3.2-1.9.3-2.9 1.3-3.2 3.2-.3-1.9-1.3-2.9-3.2-3.2 1.9-.3 2.9-1.3 3.2-3.2z"/><path fill="url(#${g}s)" d="M11 2.8c.7 4.6 3.1 7 7.7 7.7-4.6.7-7 3.1-7.7 7.7-.7-4.6-3.1-7-7.7-7.7 4.6-.7 7-3.1 7.7-7.7z" opacity=".7"/>`,
+  zin: (g) =>
+    `<path class="lxo" d="M15.2 15.2l4.6 4.6"/><path class="lxi" style="stroke-width:2.2" d="M15.2 15.2l4.6 4.6"/><circle class="bd" fill="url(#${g}b)" cx="10.5" cy="10.5" r="6.6"/><path class="ln" d="M7.8 10.5h5.4M10.5 7.8v5.4"/><circle fill="url(#${g}s)" cx="10.5" cy="10.5" r="6.6"/>`,
+  zout: (g) =>
+    `<path class="lxo" d="M15.2 15.2l4.6 4.6"/><path class="lxi" style="stroke-width:2.2" d="M15.2 15.2l4.6 4.6"/><circle class="bd" fill="url(#${g}b)" cx="10.5" cy="10.5" r="6.6"/><path class="ln" d="M7.8 10.5h5.4"/><circle fill="url(#${g}s)" cx="10.5" cy="10.5" r="6.6"/>`,
+  fit: (g) =>
+    `<circle class="bd" fill="url(#${g}b)" cx="12" cy="12" r="6.6"/><path class="lxo" d="M12 2.6v3M12 18.4v3M2.6 12h3M18.4 12h3"/><path class="lxi" style="stroke-width:1.8" d="M12 2.6v3M12 18.4v3M2.6 12h3M18.4 12h3"/><circle class="k-acc" cx="12" cy="12" r="2.1"/><circle fill="url(#${g}s)" cx="12" cy="12" r="6.6"/>`,
+}
+
+function RailIcon({ name }: { name: RailIconName }) {
+  const rawId = useId()
+  const g = 'ri' + rawId.replace(/[^a-zA-Z0-9]/g, '')
+  const html = `<defs><linearGradient id="${g}b" x1="0" y1="0" x2="0" y2="1"><stop offset="0" class="s-hi"/><stop offset="1" class="s-lo"/></linearGradient><radialGradient id="${g}s" cx=".32" cy=".18" r=".62"><stop offset="0" class="s-sp" style="stop-opacity:.85"/><stop offset=".55" class="s-sp0"/></radialGradient></defs>${RAIL_ICON_GEOMETRY[name](g)}`
+  return (
+    <svg
+      className={`ico ico-${name}`}
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
   )
 }
 
@@ -14060,13 +14141,6 @@ function collectKiraContextForSources(
     }
   }
   return merged
-}
-
-// Pragmatic token estimate with no tokenizer dependency: this corpus is short
-// titles/hex codes/bullets, which tokenize denser than prose, so 3.6 (not the
-// usual ~4.0) keeps the estimate conservative rather than overpromising.
-function estimateKiraTokens(text: string): number {
-  return Math.ceil(text.length / 3.6)
 }
 
 function resolveGraphNodePosition(
