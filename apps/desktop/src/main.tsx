@@ -10967,7 +10967,7 @@ function GraphCanvas({
         setGraphMode((current) => current === 'discover' ? 'edit' : 'discover')
         return
       }
-      if (!event.metaKey && !event.ctrlKey && !event.altKey && key === 'a') {
+      if (event.shiftKey && !event.metaKey && !event.ctrlKey && !event.altKey && key === 'a') {
         event.preventDefault()
         onOrganize(organizeMode)
         return
@@ -13351,7 +13351,7 @@ function GraphCanvas({
               <dl>
                 <div><dt>L</dt><dd>Create link</dd></div>
                 <div><dt>G</dt><dd>Toggle suggested links</dd></div>
-                <div><dt>A</dt><dd>Apply arrange</dd></div>
+                <div><dt>Shift A</dt><dd>Apply arrange</dd></div>
                 <div><dt>Cmd/Ctrl N</dt><dd>New idea</dd></div>
                 <div><dt>Cmd/Ctrl D</dt><dd>Duplicate node</dd></div>
                 <div><dt>Delete</dt><dd>Delete selected</dd></div>
