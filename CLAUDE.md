@@ -56,6 +56,8 @@ Mọi report kết thúc task chia 3 phần, theo thứ tự:
 2. **Vấn đề phát hiện / tồn đọng**: vấn đề gặp phải, kể cả lỗi của chính mình, và mọi thứ còn dở (commit chưa push, tiến trình còn chạy, đường chưa verify, quyết định chờ user).
 3. **Đề xuất**: bước tiếp theo, dạng đề xuất để user điều chỉnh.
 
+**Orchestrator báo cáo cho user về giao diện (kể cả report tổng kết QA/sửa) kèm screenshot thật** (chụp bằng Browser pane hoặc app native, gửi qua `SendUserFile`), không chỉ mô tả bằng chữ/bảng điểm — user cần nhìn thấy, không chỉ đọc số đo.
+
 ## Verify
 
 1. **Kiểm đúng mục tiêu.** Kiểm chứng phát hiện trên **commit SHA lúc phát hiện**, không phải working tree (`git log -S "<chuỗi>"`, `git show <sha>`), và ghi SHA vào report. Trước khi tin kết quả test, **chứng minh app đang chạy đúng code định test** (vd probe của chính bạn có mặt). Browser preview **không có Tauri runtime**: đường native (AI provider, `osascript`, sidecar) phải test trong app thật.
