@@ -1865,7 +1865,7 @@ function useFocusTrap<T extends HTMLElement>(containerRef: React.RefObject<T | n
     previouslyFocusedRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
 
     const focusableSelector =
-      'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      'a[href]:not([tabindex="-1"]), button:not([disabled]):not([tabindex="-1"]), textarea:not([disabled]):not([tabindex="-1"]), input:not([disabled]):not([tabindex="-1"]), select:not([disabled]):not([tabindex="-1"]), [tabindex]:not([tabindex="-1"])'
     function getFocusable(): HTMLElement[] {
       return Array.from(container!.querySelectorAll<HTMLElement>(focusableSelector))
     }
