@@ -64,6 +64,31 @@
      used elsewhere (tag-status, provider errors). */
   --control-danger-text: #e59587;
   --control-danger-edge: rgb(217 135 121 / 0.38);
+  --rail-plate: rgb(29 37 39 / 0.95);
+  --rail-chip: #f4f1ea;
+  --tooltip-bg: #f4f1ea;
+  --tooltip-text: #0f1517;
+  --tooltip-kbd: #4a4c48;
+  /* Rail icon tokens (art-direction round 2 §D, controls-v2.html S:207-222):
+     --ink/--lxo/--lxi/--line/--spec/--b-hi/--b-lo are the generic body and
+     line colors most icons use; individual icons override --b-hi/--b-lo for
+     their own body gradient below. The node-kind stickers (k-sky…k-fold)
+     are fixed and mode-invariant per DESIGN.md's Node-Kind Color Rule. */
+  --ico-ink: #0b0f10;
+  --ico-lxo: #0b0f10;
+  --ico-lxi: #f4f1ea;
+  --ico-line: #8a6d1c;
+  --ico-spec: rgb(255 255 255 / 0.8);
+  --ico-b-hi: #fbf9f4;
+  --ico-b-lo: #dfdad0;
+  --ico-c-sky: #8cc5ea;
+  --ico-c-sun: #ffcf5c;
+  --ico-c-leaf: #6aab77;
+  --ico-c-rose: #e5728a;
+  --ico-c-amb: #eea43a;
+  --ico-c-acc: #4fb49c;
+  --ico-c-fold: #d6a92f;
+  --ico-c-glass: rgb(255 255 255 / 0.1);
   --glass-sidebar: var(--bg-base);
   --glass-drawer: var(--material-drawer);
   --glass-chrome: var(--surface-2);
@@ -124,6 +149,11 @@
   --radius-2: 6px;
   --radius-3: 8px;
   --radius-4: 12px;
+  /* Added for the rail plate (DESIGN.md §6: "Rail plate: radius 16px",
+     decided 2026-09-15) — no existing step covered it (radius-4 12px,
+     radius-5 20px), and CLAUDE.md's scale discipline calls for a new step
+     over a one-off value. */
+  --radius-6: 16px;
   --radius-5: 20px;
   /* AppKit-keyed type scale — labelFontSize / smallSystemFontSize /
      systemFontSize / a panel-title step / a view-heading step. Every UI
@@ -404,6 +434,15 @@ button {
   --control-disabled-edge: rgb(35 33 29 / 0.2);
   --control-danger-text: #8a4035;
   --control-danger-edge: rgb(138 64 53 / 0.4);
+  --rail-plate: rgb(251 250 247 / 0.96);
+  --rail-chip: #23211d;
+  --tooltip-bg: #23211d;
+  --tooltip-text: #f7f5f0;
+  --tooltip-kbd: #c9c6bf;
+  --ico-ink: #23211d;
+  --ico-lxo: rgb(255 255 255 / 0.9);
+  --ico-lxi: #23211d;
+  --ico-c-glass: rgb(35 33 29 / 0.06);
 }
 
 .app-shell[data-color-mode="dark"] {
@@ -425,6 +464,15 @@ button {
   --control-disabled-edge: rgb(255 255 255 / 0.14);
   --control-danger-text: #e59587;
   --control-danger-edge: rgb(217 135 121 / 0.38);
+  --rail-plate: rgb(29 37 39 / 0.95);
+  --rail-chip: #f4f1ea;
+  --tooltip-bg: #f4f1ea;
+  --tooltip-text: #0f1517;
+  --tooltip-kbd: #4a4c48;
+  --ico-ink: #0b0f10;
+  --ico-lxo: #0b0f10;
+  --ico-lxi: #f4f1ea;
+  --ico-c-glass: rgb(255 255 255 / 0.1);
 }
 
 /* A tab is a file (board), never a view — Canvas/3D/Slides/Outline are just
@@ -4689,13 +4737,6 @@ button.mini-tags-more:focus-visible {
   cursor: pointer;
 }
 
-.kira-dock-token-meta {
-  font-size: var(--text-small);
-  color: var(--text-muted);
-  font-variant-numeric: tabular-nums;
-  padding-right: 2px;
-}
-
 .kira-dock-submit {
   display: grid;
   width: 26px;
@@ -5011,102 +5052,302 @@ button.mini-tags-more:focus-visible {
   color: var(--danger);
 }
 
+/* Rail icons (art-direction round 2 §D, controls-v2.html S:187-198): one
+   geometry, drawn once per tool in RailIcon (main.tsx), themed entirely
+   through these classes and the --ico-* tokens above so dark/light and the
+   monochrome option never touch the SVG markup itself. */
+.ico {
+  display: block;
+  overflow: visible;
+}
+
+.ico .bd {
+  stroke: var(--ico-ink);
+  stroke-width: var(--ico-sw, 1.5);
+  stroke-linejoin: round;
+}
+
+.ico .ln {
+  fill: none;
+  stroke: var(--ico-ink);
+  stroke-width: var(--ico-sw, 1.5);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.ico .ln2 {
+  fill: none;
+  stroke: var(--ico-line, var(--ico-ink));
+  stroke-width: 1.2;
+  stroke-linecap: round;
+}
+
+.ico .lnA {
+  fill: none;
+  stroke: var(--ico-c-acc);
+  stroke-width: 1.9;
+  stroke-linecap: round;
+}
+
+.ico .fk {
+  fill: var(--ico-ink);
+}
+
+/* Two-layer stroke for lines that sit directly on the rail plate rather
+   than inside a body shape: a wider outer pass in --lxo (the plate's own
+   tone) undercoats a thinner --lxi core, so the line reads at 3.6:1 instead
+   of the 1.4:1 a single stroke measured (R2 §C). Draw lxo before lxi. */
+.ico .lxo {
+  fill: none;
+  stroke: var(--ico-lxo);
+  stroke-width: 3.1;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.ico .lxi {
+  fill: none;
+  stroke: var(--ico-lxi);
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.ico .k-sky { fill: var(--ico-c-sky); }
+.ico .k-sun { fill: var(--ico-c-sun); }
+.ico .k-leaf { fill: var(--ico-c-leaf); }
+.ico .k-rose { fill: var(--ico-c-rose); }
+.ico .k-amb { fill: var(--ico-c-amb); }
+.ico .k-acc { fill: var(--ico-c-acc); }
+.ico .k-fold { fill: var(--ico-c-fold); }
+.ico .k-glass { fill: var(--ico-c-glass); }
+.ico .s-hi { stop-color: var(--ico-b-hi); }
+.ico .s-lo { stop-color: var(--ico-b-lo); }
+.ico .s-sp { stop-color: var(--ico-spec); }
+.ico .s-sp0 { stop-color: var(--ico-spec); stop-opacity: 0; }
+.ico .s-kw { stop-color: var(--kira-warm); }
+.ico .s-km { stop-color: var(--kira-mid); }
+.ico .s-kc { stop-color: var(--kira-cool); }
+
+/* Per-icon body gradient: palette/idea/note carry their own sticker color
+   instead of the generic neutral --ico-b-hi/--ico-b-lo (S:209-211),
+   invariant across dark/light per the Node-Kind Color Rule. */
+.ico-palette { --ico-b-hi: #f5e9d0; --ico-b-lo: #d8c39a; }
+.ico-idea { --ico-b-hi: #ffdf7a; --ico-b-lo: #f0a52a; }
+.ico-note { --ico-b-hi: #fdea8c; --ico-b-lo: #f0c645; }
+
+/* Frame and the 3 zoom icons draw on the rail plate itself rather than a
+   solid body, so in dark mode they need the light ink/body pair instead of
+   the cream default (S:212-213); light mode only needs the zoom body tint,
+   since --ico-ink is already dark there. */
+.app-shell[data-color-mode="dark"] .ico-frame { --ico-ink: #f4f1ea; }
+.app-shell[data-color-mode="dark"] .ico-zin,
+.app-shell[data-color-mode="dark"] .ico-zout,
+.app-shell[data-color-mode="dark"] .ico-fit {
+  --ico-ink: #f4f1ea;
+  --ico-b-hi: rgb(255 255 255 / 0.16);
+  --ico-b-lo: rgb(255 255 255 / 0.04);
+}
+
+.app-shell[data-color-mode="light"] .ico-zin,
+.app-shell[data-color-mode="light"] .ico-zout,
+.app-shell[data-color-mode="light"] .ico-fit {
+  --ico-b-hi: #ffffff;
+  --ico-b-lo: #e9e6de;
+}
+
+/* Select on the ink chip (below) needs to invert with it, the one icon that
+   sits on a lightness-inverted background instead of the rail plate
+   (S:215-216); every other colored icon keeps its own tone on the chip. */
+.app-shell[data-color-mode="dark"] .is-active .ico-select {
+  --ico-b-hi: #1b2224;
+  --ico-b-lo: #0b1011;
+  --ico-ink: #0b1011;
+  --ico-spec: rgb(255 255 255 / 0.25);
+}
+
+.app-shell[data-color-mode="light"] .is-active .ico-select {
+  --ico-b-hi: #ffffff;
+  --ico-b-lo: #e6e2d8;
+  --ico-ink: #fbf9f4;
+}
+
+/* Monochrome rail option (DESIGN.md §2.4, §6): same SVGs, the sticker and
+   body colors fold to a single neutral ink tone; --ico-ink/--ico-lxo/
+   --ico-lxi and the specular highlight are untouched since they already
+   read as material, not "which node kind." Settings > General toggle sets
+   this attribute on .app-shell; persisted in the app's own settings, not
+   per-project. */
+.app-shell[data-rail-icons="mono"] .ico {
+  --ico-c-sky: var(--text-soft);
+  --ico-c-sun: var(--text-main);
+  --ico-c-leaf: var(--text-muted);
+  --ico-c-rose: var(--text-soft);
+  --ico-c-amb: var(--text-main);
+  --ico-c-acc: var(--text-soft);
+  --ico-c-fold: var(--text-muted);
+}
+
+/* Fold to the exact neutral pair 'select' already uses unmodified in both
+   themes (#fbf9f4 / #dfdad0, S:207) rather than inventing new hex: that
+   pair is the one body gradient the specimen measured as passing 3:1 in
+   both dark and light without a per-mode override, so reusing it needs no
+   new measurement. */
+.app-shell[data-rail-icons="mono"] .ico-palette,
+.app-shell[data-rail-icons="mono"] .ico-idea,
+.app-shell[data-rail-icons="mono"] .ico-note {
+  --ico-b-hi: #fbf9f4;
+  --ico-b-lo: #dfdad0;
+}
+
+/* Rail plate (DESIGN.md §6 Tool rail; controls-v2.html S:225, S:251-252):
+   a paper strip, not the old glass-inspector panel material. backdrop-filter
+   only here and on the zoom/view-switcher/Kira plates (Material-On-Chrome
+   Rule) — every button and panel elsewhere stays opaque. */
 .canvas-tool-rail {
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
-  height: 54px;
-  padding: 6px 10px;
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius-2);
-  background: var(--glass-inspector);
+  height: 56px;
+  padding: 6px;
+  border: 0;
+  border-radius: var(--radius-6);
+  background: var(--rail-plate);
+  backdrop-filter: blur(24px) saturate(1.35);
+  -webkit-backdrop-filter: blur(24px) saturate(1.35);
   box-shadow:
-    inset 0 1px 0 color-mix(in srgb, var(--text-main), transparent 94%),
-    var(--panel-shadow);
-  gap: 8px;
+    inset 0 1px 0 rgb(255 255 255 / 0.06),
+    0 2px 4px rgb(0 0 0 / 0.45),
+    0 14px 34px -8px rgb(0 0 0 / 0.65);
+  gap: 2px;
+}
+
+.app-shell[data-color-mode="light"] .canvas-tool-rail {
+  box-shadow:
+    inset 0 0 0 1px rgb(35 33 29 / 0.06),
+    0 2px 4px rgb(35 33 29 / 0.1),
+    0 14px 30px -10px rgb(35 33 29 / 0.32);
 }
 
 .canvas-tool-group {
   position: relative;
   display: inline-flex;
-  gap: 5px;
+  gap: 2px;
 }
 
 .canvas-tool-group + .canvas-tool-group::before {
   display: inline-block;
   width: 1px;
   height: 24px;
-  margin: auto 5px auto 2px;
+  margin: auto 6px;
   background: var(--separator-hairline);
   content: "";
 }
 
+/* Tool: 44px square, radius --radius-4 (DESIGN.md §6, S:254-255). Hover
+   picks the sticker up (icon translateY + rotate, not the button itself);
+   pressed settles it back down. The button's own background only ever
+   shows the neutral --glass-hover patch or the ink chip below — never an
+   accent tint (One Accent Rule). */
 .canvas-tool-rail button {
   position: relative;
   display: grid;
-  width: 38px;
-  height: 38px;
+  width: 44px;
+  height: 44px;
   place-items: center;
   border: 0;
-  border-radius: var(--radius-2);
+  border-radius: var(--radius-4);
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
-  transition: color 160ms ease, background 160ms ease, transform 160ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 160ms ease;
+  transition: background var(--duration-fast) ease, box-shadow var(--duration-fast) ease;
+}
+
+.canvas-tool-rail .ico {
+  width: 28px;
+  height: 28px;
+  filter: drop-shadow(0 1px 0 rgb(0 0 0 / 0.35));
+  transition: transform var(--duration-fast) var(--ease-out-soft), filter var(--duration-fast) ease;
+}
+
+.app-shell[data-color-mode="light"] .canvas-tool-rail .ico {
+  filter: drop-shadow(0 1px 0 rgb(35 33 29 / 0.18));
 }
 
 .canvas-tool-rail button:hover,
 .canvas-tool-rail button:focus-visible {
-  background: rgb(255 255 255 / 0.05);
-  
+  background: var(--glass-hover);
 }
 
-/* Expressive icon tinting (§2.4 of DESIGN.md): the create-node cluster gets a
-   light color identity per node kind, reusing the existing accent tokens
-   rather than inventing new ones. --accent-cyan stays reserved for the
-   is-active tool state, so these lean on the secondary accents. */
-.canvas-tool-rail button[data-tool-kind] .tool-icon {
-  transition: color 160ms ease, filter 160ms ease;
+.canvas-tool-rail button:hover .ico,
+.canvas-tool-rail button:focus-visible .ico {
+  transform: translateY(-3px) rotate(-4deg);
+  filter: drop-shadow(0 4px 3px rgb(0 0 0 / 0.45));
 }
 
-.canvas-tool-rail button[data-tool-kind="idea"] .tool-icon {
-  color: color-mix(in srgb, var(--accent-amber), var(--text-soft) 30%);
+.app-shell[data-color-mode="light"] .canvas-tool-rail button:hover .ico,
+.app-shell[data-color-mode="light"] .canvas-tool-rail button:focus-visible .ico {
+  filter: drop-shadow(0 4px 3px rgb(35 33 29 / 0.28));
 }
 
-.canvas-tool-rail button[data-tool-kind="sticker"] .tool-icon {
-  color: color-mix(in srgb, var(--accent-amber), var(--text-soft) 55%);
+.canvas-tool-rail button:active {
+  background: var(--glass-hover);
 }
 
-.canvas-tool-rail button[data-tool-kind="palette"] .tool-icon {
-  color: color-mix(in srgb, var(--accent-violet), var(--text-soft) 25%);
+.canvas-tool-rail button:active .ico {
+  transform: translateY(1px) scale(0.94);
+  filter: none;
 }
 
-.canvas-tool-rail button[data-tool-kind="diagram"] .tool-icon {
-  color: color-mix(in srgb, var(--accent-sage), var(--text-soft) 25%);
+/* The tool in use sits on an ink chip, not a teal tint (One Accent Rule;
+   DESIGN.md §6, S:262-264) — the same lightness-inverted block as .primary-
+   button, at rail scale. Select is the one icon that also inverts its own
+   body/ink to read against the now-light (dark mode) or now-dark (light
+   mode) chip; every other tool keeps its sticker color on the chip. */
+.canvas-tool-rail button.is-active {
+  background: var(--rail-chip);
+  box-shadow: 0 1px 0 rgb(0 0 0 / 0.35), 0 4px 10px -4px rgb(0 0 0 / 0.5);
 }
 
-.canvas-tool-rail button[data-tool-kind="image"] .tool-icon,
-.canvas-tool-rail button[data-tool-kind="frame"] .tool-icon {
-  color: color-mix(in srgb, var(--accent-cyan), var(--text-soft) 55%);
+.canvas-tool-rail button.is-active:hover .ico,
+.canvas-tool-rail button.is-active:focus-visible .ico {
+  transform: none;
+  filter: none;
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .canvas-tool-rail button,
+  .canvas-tool-rail .ico {
+    transition: none;
+  }
 
+  .canvas-tool-rail button:hover .ico,
+  .canvas-tool-rail button:focus-visible .ico,
+  .canvas-tool-rail button:active .ico {
+    transform: none;
+  }
+}
 
+/* Tooltip: ink, not the old panel-tinted popover (DESIGN.md §6, S:230-233).
+   Name only for now — no per-tool keyboard shortcut exists yet to put in
+   --tooltip-kbd, so the kbd slot from the spec is unused until one does. */
 .canvas-tool-rail button[data-tooltip]::after {
   position: absolute;
-  bottom: calc(100% + 10px);
+  bottom: calc(100% + 12px);
   left: 50%;
   z-index: 20;
-  padding: 5px 7px;
-  border: 1px solid var(--border-soft);
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--surface-inspector), transparent 4%);
-  box-shadow: 0 8px 20px rgb(0 0 0 / 0.24);
-  color: var(--text-main);
+  display: flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 9px;
+  border-radius: var(--radius-3);
+  background: var(--tooltip-bg);
+  box-shadow: 0 6px 16px -4px rgb(0 0 0 / 0.45);
+  color: var(--tooltip-text);
   content: attr(data-tooltip);
   font-size: var(--text-small);
-  font-weight: 580;
+  font-weight: 560;
   opacity: 0;
   pointer-events: none;
   transform: translate(-50%, 4px);
@@ -5118,20 +5359,6 @@ button.mini-tags-more:focus-visible {
 .canvas-tool-rail button[data-tooltip]:focus-visible::after {
   opacity: 1;
   transform: translate(-50%, 0);
-}
-
-.canvas-tool-rail button:hover,
-.canvas-tool-rail button.is-active {
-  background: var(--glass-active);
-  color: var(--accent-strong);
-}
-
-/* SF Symbols never scale or glow on hover — only the button's background/
-   color changes (see .canvas-tool-rail button:hover above). The icons are
-   vector now, so hover/active state comes for free via currentColor instead
-   of needing a separate transform+filter treatment. */
-.canvas-tool-rail .tool-icon {
-  flex: 0 0 auto;
 }
 
 /* Bottom-left: how the board is shown. Bottom-right: where the view is.
@@ -5178,6 +5405,9 @@ button.mini-tags-more:focus-visible {
   margin-right: -6px;
 }
 
+/* Same plate material as the tool rail, at the smaller radius the view
+   switcher and zoom share (DESIGN.md §6: "View switcher and zoom plates:
+   radius 12px, padding 4px, same plate material"). */
 .canvas-view-rail,
 .canvas-zoom-rail {
   display: inline-flex;
@@ -5185,27 +5415,35 @@ button.mini-tags-more:focus-visible {
   align-items: center;
   min-height: 38px;
   padding: 4px;
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius-2);
-  background: var(--glass-inspector);
-  /* A firmer, bottom-weighted contact shadow (vs. the all-around
-     --panel-shadow) so the pill reads as resting on the canvas floor
-     rather than hovering flat above it. */
-  box-shadow: 0 10px 20px -6px rgb(0 0 0 / 0.45), 0 2px 6px rgb(0 0 0 / 0.3);
+  border: 0;
+  border-radius: var(--radius-4);
+  background: var(--rail-plate);
+  backdrop-filter: blur(24px) saturate(1.35);
+  -webkit-backdrop-filter: blur(24px) saturate(1.35);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.06),
+    0 2px 4px rgb(0 0 0 / 0.45),
+    0 12px 28px -8px rgb(0 0 0 / 0.65);
   color: var(--text-muted);
   gap: 4px;
   font-size: var(--text-small);
   white-space: nowrap;
 }
 
+.app-shell[data-color-mode="light"] .canvas-view-rail,
+.app-shell[data-color-mode="light"] .canvas-zoom-rail {
+  box-shadow:
+    inset 0 0 0 1px rgb(35 33 29 / 0.06),
+    0 2px 4px rgb(35 33 29 / 0.1),
+    0 12px 26px -10px rgb(35 33 29 / 0.32);
+}
+
 /* Secondary to the view-rail's mode switch and the create-tools rail — this
    is read-only viewport status, not a primary action cluster, so it carries
-   less visual weight: no border, dimmer fill, smaller text. */
+   less visual weight: dimmer fill, smaller text. */
 .canvas-zoom-rail {
   padding-right: 7px;
-  border-color: transparent;
-  background: color-mix(in srgb, var(--glass-inspector), transparent 30%);
-  box-shadow: 0 8px 16px -6px rgb(0 0 0 / 0.35);
+  background: color-mix(in srgb, var(--rail-plate), transparent 30%);
   font-size: var(--text-small);
 }
 
@@ -5313,21 +5551,66 @@ button.mini-tags-more:focus-visible {
 }
 
 
+/* Same instrument as the tool rail (DESIGN.md §6: "Zoom: plate radius
+   12px, tool 32px icon 20px"), just smaller — hover still picks the icon
+   up, since these are the same rail icons, not Lucide glyphs. */
 .canvas-zoom-rail button {
   display: inline-grid;
-  width: 24px;
-  height: 24px;
+  width: 32px;
+  height: 32px;
   place-items: center;
   border: 0;
   border-radius: var(--radius-2);
   background: transparent;
   color: var(--text-soft);
   cursor: pointer;
+  transition: background var(--duration-fast) ease;
 }
 
-.canvas-zoom-rail button:hover {
-  background: rgb(255 255 255 / 0.075);
+.canvas-zoom-rail .ico {
+  width: 20px;
+  height: 20px;
+  filter: drop-shadow(0 1px 0 rgb(0 0 0 / 0.35));
+  transition: transform var(--duration-fast) var(--ease-out-soft), filter var(--duration-fast) ease;
+}
+
+.app-shell[data-color-mode="light"] .canvas-zoom-rail .ico {
+  filter: drop-shadow(0 1px 0 rgb(35 33 29 / 0.18));
+}
+
+.canvas-zoom-rail button:hover,
+.canvas-zoom-rail button:focus-visible {
+  background: var(--glass-hover);
   color: var(--text-main);
+}
+
+.canvas-zoom-rail button:hover .ico,
+.canvas-zoom-rail button:focus-visible .ico {
+  transform: translateY(-2px) rotate(-4deg);
+  filter: drop-shadow(0 3px 2px rgb(0 0 0 / 0.45));
+}
+
+.app-shell[data-color-mode="light"] .canvas-zoom-rail button:hover .ico,
+.app-shell[data-color-mode="light"] .canvas-zoom-rail button:focus-visible .ico {
+  filter: drop-shadow(0 3px 2px rgb(35 33 29 / 0.28));
+}
+
+.canvas-zoom-rail button:active .ico {
+  transform: translateY(1px) scale(0.94);
+  filter: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .canvas-zoom-rail button,
+  .canvas-zoom-rail .ico {
+    transition: none;
+  }
+
+  .canvas-zoom-rail button:hover .ico,
+  .canvas-zoom-rail button:focus-visible .ico,
+  .canvas-zoom-rail button:active .ico {
+    transform: none;
+  }
 }
 
 .canvas-zoom-value {
