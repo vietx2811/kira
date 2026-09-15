@@ -2590,14 +2590,19 @@ function FileWorkspace({
     return () => window.removeEventListener('resize', handleResize)
   }, [])
   const isNarrowWindow = windowWidth < 1180
+  // One effect, not two: Orchestrator caught a real race when this was split
+  // into a pair of effects each reacting to isNarrowWindow independently —
+  // opening both drawers wide, then resizing narrow in one go, had both
+  // effects read the OTHER's still-stale state in the same commit (the
+  // Library-collapse effect hadn't applied yet when the Kira-close effect
+  // read isLibraryCollapsed), so both drawers closed instead of just
+  // Library. A single effect reading both flags atomically can't race with
+  // itself. Only the direction DECISIONS.md bố cục #3 actually specifies
+  // ("mở Kira thì Thư viện thu lại") is enforced — Library never force-closes
+  // Kira; at a narrow width Library just can't reopen while Kira is open.
   useEffect(() => {
-    if (isKiraPanelOpen && isNarrowWindow) setIsLibraryCollapsed(true)
-  }, [isKiraPanelOpen, isNarrowWindow])
-  // The reverse direction of the same rule: Library expanding at a narrow
-  // width closes Kira, symmetric with the effect above.
-  useEffect(() => {
-    if (!isLibraryCollapsed && isNarrowWindow) onKiraPanelOpenChange(false)
-  }, [isLibraryCollapsed, isNarrowWindow, onKiraPanelOpenChange])
+    if (isNarrowWindow && isKiraPanelOpen && !isLibraryCollapsed) setIsLibraryCollapsed(true)
+  }, [isKiraPanelOpen, isLibraryCollapsed, isNarrowWindow])
   // Reported once per aiPanelState change, not computed redundantly at each
   // of the toggle/tab/dock-status render sites (kira/README.md §"2").
   useEffect(() => {
@@ -6774,16 +6779,17 @@ function App() {
   const handleKiraPanelOpenChange = useCallback((id: string, open: boolean) => {
     setKiraPanelOpenByFile((current) => (current[id] === open ? current : { ...current, [id]: open }))
   }, [])
-  // FileWorkspace's narrow-window coordination effect (below 1180px, only
-  // one drawer open) puts its onKiraPanelOpenChange prop in its own effect's
-  // dependency array. A NEW inline closure per render — `(open) =>
+  // A NEW inline closure per render — `(open) =>
   // handleKiraPanelOpenChange(file.id, open)` inside the .map() below — would
   // change identity every App() render even though handleKiraPanelOpenChange
-  // itself is stable, re-firing that effect every time regardless of an
-  // unchanged value and tripping React's "Maximum update depth exceeded"
-  // during the settling burst (caught live testing at a sub-1180px width).
-  // Memoizing one closure per fileId, reused across renders, is what
-  // actually stops the churn — the bail-out above only bounds it.
+  // itself is stable. This bit FileWorkspace's narrow-window coordination
+  // effect once already (that effect no longer depends on this callback,
+  // consolidated to fix a real cross-effect race — see the isNarrowWindow
+  // effect below), but the pattern is still worth avoiding generally: a
+  // churning prop identity is what tripped React's "Maximum update depth
+  // exceeded" during the settling burst caught live testing at a sub-1180px
+  // width. Memoizing one closure per fileId, reused across renders, is what
+  // actually stops that churn — the bail-out above only bounds it.
   const kiraPanelOpenChangeByFileRef = useRef(new Map<string, (open: boolean) => void>())
   const kiraNeedsYouCountChangeByFileRef = useRef(new Map<string, (count: number) => void>())
   function getKiraPanelOpenChangeHandler(id: string) {
