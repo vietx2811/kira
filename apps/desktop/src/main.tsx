@@ -5,7 +5,7 @@ import { create, useStore } from 'zustand'
 import { temporal } from 'zundo'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
-import { Effect, EffectState, getCurrentWindow } from '@tauri-apps/api/window'
+import { getCurrentWindow } from '@tauri-apps/api/window'
 import { open, save } from '@tauri-apps/plugin-dialog'
 import { useEditor, EditorContent, type Editor } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
@@ -1372,7 +1372,7 @@ type SlidesConfig = {
   order: string[]
   customizations: Record<string, SlideCustomization>
 }
-type GlassStatus = 'browser' | 'native' | 'fallback'
+type GlassStatus = 'browser' | 'fallback'
 
 type KiraDevApi = {
   loadFixture: (referenceCount?: number) => ProjectSnapshot
@@ -3010,21 +3010,13 @@ function FileWorkspace({
     }
     const appWindow = getCurrentWindow()
     // KIRA owns its chrome appearance. Leaving this unset makes macOS flip
-    // native controls and vibrancy whenever the system appearance changes, so
-    // pin it to the project's mode (the same value the shell renders).
+    // native controls whenever the system appearance changes, so pin it to
+    // the project's mode (the same value the shell renders). The window is
+    // opaque with no vibrancy/transparency material (removed 2026-09-16 —
+    // it let the desktop wallpaper show through gaps around the shell), so
+    // the shell always paints its own themed ground here.
     void appWindow.setTheme(shellColorMode).catch(() => undefined)
-    void appWindow
-      .setEffects({
-        effects: [Effect.UnderWindowBackground],
-        state: EffectState.FollowsWindowActiveState,
-      })
-      .then(() => {
-        setGlassStatus('native')
-      })
-      .catch(() => {
-        setGlassStatus('fallback')
-        // Window effects are platform-dependent; transparent CSS remains the fallback.
-      })
+    setGlassStatus('fallback')
   }, [isActive, shellColorMode])
 
   const outlineSections = useMemo(
@@ -14713,9 +14705,6 @@ function buildProjectAppearanceStyle(appearance: ProjectAppearance): React.CSSPr
     '--window-border': dark ? 'rgb(255 255 255 / 0.08)' : colorWithAlpha(tokens.textMain, 0.08),
     '--glass-sidebar': dark ? colorWithAlpha(tokens.surface1, 0.32) : colorWithAlpha(tokens.surface1, 0.34),
     '--glass-drawer': colorWithAlpha(tokens.surfaceDrawer, DRAWER_GLASS_ALPHA[tokens.mode]),
-    // Only meaningful in the native glass state, where the window chrome is the
-    // one surface that lets the window material through.
-    '--material-chrome-glass': colorWithAlpha(tokens.base, CHROME_GLASS_ALPHA[tokens.mode]),
     '--scrim': dark ? 'rgb(0 0 0 / 0.62)' : colorWithAlpha(tokens.textMain, 0.38),
     '--glass-content': dark ? colorWithAlpha(tokens.base, 0.22) : colorWithAlpha(tokens.base, 0.28),
     '--glass-inspector': dark ? colorWithAlpha(tokens.surfaceInspector, 0.86) : colorWithAlpha(tokens.surfaceInspector, 0.9),

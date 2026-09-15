@@ -10,7 +10,6 @@
     "frontendDist": "../dist"
   },
   "app": {
-    "macOSPrivateApi": true,
     "windows": [
       {
         "title": "KIRA",
@@ -20,7 +19,8 @@
         "minHeight": 720,
         "resizable": true,
         "decorations": true,
-        "transparent": true,
+        "transparent": false,
+        "backgroundColor": "#0d0e0d",
         "shadow": true,
         "titleBarStyle": "Overlay",
         "hiddenTitle": true
