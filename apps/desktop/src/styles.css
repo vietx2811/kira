@@ -853,7 +853,7 @@ button {
   background: transparent;
   box-shadow: inset 0 -2px 0 var(--text-main);
   transform: translateX(calc(var(--seg-index) * (100% + 2px)));
-  transition: transform var(--duration-base) var(--ease-spring);
+  transition: transform var(--duration-base) var(--ease-out-soft);
   pointer-events: none;
 }
 
@@ -1409,14 +1409,23 @@ button {
 
 .canvas-notice {
   position: absolute;
-  bottom: 18px;
+  /* .canvas-bottom-bar sits at bottom: var(--space-4) (16px) and its
+     tallest child, .canvas-tool-rail, is 56px — so the bar's top edge is
+     72px above the viewport bottom. This toast used to sit at bottom: 18px
+     (top edge ~48px), overlapping the tool rail's Select button by
+     ~64x30px (measured via elementsFromPoint). Clear the bar plus a 16px
+     gap so the toast floats above it instead. */
+  bottom: calc(var(--space-4) * 2 + 56px);
   left: 50%;
   z-index: 50;
   max-width: min(420px, calc(100% - 32px));
   padding: 8px 16px;
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-2);
-  background: var(--glass-inspector);
+  /* Chrome floating over the canvas stays opaque (Material-On-Chrome Rule,
+     DESIGN.md §6: "every button stays opaque") — was --glass-inspector
+     (alpha 0.86), matching the .kira-panel/aside.inbox opacity fix. */
+  background: var(--surface-inspector);
   box-shadow: var(--panel-shadow);
   color: var(--text-main);
   font-size: var(--text-small);
@@ -3058,7 +3067,10 @@ button.mini-tags-more:focus-visible {
   padding: 26px;
   border: 0;
   border-radius: var(--radius-3);
-  background: color-mix(in srgb, var(--surface-drawer), transparent 7%);
+  /* Opaque (Material-On-Chrome Rule, DESIGN.md §6): --surface-drawer is
+     already a solid hex, so the color-mix transparency wrapper was the
+     only thing making this 0.93 alpha instead of fully opaque. */
+  background: var(--surface-drawer);
   box-shadow: 0 12px 36px rgba(0,0,0,0.25), 0 0 0 1px var(--border-soft);
   gap: 16px;
   overflow: auto;
@@ -3143,7 +3155,10 @@ button.mini-tags-more:focus-visible {
   padding: 0 12px;
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-2);
-  background: color-mix(in srgb, var(--surface-inset), transparent 20%);
+  /* Opaque (Material-On-Chrome Rule, DESIGN.md §6): --surface-inset is
+     already a solid hex, so the color-mix transparency wrapper was the
+     only thing making this 0.8 alpha instead of fully opaque. */
+  background: var(--surface-inset);
   color: var(--text-main);
   cursor: pointer;
   place-items: center;
@@ -4389,10 +4404,13 @@ button.mini-tags-more:focus-visible {
 }
 
 /* One persistent element that IS the launcher and the composer — no
-   separate popover to cross-fade with. Closed: a 44px circle matching the
-   tool rail's footprint. Open: a wide glass composer that drifts up and
-   toward the canvas centre (--kira-dock-shift, measured in main.tsx) and
-   reads as a distinctly "wetter" material than the rail — see .is-open. */
+   separate popover to cross-fade with. Closed: a true 44px circle (44px
+   grid width + the 1px transparent border on each side; the single grid
+   row sizes to the orb's 42px height, so border-box brings it to 44px
+   square) matching the tool rail's footprint. Open: a wide glass composer
+   that drifts up and toward the canvas centre (--kira-dock-shift, measured
+   in main.tsx) and reads as a distinctly "wetter" material than the rail
+   — see .is-open. */
 .kira-dock {
   position: absolute;
   bottom: 0;
@@ -4403,13 +4421,19 @@ button.mini-tags-more:focus-visible {
   width: 44px;
   grid-template-rows: auto 0fr;
   border: 1px solid transparent;
-  border-radius: var(--radius-2);
+  border-radius: 50%;
   background: var(--surface-inspector);
-  /* Nearest Shadow Vocabulary token (DESIGN.md §6) instead of hand-tuned
-     rgba layers outside it; the 1px ring keeps the closed 44px launcher
-     legible against the canvas since its own border is transparent
-     (real border only shows once open, to avoid a layout shift). */
-  box-shadow: var(--panel-shadow), 0 0 0 1px var(--border-soft);
+  /* Closed dock is a small floating chrome plate over the canvas, same
+     shadow vocabulary as .canvas-view-rail/.canvas-zoom-rail (DESIGN.md
+     §6) — not --panel-shadow, which is sized for large floating panels
+     and was overkill here. The 1px ring keeps the closed 44px launcher
+     legible against the canvas since its own border is transparent (real
+     border only shows once open, to avoid a layout shift). */
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.06),
+    0 2px 4px rgb(0 0 0 / 0.45),
+    0 12px 28px -8px rgb(0 0 0 / 0.65),
+    0 0 0 1px var(--border-soft);
   color: var(--text-main);
   transform: translate(-50%, 0);
   /* --ease-spring is reserved for canvas drag/drop (kira-controls §7); a
@@ -4421,6 +4445,18 @@ button.mini-tags-more:focus-visible {
     grid-template-rows var(--duration-panel) var(--ease-out-soft),
     background-color var(--duration-base) var(--ease-soft),
     border-color var(--duration-base) var(--ease-soft);
+}
+
+/* Same light-mode shadow split as .canvas-view-rail/.canvas-zoom-rail.
+   Equal specificity to .kira-dock.is-open below and declared before it, so
+   the open state's box-shadow (var(--panel-shadow)) still wins in light
+   mode — this only touches the closed 44px launcher. */
+.app-shell[data-color-mode="light"] .kira-dock {
+  box-shadow:
+    inset 0 0 0 1px rgb(35 33 29 / 0.06),
+    0 2px 4px rgb(35 33 29 / 0.1),
+    0 12px 26px -10px rgb(35 33 29 / 0.32),
+    0 0 0 1px var(--border-soft);
 }
 
 .kira-dock.is-open {
@@ -5566,12 +5602,13 @@ button.mini-tags-more:focus-visible {
 }
 
 /* Secondary to the view-rail's mode switch and the create-tools rail — this
-   is read-only viewport status, not a primary action cluster, so it carries
-   less visual weight: dimmer fill, smaller text. */
+   is read-only viewport status, not a primary action cluster. It used to
+   carry less visual weight via a dimmer fill, but that dropped its text
+   contrast below 3:1 (1.57:1 measured); it now shares the same 0.95-alpha
+   plate as .canvas-view-rail/.canvas-tool-rail and is set apart only by
+   the tighter right padding below. */
 .canvas-zoom-rail {
   padding-right: 7px;
-  background: color-mix(in srgb, var(--rail-plate), transparent 30%);
-  font-size: var(--text-small);
 }
 
 .canvas-view-rail-trigger {
