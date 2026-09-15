@@ -788,6 +788,11 @@ const UI_STRINGS: Record<string, { en: string; vi: string }> = {
   'library.browseMode.grid': { en: 'Grid', vi: 'Lưới' },
   'library.density.compact': { en: 'Compact', vi: 'Gọn' },
   'library.density.relaxed': { en: 'Relaxed', vi: 'Thoải mái' },
+  'library.thumbSize.label': { en: 'Thumbnail size', vi: 'Kích thước ảnh' },
+  'canvas.optionsMenu': { en: 'Canvas options', vi: 'Tuỳ chọn canvas' },
+  'canvas.discoverToggle.label': { en: 'Suggest weak links', vi: 'Gợi ý liên kết' },
+  'canvas.discoverChip.active': { en: 'Showing suggested links', vi: 'Đang hiện gợi ý liên kết' },
+  'canvas.discoverChip.off': { en: 'Turn off', vi: 'Tắt' },
   'library.empty.title': { en: 'No references yet', vi: 'Chưa có tư liệu tham khảo' },
   'library.empty.body': { en: 'Drag in images, paste a URL, or import a folder to start your moodboard.', vi: 'Kéo thả hình ảnh, dán URL, hoặc nhập một thư mục để bắt đầu moodboard.' },
   'library.empty.import': { en: 'Import images', vi: 'Nhập hình ảnh' },
@@ -963,6 +968,52 @@ const useKiraPanelWidthStore = create<{ width: number; setWidth: (width: number)
   },
 }))
 
+// Percent 0-100 along the slider's travel; converted to actual pixel sizes
+// by libraryGridMinPxFor/libraryListThumbWidthFor below. App-level, not
+// project-level, same reasoning as panel width/rail icon mode above: how
+// big someone likes their reference thumbnails doesn't change per project.
+const LIBRARY_THUMB_SIZE_MIN = 0
+const LIBRARY_THUMB_SIZE_MAX = 100
+const LIBRARY_THUMB_SIZE_DEFAULT = 60
+const LIBRARY_GRID_MIN_PX = 110
+const LIBRARY_GRID_MAX_PX = 260
+const LIBRARY_LIST_THUMB_MIN_PX = 46
+const LIBRARY_LIST_THUMB_MAX_PX = 100
+
+function clampLibraryThumbSize(pct: number) {
+  return Math.min(LIBRARY_THUMB_SIZE_MAX, Math.max(LIBRARY_THUMB_SIZE_MIN, Math.round(pct)))
+}
+
+function readStoredLibraryThumbSize(): number {
+  try {
+    const stored = Number(localStorage.getItem('kira:libraryThumbSize'))
+    return Number.isFinite(stored) && stored >= 0 ? clampLibraryThumbSize(stored) : LIBRARY_THUMB_SIZE_DEFAULT
+  } catch {
+    return LIBRARY_THUMB_SIZE_DEFAULT
+  }
+}
+
+const useLibraryThumbSizeStore = create<{ pct: number; setPct: (pct: number) => void }>()((set) => ({
+  pct: readStoredLibraryThumbSize(),
+  setPct: (pct) => {
+    const next = clampLibraryThumbSize(pct)
+    try {
+      localStorage.setItem('kira:libraryThumbSize', String(next))
+    } catch {
+      // ignore persistence failures (private mode, etc.)
+    }
+    set({ pct: next })
+  },
+}))
+
+function libraryGridMinPxFor(pct: number) {
+  return Math.round(LIBRARY_GRID_MIN_PX + (LIBRARY_GRID_MAX_PX - LIBRARY_GRID_MIN_PX) * (pct / 100))
+}
+
+function libraryListThumbWidthFor(pct: number) {
+  return Math.round(LIBRARY_LIST_THUMB_MIN_PX + (LIBRARY_LIST_THUMB_MAX_PX - LIBRARY_LIST_THUMB_MIN_PX) * (pct / 100))
+}
+
 /** Inline translated label. Subscribes to the language store so it re-renders on toggle. */
 function T({ k }: { k: string }): React.ReactElement {
   const lang = useLangStore((state) => state.lang)
@@ -979,7 +1030,7 @@ function t(key: string, lang: Lang, vars?: Record<string, string>): string {
   return template.replace(/\{(\w+)\}/g, (match, name) => vars[name] ?? match)
 }
 
-type SegmentedOption<T extends string> = { value: T; label: React.ReactNode; ariaLabel?: string; title?: string }
+type SegmentedOption<T extends string> = { value: T; label: React.ReactNode; ariaLabel?: string; title?: string; tooltip?: string }
 
 /**
  * One shared segmented control for every "pick one of N" picker in the app —
@@ -1059,6 +1110,7 @@ function Segmented<T extends string>({
             className={selected ? 'segmented-option is-active' : 'segmented-option'}
             aria-label={option.ariaLabel}
             title={option.title}
+            data-tooltip={option.tooltip}
             aria-selected={variant === 'tabs' ? selected : undefined}
             aria-checked={variant === 'radio' ? selected : undefined}
             tabIndex={selected ? 0 : -1}
@@ -1302,23 +1354,26 @@ const inspectorLinkedListLimit = 8
 const outlineReferenceLimit = 6
 const libraryOverscan = 5
 const duplicateCandidateThreshold = 8
-// The rendered row box (measured .image-row height, tags row included) is
-// ~86px compact / ~100px relaxed — taller than the CSS min-height because
-// the two-row layout (thumb+copy, then tags) grows past it. The virtualized
-// list positions rows every libraryRowHeights[density]px via `transform:
-// translateY(...)`, so these must stay >= the tallest actual row or rows
-// will visually overlap; the remaining difference below is a deliberate
-// gutter between rows, not slack to trim.
+// The virtualized list positions rows via `transform: translateY(...)`
+// every rowHeight px (thumb height + chrome below + this gutter), so the
+// estimate must stay >= the tallest actual row or rows will visually
+// overlap; this is a deliberate gutter between rows, not slack to trim.
 const libraryRowGutter = 6
-const libraryRowBoxHeights: Record<LibraryDensity, number> = {
-  compact: 86,
-  relaxed: 100,
+// Everything in a list row besides the thumbnail itself (title/meta text,
+// row padding) — density still controls this. The thumbnail's own size now
+// comes from the size slider instead of density (libraryListThumbWidthFor
+// above), so this is what's left over once the (measured) row box heights
+// of 86px compact / 100px relaxed have the old fixed 48px/58px thumb
+// subtracted back out.
+const libraryRowChromeHeights: Record<LibraryDensity, number> = {
+  compact: 38,
+  relaxed: 42,
 }
-const libraryRowHeights: Record<LibraryDensity, number> = {
-  compact: libraryRowBoxHeights.compact + libraryRowGutter,
-  relaxed: libraryRowBoxHeights.relaxed + libraryRowGutter,
-}
-const libraryGridItemHeight = 184
+// Same shape as the grid card at rest (thumb aspect-ratio ~1.16 plus title/
+// meta/padding below it) — used only to estimate virtualized row height,
+// not to size anything directly (the actual card uses CSS aspect-ratio).
+const libraryGridItemChromeHeight = 74
+const libraryGridItemAspect = 1.16
 
 type GraphMetrics = {
   mode: GraphMode
@@ -1583,11 +1638,6 @@ const graphScopeLabels: Record<GraphScope, string> = {
   all: 'All',
   linked: 'Linked',
   selection: 'Focus',
-}
-
-const graphModeLabels: Record<GraphMode, string> = {
-  edit: 'Edit',
-  discover: 'Discover',
 }
 
 const discoveryFilterLabels: Record<DiscoveryFilter, string> = {
@@ -7206,6 +7256,24 @@ function FileWorkspace({
         <div className="kp-head">
           <div className="kp-title">
             <h3>Kira</h3>
+            <Segmented
+              className="kp-tabs"
+              ariaLabel="Kira"
+              value={kiraPanelTab}
+              onChange={setKiraPanelTab}
+              options={[
+                { value: 'chat', label: t('kira.panel.tabChat', lang) },
+                {
+                  value: 'needs-you',
+                  label: (
+                    <>
+                      {t('kira.panel.tabNeedsYou', lang)}
+                      {kiraNeedsYouCount > 0 && <span className="count">{kiraNeedsYouCount}</span>}
+                    </>
+                  ),
+                },
+              ]}
+            />
             <span className="spacer" />
             <button
               type="button"
@@ -7216,24 +7284,6 @@ function FileWorkspace({
               <X size={13} />
             </button>
           </div>
-          <Segmented
-            className="kp-tabs"
-            ariaLabel="Kira"
-            value={kiraPanelTab}
-            onChange={setKiraPanelTab}
-            options={[
-              { value: 'chat', label: t('kira.panel.tabChat', lang) },
-              {
-                value: 'needs-you',
-                label: (
-                  <>
-                    {t('kira.panel.tabNeedsYou', lang)}
-                    {kiraNeedsYouCount > 0 && <span className="count">{kiraNeedsYouCount}</span>}
-                  </>
-                ),
-              },
-            ]}
-          />
         </div>
         <div className="kp-body">
           {kiraPanelTab === 'chat' ? (
@@ -8492,12 +8542,8 @@ function TopBar({
         options={views.map(({ label, key, icon: Icon }) => ({
           value: label,
           ariaLabel: t(key, lang),
-          label: (
-            <>
-              <Icon size={14} />
-              <span>{t(key, lang)}</span>
-            </>
-          ),
+          tooltip: t(key, lang),
+          label: <Icon size={16} aria-hidden="true" />,
         }))}
       />
 
@@ -9788,6 +9834,8 @@ function EvidenceInbox({
   const [libraryScrollTop, setLibraryScrollTop] = useState(0)
   const [libraryViewportHeight, setLibraryViewportHeight] = useState(0)
   const [libraryViewportWidth, setLibraryViewportWidth] = useState(0)
+  const thumbSizePct = useLibraryThumbSizeStore((state) => state.pct)
+  const setThumbSizePct = useLibraryThumbSizeStore((state) => state.setPct)
   const unassigned = images.filter((image) => image.suggestions.length > 0)
   const selectedCount = selectedReferenceIds.size
   const panelCounts: Record<LibraryPanelMode, number> = {
@@ -9814,7 +9862,14 @@ function EvidenceInbox({
     }),
     [ideaTitleById, imageTitleById, links, searchQuery],
   )
-  const rowHeight = libraryRowHeights[density]
+  // Thumbnail size slider (task 2): the grid's card width and the list's
+  // thumb width both derive from the same 0-100 store value, at their own
+  // pixel ranges — grid cards are much bigger than a list thumbnail, so a
+  // shared "percent along the slider" keeps the two in step without forcing
+  // one literal px value onto both layouts.
+  const libraryThumbWidth = libraryListThumbWidthFor(thumbSizePct)
+  const libraryThumbHeight = Math.round(libraryThumbWidth / 1.25)
+  const rowHeight = libraryThumbHeight + libraryRowChromeHeights[density] + libraryRowGutter
   const totalListHeight = images.length * rowHeight
   const startIndex = Math.max(0, Math.floor(libraryScrollTop / rowHeight) - libraryOverscan)
   const visibleCount = Math.ceil((libraryViewportHeight || 1) / rowHeight) + libraryOverscan * 2
@@ -9823,18 +9878,19 @@ function EvidenceInbox({
 
   // Grid virtualization windows by ROW, not by item — a CSS `auto-fill` grid
   // has no per-item position to transform individually, so this re-derives
-  // the same column count the CSS's `repeat(auto-fill, minmax(128px, 1fr))`
-  // would produce, then renders (and vertically offsets) only the visible
-  // rows' items, same overscan/scroll-driven approach as the list above.
-  // These four constants are read off styles.css and hand-kept in sync —
-  // change `.image-grid-window`'s gap/minmax or `.image-list--grid`'s
+  // the same column count the CSS's `repeat(auto-fill, minmax(var(--library-
+  // grid-min), 1fr))` would produce, then renders (and vertically offsets)
+  // only the visible rows' items, same overscan/scroll-driven approach as
+  // the list above. These constants are read off styles.css and hand-kept
+  // in sync — change `.image-grid-window`'s gap or `.image-list--grid`'s
   // padding (styles.css, near `.image-grid-window`) and update here too, or
   // the estimated column count drifts from what actually renders.
   const gridGap = 12 // var(--space-3)
-  const gridItemMinWidth = 128
+  const gridItemMinWidth = libraryGridMinPxFor(thumbSizePct)
   const gridHorizontalPadding = 32 // var(--space-4) * 2, matches .image-list--grid
   const gridAvailableWidth = Math.max(0, libraryViewportWidth - gridHorizontalPadding)
   const gridColumns = Math.max(1, Math.floor((gridAvailableWidth + gridGap) / (gridItemMinWidth + gridGap)))
+  const libraryGridItemHeight = Math.round(gridItemMinWidth / libraryGridItemAspect) + libraryGridItemChromeHeight
   const gridRowHeight = libraryGridItemHeight + gridGap
   const totalGridRows = Math.ceil(images.length / gridColumns)
   const totalGridHeight = totalGridRows * gridRowHeight
@@ -9895,8 +9951,7 @@ function EvidenceInbox({
       }}
     >
       <div className="panel-header">
-        <div>
-          <p className="panel-kicker"><T k="library.title" /></p>
+        <div className="panel-title-row">
           <h2>{panelMode === 'images' ? 'Images' : panelMode === 'ideas' ? 'Ideas' : 'Links'}</h2>
           <span className="panel-meta">
             {t(panelCounts[panelMode] === 1 ? 'library.meta.item' : 'library.meta.items', lang, { count: String(panelCounts[panelMode]) })}
@@ -9956,6 +10011,16 @@ function EvidenceInbox({
             { value: 'list', label: t('library.browseMode.list', lang) },
             { value: 'grid', label: t('library.browseMode.grid', lang) },
           ]}
+        />
+        <input
+          className="library-size-slider"
+          aria-label={t('library.thumbSize.label', lang)}
+          type="range"
+          min={LIBRARY_THUMB_SIZE_MIN}
+          max={LIBRARY_THUMB_SIZE_MAX}
+          step={5}
+          value={thumbSizePct}
+          onChange={(event) => setThumbSizePct(Number(event.currentTarget.value))}
         />
         {selectedTag ? (
           <button
@@ -10043,6 +10108,11 @@ function EvidenceInbox({
       {panelMode === 'images' ? (
         <div
           className={`image-list image-list--${density} image-list--${browseMode}`}
+          style={{
+            '--library-thumb-w': `${libraryThumbWidth}px`,
+            '--library-thumb-h': `${libraryThumbHeight}px`,
+            '--library-grid-min': `${gridItemMinWidth}px`,
+          } as React.CSSProperties}
           data-rendered-count={browseMode === 'grid' ? visibleGridImages.length : visibleImages.length}
           data-total-count={images.length}
           ref={listRef}
@@ -10884,6 +10954,16 @@ function GraphCanvas({
         onActiveCanvasToolChange((current) => current === 'link' ? 'select' : 'link')
         return
       }
+      if (!event.metaKey && !event.ctrlKey && !event.altKey && key === 'g') {
+        event.preventDefault()
+        setGraphMode((current) => current === 'discover' ? 'edit' : 'discover')
+        return
+      }
+      if (event.shiftKey && !event.metaKey && !event.ctrlKey && !event.altKey && key === 'a') {
+        event.preventDefault()
+        onOrganize(organizeMode)
+        return
+      }
       if ((event.metaKey || event.ctrlKey) && !event.altKey && (event.key === '+' || event.key === '=')) {
         event.preventDefault()
         updateZoom(0.15)
@@ -10902,7 +10982,7 @@ function GraphCanvas({
 
     window.addEventListener('keydown', handleCanvasKeydown)
     return () => window.removeEventListener('keydown', handleCanvasKeydown)
-  }, [multiSelectedNodes, onActiveCanvasToolChange, onDeleteNodes, onPendingLinkSourceChange])
+  }, [multiSelectedNodes, onActiveCanvasToolChange, onDeleteNodes, onOrganize, onPendingLinkSourceChange, organizeMode])
 
   // Hold-space-to-pan (Figma/Sketch/Illustrator/Miro convention). The cursor
   // only promises a drag-to-pan while this is armed — see .is-space-armed.
@@ -12300,27 +12380,16 @@ function GraphCanvas({
             right. Flex keeps them from ever overlapping at any canvas width. */}
         <div className={kiraSession ? 'canvas-bottom-bar has-kira-open' : 'canvas-bottom-bar'}>
         <div className="canvas-view-rail" aria-label="Canvas view tools">
-          <Segmented
-            className="graph-mode-toggle"
-            ariaLabel="Canvas mode"
-            variant="radio"
-            value={graphMode}
-            onChange={setGraphMode}
-            options={(Object.keys(graphModeLabels) as GraphMode[]).map((mode) => ({
-              value: mode,
-              label: graphModeLabels[mode],
-              title: mode === 'discover' ? 'Suggest weak links without saving them' : 'Move, edit, and link nodes',
-            }))}
-          />
           <button
             aria-expanded={isGraphToolsOpen}
-            className={isGraphToolsOpen ? 'canvas-view-rail-trigger is-active' : 'canvas-view-rail-trigger'}
+            aria-label={t('canvas.optionsMenu', lang)}
+            data-tooltip={t('canvas.optionsMenu', lang)}
+            className={isGraphToolsOpen ? 'icon-button is-active' : 'icon-button'}
             data-menu-trigger="graph-tools"
             type="button"
             onClick={() => setIsGraphToolsOpen((current) => !current)}
           >
-            <SlidersHorizontal size={13} />
-            Arrange
+            <SlidersHorizontal size={16} />
           </button>
         </div>
 
@@ -12399,6 +12468,15 @@ function GraphCanvas({
           </span>
         </div>
         </div>
+        {graphMode === 'discover' && (
+          <div className="discover-mode-chip" role="status">
+            <span>{t('canvas.discoverChip.active', lang)}</span>
+            <span className="discover-mode-chip-sep" aria-hidden="true">·</span>
+            <button type="button" onClick={() => setGraphMode('edit')}>
+              {t('canvas.discoverChip.off', lang)}
+            </button>
+          </div>
+        )}
         {graphMetrics.totalNodes === 0 && (
           <section className="canvas-zero-state" aria-label="Start a KIRA project">
             {restorableSessionLabel && (
@@ -13156,6 +13234,18 @@ function GraphCanvas({
 
         {isGraphToolsOpen && (
           <div className="graph-tools-drawer">
+            <label className="graph-tools-wide graph-tools-toggle">
+              <span>{t('canvas.discoverToggle.label', lang)}</span>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={graphMode === 'discover'}
+                className={graphMode === 'discover' ? 'kira-switch is-on' : 'kira-switch'}
+                onClick={() => setGraphMode((current) => current === 'discover' ? 'edit' : 'discover')}
+              >
+                <span className="kira-switch-thumb" aria-hidden="true" />
+              </button>
+            </label>
             <label>
               <span>Cap</span>
               <select
@@ -13252,6 +13342,8 @@ function GraphCanvas({
               <summary>Shortcuts</summary>
               <dl>
                 <div><dt>L</dt><dd>Create link</dd></div>
+                <div><dt>G</dt><dd>Toggle suggested links</dd></div>
+                <div><dt>Shift A</dt><dd>Apply arrange</dd></div>
                 <div><dt>Cmd/Ctrl N</dt><dd>New idea</dd></div>
                 <div><dt>Cmd/Ctrl D</dt><dd>Duplicate node</dd></div>
                 <div><dt>Delete</dt><dd>Delete selected</dd></div>

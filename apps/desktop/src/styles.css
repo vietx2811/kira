@@ -850,6 +850,30 @@ button {
     0 12px 26px -10px rgb(35 33 29 / 0.32);
 }
 
+/* Icon-only, 28px square options (task 4) — was icon+text label with an
+   ink-underline selected state shared with every other Segmented; the view
+   switcher gets its own raised pill instead, closer to a macOS segmented
+   control and legible without the label. Scoped to .content-view-switch
+   only: List/Grid, density, language etc. keep the shared underline. */
+.content-view-switch .segmented-option {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  gap: 0;
+}
+
+.content-view-switch .segmented-thumb {
+  /* Same ink-chip recipe as the canvas tool rail's selected tool (S:262-
+     264) — a raised pill in the groove, not the shared underline and never
+     teal (kira-controls §2-3). */
+  background: var(--rail-chip);
+  box-shadow: 0 1px 0 rgb(0 0 0 / 0.35), 0 4px 10px -4px rgb(0 0 0 / 0.5);
+}
+
+.content-view-switch .segmented-option.is-active {
+  color: var(--control-on-primary);
+}
+
 /* One shared segmented control (see the Segmented component in main.tsx) for
    every "pick one of N" picker in the app — view tabs, List/Grid, density,
    Edit/Discover, outline filter, 3D scope, the language toggle. A sliding
@@ -1875,8 +1899,26 @@ button {
 .panel-header {
   position: relative;
   justify-content: space-between;
-  padding: 18px var(--space-4) 12px;
+  padding: 14px var(--space-4) 10px;
   border-bottom: 0;
+}
+
+/* Title, item count and the "N suggested" badge share one line (DESIGN.md
+   §5 Space-and-Line-First: a panel gets one header row, not a kicker +
+   title + meta stack) — h2 shrinks and truncates before it pushes the
+   count off the edge of a narrow drawer. */
+.panel-title-row {
+  display: flex;
+  align-items: baseline;
+  min-width: 0;
+  gap: var(--space-2);
+}
+
+.panel-title-row h2 {
+  overflow: hidden;
+  font-size: var(--text-small);
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .panel-header::after {
@@ -1900,15 +1942,6 @@ button {
   width: 28px;
 }
 
-.panel-kicker {
-  margin: 0 0 2px;
-  color: var(--text-muted);
-  font-size: var(--text-small);
-  font-weight: var(--weight-label);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
 h1,
 h2,
 h3,
@@ -1928,11 +1961,13 @@ h2 {
 
 .panel-meta {
   display: flex;
+  flex: 1 1 auto;
   align-items: center;
-  margin-top: 4px;
+  min-width: 0;
   color: var(--text-muted);
   gap: 6px;
   font-size: var(--text-small);
+  white-space: nowrap;
 }
 
 .panel-meta-badge {
@@ -1984,11 +2019,28 @@ small {
 .library-browse-bar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   min-height: 32px;
   padding: 0 var(--space-4) var(--space-2);
   color: var(--text-muted);
+  gap: var(--space-2);
   font-size: var(--text-small);
+}
+
+/* Filter chip or item count is the row's least important content once the
+   size slider is added — always trail it, whichever sits there. */
+.library-browse-bar > :last-child {
+  flex: 0 1 auto;
+  min-width: 0;
+  margin-left: auto;
+}
+
+/* Thumbnail-size slider (task 2): shares the browse-mode row instead of
+   taking its own line. Native range track, themed only via accent-color —
+   same recipe as .range-field input, just without the stacked label. */
+.library-size-slider {
+  width: 72px;
+  flex: 0 0 auto;
+  accent-color: var(--accent-cyan);
 }
 
 .active-filter-chip {
@@ -2163,15 +2215,6 @@ small {
   padding: var(--space-2) var(--space-3);
 }
 
-.image-list--relaxed .image-row > button {
-  grid-template-columns: 72px 1fr;
-}
-
-.image-list--relaxed .image-row .reference-thumb {
-  width: 72px;
-  height: 58px;
-}
-
 /* Custom checkbox (native <input> hidden, .reference-check draws the box)
    so hover/checked states are consistent and, in the grid, so it can sit on
    a scrim — a bare native checkbox with only `accent-color` was invisible
@@ -2247,7 +2290,10 @@ small {
 
 .image-row > button {
   display: grid;
-  grid-template-columns: 60px 1fr;
+  /* Thumb width tracks the size slider (task 2) — same var the grid card
+     reads (see .image-grid-window), just at the list's own smaller range
+     (libraryListThumbWidthFor in main.tsx). */
+  grid-template-columns: var(--library-thumb-w, 60px) 1fr;
   align-items: center;
   gap: var(--space-3);
   min-width: 0;
@@ -2296,8 +2342,8 @@ small {
 }
 
 .image-row .reference-thumb {
-  width: 60px;
-  height: 48px;
+  width: var(--library-thumb-w, 60px);
+  height: var(--library-thumb-h, 48px);
   border-radius: var(--radius-1);
 }
 
@@ -2318,7 +2364,7 @@ small {
   right: 0;
   left: 0;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(128px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(var(--library-grid-min, 128px), 1fr));
   align-items: start;
   gap: var(--space-3);
 }
@@ -5558,7 +5604,8 @@ button.mini-tags-more:focus-visible {
 /* Tooltip: ink, not the old panel-tinted popover (DESIGN.md §6, S:230-233).
    Name only for now — no per-tool keyboard shortcut exists yet to put in
    --tooltip-kbd, so the kbd slot from the spec is unused until one does. */
-.canvas-tool-rail button[data-tooltip]::after {
+.canvas-tool-rail button[data-tooltip]::after,
+.canvas-view-rail button[data-tooltip]::after {
   position: absolute;
   bottom: calc(100% + 12px);
   left: 50%;
@@ -5582,7 +5629,41 @@ button.mini-tags-more:focus-visible {
 }
 
 .canvas-tool-rail button[data-tooltip]:hover::after,
-.canvas-tool-rail button[data-tooltip]:focus-visible::after {
+.canvas-tool-rail button[data-tooltip]:focus-visible::after,
+.canvas-view-rail button[data-tooltip]:hover::after,
+.canvas-view-rail button[data-tooltip]:focus-visible::after {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+/* Same ink tooltip, opening downward instead of up — .content-view-switch
+   sits at the top of the window (the topbar), so a tooltip above it would
+   run off-screen behind the traffic lights. */
+.content-view-switch .segmented-option[data-tooltip]::after {
+  position: absolute;
+  top: calc(100% + 10px);
+  left: 50%;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 9px;
+  border-radius: var(--radius-3);
+  background: var(--tooltip-bg);
+  box-shadow: 0 6px 16px -4px rgb(0 0 0 / 0.45);
+  color: var(--tooltip-text);
+  content: attr(data-tooltip);
+  font-size: var(--text-small);
+  font-weight: var(--weight-control);
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, -4px);
+  transition: opacity 120ms ease, transform var(--duration-fast) var(--ease-out-soft);
+  white-space: nowrap;
+}
+
+.content-view-switch .segmented-option[data-tooltip]:hover::after,
+.content-view-switch .segmented-option[data-tooltip]:focus-visible::after {
   opacity: 1;
   transform: translate(-50%, 0);
 }
@@ -5624,6 +5705,14 @@ button.mini-tags-more:focus-visible {
 .canvas-view-rail {
   margin-right: auto;
   margin-left: -6px;
+}
+
+/* Tooltip anchor for the menu trigger's [data-tooltip]::after — .icon-button
+   itself carries no position, so without this the tooltip would position
+   against the nearest ancestor that does (.canvas-bottom-bar), not the
+   button. */
+.canvas-view-rail button {
+  position: relative;
 }
 
 .canvas-zoom-rail {
@@ -5683,32 +5772,110 @@ button.mini-tags-more:focus-visible {
   padding-right: 7px;
 }
 
-.canvas-view-rail-trigger {
+/* .canvas-view-rail now holds a single icon-only menu trigger (task 3: the
+   old Edit/Discover segmented + text "Arrange" button folded into the
+   graph-tools-drawer menu) — plain .icon-button at its default 32px
+   Regular size, same quiet-tier look and ink-underline .is-active state
+   every other menu trigger in the app already uses (Library's "⋯", the
+   project-settings toggle), so no bespoke button CSS is needed here. */
+
+/* Status chip shown on canvas while "Gợi ý liên kết" (Suggest weak links)
+   is on, so turning on discover mode is never a dead end (DESIGN.md §2:
+   don't strand the user in a hidden mode). Teal is allowed here — this is
+   a status readout, not a control fill (kira-controls §2, "trạng thái"). */
+.discover-mode-chip {
+  position: absolute;
+  top: var(--space-4);
+  left: 50%;
+  z-index: 5;
   display: inline-flex;
   align-items: center;
-  height: 26px;
-  padding: 0 10px;
-  border: 0;
-  border-radius: var(--radius-2);
-  background: transparent;
-  color: var(--text-soft);
-  cursor: pointer;
-  gap: 5px;
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: var(--accent-faint);
+  color: var(--accent-strong);
+  transform: translateX(-50%);
+  gap: 6px;
   font-size: var(--text-small);
   font-weight: var(--weight-control);
+  pointer-events: auto;
 }
 
-.canvas-view-rail-trigger:hover {
-  background: var(--control-patch);
+.discover-mode-chip-sep {
+  opacity: 0.6;
+}
+
+.discover-mode-chip button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  font-weight: var(--weight-title);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.discover-mode-chip button:hover {
   color: var(--text-main);
 }
 
-.canvas-view-rail-trigger.is-active {
-  /* Selected is ink, not teal (DESIGN.md §7 "view options are quiet Compact
-     buttons and the current view takes the ink underline"). */
-  color: var(--text-main);
-  box-shadow: inset 0 -2px 0 var(--text-main);
-  border-radius: 8px 8px 2px 2px;
+/* Discover toggle row inside graph-tools-drawer: label left, switch right,
+   instead of the drawer's usual stacked <label><span>+<select> layout. */
+.graph-tools-drawer label.graph-tools-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+/* A real on/off switch (role="switch") rather than a checkbox — this picks
+   a canvas mode, not a settings flag. Off is a paper sheet at rest (same
+   material as secondary/danger buttons); on is filled with --accent-cyan,
+   the one allowed non-focus/selection use of teal (kira-controls §2,
+   "checkbox đã tick"). */
+.kira-switch {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  width: 34px;
+  height: 20px;
+  padding: 2px;
+  border: 1px solid var(--control-sheet-edge);
+  border-radius: 999px;
+  background: var(--control-sheet);
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  transition: background var(--duration-fast) ease, border-color var(--duration-fast) ease;
+}
+
+.kira-switch-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: var(--text-soft);
+  transition: transform var(--duration-fast) var(--ease-out-soft), background var(--duration-fast) ease;
+  transform: translateX(0);
+}
+
+.kira-switch.is-on {
+  border-color: transparent;
+  background: var(--accent-cyan);
+}
+
+.kira-switch.is-on .kira-switch-thumb {
+  background: var(--bg-base);
+  transform: translateX(16px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kira-switch,
+  .kira-switch-thumb {
+    transition: none;
+  }
 }
 
 .canvas-zoom-status {
@@ -9127,14 +9294,19 @@ textarea {
 .kp-title {
   display: flex;
   align-items: center;
-  margin-bottom: 12px;
   gap: 8px;
 }
 
+/* One line for the whole header (DESIGN.md §5): title, tabs and close
+   button share it instead of stacking title above tabs. */
 .kp-title h3 {
   margin: 0;
-  font-size: var(--text-title);
+  overflow: hidden;
+  color: var(--text-soft);
+  font-size: var(--text-small);
   font-weight: var(--weight-title);
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .kp-title .spacer {
