@@ -1,0 +1,1065 @@
+<!-- Specimen v3, Art Director KIRA, 2026-09-16. Mã nguồn kit trích dẫn: shadcn/ui (MIT), Untitled UI React (MIT), figui3 core (MIT), Lucide (ISC). -->
+<title>KIRA Kit Directions v3</title>
+<meta name="description" content="Specimen so sánh 4 hướng thẩm mỹ cho KIRA: Ink & Paper, shadcn/ui, Untitled UI, Figma UI3">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400..700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.3.3/dist/index.global.js"></script>
+<style type="text/tailwindcss">
+/* Hướng B (shadcn/ui, style nova, base-color neutral) và C (Untitled UI React) dùng chung một trình biên dịch Tailwind v4.
+   Hai kit trùng tên utility (bg-primary, text-primary, rounded-lg...) với nghĩa khác nhau, nên các namespace trùng
+   trỏ qua biến --k-* và mỗi kit tự đặt --k-* trong phạm vi .kit-b / .kit-c. Class trong markup giữ nguyên như mã nguồn kit. */
+@custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));
+@theme inline {
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --radius-sm: var(--k-r-sm); --radius-md: var(--k-r-md); --radius-lg: var(--k-r-lg); --radius-xl: var(--k-r-xl);
+  --shadow-lg: var(--k-shadow-lg);
+  --shadow-xs-skeuomorphic: 0px 0px 0px 1px rgba(0,0,0,0.18) inset, 0px -2px 0px 0px rgba(0,0,0,0.05) inset, 0px 1px 2px rgba(0,0,0,0.05);
+  --text-md: 1rem; --text-md--line-height: 1.5rem;
+  /* shadcn */
+  --color-background: var(--background); --color-foreground: var(--foreground);
+  --color-card: var(--card); --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover); --color-popover-foreground: var(--popover-foreground);
+  --color-primary-foreground: var(--primary-foreground); --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted); --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent); --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive); --color-border: var(--border); --color-input: var(--input); --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar); --color-sidebar-foreground: var(--sidebar-foreground); --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent: var(--sidebar-accent); --color-sidebar-accent-foreground: var(--sidebar-accent-foreground); --color-sidebar-ring: var(--sidebar-ring);
+  /* trùng tên giữa hai kit */
+  --color-primary: var(--k-primary);
+  --background-color-primary: var(--k-bg-primary); --background-color-secondary: var(--k-bg-secondary);
+  --text-color-primary: var(--k-text-primary); --text-color-secondary: var(--k-text-secondary);
+  /* Untitled UI */
+  --background-color-tertiary: var(--u-bg-tertiary); --background-color-quaternary: var(--u-bg-quaternary);
+  --background-color-primary_hover: var(--u-bg-primary_hover); --background-color-secondary_hover: var(--u-bg-secondary_hover);
+  --background-color-primary_alt: var(--u-bg-primary_alt); --background-color-secondary_alt: var(--u-bg-secondary_alt);
+  --background-color-brand-solid: var(--u-brand-600); --background-color-brand-solid_hover: var(--u-bg-brand-solid_hover);
+  --background-color-primary-solid: var(--u-bg-primary-solid); --background-color-overlay: var(--u-bg-overlay);
+  --text-color-tertiary: var(--u-text-tertiary); --text-color-quaternary: var(--u-text-quaternary);
+  --text-color-placeholder: var(--u-text-quaternary); --text-color-brand-secondary: var(--u-text-brand-secondary);
+  --text-color-error-primary: var(--u-text-error); --text-color-success-primary: var(--u-text-success); --text-color-warning-primary: var(--u-text-warning);
+  --text-color-tooltip-supporting-text: var(--u-tooltip-supporting);
+  --border-color-primary: var(--u-border-primary); --border-color-secondary: var(--u-border-secondary);
+  --ring-color-primary: var(--u-border-primary); --ring-color-secondary: var(--u-border-secondary); --ring-color-secondary_alt: var(--u-border-secondary_alt);
+  --ring-color-brand: var(--u-border-brand); --ring-color-slider-handle-border: var(--u-slider-border);
+  --color-border-secondary: var(--u-border-secondary);
+  --color-fg-quaternary: var(--u-fg-quaternary); --color-fg-quaternary_hover: var(--u-fg-quaternary_hover);
+  --color-fg-secondary: var(--u-fg-secondary); --color-fg-secondary_hover: var(--u-fg-secondary_hover);
+  --color-fg-brand-primary: var(--u-fg-brand-primary); --color-fg-brand-primary_alt: var(--u-fg-brand-primary_alt);
+  --color-fg-white: #ffffff; --color-fg-warning-secondary: var(--u-fg-warning-secondary); --color-fg-success-secondary: var(--u-fg-success-secondary);
+  --color-focus-ring: var(--u-brand-500); --color-slider-handle-bg: var(--u-slider-bg); --color-bg-primary-solid: var(--u-bg-primary-solid);
+  --color-utility-neutral-50: var(--u-un50); --color-utility-neutral-200: var(--u-un200); --color-utility-neutral-700: var(--u-un700);
+  --color-utility-brand-50: var(--u-ub50); --color-utility-brand-200: var(--u-ub200); --color-utility-brand-700: var(--u-ub700);
+  --color-utility-green-50: var(--u-ug50); --color-utility-green-200: var(--u-ug200); --color-utility-green-700: var(--u-ug700);
+  --color-utility-yellow-50: var(--u-uy50); --color-utility-yellow-200: var(--u-uy200); --color-utility-yellow-700: var(--u-uy700);
+}
+@layer base {
+  .kit-b *, .kit-b ::before, .kit-b ::after { border-color: var(--border); }
+}
+@layer components {
+  .kit-b {
+    .cn-button { @apply focus-visible:border-ring focus-visible:ring-ring/50 aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive dark:aria-invalid:border-destructive/50 rounded-lg border border-transparent bg-clip-padding text-sm font-medium focus-visible:ring-3 aria-invalid:ring-3 active:not-aria-[haspopup]:translate-y-px [&_svg:not([class*='size-'])]:size-4; }
+    .cn-button-variant-default { @apply bg-primary text-primary-foreground hover:bg-primary/80; }
+    .cn-button-variant-outline { @apply border-border bg-background hover:bg-muted hover:text-foreground dark:bg-input/30 dark:border-input dark:hover:bg-input/50 aria-expanded:bg-muted aria-expanded:text-foreground; }
+    .cn-button-variant-secondary { @apply bg-secondary text-secondary-foreground hover:bg-[color-mix(in_oklch,var(--secondary),var(--foreground)_5%)] aria-expanded:bg-secondary aria-expanded:text-secondary-foreground; }
+    .cn-button-variant-ghost { @apply hover:bg-muted hover:text-foreground dark:hover:bg-muted/50 aria-expanded:bg-muted aria-expanded:text-foreground; }
+    .cn-button-variant-destructive { @apply bg-destructive/10 hover:bg-destructive/20 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40 dark:bg-destructive/20 text-destructive focus-visible:border-destructive/40 dark:hover:bg-destructive/30; }
+    .cn-button-size-xs { @apply h-6 gap-1 rounded-[min(var(--radius-md),10px)] px-2 text-xs in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&_svg:not([class*='size-'])]:size-3; }
+    .cn-button-size-sm { @apply h-7 gap-1 rounded-[min(var(--radius-md),12px)] px-2.5 text-[0.8rem] in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&_svg:not([class*='size-'])]:size-3.5; }
+    .cn-button-size-default { @apply h-8 gap-1.5 px-2.5 has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2; }
+    .cn-button-size-icon-xs { @apply size-6 rounded-[min(var(--radius-md),10px)] in-data-[slot=button-group]:rounded-lg [&_svg:not([class*='size-'])]:size-3; }
+    .cn-button-size-icon-sm { @apply size-7 rounded-[min(var(--radius-md),12px)] in-data-[slot=button-group]:rounded-lg; }
+    .cn-button-size-icon { @apply size-8; }
+    .cn-badge { @apply h-5 gap-1 rounded-4xl border border-transparent px-2 py-0.5 text-xs font-medium transition-all has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&>svg]:size-3!; }
+    .cn-badge-variant-secondary { @apply bg-secondary text-secondary-foreground [a]:hover:bg-secondary/80; }
+    .cn-badge-variant-outline { @apply border-border text-foreground [a]:hover:bg-muted [a]:hover:text-muted-foreground; }
+    .cn-dropdown-menu-content { @apply ring-foreground/10 bg-popover text-popover-foreground min-w-32 rounded-lg p-1 shadow-md ring-1; }
+    .cn-dropdown-menu-item { @apply focus:bg-accent focus:text-accent-foreground data-[variant=destructive]:text-destructive data-[variant=destructive]:focus:bg-destructive/10 dark:data-[variant=destructive]:focus:bg-destructive/20 data-[variant=destructive]:focus:text-destructive data-[variant=destructive]:*:[svg]:text-destructive not-data-[variant=destructive]:focus:**:text-accent-foreground gap-1.5 rounded-md px-1.5 py-1 text-sm data-inset:pl-7 [&_svg:not([class*='size-'])]:size-4; }
+    .cn-dropdown-menu-radio-item { @apply focus:bg-accent focus:text-accent-foreground focus:**:text-accent-foreground gap-1.5 rounded-md py-1 pr-8 pl-1.5 text-sm data-inset:pl-7 [&_svg:not([class*='size-'])]:size-4; }
+    .cn-dropdown-menu-item-indicator { @apply absolute right-2 flex items-center justify-center; }
+    .cn-dropdown-menu-label { @apply text-muted-foreground px-1.5 py-1 text-xs font-medium data-inset:pl-7; }
+    .cn-dropdown-menu-separator { @apply bg-border -mx-1 my-1 h-px; }
+    .cn-dropdown-menu-shortcut { @apply text-muted-foreground group-focus/dropdown-menu-item:text-accent-foreground ml-auto text-xs tracking-widest; }
+    .cn-empty { @apply gap-4 rounded-xl border-dashed p-6; }
+    .cn-empty-header { @apply gap-2; }
+    .cn-empty-media { @apply mb-2; }
+    .cn-empty-media-icon { @apply bg-muted text-foreground flex size-8 shrink-0 items-center justify-center rounded-lg [&_svg:not([class*='size-'])]:size-4; }
+    .cn-empty-title { @apply text-sm font-medium tracking-tight; }
+    .cn-empty-description { @apply text-sm/relaxed; }
+    .cn-empty-content { @apply gap-2.5 text-sm; }
+    .cn-field-group { @apply gap-5 data-[slot=checkbox-group]:gap-3 *:data-[slot=field-group]:gap-4; }
+    .cn-field { @apply data-[invalid=true]:text-destructive gap-2; }
+    .cn-field-description { @apply text-muted-foreground text-left text-sm [[data-variant=legend]+&]:-mt-1.5; }
+    .cn-label { @apply gap-2 text-sm leading-none font-medium group-data-[disabled=true]:opacity-50 peer-disabled:opacity-50; }
+    .cn-input { @apply dark:bg-input/30 border-input focus-visible:border-ring focus-visible:ring-ring/50 aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive dark:aria-invalid:border-destructive/50 disabled:bg-input/50 dark:disabled:bg-input/80 h-8 rounded-lg border bg-transparent px-2.5 py-1 text-base transition-colors file:h-6 file:text-sm file:font-medium focus-visible:ring-3 aria-invalid:ring-3 md:text-sm; }
+    .cn-textarea { @apply border-input dark:bg-input/30 focus-visible:border-ring focus-visible:ring-ring/50 aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive dark:aria-invalid:border-destructive/50 disabled:bg-input/50 dark:disabled:bg-input/80 rounded-lg border bg-transparent px-2.5 py-2 text-base transition-colors focus-visible:ring-3 aria-invalid:ring-3 md:text-sm; }
+    .cn-input-group { @apply border-input dark:bg-input/30 has-[[data-slot=input-group-control]:focus-visible]:border-ring has-[[data-slot=input-group-control]:focus-visible]:ring-ring/50 has-[[data-slot][aria-invalid=true]]:ring-destructive/20 has-[[data-slot][aria-invalid=true]]:border-destructive dark:has-[[data-slot][aria-invalid=true]]:ring-destructive/40 has-disabled:bg-input/50 dark:has-disabled:bg-input/80 h-8 rounded-lg border transition-colors in-data-[slot=combobox-content]:focus-within:border-inherit in-data-[slot=combobox-content]:focus-within:ring-0 has-disabled:opacity-50 has-[[data-slot=input-group-control]:focus-visible]:ring-3 has-[[data-slot][aria-invalid=true]]:ring-3 has-[>[data-align=block-end]]:h-auto has-[>[data-align=block-end]]:flex-col has-[>[data-align=block-start]]:h-auto has-[>[data-align=block-start]]:flex-col has-[>[data-align=block-end]]:[&>input]:pt-3 has-[>[data-align=block-start]]:[&>input]:pb-3 has-[>[data-align=inline-end]]:[&>input]:pr-1.5 has-[>[data-align=inline-start]]:[&>input]:pl-1.5; }
+    .cn-input-group-addon { @apply text-muted-foreground h-auto gap-2 py-1.5 text-sm font-medium group-data-[disabled=true]/input-group:opacity-50 [&>kbd]:rounded-[calc(var(--radius)-5px)] [&>svg:not([class*='size-'])]:size-4; }
+    .cn-input-group-addon-align-inline-start { @apply pl-2 has-[>button]:ml-[-0.3rem] has-[>kbd]:ml-[-0.15rem]; }
+    .cn-input-group-addon-align-block-end { @apply px-2.5 pb-2 group-has-[>input]/input-group:pb-2 [.border-t]:pt-2; }
+    .cn-input-group-input { @apply rounded-none border-0 bg-transparent shadow-none ring-0 focus-visible:ring-0 disabled:bg-transparent aria-invalid:ring-0 dark:bg-transparent dark:disabled:bg-transparent; }
+    .cn-input-group-textarea { @apply rounded-none border-0 bg-transparent py-2 shadow-none ring-0 focus-visible:ring-0 disabled:bg-transparent aria-invalid:ring-0 dark:bg-transparent dark:disabled:bg-transparent; }
+    .cn-item { @apply [a]:hover:bg-muted rounded-lg border text-sm; }
+    .cn-item-variant-outline { @apply border-border; }
+    .cn-item-size-sm { @apply gap-2.5 px-3 py-2.5; }
+    .cn-item-size-xs { @apply gap-2 px-2.5 py-2 in-data-[slot=dropdown-menu-content]:p-0; }
+    .cn-item-media { @apply gap-2 group-has-data-[slot=item-description]/item:translate-y-0.5 group-has-data-[slot=item-description]/item:self-start; }
+    .cn-item-media-variant-icon { @apply [&_svg:not([class*='size-'])]:size-4; }
+    .cn-item-content { @apply gap-1 group-data-[size=xs]/item:gap-0; }
+    .cn-item-title { @apply gap-2 text-sm leading-snug font-medium underline-offset-4; }
+    .cn-item-description { @apply text-muted-foreground text-left text-sm leading-normal group-data-[size=xs]/item:text-xs; }
+    .cn-item-actions { @apply gap-2; }
+    .cn-item-footer { @apply gap-2; }
+    .cn-item-group { @apply gap-4 has-data-[size=sm]:gap-2.5 has-data-[size=xs]:gap-2; }
+    .cn-kbd { @apply bg-muted text-muted-foreground in-data-[slot=tooltip-content]:bg-background/20 in-data-[slot=tooltip-content]:text-background dark:in-data-[slot=tooltip-content]:bg-background/10 h-5 w-fit min-w-5 gap-1 rounded-sm px-1 font-sans text-xs font-medium [&_svg:not([class*='size-'])]:size-3; }
+    .cn-select-trigger { @apply border-input data-placeholder:text-muted-foreground dark:bg-input/30 dark:hover:bg-input/50 focus-visible:border-ring focus-visible:ring-ring/50 aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive dark:aria-invalid:border-destructive/50 gap-1.5 rounded-lg border bg-transparent py-2 pr-2 pl-2.5 text-sm transition-colors select-none focus-visible:ring-3 aria-invalid:ring-3 data-[size=default]:h-8 data-[size=sm]:h-7 data-[size=sm]:rounded-[min(var(--radius-md),10px)] *:data-[slot=select-value]:flex *:data-[slot=select-value]:gap-1.5 [&_svg:not([class*='size-'])]:size-4; }
+    .cn-select-value { @apply flex flex-1 text-left; }
+    .cn-select-trigger-icon { @apply text-muted-foreground size-4; }
+    .cn-select-content { @apply bg-popover text-popover-foreground ring-foreground/10 min-w-36 rounded-lg shadow-md ring-1; }
+    .cn-select-item { @apply focus:bg-accent focus:text-accent-foreground not-data-[variant=destructive]:focus:**:text-accent-foreground gap-1.5 rounded-md py-1 pr-8 pl-1.5 text-sm [&_svg:not([class*='size-'])]:size-4 *:[span]:last:flex *:[span]:last:items-center *:[span]:last:gap-2; }
+    .cn-select-item-indicator { @apply pointer-events-none absolute right-2 flex size-4 items-center justify-center; }
+    .cn-select-group { @apply scroll-my-1 p-1; }
+    .cn-separator { @apply bg-border shrink-0; }
+    .cn-separator-vertical { @apply h-full w-px; }
+    .cn-slider { @apply data-vertical:min-h-40; }
+    .cn-slider-track { @apply bg-muted rounded-full data-horizontal:h-1 data-horizontal:w-full data-vertical:h-full data-vertical:w-1; }
+    .cn-slider-range { @apply bg-primary; }
+    .cn-slider-thumb { @apply border-ring ring-ring/50 relative size-3 rounded-full border bg-white transition-[color,box-shadow] after:absolute after:-inset-2 hover:ring-3 focus-visible:ring-3 focus-visible:outline-hidden active:ring-3; }
+    .cn-switch { @apply data-checked:bg-primary data-unchecked:bg-input focus-visible:border-ring focus-visible:ring-ring/50 aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive dark:aria-invalid:border-destructive/50 dark:data-unchecked:bg-input/80 shrink-0 rounded-full border border-transparent focus-visible:ring-3 aria-invalid:ring-3 group-has-[:focus-visible]/field-label:ring-0 group-has-[:focus-visible]/field-label:border-transparent data-[size=default]:h-[18.4px] data-[size=default]:w-[32px] data-[size=sm]:h-[14px] data-[size=sm]:w-[24px]; }
+    .cn-switch-thumb { @apply bg-background dark:data-unchecked:bg-foreground dark:data-checked:bg-primary-foreground rounded-full group-data-[size=default]/switch:size-4 group-data-[size=sm]/switch:size-3 group-data-[size=default]/switch:data-checked:translate-x-[calc(100%-2px)] group-data-[size=sm]/switch:data-checked:translate-x-[calc(100%-2px)] group-data-[size=default]/switch:data-unchecked:translate-x-0 group-data-[size=sm]/switch:data-unchecked:translate-x-0; }
+    .cn-tabs { @apply gap-2; }
+    .cn-tabs-list { @apply rounded-lg p-[3px] group-data-horizontal/tabs:h-8 data-[variant=line]:rounded-none; }
+    .cn-tabs-trigger { @apply gap-1.5 rounded-md border border-transparent px-1.5 py-0.5 text-sm font-medium group-data-[variant=default]/tabs-list:data-active:shadow-sm group-data-[variant=line]/tabs-list:data-active:shadow-none [&_svg:not([class*='size-'])]:size-4 has-data-[icon=inline-end]:pr-1 has-data-[icon=inline-start]:pl-1; }
+    .cn-toggle { @apply hover:text-foreground aria-pressed:bg-muted focus-visible:border-ring focus-visible:ring-ring/50 aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive data-[state=on]:bg-muted gap-1 rounded-lg text-sm font-medium transition-all [&_svg:not([class*='size-'])]:size-4; }
+    .cn-toggle-variant-default { @apply bg-transparent; }
+    .cn-toggle-variant-outline { @apply border-input hover:bg-muted border bg-transparent; }
+    .cn-toggle-size-default { @apply h-8 min-w-8 px-2.5 has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2; }
+    .cn-toggle-size-sm { @apply h-7 min-w-7 rounded-[min(var(--radius-md),12px)] px-2.5 text-[0.8rem] has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&_svg:not([class*='size-'])]:size-3.5; }
+    .cn-toggle-group { @apply rounded-lg data-[size=sm]:rounded-[min(var(--radius-md),10px)]; }
+    .cn-tooltip-content { @apply inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs has-data-[slot=kbd]:pr-1.5 **:data-[slot=kbd]:relative **:data-[slot=kbd]:isolate **:data-[slot=kbd]:z-50 **:data-[slot=kbd]:rounded-sm; }
+    .cn-dialog-content { @apply bg-popover text-popover-foreground ring-foreground/10 grid max-w-[calc(100%-2rem)] gap-4 rounded-xl p-4 text-sm ring-1 sm:max-w-sm; }
+    .cn-dialog-title { @apply text-base leading-none font-medium; }
+    .cn-sidebar-menu-button { @apply ring-sidebar-ring hover:bg-sidebar-accent hover:text-sidebar-accent-foreground active:bg-sidebar-accent active:text-sidebar-accent-foreground data-active:bg-sidebar-accent data-active:text-sidebar-accent-foreground gap-2 rounded-md p-2 text-left text-sm transition-[width,height,padding] group-has-data-[sidebar=menu-action]/menu-item:pr-8 group-data-[collapsible=icon]:size-8! group-data-[collapsible=icon]:p-2! focus-visible:ring-2 data-active:font-medium; }
+    .cn-sidebar-menu-button-size-default { @apply h-8 text-sm; }
+
+  }
+}
+</style>
+
+<style>
+/* ============ trang specimen ============ */
+:root{--pg-bg:#e9e8e4;--pg-fg:#1d1c1a;--pg-mute:#5b5a56;--pg-line:rgb(29 28 26 / .14);--pg-chip:#fff;--pg-on:#1d1c1a;--pg-onfg:#f7f5f0}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--pg-bg:#141414;--pg-fg:#eeece6;--pg-mute:#a3a19b;--pg-line:rgb(238 236 230 / .14);--pg-chip:#1f1f1f;--pg-on:#eeece6;--pg-onfg:#141414}}
+:root[data-theme="dark"]{--pg-bg:#141414;--pg-fg:#eeece6;--pg-mute:#a3a19b;--pg-line:rgb(238 236 230 / .14);--pg-chip:#1f1f1f;--pg-on:#eeece6;--pg-onfg:#141414}
+body{background:var(--pg-bg);color:var(--pg-fg);font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+.pg{padding-inline:16px;padding-block:16px 40px;max-width:1520px;margin:0 auto}
+.pg h1{font-size:18px;font-weight:650;margin:0 0 2px}
+.pg .lede{color:var(--pg-mute);margin:0 0 12px;max-width:90ch}
+.ctl{display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center;margin:0 0 12px;position:sticky;top:0;z-index:50;background:var(--pg-bg);padding-block:8px;border-bottom:1px solid var(--pg-line)}
+.ctl fieldset{border:0;margin:0;padding:0;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.ctl legend{float:left;font-size:12px;color:var(--pg-mute);margin-right:4px}
+.ctl button{appearance:none;border:1px solid var(--pg-line);background:var(--pg-chip);color:var(--pg-fg);font:500 13px/1 inherit;font-family:inherit;height:30px;padding:0 10px;border-radius:8px;cursor:pointer}
+.ctl button[aria-pressed="true"]{background:var(--pg-on);color:var(--pg-onfg);border-color:var(--pg-on)}
+.ctl button:focus-visible{outline:2px solid #0c8a73;outline-offset:2px}
+.stage{overflow:auto;border-radius:14px;border:1px solid var(--pg-line);background:repeating-linear-gradient(45deg,transparent 0 10px,rgb(127 127 127 / .05) 10px 20px)}
+.stage-in{padding:20px;width:max-content}
+.fitwrap{transform-origin:0 0}
+.notes{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr));gap:16px;margin-top:16px}
+.notes section{border-top:1px solid var(--pg-line);padding-top:10px}
+.notes h2{font-size:13px;font-weight:650;margin:0 0 6px}
+.notes p,.notes li{font-size:13px;color:var(--pg-mute);margin:0 0 6px}
+.notes ul{margin:0;padding-left:18px}
+.notes code{font-size:12px}
+
+.cap body{background:#000}.cap .pg{padding:0;max-width:none}.cap .pg>h1,.cap .lede,.cap .ctl,.cap .notes{display:none}.cap .stage{border:0;border-radius:0;background:none;overflow:visible}.cap .stage-in{padding:0}.cap .win{border-radius:0;box-shadow:none}
+/* ============ khung cửa sổ chung (đục, không trong suốt) ============ */
+.win{position:relative;width:1440px;height:900px;overflow:hidden;border-radius:12px;box-shadow:0 0 0 1px rgb(0 0 0 / .35),0 30px 80px -20px rgb(0 0 0 / .45);isolation:isolate}
+.win-title{position:relative;height:40px;display:flex;align-items:center;gap:8px;padding-right:10px}
+.traffic{display:flex;gap:8px;padding:0 12px 0 14px;flex:none}
+.traffic i{width:12px;height:12px;border-radius:50%;display:block;box-shadow:inset 0 0 0 .5px rgb(0 0 0 / .2)}
+.traffic i:nth-child(1){background:#ff5f57}.traffic i:nth-child(2){background:#febc2e}.traffic i:nth-child(3){background:#28c840}
+.win-body{position:absolute;top:40px;left:0;right:0;bottom:0;display:flex}
+.nav{width:52px;flex:none;display:flex;flex-direction:column;align-items:center;gap:6px;padding:10px 0}
+.nav .grow{flex:1}
+.drawer{width:392px;flex:none;display:flex;flex-direction:column;min-height:0}
+.canvas{position:relative;flex:1;min-width:0;overflow:hidden;background-color:var(--cv-bg);background-image:radial-gradient(var(--cv-dot) 1px,transparent 1.3px);background-size:22px 22px}
+.panel{width:372px;flex:none;display:flex;flex-direction:column;min-height:0}
+.ovl{position:absolute;z-index:40}
+.spacer{flex:1}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+
+/* ============ nội dung canvas chung (màu theo biến của từng kit) ============ */
+.world{position:absolute;left:50%;top:56px;width:1000px;height:700px;margin-left:-500px}
+.world svg.edges{position:absolute;inset:0;overflow:visible}
+.world .edges path{fill:none;stroke:var(--edge);stroke-width:1.4}
+.cv-node{position:absolute;background:var(--n-bg);border:1px solid var(--n-bd);border-radius:var(--n-r);box-shadow:var(--n-sh);color:var(--n-tx)}
+.cv-idea{padding:12px 14px;font-size:13px;line-height:1.35}
+.cv-idea b{display:flex;gap:8px;align-items:center;font-weight:600}
+.cv-idea b::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--dot-idea,#e2b04a);flex:none}
+.cv-idea p{margin:4px 0 0 15px;color:var(--n-sub);font-size:12px}
+.cv-img{width:150px;padding:6px;font-size:12px}
+.cv-img .th{height:96px;border-radius:calc(var(--n-r) - 4px);overflow:hidden}
+.cv-img .th svg{width:100%;height:100%;display:block}
+.cv-img span{display:block;padding:6px 2px 0;color:var(--n-sub)}
+.cv-pal{padding:10px;width:176px;font-size:12px}
+.cv-pal .cv-sw{display:flex;height:34px;border-radius:calc(var(--n-r) - 4px);overflow:hidden;margin-bottom:6px}
+.cv-pal .cv-sw i{flex:1}
+.cv-node.is-sel{outline:2px solid var(--sel);outline-offset:3px}
+.cv-chip{position:absolute;font-size:11px;padding:3px 8px;border-radius:999px;background:var(--n-bg);border:1px solid var(--sel);color:var(--n-tx)}
+
+/* ============ token B (shadcn neutral, nguyên bản registry) ============ */
+.kit-b{--radius:.625rem;--k-r-sm:calc(var(--radius)*.6);--k-r-md:calc(var(--radius)*.8);--k-r-lg:var(--radius);--k-r-xl:calc(var(--radius)*1.4);
+  --k-shadow-lg:0 10px 15px -3px rgb(0 0 0 / .1),0 4px 6px -4px rgb(0 0 0 / .1);
+  --k-primary:var(--primary);--k-bg-primary:var(--primary);--k-bg-secondary:var(--secondary);--k-text-primary:var(--primary);--k-text-secondary:var(--secondary-foreground);
+  font-family:"Inter",-apple-system,BlinkMacSystemFont,sans-serif;color:var(--foreground);background:var(--background)}
+.kit-b[data-theme=light]{--background:oklch(1 0 0);--foreground:oklch(.145 0 0);--card:oklch(1 0 0);--card-foreground:oklch(.145 0 0);--popover:oklch(1 0 0);--popover-foreground:oklch(.145 0 0);--primary:oklch(.205 0 0);--primary-foreground:oklch(.985 0 0);--secondary:oklch(.97 0 0);--secondary-foreground:oklch(.205 0 0);--muted:oklch(.97 0 0);--muted-foreground:oklch(.556 0 0);--accent:oklch(.97 0 0);--accent-foreground:oklch(.205 0 0);--destructive:oklch(.577 .245 27.325);--border:oklch(.922 0 0);--input:oklch(.922 0 0);--ring:oklch(.708 0 0);--sidebar:oklch(.985 0 0);--sidebar-foreground:oklch(.145 0 0);--sidebar-accent:oklch(.97 0 0);--sidebar-accent-foreground:oklch(.205 0 0);--sidebar-border:oklch(.922 0 0);--sidebar-ring:oklch(.708 0 0);
+  --cv-bg:oklch(.985 0 0);--cv-dot:oklch(.87 0 0);--n-bg:oklch(1 0 0);--n-bd:oklch(.922 0 0);--n-tx:oklch(.145 0 0);--n-sub:oklch(.556 0 0);--n-r:14px;--n-sh:0 1px 2px rgb(0 0 0 / .06);--sel:#0c6052;--edge:oklch(.708 0 0)}
+.kit-b[data-theme=dark]{--background:oklch(.145 0 0);--foreground:oklch(.985 0 0);--card:oklch(.205 0 0);--card-foreground:oklch(.985 0 0);--popover:oklch(.205 0 0);--popover-foreground:oklch(.985 0 0);--primary:oklch(.922 0 0);--primary-foreground:oklch(.205 0 0);--secondary:oklch(.269 0 0);--secondary-foreground:oklch(.985 0 0);--muted:oklch(.269 0 0);--muted-foreground:oklch(.708 0 0);--accent:oklch(.269 0 0);--accent-foreground:oklch(.985 0 0);--destructive:oklch(.704 .191 22.216);--border:oklch(1 0 0 / 10%);--input:oklch(1 0 0 / 15%);--ring:oklch(.556 0 0);--sidebar:oklch(.205 0 0);--sidebar-foreground:oklch(.985 0 0);--sidebar-accent:oklch(.269 0 0);--sidebar-accent-foreground:oklch(.985 0 0);--sidebar-border:oklch(1 0 0 / 10%);--sidebar-ring:oklch(.556 0 0);
+  --cv-bg:oklch(.145 0 0);--cv-dot:oklch(1 0 0 / 9%);--n-bg:oklch(.205 0 0);--n-bd:oklch(1 0 0 / 10%);--n-tx:oklch(.985 0 0);--n-sub:oklch(.708 0 0);--n-r:14px;--n-sh:0 1px 2px rgb(0 0 0 / .4);--sel:#7fc8b7;--edge:oklch(.556 0 0)}
+
+/* ============ token C (Untitled UI theme.css; brand tím đổi sang thang teal KIRA) ============ */
+.kit-c{--k-r-sm:.25rem;--k-r-md:.375rem;--k-r-lg:.5rem;--k-r-xl:.75rem;
+  --k-shadow-lg:0px 12px 16px -4px rgba(0,0,0,.08),0px 4px 6px -2px rgba(0,0,0,.03),0px 2px 2px -1px rgba(0,0,0,.04);
+  --k-primary:var(--u-brand-600);--k-bg-primary:var(--u-bg-primary);--k-bg-secondary:var(--u-bg-secondary);--k-text-primary:var(--u-text-primary);--k-text-secondary:var(--u-text-secondary);
+  --u-brand-50:#effaf7;--u-brand-200:#aee4d5;--u-brand-300:#7fc8b7;--u-brand-400:#52ad99;--u-brand-500:#2f917e;--u-brand-600:#1f7667;--u-brand-700:#1b5f54;--u-brand-800:#194c44;--u-brand-950:#0a2420;
+  font-family:"Inter",-apple-system,BlinkMacSystemFont,sans-serif;color:var(--u-text-primary);background:var(--u-bg-primary)}
+.kit-c[data-theme=light]{--u-bg-primary:#fff;--u-bg-secondary:oklch(.985 0 0);--u-bg-tertiary:oklch(.97 0 0);--u-bg-quaternary:oklch(.922 0 0);--u-bg-primary_hover:oklch(.985 0 0);--u-bg-secondary_hover:oklch(.97 0 0);--u-bg-primary_alt:#fff;--u-bg-secondary_alt:oklch(.985 0 0);--u-bg-brand-solid_hover:var(--u-brand-700);--u-bg-primary-solid:oklch(.145 0 0);--u-bg-overlay:oklch(.145 0 0);
+  --u-text-primary:oklch(.205 0 0);--u-text-secondary:oklch(.371 0 0);--u-text-tertiary:oklch(.439 0 0);--u-text-quaternary:oklch(.556 0 0);--u-text-brand-secondary:var(--u-brand-700);--u-text-error:oklch(.577 .245 27.325);--u-text-success:oklch(.627 .194 149.214);--u-text-warning:oklch(.681 .162 75.834);--u-tooltip-supporting:oklch(.87 0 0);
+  --u-border-primary:oklch(.87 0 0);--u-border-secondary:oklch(.922 0 0);--u-border-secondary_alt:rgb(0 0 0 / .1);--u-border-brand:var(--u-brand-500);
+  --u-fg-quaternary:oklch(.708 0 0);--u-fg-quaternary_hover:oklch(.556 0 0);--u-fg-secondary:oklch(.371 0 0);--u-fg-secondary_hover:oklch(.269 0 0);--u-fg-brand-primary:var(--u-brand-600);--u-fg-brand-primary_alt:var(--u-brand-600);--u-fg-warning-secondary:oklch(.795 .184 86.047);--u-fg-success-secondary:oklch(.723 .219 149.579);
+  --u-slider-bg:#fff;--u-slider-border:var(--u-brand-600);
+  --u-un50:oklch(.985 0 0);--u-un200:oklch(.922 0 0);--u-un700:oklch(.371 0 0);--u-ub50:var(--u-brand-50);--u-ub200:var(--u-brand-200);--u-ub700:var(--u-brand-700);
+  --u-ug50:oklch(.982 .018 155.826);--u-ug200:oklch(.925 .084 155.995);--u-ug700:oklch(.527 .154 150.069);--u-uy50:oklch(.987 .026 102.212);--u-uy200:oklch(.945 .129 101.54);--u-uy700:oklch(.554 .135 66.442);
+  --cv-bg:oklch(.985 0 0);--cv-dot:oklch(.87 0 0);--n-bg:#fff;--n-bd:oklch(.922 0 0);--n-tx:oklch(.205 0 0);--n-sub:oklch(.439 0 0);--n-r:12px;--n-sh:0 1px 2px rgba(0,0,0,.05);--sel:#0c6052;--edge:oklch(.708 0 0)}
+.kit-c[data-theme=dark]{--u-bg-primary:oklch(.145 0 0);--u-bg-secondary:oklch(.205 0 0);--u-bg-tertiary:oklch(.269 0 0);--u-bg-quaternary:oklch(.371 0 0);--u-bg-primary_hover:oklch(.205 0 0);--u-bg-secondary_hover:oklch(.269 0 0);--u-bg-primary_alt:oklch(.205 0 0);--u-bg-secondary_alt:oklch(.145 0 0);--u-bg-brand-solid_hover:var(--u-brand-500);--u-bg-primary-solid:oklch(.205 0 0);--u-bg-overlay:oklch(.269 0 0);
+  --u-text-primary:oklch(.985 0 0);--u-text-secondary:oklch(.87 0 0);--u-text-tertiary:oklch(.708 0 0);--u-text-quaternary:oklch(.708 0 0);--u-text-brand-secondary:oklch(.87 0 0);--u-text-error:oklch(.704 .191 22.216);--u-text-success:oklch(.792 .209 151.711);--u-text-warning:oklch(.852 .199 91.936);--u-tooltip-supporting:oklch(.87 0 0);
+  --u-border-primary:oklch(.371 0 0);--u-border-secondary:oklch(.269 0 0);--u-border-secondary_alt:oklch(.269 0 0);--u-border-brand:var(--u-brand-400);
+  --u-fg-quaternary:oklch(.439 0 0);--u-fg-quaternary_hover:oklch(.556 0 0);--u-fg-secondary:oklch(.87 0 0);--u-fg-secondary_hover:oklch(.922 0 0);--u-fg-brand-primary:var(--u-brand-500);--u-fg-brand-primary_alt:oklch(.87 0 0);--u-fg-warning-secondary:oklch(.852 .199 91.936);--u-fg-success-secondary:oklch(.792 .209 151.711);
+  --u-slider-bg:var(--u-brand-500);--u-slider-border:oklch(.145 0 0);
+  --u-un50:oklch(.205 0 0);--u-un200:oklch(.371 0 0);--u-un700:oklch(.87 0 0);--u-ub50:var(--u-brand-950);--u-ub200:var(--u-brand-800);--u-ub700:var(--u-brand-300);
+  --u-ug50:oklch(.266 .065 152.934);--u-ug200:oklch(.448 .119 151.328);--u-ug700:oklch(.871 .15 154.449);--u-uy50:oklch(.286 .066 53.813);--u-uy200:oklch(.476 .114 61.907);--u-uy700:oklch(.905 .182 98.111);
+  --cv-bg:oklch(.205 0 0);--cv-dot:oklch(1 0 0 / 8%);--n-bg:oklch(.145 0 0);--n-bd:oklch(.269 0 0);--n-tx:oklch(.985 0 0);--n-sub:oklch(.708 0 0);--n-r:12px;--n-sh:0 1px 2px rgba(0,0,0,.4);--sel:#7fc8b7;--edge:oklch(.439 0 0)}
+</style>
+
+<style>
+/* ============ A. Ink & Paper (token DESIGN.md / kira-controls, preset Cyan) ============ */
+.kit-a{--font:-apple-system,BlinkMacSystemFont,ui-sans-serif,system-ui,"Segoe UI",sans-serif;font-family:var(--font);font-size:13px;color:var(--tm);background:var(--base)}
+.kit-a[data-theme=dark]{--base:#020303;--cvb:#040808;--s1:#080e0e;--s2:#0f1619;--s3:#192124;--drw:#060c0c;--inset:#0d1315;--bs:rgb(255 255 255 / .06);--bst:rgb(255 255 255 / .13);--hair:rgb(255 255 255 / .052);--gh:rgb(255 255 255 / .055);--tm:#f4f1ea;--ts:#b5b4af;--tmu:#8e8e8a;--acc:#7fc8b7;--amber:#dfae67;
+  --ink:#f4f1ea;--ink-h:#fffdf7;--ink-p:#dcd8cf;--ink-fg:#0f1517;--sheet:#1c2426;--sheet-h:#222b2d;--sheet-p:#141b1d;--sheet-edge:rgb(255 255 255 / .075);--lift1:rgb(0 0 0 / .5);--lift2:rgb(0 0 0 / .55);--paper-edge:rgb(35 33 29 / .25);--patch:rgb(255 255 255 / .065);--patch-p:rgb(255 255 255 / .035);--dis-edge:rgb(255 255 255 / .14);--danger-fg:#e59587;--danger-edge:rgb(217 135 121 / .38);
+  --plate:rgb(29 37 39 / .95);--plate-sh:inset 0 1px 0 rgb(255 255 255 / .06),0 2px 4px rgb(0 0 0 / .45),0 14px 34px -8px rgb(0 0 0 / .65);--plate-sh-sm:inset 0 1px 0 rgb(255 255 255 / .06),0 2px 4px rgb(0 0 0 / .45),0 12px 28px -8px rgb(0 0 0 / .65);
+  --tip-bg:#f4f1ea;--tip-fg:#0f1517;--tip-kbd:#4a4c48;--pop-sh:0 20px 70px rgb(0 0 0 / .28),0 2px 6px rgb(0 0 0 / .4);--sw-off:rgb(255 255 255 / .16);--knob-on:#0f1517;--scrim:rgb(0 0 0 / .5);
+  --cv-bg:#040808;--cv-dot:rgb(255 255 255 / .075);--n-bg:#0f1619;--n-bd:rgb(255 255 255 / .06);--n-tx:#f4f1ea;--n-sub:#b5b4af;--n-r:10px;--n-sh:0 6px 20px rgb(0 0 0 / .22);--sel:#7fc8b7;--edge:rgb(244 241 234 / .26)}
+.kit-a[data-theme=light]{--base:#eff3f3;--cvb:#dfe5e5;--s1:#d7dede;--s2:#cad3d5;--s3:#bdc6c9;--drw:#dae1e1;--inset:#d5dcde;--bs:rgb(35 33 29 / .1);--bst:rgb(35 33 29 / .18);--hair:rgb(35 33 29 / .1);--gh:rgb(34 31 26 / .055);--tm:#23211d;--ts:#3e3d39;--tmu:#575855;--acc:#0c6052;--amber:#7a4e00;
+  --ink:#23211d;--ink-h:#35322c;--ink-p:#12110f;--ink-fg:#f7f5f0;--sheet:#fbfaf7;--sheet-h:#ffffff;--sheet-p:#eceae4;--sheet-edge:rgb(35 33 29 / .13);--lift1:rgb(35 33 29 / .1);--lift2:rgb(35 33 29 / .24);--paper-edge:rgb(255 255 255 / .12);--patch:rgb(35 33 29 / .065);--patch-p:rgb(35 33 29 / .1);--dis-edge:rgb(35 33 29 / .2);--danger-fg:#8a4035;--danger-edge:rgb(138 64 53 / .4);
+  --plate:rgb(251 250 247 / .96);--plate-sh:inset 0 0 0 1px rgb(35 33 29 / .06),0 2px 4px rgb(35 33 29 / .1),0 14px 30px -10px rgb(35 33 29 / .32);--plate-sh-sm:inset 0 0 0 1px rgb(35 33 29 / .06),0 2px 4px rgb(35 33 29 / .1),0 12px 26px -10px rgb(35 33 29 / .32);
+  --tip-bg:#23211d;--tip-fg:#f7f5f0;--tip-kbd:#c9c6bf;--pop-sh:0 12px 32px rgb(35 33 29 / .16),0 1px 3px rgb(35 33 29 / .12);--sw-off:rgb(35 33 29 / .2);--knob-on:#ffffff;--scrim:rgb(35 33 29 / .22);
+  --cv-bg:#dfe5e5;--cv-dot:rgb(35 33 29 / .13);--n-bg:#f6f8f7;--n-bd:rgb(35 33 29 / .1);--n-tx:#23211d;--n-sub:#3e3d39;--n-r:10px;--n-sh:0 4px 14px rgb(35 33 29 / .1);--sel:#0c6052;--edge:rgb(35 33 29 / .3)}
+.kit-a .a-title{background:var(--base);box-shadow:inset 0 -1px 0 var(--bs)}
+.kit-a .a-nav{background:var(--base);box-shadow:inset -1px 0 0 var(--bs)}
+.kit-a .gl{width:16px;height:16px;flex:none}
+.kit-a .btn.c .gl{width:14px;height:14px}
+/* nút: 4 cấp */
+.kit-a .btn{appearance:none;display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 12px;border:1px solid transparent;border-radius:8px;font:560 13px/1 var(--font);letter-spacing:-.003em;color:var(--tm);background:transparent;white-space:nowrap;cursor:pointer;transition:background 120ms ease,box-shadow 120ms ease,transform 120ms cubic-bezier(.16,1,.3,1)}
+.kit-a .btn.c{height:26px;padding:0 9px;gap:4px;border-radius:6px;font-size:11px}
+.kit-a .btn.io{width:32px;padding:0}.kit-a .btn.c.io{width:26px}
+.kit-a .btn:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+.kit-a .primary{background:var(--ink);color:var(--ink-fg);box-shadow:inset 0 -1px 0 var(--paper-edge),0 1px 0 var(--lift1),0 4px 10px -3px var(--lift2)}
+.kit-a .primary:hover{background:var(--ink-h);transform:translateY(-1px)}
+.kit-a .secondary,.kit-a .danger{background:var(--sheet);border-color:var(--sheet-edge);box-shadow:0 1px 0 var(--lift1),0 3px 8px -2px var(--lift2)}
+.kit-a .secondary:hover,.kit-a .danger:hover{background:var(--sheet-h);transform:translateY(-1px)}
+.kit-a .danger{color:var(--danger-fg);border-color:var(--danger-edge)}
+.kit-a .quiet{color:var(--ts)}
+.kit-a .quiet:hover{background:var(--patch);color:var(--tm)}
+.kit-a .quiet.sel{color:var(--tm);box-shadow:inset 0 -2px 0 var(--tm);border-radius:8px 8px 2px 2px}
+.kit-a .quiet.sel-l{color:var(--tm);background:var(--patch);box-shadow:inset 2px 0 0 var(--tm);border-radius:2px 8px 8px 2px}
+.kit-a .is-dis{background:transparent;border:1px dashed var(--dis-edge);color:var(--tmu);box-shadow:none;cursor:default}
+/* tab file */
+.kit-a .a-ftab{height:26px;padding:0 10px;display:inline-flex;align-items:center;gap:6px;font:560 11px/1 var(--font);color:var(--ts);border-radius:6px 6px 2px 2px}
+.kit-a .a-ftab.on{color:var(--tm);box-shadow:inset 0 -2px 0 var(--tm)}
+.kit-a .a-ftab i{width:6px;height:6px;border-radius:50%;background:var(--tmu)}
+.kit-a .a-badge{font:560 11px/1 var(--font);color:var(--amber)}
+/* plate nổi */
+.kit-a .a-plate{display:flex;align-items:center;gap:2px;padding:4px;border-radius:12px;background:var(--plate);box-shadow:var(--plate-sh-sm);-webkit-backdrop-filter:blur(24px) saturate(1.35);backdrop-filter:blur(24px) saturate(1.35)}
+.kit-a .a-plate .sep{width:1px;height:20px;background:var(--hair);margin:0 4px}
+.kit-a .a-zoom{font:560 11px/1 SFMono-Regular,Menlo,monospace;color:var(--ts);padding:0 4px;min-width:38px;text-align:center}
+.kit-a .a-rail{padding:6px;border-radius:16px;box-shadow:var(--plate-sh)}
+.kit-a .a-rail .sep{height:24px;margin:0 6px}
+.kit-a .tool{appearance:none;position:relative;display:grid;place-items:center;width:44px;height:44px;border:0;padding:0;border-radius:12px;background:transparent;cursor:pointer}
+.kit-a .tool.z{width:32px;height:32px;border-radius:8px}
+.kit-a .tool .ico{width:28px;height:28px;filter:drop-shadow(0 1px 0 rgb(0 0 0 / .35));transition:transform 120ms cubic-bezier(.16,1,.3,1)}
+.kit-a .tool.z .ico{width:20px;height:20px}
+.kit-a[data-theme=light] .tool .ico{filter:drop-shadow(0 1px 0 rgb(35 33 29 / .18))}
+.kit-a .tool:hover{background:var(--gh)}
+.kit-a .tool:hover .ico{transform:translateY(-3px) rotate(-4deg)}
+.kit-a .tool.sel{background:var(--ink);box-shadow:0 1px 0 rgb(0 0 0 / .35),0 4px 10px -4px rgb(0 0 0 / .5)}
+/* icon rail (trích specimen v2, S:187-216) */
+.kit-a .ico{display:block;overflow:visible;--lxo:#0b0f10;--lxi:#f4f1ea;--ink:#0b0f10;--line:#8a6d1c;--spec:rgb(255 255 255 / .8);--b-hi:#fbf9f4;--b-lo:#dfdad0;--c-sky:#8cc5ea;--c-sun:#ffcf5c;--c-leaf:#6aab77;--c-rose:#e5728a;--c-amb:#eea43a;--c-acc:#4fb49c;--c-fold:#d6a92f;--c-glass:rgb(255 255 255 / .1);--kira-warm:#f0c07f;--kira-mid:#d79fc0;--kira-cool:#a5a6ea}
+.kit-a[data-theme=light] .ico{--lxo:rgb(255 255 255 / .9);--lxi:#23211d;--ink:#23211d;--c-glass:rgb(35 33 29 / .06)}
+.kit-a .ico .bd{stroke:var(--ink);stroke-width:1.5;stroke-linejoin:round;stroke-linecap:round}
+.kit-a .ico .ln{fill:none;stroke:var(--ink);stroke-width:1.5;stroke-linecap:round}
+.kit-a .ico .ln2{fill:none;stroke:var(--line);stroke-width:1.2;stroke-linecap:round}
+.kit-a .ico .lnA{fill:none;stroke:var(--c-acc);stroke-width:1.9;stroke-linecap:round}
+.kit-a .ico .fk{fill:var(--ink)}
+.kit-a .ico .lxo{fill:none;stroke:var(--lxo);stroke-width:3.1;stroke-linecap:round;stroke-linejoin:round}
+.kit-a .ico .lxi{fill:none;stroke:var(--lxi);stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.kit-a .s-hi{stop-color:var(--b-hi)}.kit-a .s-lo{stop-color:var(--b-lo)}.kit-a .s-sp{stop-color:var(--spec)}.kit-a .s-sp0{stop-color:var(--spec);stop-opacity:0}
+.kit-a .s-kw{stop-color:var(--kira-warm)}.kit-a .s-km{stop-color:var(--kira-mid)}.kit-a .s-kc{stop-color:var(--kira-cool)}
+.kit-a .k-sky{fill:var(--c-sky)}.kit-a .k-sun{fill:var(--c-sun)}.kit-a .k-leaf{fill:var(--c-leaf)}.kit-a .k-rose{fill:var(--c-rose)}.kit-a .k-amb{fill:var(--c-amb)}.kit-a .k-acc{fill:var(--c-acc)}.kit-a .k-fold{fill:var(--c-fold)}.kit-a .k-glass{fill:var(--c-glass)}
+.kit-a .ico-palette{--b-hi:#f5e9d0;--b-lo:#d8c39a}.kit-a .ico-idea{--b-hi:#ffdf7a;--b-lo:#f0a52a}.kit-a .ico-note{--b-hi:#fdea8c;--b-lo:#f0c645}
+.kit-a[data-theme=dark] .ico-frame{--ink:#f4f1ea}
+.kit-a[data-theme=dark] .ico-zin,.kit-a[data-theme=dark] .ico-zout,.kit-a[data-theme=dark] .ico-fit{--ink:#f4f1ea;--b-hi:rgb(255 255 255 / .16);--b-lo:rgb(255 255 255 / .04)}
+.kit-a[data-theme=light] .ico-zin,.kit-a[data-theme=light] .ico-zout,.kit-a[data-theme=light] .ico-fit{--b-hi:#ffffff;--b-lo:#e9e6de}
+.kit-a[data-theme=dark] .sel .ico-select{--b-hi:#1b2224;--b-lo:#0b1011;--ink:#0b1011;--spec:rgb(255 255 255 / .25)}
+.kit-a[data-theme=light] .sel .ico-select{--b-hi:#ffffff;--b-lo:#e6e2d8;--ink:#fbf9f4}
+/* tooltip, menu, form */
+.kit-a .a-tip{display:inline-flex;align-items:center;gap:8px;height:26px;padding:0 9px;border-radius:8px;font:560 11px/1 var(--font);background:var(--tip-bg);color:var(--tip-fg);box-shadow:0 6px 16px -4px rgb(0 0 0 / .45);white-space:nowrap}
+.kit-a .a-tip kbd{font:500 11px/1 var(--font);color:var(--tip-kbd)}
+.kit-a .a-menu{width:272px;padding:6px;border-radius:12px;background:var(--s2);border:1px solid var(--bst);box-shadow:var(--pop-sh)}
+.kit-a .a-mi{display:flex;align-items:center;gap:8px;min-height:28px;padding:0 8px;border-radius:6px;color:var(--ts);font-size:13px}
+.kit-a .a-mi.hl{background:var(--patch);color:var(--tm)}
+.kit-a .a-mi .sc{margin-left:auto;font-size:11px;color:var(--tmu)}
+.kit-a .a-mi .ck{width:14px;display:grid;place-items:center;color:var(--tm)}
+.kit-a .a-mi.two{align-items:flex-start;padding:7px 8px}
+.kit-a .a-mi small{display:block;font-size:11px;color:var(--tmu);margin-top:2px}
+.kit-a .a-ml{font:800 11px/1 var(--font);color:var(--tmu);padding:10px 8px 6px;text-transform:uppercase;letter-spacing:.02em}
+.kit-a .a-sep{height:1px;background:var(--hair);margin:6px 2px}
+.kit-a .a-sw{position:relative;width:28px;height:16px;border-radius:999px;background:var(--sw-off);flex:none;margin-left:auto}
+.kit-a .a-sw::after{content:"";position:absolute;top:2px;left:2px;width:12px;height:12px;border-radius:50%;background:var(--tm)}
+.kit-a .a-sw.on{background:var(--acc)}.kit-a .a-sw.on::after{left:14px;background:var(--knob-on)}
+.kit-a .a-in{display:flex;align-items:center;gap:6px;height:32px;padding:0 10px;background:var(--inset);border:1px solid var(--bst);border-radius:8px;color:var(--tm);font-size:13px;min-width:0}
+.kit-a .a-in.c{height:26px;border-radius:6px;font-size:11px;padding:0 8px}
+.kit-a .a-in .ph{color:var(--tmu);flex:1;white-space:nowrap;overflow:hidden}
+.kit-a .a-in .gl{color:var(--tmu)}
+.kit-a .a-in.open{outline:2px solid var(--acc);outline-offset:1px}
+.kit-a .a-lab{font:800 11px/1 var(--font);color:var(--tmu);text-transform:uppercase;letter-spacing:.02em;margin-bottom:6px;display:block}
+.kit-a .a-sl{position:relative;flex:1;height:26px;min-width:80px}
+.kit-a .a-sl::before{content:"";position:absolute;left:0;right:0;top:12px;height:3px;border-radius:2px;background:var(--bst)}
+.kit-a .a-sl b{position:absolute;left:0;top:12px;height:3px;border-radius:2px;background:var(--tm)}
+.kit-a .a-sl i{position:absolute;top:6px;width:14px;height:14px;margin-left:-7px;border-radius:50%;background:var(--sheet);border:1px solid var(--sheet-edge);box-shadow:0 1px 0 var(--lift1),0 3px 8px -2px var(--lift2)}
+/* surfaces */
+.kit-a .a-drawer{background:var(--drw);box-shadow:inset -1px 0 0 var(--bs)}
+.kit-a .a-panel{background:var(--s1);box-shadow:inset 1px 0 0 var(--bs)}
+.kit-a .a-hd{height:36px;flex:none;display:flex;align-items:center;gap:6px;padding:0 6px 0 14px;box-shadow:inset 0 -1px 0 var(--hair)}
+.kit-a .a-hd .lbl{font:800 11px/1 var(--font);color:var(--tmu);text-transform:uppercase;letter-spacing:.02em}
+.kit-a .a-hd .cnt{font-size:11px;color:var(--tmu)}
+.kit-a .a-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px 10px;padding:4px 14px 14px;overflow:hidden;align-content:start}
+.kit-a .a-grid figure{margin:0}
+.kit-a .a-grid .th{aspect-ratio:4/3;border-radius:8px;overflow:hidden;box-shadow:0 0 0 1px var(--bs)}
+.kit-a .a-grid .th svg{width:100%;height:100%;display:block}
+.kit-a .a-grid figure.sel .th{outline:2px solid var(--acc);outline-offset:2px}
+.kit-a .a-grid figcaption{padding-top:6px;font-size:11px;color:var(--tm);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.kit-a .a-grid figcaption small{display:block;color:var(--tmu);font-size:11px}
+.kit-a .a-empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:8px;padding:24px}
+.kit-a .a-empty h3{margin:6px 0 0;font:680 15px/1.3 var(--font);color:var(--tm)}
+.kit-a .a-empty p{margin:0 0 8px;color:var(--ts);font-size:13px;max-width:30ch}
+.kit-a .a-composer{margin:10px;border:1px solid var(--bst);background:var(--inset);border-radius:10px;padding:10px}
+.kit-a .a-composer .ph{color:var(--tmu);font-size:13px;height:40px}
+.kit-a .a-card{margin:0 12px 10px;padding:12px;border-radius:10px;background:var(--s2);border:1px solid var(--bs)}
+.kit-a .a-diff{margin:8px 0 10px;padding:9px 10px;border-radius:8px;background:var(--inset);color:var(--ts);font-size:13px;line-height:1.5}
+.kit-a del{color:var(--tmu)}.kit-a ins{text-decoration:none;color:var(--tm);box-shadow:inset 0 -1px 0 var(--tm)}
+.kit-a .a-meta{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--tmu)}
+.kit-a .a-meta .st{margin-left:auto;color:var(--amber);font-weight:560}
+.kit-a .a-t{font:680 13px/1.35 var(--font);color:var(--tm);margin-top:4px}
+.kit-a .a-row{display:flex;align-items:center;gap:6px}
+.kit-a .a-listrow{display:flex;align-items:center;gap:6px;height:34px;margin:0 12px;padding:0 4px;font-size:11px;color:var(--tmu);box-shadow:inset 0 1px 0 var(--hair)}
+/* dialog settings */
+.kit-a .a-scrim{position:absolute;inset:0;background:var(--scrim)}
+.kit-a .a-dlg{position:absolute;left:50%;top:50%;width:940px;height:640px;margin:-320px 0 0 -470px;display:grid;grid-template-columns:196px 1fr;border-radius:16px;background:var(--s1);border:1px solid var(--bst);box-shadow:var(--pop-sh);overflow:hidden}
+.kit-a .a-dnav{background:var(--drw);box-shadow:inset -1px 0 0 var(--bs);padding:12px 10px;display:flex;flex-direction:column;gap:2px}
+.kit-a .a-dnav .btn{justify-content:flex-start;width:100%}
+.kit-a .a-dhd{height:48px;display:flex;align-items:center;padding:0 10px 0 18px;box-shadow:inset 0 -1px 0 var(--hair)}
+.kit-a .a-dhd h2{margin:0;font:680 15px/1 var(--font)}
+.kit-a .a-dbody{display:grid;grid-template-columns:268px 1fr;gap:20px;padding:18px}
+.kit-a .a-list{border:1px solid var(--bs);border-radius:6px;background:var(--drw);overflow:hidden;align-self:start}
+.kit-a .a-list .r{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;padding:10px 12px;box-shadow:inset 0 1px 0 var(--bs);font-size:11px}
+.kit-a .a-list .r:first-child{box-shadow:none}
+.kit-a .a-list .r strong{display:block;font-weight:560;color:var(--tm);font-size:11px}
+.kit-a .a-list .r small{color:var(--tmu);font-size:11px}
+.kit-a .a-list .r.sel{background:var(--patch);box-shadow:inset 2px 0 0 var(--tm)}
+.kit-a .ok{color:var(--acc)}.kit-a .att{color:var(--amber)}.kit-a .mu{color:var(--tmu)}
+.kit-a .a-lb{position:absolute;left:0;right:0;top:calc(100% + 6px);padding:4px;border-radius:10px;background:var(--s2);border:1px solid var(--bst);box-shadow:var(--pop-sh);z-index:5}
+.kit-a .a-lb .a-mi{font-size:13px}
+</style>
+
+<style>
+/* ============ D. Figma UI3 look: giá trị đo từ rogie/figui3 (components.css, @rogieking/figui3 9.0.10, commit d43d65e)
+   Brand xanh #0c8ce9/#0d99ff đổi sang teal KIRA; mọi kích thước, bo góc, elevation giữ nguyên. ============ */
+.kit-d{font-family:Inter,AppleSystemUIFont,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:11px;line-height:16px;font-weight:450;letter-spacing:.055px;font-variant-numeric:lining-nums tabular-nums;
+  --r:5px;--rl:13px;--h:24px;
+  color:var(--tx);background:var(--bg)}
+.kit-d[data-theme=dark]{color-scheme:dark}
+.kit-d[data-theme=light]{color-scheme:light}
+.kit-d{--bg:light-dark(#ffffff,#2c2c2c);--bg2:light-dark(#f5f5f5,#383838);--bg3:light-dark(#e6e6e6,#444444);--border:light-dark(#e6e6e6,#444444);--bt:light-dark(rgba(0,0,0,.1),rgba(255,255,255,.1));
+  --tx:light-dark(#000000e5,#ffffff);--tx2:light-dark(#00000099,#ffffffcc);--tx3:light-dark(#00000099,#ffffff99);--icon2:light-dark(#00000080,#ffffffb3);
+  --th:light-dark(rgba(0,0,0,.05),rgba(255,255,255,.05));--tp:light-dark(rgba(0,0,0,.1),rgba(255,255,255,.1));
+  --brand:light-dark(#0c7a68,#0e7c6b);--brand-h:light-dark(#0a6657,#0b6a5b);
+  --selbg:light-dark(#e1f3ee,#3b5a54);--icon-sel:light-dark(#0c6052,#7fc8b7);
+  --switch:light-dark(#e6e6e6,#444444);--danger:light-dark(#dc3412,#fca397);--danger-bd:light-dark(#ffc7c2,#963323);--warn:light-dark(#b86200,#f7d15f);--ok:light-dark(#009951,#79d297);
+  --menu:#1e1e1e;--tipbg:light-dark(#ffffff,#1e1e1e);
+  --el200c:0 0 0 .5px light-dark(rgba(0,0,0,.10),transparent),0 .5px 0 0 light-dark(transparent,rgba(255,255,255,.08)) inset,0 3px 8px 0 light-dark(rgba(0,0,0,.10),rgba(0,0,0,.35)),0 0 .5px 0 light-dark(rgba(0,0,0,.18),rgba(255,255,255,.30)) inset,0 1px 3px 0 light-dark(rgba(0,0,0,.10),rgba(0,0,0,.50));
+  --el400:0px 0px .5px 0px light-dark(rgba(0,0,0,.12),transparent),0px 10px 16px 0px light-dark(rgba(0,0,0,.12),rgba(0,0,0,.35)),0px 2px 5px 0px light-dark(rgba(0,0,0,.15),rgba(0,0,0,.35)),inset 0px .5px 0px 0px light-dark(transparent,rgba(255,255,255,.08)),inset 0px .75px 0px 0px light-dark(transparent,rgba(255,255,255,.1));
+  --el500:0px 0px .5px 0px light-dark(rgba(0,0,0,.08),transparent),0px 10px 24px 0px light-dark(rgba(0,0,0,.18),rgba(0,0,0,.45)),0px 2px 5px 0px light-dark(rgba(0,0,0,.15),transparent),0px 3px 5px 0px light-dark(transparent,rgba(0,0,0,.35)),inset 0px .75px 0px 0px light-dark(transparent,rgba(255,255,255,.1));
+  --popsh:drop-shadow(0px 1px 1.5px light-dark(rgba(0,0,0,.1),rgba(0,0,0,.4))) drop-shadow(0px 2.5px 6px light-dark(rgba(0,0,0,.13),rgba(0,0,0,.5))) drop-shadow(0px 0px .5px light-dark(rgba(0,0,0,.15),rgba(255,255,255,.15)));
+  --handle:0px 0px 0px 1px rgba(0,0,0,.1),0px 0px .5px 0px light-dark(rgba(0,0,0,.3),rgba(255,255,255,.1)),0px 1px 3px 0px light-dark(rgba(0,0,0,.15),transparent);
+  --cv-bg:light-dark(#f5f5f5,#1e1e1e);--cv-dot:light-dark(rgba(0,0,0,.12),rgba(255,255,255,.08));--n-bg:light-dark(#ffffff,#2c2c2c);--n-bd:light-dark(#e6e6e6,#444444);--n-tx:var(--tx);--n-sub:var(--tx2);--n-r:8px;--n-sh:var(--el200c);--sel:light-dark(#0c6052,#7fc8b7);--edge:light-dark(rgba(0,0,0,.3),rgba(255,255,255,.3))}
+.kit-d .gl{width:16px;height:16px;flex:none}
+.kit-d .d-title{background:var(--bg);box-shadow:inset 0 -1px 0 var(--border)}
+.kit-d .d-nav{background:var(--bg);box-shadow:inset -1px 0 0 var(--border)}
+.kit-d .d-ftab{display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 8px;border-radius:var(--r);color:var(--tx2)}
+.kit-d .d-ftab.on{background:var(--bg2);color:var(--tx);font-weight:550}
+.kit-d .d-ftab i{width:6px;height:6px;border-radius:50%;background:var(--tx3)}
+/* fig-button */
+.kit-d .b{appearance:none;display:inline-flex;align-items:center;justify-content:center;gap:4px;height:var(--h);padding:0 8px;border:0;border-radius:var(--r);font-family:inherit;font-size:11px;line-height:16px;font-weight:500;letter-spacing:inherit;white-space:nowrap;cursor:default;color:#fff;background:var(--brand)}
+.kit-d .b:hover{background:var(--brand-h)}
+.kit-d .b.sec{box-shadow:inset 0 0 0 1px var(--bt);padding:0 7px;background:none;color:var(--tx)}
+.kit-d .b.sec:hover{background:var(--bg2)}
+.kit-d .b.gh{background:none;color:var(--tx)}
+.kit-d .b.gh:hover{background:var(--th)}
+.kit-d .b.dsec{box-shadow:inset 0 0 0 1px var(--danger-bd);padding:0 7px;background:none;color:var(--danger)}
+.kit-d .b.io{width:24px;padding:0;flex:none}
+.kit-d .b.lg{height:32px;padding:0 16px}.kit-d .b.lg.io{width:32px;padding:0}
+.kit-d .b[selected],.kit-d .b[selected]:hover{background:var(--selbg);color:var(--icon-sel)}
+.kit-d .b:focus-visible{outline:1px solid var(--icon-sel);outline-offset:-1px}
+.kit-d .b.gh .gl{color:var(--tx)}
+/* toolbar nổi */
+.kit-d .d-plate{display:flex;align-items:center;gap:2px;padding:4px;border-radius:var(--rl);background:var(--bg);box-shadow:var(--el200c)}
+.kit-d .d-plate .sep{width:1px;height:16px;background:var(--border);margin:0 4px}
+.kit-d .d-rail{padding:8px;gap:4px}
+.kit-d .d-zoom{min-width:40px;text-align:center;color:var(--tx2)}
+/* fig-segmented-control */
+.kit-d .seg{display:inline-flex;height:24px;padding:1px;border-radius:var(--r);background:var(--bg2)}
+.kit-d .seg .si{display:flex;align-items:center;justify-content:center;min-width:24px;padding:0 8px;color:var(--tx2);border-radius:calc(var(--r) - 1px)}
+.kit-d .seg .si.io{padding:0;width:26px}
+.kit-d .seg .si.on{background:var(--bg);color:var(--tx);box-shadow:0 0 0 1px var(--border)}
+/* fig-tab */
+.kit-d .tab{display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 8px;border-radius:var(--r);color:var(--tx2)}
+.kit-d .tab.on{background:var(--bg2);color:var(--tx);font-weight:550}
+.kit-d .tab .n{color:var(--warn);font-weight:550}
+/* tooltip: fig-popup variant=tooltip */
+.kit-d .d-tip{display:inline-flex;gap:8px;padding:4px 8px;border-radius:var(--r);background:var(--tipbg);color:var(--tx);filter:var(--popsh);box-shadow:inset 0 .5px 0 0 light-dark(rgba(0,0,0,.06),rgba(255,255,255,.1));white-space:nowrap}
+.kit-d .d-tip kbd{font:inherit;color:var(--tx3)}
+/* fig-menu (luôn tối) */
+.kit-d .d-menu{color-scheme:dark;width:248px;padding:8px 0;border-radius:var(--rl);background:var(--menu);color:#fff;box-shadow:var(--el400)}
+.kit-d .mi{position:relative;display:flex;align-items:center;gap:8px;min-height:24px;padding:4px 16px;z-index:0}
+.kit-d .mi::before{content:"";position:absolute;inset:0 8px;border-radius:var(--r);z-index:-1}
+.kit-d .mi.hl::before{background:var(--brand)}
+.kit-d .mi .ck{width:12px;display:grid;place-items:center;margin-left:-4px}
+.kit-d .mi .sc,.kit-d .mi small{margin-left:auto;color:rgba(255,255,255,.7)}
+.kit-d .mi.two{align-items:flex-start}
+.kit-d .mi.two small{display:block;margin:0}
+.kit-d .mh{padding:4px 16px;color:rgba(255,255,255,.5)}
+.kit-d .msep{height:1px;background:#383838;margin:8px 0}
+/* switch figui3 */
+.kit-d .sw{position:relative;width:32px;height:16px;border-radius:8px;background:var(--switch);box-shadow:inset 0 0 0 1px var(--bt);flex:none;margin-left:auto}
+.kit-d .sw::after{content:"";position:absolute;top:4px;left:4px;width:12px;height:8px;border-radius:8px;background:#fff;box-shadow:var(--handle)}
+.kit-d .sw.on{background:var(--brand)}.kit-d .sw.on::after{left:16px}
+/* input, dropdown, slider */
+.kit-d .in{display:flex;align-items:center;height:24px;background:var(--bg2);border-radius:var(--r);color:var(--tx);min-width:0}
+.kit-d .in .slot{width:24px;display:grid;place-items:center;color:var(--tx2);flex:none}
+.kit-d .in .v{padding:0 8px;flex:1;white-space:nowrap;overflow:hidden}
+.kit-d .in .slot + .v{padding-left:0}
+.kit-d .in .ph{color:var(--tx3)}
+.kit-d .in.open{outline:1px solid var(--icon-sel);outline-offset:-1px}
+.kit-d .lab{display:block;color:var(--tx2);margin:0 0 4px}
+.kit-d .sl{position:relative;flex:1;height:24px;display:flex;align-items:center;min-width:80px}
+.kit-d .sl .tr{position:relative;width:100%;height:16px;border-radius:8px;background:var(--bg2);box-shadow:inset 0 0 0 1px var(--bt)}
+.kit-d .sl .fi{position:absolute;left:0;top:0;bottom:0;min-width:16px;border-radius:8px;background:var(--brand);box-shadow:inset 0 0 0 1px var(--bt)}
+.kit-d .sl .th{position:absolute;top:0;width:16px;height:16px;margin-left:-16px;border-radius:8px;box-shadow:inset 0 0 0 4px #fff,0 0 0 .5px rgba(0,0,0,.1),var(--handle)}
+/* surfaces */
+.kit-d .d-drawer{background:var(--bg);box-shadow:inset -1px 0 0 var(--border)}
+.kit-d .d-panel{background:var(--bg);box-shadow:inset 1px 0 0 var(--border)}
+.kit-d .hdr{height:40px;flex:none;display:flex;align-items:center;gap:8px;padding:4px 8px;box-shadow:inset 0 -1px 0 0 var(--border)}
+.kit-d .hdr h3{margin:0;padding-left:8px;font-size:11px;font-weight:550;flex:1}
+.kit-d .hdr .cnt{color:var(--tx3)}
+.kit-d .d-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px 8px;padding:4px 16px 16px;align-content:start;overflow:hidden}
+.kit-d .d-grid figure{margin:0}
+.kit-d .d-grid .th{position:relative;aspect-ratio:4/3;border-radius:var(--r);overflow:hidden;background:var(--bg2)}
+.kit-d .d-grid .th::after{content:"";position:absolute;inset:0;border-radius:inherit;box-shadow:inset 0 0 0 1px var(--bt)}
+.kit-d .d-grid .th svg{width:100%;height:100%;display:block}
+.kit-d .d-grid figure.sel .th::after{box-shadow:inset 0 0 0 2px var(--icon-sel)}
+.kit-d .d-grid figcaption{padding-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.kit-d .d-grid figcaption small{display:block;color:var(--tx3);font-size:11px}
+.kit-d .d-empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;text-align:center;padding:24px}
+.kit-d .d-empty strong{font-weight:550;margin-top:8px}
+.kit-d .d-empty p{margin:0 0 12px;color:var(--tx2);max-width:28ch}
+.kit-d .d-composer{margin:8px;border-radius:var(--r);background:var(--bg2);padding:8px;color:var(--tx3);height:72px;display:flex;flex-direction:column;justify-content:space-between}
+.kit-d .d-sec{padding:8px 16px;box-shadow:inset 0 -1px 0 var(--border)}
+.kit-d .d-meta{display:flex;gap:6px;align-items:center;color:var(--tx2)}
+.kit-d .d-meta .st{margin-left:auto;color:var(--warn);font-weight:550}
+.kit-d .d-diff{margin:8px 0;padding:8px;border-radius:var(--r);background:var(--bg2);color:var(--tx2);line-height:18px}
+.kit-d del{color:var(--tx3)}.kit-d ins{text-decoration:none;color:var(--tx);box-shadow:inset 0 -1px 0 var(--icon-sel)}
+.kit-d .row{display:flex;align-items:center;gap:8px}
+.kit-d .d-scrim{position:absolute;inset:0;background:rgba(0,0,0,.35)}
+.kit-d .d-dlg{position:absolute;left:50%;top:50%;width:880px;height:600px;margin:-300px 0 0 -440px;display:grid;grid-template-columns:180px 1fr;border-radius:var(--rl);background:var(--bg);box-shadow:var(--el500);overflow:hidden}
+.kit-d .d-dnav{padding:8px;box-shadow:inset -1px 0 0 var(--border);display:flex;flex-direction:column;gap:2px}
+.kit-d .d-dnav .tab{width:100%}
+.kit-d .d-dbody{display:grid;grid-template-columns:248px 1fr;min-height:0}
+.kit-d .plist{padding:8px;box-shadow:inset -1px 0 0 var(--border)}
+.kit-d .plist .r{display:flex;align-items:center;gap:8px;height:32px;padding:0 8px;border-radius:var(--r)}
+.kit-d .plist .r.sel{background:var(--selbg)}
+.kit-d .plist .r span:first-child{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.kit-d .ok{color:var(--ok)}.kit-d .att{color:var(--warn)}.kit-d .mu{color:var(--tx3)}
+.kit-d .fgrid{display:grid;grid-template-columns:1fr 1fr;gap:12px 8px;padding:12px 16px}
+.kit-d .fgrid .full{grid-column:1/-1}
+.kit-d .d-lb{position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:5}
+</style>
+
+<style>.kit-a .a-scrim,.kit-d .d-scrim{z-index:45}.kit-a .a-dlg,.kit-d .d-dlg{z-index:46}</style>
+
+<div class="pg">
+  <h1>KIRA, 4 hướng thẩm mỹ cho giao diện "2026 hơn"</h1>
+  <p class="lede">Specimen tĩnh ở khổ desktop 1440 x 900. Mỗi hướng dựng cùng 4 màn và cùng nội dung, đã áp đủ góp ý user chốt 2026-09-16: header panel một dòng nhỏ, ảnh Library to hơn có slider, bỏ thanh Edit/Discover/Arrange (gộp vào menu canvas), view switcher chỉ icon kèm tooltip, cửa sổ nền đục, panel dính mép. Báo cáo: <code>docs/research/2026-09-16-art-direction-v3-kit-directions.md</code>.</p>
+  <div class="ctl" role="group" aria-label="Điều khiển specimen">
+    <fieldset><legend>Hướng</legend>
+      <button data-k="dir" data-v="a">A. Ink &amp; Paper</button>
+      <button data-k="dir" data-v="b">B. shadcn/ui</button>
+      <button data-k="dir" data-v="c">C. Untitled UI</button>
+      <button data-k="dir" data-v="d">D. Figma UI3</button>
+    </fieldset>
+    <fieldset><legend>Màn</legend>
+      <button data-k="screen" data-v="1">1 Chrome canvas</button>
+      <button data-k="screen" data-v="2">2 Library</button>
+      <button data-k="screen" data-v="3">3 Panel Kira</button>
+      <button data-k="screen" data-v="4">4 AI Providers</button>
+    </fieldset>
+    <fieldset><legend>Theme</legend>
+      <button data-k="theme" data-v="dark">Tối</button>
+      <button data-k="theme" data-v="light">Sáng</button>
+    </fieldset>
+    <fieldset id="tabctl"><legend>Tab panel</legend>
+      <button data-k="tab" data-v="chat">Chat</button>
+      <button data-k="tab" data-v="needs">Cần bạn</button>
+    </fieldset>
+    <fieldset><legend>Cỡ</legend>
+      <button data-k="fit" data-v="0">100%</button>
+      <button data-k="fit" data-v="1">Vừa khung</button>
+    </fieldset>
+  </div>
+  <div class="stage" id="stage"><div class="stage-in"><div class="fitwrap" id="fitwrap"><div id="win"></div></div></div></div>
+  <div class="notes" id="notes"></div>
+</div>
+
+<script>
+/* Lucide 1.46.0 (ISC), đường path nguyên bản */
+const L = {"arrow-up":"<path d=\"m5 12 7-7 7 7\"/><path d=\"M12 19V5\"/>","box":"<path d=\"M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z\"/><path d=\"m3.3 7 8.7 5 8.7-5\"/><path d=\"M12 22V12\"/>","check":"<path d=\"M20 6 9 17l-5-5\"/>","chevron-down":"<path d=\"m6 9 6 6 6-6\"/>","chevron-right":"<path d=\"m9 18 6-6-6-6\"/>","circle-alert":"<circle cx=\"12\" cy=\"12\" r=\"10\"/><line x1=\"12\" x2=\"12\" y1=\"8\" y2=\"12\"/><line x1=\"12\" x2=\"12.01\" y1=\"16\" y2=\"16\"/>","circle-check":"<circle cx=\"12\" cy=\"12\" r=\"10\"/><path d=\"m16 9-5.5 5.5L8 12\"/>","cpu":"<path d=\"M12 20v2\"/><path d=\"M12 2v2\"/><path d=\"M17 20v2\"/><path d=\"M17 2v2\"/><path d=\"M2 12h2\"/><path d=\"M2 17h2\"/><path d=\"M2 7h2\"/><path d=\"M20 12h2\"/><path d=\"M20 17h2\"/><path d=\"M20 7h2\"/><path d=\"M7 20v2\"/><path d=\"M7 2v2\"/><rect x=\"4\" y=\"4\" width=\"16\" height=\"16\" rx=\"2\"/><rect x=\"8\" y=\"8\" width=\"8\" height=\"8\" rx=\"1\"/>","download":"<path d=\"M12 15V3\"/><path d=\"M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4\"/><path d=\"m7 10 5 5 5-5\"/>","ellipsis":"<circle cx=\"12\" cy=\"12\" r=\"1\"/><circle cx=\"19\" cy=\"12\" r=\"1\"/><circle cx=\"5\" cy=\"12\" r=\"1\"/>","eye":"<path d=\"M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0\"/><circle cx=\"12\" cy=\"12\" r=\"3\"/>","folder-open":"<path d=\"m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2\"/>","frame":"<line x1=\"22\" x2=\"2\" y1=\"6\" y2=\"6\"/><line x1=\"22\" x2=\"2\" y1=\"18\" y2=\"18\"/><line x1=\"6\" x2=\"6\" y1=\"2\" y2=\"22\"/><line x1=\"18\" x2=\"18\" y1=\"2\" y2=\"22\"/>","git-branch":"<path d=\"M15 6a9 9 0 0 0-9 9V3\"/><circle cx=\"18\" cy=\"6\" r=\"3\"/><circle cx=\"6\" cy=\"18\" r=\"3\"/>","git-pull-request":"<circle cx=\"18\" cy=\"18\" r=\"3\"/><circle cx=\"6\" cy=\"6\" r=\"3\"/><path d=\"M13 6h3a2 2 0 0 1 2 2v7\"/><line x1=\"6\" x2=\"6\" y1=\"9\" y2=\"21\"/>","history":"<path d=\"M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8\"/><path d=\"M3 3v5h5\"/><path d=\"M12 7v5l4 2\"/>","image-plus":"<path d=\"M16 5h6\"/><path d=\"M19 2v6\"/><path d=\"M21 11.5V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7.5\"/><path d=\"m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21\"/><circle cx=\"9\" cy=\"9\" r=\"2\"/>","image":"<rect width=\"18\" height=\"18\" x=\"3\" y=\"3\" rx=\"2\" ry=\"2\"/><circle cx=\"9\" cy=\"9\" r=\"2\"/><path d=\"m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21\"/>","key-round":"<path d=\"M2.586 17.414A2 2 0 0 0 2 18.828V21a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h1a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h.172a2 2 0 0 0 1.414-.586l.814-.814a6.5 6.5 0 1 0-4-4z\"/><circle cx=\"16.5\" cy=\"7.5\" r=\".5\" fill=\"currentColor\"/>","keyboard":"<path d=\"M10 8h.01\"/><path d=\"M12 12h.01\"/><path d=\"M14 8h.01\"/><path d=\"M16 12h.01\"/><path d=\"M18 8h.01\"/><path d=\"M6 8h.01\"/><path d=\"M7 16h10\"/><path d=\"M8 12h.01\"/><rect width=\"20\" height=\"16\" x=\"2\" y=\"4\" rx=\"2\"/>","layers-2":"<path d=\"M13 13.74a2 2 0 0 1-2 0L2.5 8.87a1 1 0 0 1 0-1.74L11 2.26a2 2 0 0 1 2 0l8.5 4.87a1 1 0 0 1 0 1.74z\"/><path d=\"m20 14.285 1.5.845a1 1 0 0 1 0 1.74L13 21.74a2 2 0 0 1-2 0l-8.5-4.87a1 1 0 0 1 0-1.74l1.5-.845\"/>","layout-grid":"<rect width=\"7\" height=\"7\" x=\"3\" y=\"3\" rx=\"1\"/><rect width=\"7\" height=\"7\" x=\"14\" y=\"3\" rx=\"1\"/><rect width=\"7\" height=\"7\" x=\"14\" y=\"14\" rx=\"1\"/><rect width=\"7\" height=\"7\" x=\"3\" y=\"14\" rx=\"1\"/>","lightbulb":"<path d=\"M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5\"/><path d=\"M9 18h6\"/><path d=\"M10 22h4\"/>","link":"<path d=\"M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71\"/><path d=\"M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71\"/>","list-tree":"<path d=\"M8 5h13\"/><path d=\"M13 12h8\"/><path d=\"M13 19h8\"/><path d=\"M3 10a2 2 0 0 0 2 2h3\"/><path d=\"M3 5v12a2 2 0 0 0 2 2h3\"/>","list":"<path d=\"M3 5h.01\"/><path d=\"M3 12h.01\"/><path d=\"M3 19h.01\"/><path d=\"M8 5h13\"/><path d=\"M8 12h13\"/><path d=\"M8 19h13\"/>","locate-fixed":"<line x1=\"2\" x2=\"5\" y1=\"12\" y2=\"12\"/><line x1=\"19\" x2=\"22\" y1=\"12\" y2=\"12\"/><line x1=\"12\" x2=\"12\" y1=\"2\" y2=\"5\"/><line x1=\"12\" x2=\"12\" y1=\"19\" y2=\"22\"/><circle cx=\"12\" cy=\"12\" r=\"7\"/><circle cx=\"12\" cy=\"12\" r=\"3\"/>","message-square":"<path d=\"M22 17a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 21.286V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2z\"/>","minus":"<path d=\"M5 12h14\"/>","mouse-pointer-2":"<path d=\"M4.037 4.688a.495.495 0 0 1 .651-.651l16 6.5a.5.5 0 0 1-.063.947l-6.124 1.58a2 2 0 0 0-1.438 1.435l-1.579 6.126a.5.5 0 0 1-.947.063z\"/>","network":"<rect x=\"16\" y=\"16\" width=\"6\" height=\"6\" rx=\"1\"/><rect x=\"2\" y=\"16\" width=\"6\" height=\"6\" rx=\"1\"/><rect x=\"9\" y=\"2\" width=\"6\" height=\"6\" rx=\"1\"/><path d=\"M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3\"/><path d=\"M12 12V8\"/>","palette":"<path d=\"M12 22a1 1 0 0 1 0-20 10 9 0 0 1 10 9 5 5 0 0 1-5 5h-2.25a1.75 1.75 0 0 0-1.4 2.8l.3.4a1.75 1.75 0 0 1-1.4 2.8z\"/><circle cx=\"13.5\" cy=\"6.5\" r=\".5\" fill=\"currentColor\"/><circle cx=\"17.5\" cy=\"10.5\" r=\".5\" fill=\"currentColor\"/><circle cx=\"6.5\" cy=\"12.5\" r=\".5\" fill=\"currentColor\"/><circle cx=\"8.5\" cy=\"7.5\" r=\".5\" fill=\"currentColor\"/>","panel-right":"<rect width=\"18\" height=\"18\" x=\"3\" y=\"3\" rx=\"2\"/><path d=\"M15 3v18\"/>","pencil":"<path d=\"M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z\"/><path d=\"m15 5 4 4\"/>","plus":"<path d=\"M5 12h14\"/><path d=\"M12 5v14\"/>","presentation":"<path d=\"M2 3h20\"/><path d=\"M21 3v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V3\"/><path d=\"m7 21 5-5 5 5\"/>","refresh-cw":"<path d=\"M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8\"/><path d=\"M21 3v5h-5\"/><path d=\"M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16\"/><path d=\"M8 16H3v5\"/>","save":"<path d=\"M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z\"/><path d=\"M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7\"/><path d=\"M7 3v4a1 1 0 0 0 1 1h7\"/>","scan-search":"<path d=\"M3 7V5a2 2 0 0 1 2-2h2\"/><path d=\"M17 3h2a2 2 0 0 1 2 2v2\"/><path d=\"M21 17v2a2 2 0 0 1-2 2h-2\"/><path d=\"M7 21H5a2 2 0 0 1-2-2v-2\"/><circle cx=\"12\" cy=\"12\" r=\"3\"/><path d=\"m16 16-1.9-1.9\"/>","search":"<path d=\"m21 21-4.34-4.34\"/><circle cx=\"11\" cy=\"11\" r=\"8\"/>","settings":"<path d=\"M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915\"/><circle cx=\"12\" cy=\"12\" r=\"3\"/>","sliders-horizontal":"<path d=\"M10 5H3\"/><path d=\"M12 19H3\"/><path d=\"M14 3v4\"/><path d=\"M16 17v4\"/><path d=\"M21 12h-9\"/><path d=\"M21 19h-5\"/><path d=\"M21 5h-7\"/><path d=\"M8 10v4\"/><path d=\"M8 12H3\"/>","sparkles":"<path d=\"M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z\"/><path d=\"M20 2v4\"/><path d=\"M22 4h-4\"/><circle cx=\"4\" cy=\"20\" r=\"2\"/>","spline":"<circle cx=\"19\" cy=\"5\" r=\"2\"/><circle cx=\"5\" cy=\"19\" r=\"2\"/><path d=\"M5 17A12 12 0 0 1 17 5\"/>","sticky-note":"<path d=\"M21 9a2.4 2.4 0 0 0-.706-1.706l-3.588-3.588A2.4 2.4 0 0 0 15 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2z\"/><path d=\"M15 3v5a1 1 0 0 0 1 1h5\"/>","terminal":"<path d=\"M12 19h8\"/><path d=\"m4 17 6-6-6-6\"/>","trash-2":"<path d=\"M10 11v6\"/><path d=\"M14 11v6\"/><path d=\"M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6\"/><path d=\"M3 6h18\"/><path d=\"M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2\"/>","upload":"<path d=\"M12 3v12\"/><path d=\"m17 8-5-5-5 5\"/><path d=\"M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4\"/>","wand-sparkles":"<path d=\"m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72\"/><path d=\"m14 7 3 3\"/><path d=\"M5 6v4\"/><path d=\"M19 14v4\"/><path d=\"M10 2v2\"/><path d=\"M7 8H3\"/><path d=\"M21 16h-4\"/><path d=\"M11 3H9\"/>","workflow":"<rect width=\"8\" height=\"8\" x=\"3\" y=\"3\" rx=\"2\"/><path d=\"M7 11v4a2 2 0 0 0 2 2h4\"/><rect width=\"8\" height=\"8\" x=\"13\" y=\"13\" rx=\"2\"/>","x":"<path d=\"M18 6 6 18\"/><path d=\"m6 6 12 12\"/>","zoom-in":"<circle cx=\"11\" cy=\"11\" r=\"8\"/><line x1=\"21\" x2=\"16.65\" y1=\"21\" y2=\"16.65\"/><line x1=\"11\" x2=\"11\" y1=\"8\" y2=\"14\"/><line x1=\"8\" x2=\"14\" y1=\"11\" y2=\"11\"/>","zoom-out":"<circle cx=\"11\" cy=\"11\" r=\"8\"/><line x1=\"21\" x2=\"16.65\" y1=\"21\" y2=\"16.65\"/><line x1=\"8\" x2=\"14\" y1=\"11\" y2=\"11\"/>"};
+const ic = (n, s = 16, sw = 2, c = 'gl') => `<svg class="${c}" width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${L[n] || ''}</svg>`;
+let uid = 0;
+
+/* ---------- ảnh minh hoạ (SVG inline, không tải ảnh ngoài) ---------- */
+function scene(k) {
+  const g = 'sc' + (++uid);
+  const wrap = (inner, bg) => `<svg viewBox="0 0 160 120" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><rect width="160" height="120" fill="${bg}"/>${inner}</svg>`;
+  switch (k) {
+    case 'facade': return wrap(`<rect x="14" y="30" width="40" height="90" fill="#b88a5a"/><rect x="54" y="14" width="46" height="106" fill="#e7dcc4"/><rect x="100" y="38" width="44" height="82" fill="#6f7c78"/>${[24, 44, 64, 84].map(y => `<rect x="64" y="${y}" width="10" height="12" fill="#3a3632"/><rect x="80" y="${y}" width="10" height="12" fill="#3a3632"/>`).join('')}<rect x="0" y="108" width="160" height="12" fill="#1d1c1f"/>`, '#2b2a2e');
+    case 'lantern': return wrap(`<path d="M80 0v38" stroke="#6b5a45" stroke-width="2"/><circle cx="80" cy="62" r="26" fill="#e39a3b"/><circle cx="80" cy="62" r="14" fill="#f6d38a"/><rect x="0" y="100" width="160" height="20" fill="#3b4a4e"/>`, '#1a2426');
+    case 'counter': return wrap(`${[40, 80, 120].map(x => `<path d="M${x} 0v26" stroke="#8b7a62" stroke-width="1.5"/><circle cx="${x}" cy="32" r="6" fill="#f3c46b"/>`).join('')}<rect x="0" y="70" width="160" height="14" fill="#c98a4f"/><rect x="0" y="84" width="160" height="36" fill="#7a4a2a"/>`, '#2a211c');
+    case 'shutters': return wrap(`<rect x="30" y="14" width="100" height="92" fill="#cfd6d4"/><rect x="38" y="22" width="40" height="76" fill="#7c9aa0"/><rect x="82" y="22" width="40" height="76" fill="#c57d4f"/>${[30, 42, 54, 66, 78, 90].map(y => `<rect x="82" y="${y}" width="40" height="3" fill="#a3603a"/>`).join('')}`, '#394446');
+    case 'tiles': { let s = ''; for (let x = 0; x < 160; x += 40) for (let y = 0; y < 120; y += 40) { s += `<rect x="${x}" y="${y}" width="40" height="40" fill="${(x + y) % 80 ? '#e9d7bf' : '#b36b4a'}"/><circle cx="${x + 20}" cy="${y + 20}" r="8" fill="#3f5a58"/>`; } return wrap(s, '#e9d7bf'); }
+    case 'rain': return wrap(`<defs><linearGradient id="${g}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1c2530"/><stop offset="1" stop-color="#2d3a44"/></linearGradient></defs><rect width="160" height="120" fill="url(#${g})"/><rect x="20" y="20" width="26" height="46" fill="#d9a54f" opacity=".85"/><rect x="104" y="12" width="30" height="54" fill="#c55b48" opacity=".8"/><rect x="0" y="68" width="160" height="52" fill="#141b21"/><rect x="24" y="72" width="18" height="44" fill="#d9a54f" opacity=".35"/><rect x="108" y="72" width="22" height="44" fill="#c55b48" opacity=".3"/>`, '#1c2530');
+    case 'cup': return wrap(`<ellipse cx="80" cy="64" rx="54" ry="44" fill="#f3eee4"/><circle cx="80" cy="60" r="30" fill="#ffffff"/><circle cx="80" cy="60" r="22" fill="#3a2418"/><path d="M110 60h14a8 8 0 0 1 0 16h-10" stroke="#ffffff" stroke-width="6" fill="none"/>`, '#d9cbb3');
+    case 'neon': return wrap(`<rect x="26" y="34" width="108" height="30" rx="15" fill="none" stroke="#ff5d8f" stroke-width="4"/><path d="M40 86h80" stroke="#7fd1ff" stroke-width="4" stroke-linecap="round"/><circle cx="130" cy="96" r="5" fill="#ffd166"/>`, '#16141c');
+    case 'brass': return wrap(`<defs><radialGradient id="${g}" cx=".35" cy=".3" r=".7"><stop offset="0" stop-color="#f1cf7a"/><stop offset="1" stop-color="#7d5620"/></radialGradient></defs><circle cx="80" cy="60" r="36" fill="url(#${g})"/><rect x="70" y="92" width="20" height="28" fill="#5d4219"/>`, '#3a2e22');
+    case 'paper': return wrap(`${[18, 34, 50, 66, 82, 98].map((y, i) => `<path d="M12 ${y}c30 ${i % 2 ? 4 : -4} 90 ${i % 2 ? -3 : 3} 136 0" stroke="#cbbd9f" stroke-width="1.2" fill="none"/>`).join('')}<path d="M20 30l30 50M90 20l20 70" stroke="#d9ccb0" stroke-width=".8"/>`, '#e8dfcc');
+    case 'moss': return wrap(`<rect width="160" height="120" fill="#8a8a7a"/><path d="M0 70c20-20 40 10 60-6s40-20 60 0 30 10 40 0v56H0z" fill="#5f7a3a"/><circle cx="40" cy="80" r="16" fill="#a9c26a"/><circle cx="110" cy="92" r="20" fill="#7d9a4a"/>`, '#8a8a7a');
+    case 'ceramic': return wrap(`<ellipse cx="80" cy="70" rx="56" ry="30" fill="#2f5d8a"/><ellipse cx="80" cy="62" rx="56" ry="20" fill="#e9eef3"/><path d="M36 62c14 8 74 8 88 0" stroke="#2f5d8a" stroke-width="2" fill="none"/><circle cx="80" cy="60" r="6" fill="none" stroke="#2f5d8a" stroke-width="2"/>`, '#eceae6');
+  }
+  return '';
+}
+
+const LIB = [
+  ['Mặt tiền Hàng Buồm', 'eagle.import', 'facade'], ['Đèn lồng giấy', 'browser.capture', 'lantern'], ['Quầy gỗ cũ', 'local.library', 'counter'],
+  ['Cửa sổ chớp', 'browser.capture', 'shutters'], ['Gạch bông', 'local.library', 'tiles'], ['Phố sau mưa', 'browser.capture', 'rain'],
+  ['Tách cà phê đen', 'eagle.import', 'cup'], ['Biển hiệu neon', 'browser.capture', 'neon'], ['Tay nắm đồng', 'local.library', 'brass'],
+  ['Giấy dó', 'eagle.import', 'paper'], ['Rêu tường', 'browser.capture', 'moss'], ['Chén men lam', 'local.library', 'ceramic'],
+];
+const VIEWS = [['network', 'Bảng vẽ', '⌘1'], ['box', '3D', '⌘2'], ['presentation', 'Trình chiếu', '⌘3'], ['list-tree', 'Dàn ý', '⌘4']];
+const PROVIDERS = [
+  ['Apple Foundation Models', 'On-device', 'Unavailable', 'mu'], ['Claude Code (CLI)', 'Signed in via Terminal', 'Connected', 'ok'],
+  ['Codex CLI (ChatGPT)', 'Not signed in', 'Signed out', 'mu'], ['OpenAI Platform', 'OpenAI API key', 'Key missing', 'att'],
+  ['Anthropic Console', 'Anthropic API key', 'Key missing', 'att'], ['Ollama', 'localhost:11434', 'Not running', 'mu'],
+];
+const MODELS = [['gpt-4.1-mini', 'Nhanh, rẻ'], ['gpt-4.1', 'Chất lượng cao'], ['o4-mini', 'Suy luận'], ['Model id tuỳ chỉnh…', '']];
+const DIFF = 'Ánh vàng thấp, gỗ tối, <del>kính mờ hơi nước</del> <ins>kính mờ và đồng xước</ins>. Khách ngồi quay lưng ra phố<ins>, quầy là nguồn sáng duy nhất</ins>.';
+
+/* ---------- canvas chung ---------- */
+function world() {
+  const img = (x, y, t, k, sel) => `<div class="cv-node cv-img${sel ? ' is-sel' : ''}" style="left:${x}px;top:${y}px"><div class="th">${scene(k)}</div><span>${t}</span></div>`;
+  return `<div class="world" aria-hidden="true">
+    <svg class="edges" viewBox="0 0 1000 700"><path d="M216 150C268 150 268 262 320 262"/><path d="M460 304C460 370 225 360 225 420"/><path d="M460 304C460 390 455 400 455 470"/><path d="M460 304C460 370 675 380 675 440"/><path d="M600 262C650 262 650 161 700 161"/><path d="M810 192C810 250 865 250 865 300"/></svg>
+    <div class="cv-node cv-pal" style="left:40px;top:90px"><div class="cv-sw"><i style="background:#1f1a17"></i><i style="background:#6b3d24"></i><i style="background:#c98a4f"></i><i style="background:#f0c27a"></i><i style="background:#3f5a58"></i></div>Đêm Hàng Buồm</div>
+    <div class="cv-node cv-idea is-sel" style="left:320px;top:180px;width:280px"><b>Hanoi noir: quán cà phê đêm</b><p>Ánh vàng thấp, gỗ tối, kính mờ hơi nước. Khách ngồi quay lưng ra phố.</p></div>
+    <div class="cv-node cv-idea" style="left:700px;top:90px;width:220px"><b>Quầy bar ánh đồng</b><p>Nhánh concept từ node gốc.</p></div>
+    ${img(150, 420, 'Mặt tiền', 'facade')}${img(380, 470, 'Đèn lồng giấy', 'lantern')}${img(600, 440, 'Quầy gỗ cũ', 'counter')}${img(790, 300, 'Cửa sổ chớp', 'shutters')}
+  </div>`;
+}
+
+/* ---------- icon rail A: trích nguyên từ docs/research/art-direction/v2/controls-v2.html (S:490-511) ---------- */
+const RI = {
+  select: (g) => `<path class="bd" fill="url(#${g}b)" d="M5.3 3.9 18.4 10.6c.8.4.7 1.5-.2 1.7l-5.2 1.3-2.6 5c-.4.8-1.6.7-1.8-.2L4 5.1c-.2-.9.6-1.6 1.3-1.2z"/><path fill="url(#${g}s)" d="M5.3 3.9 18.4 10.6c.8.4.7 1.5-.2 1.7l-5.2 1.3-2.6 5c-.4.8-1.6.7-1.8-.2L4 5.1c-.2-.9.6-1.6 1.3-1.2z"/>`,
+  image: (g) => `<rect class="bd" fill="url(#${g}b)" x="2.8" y="4.3" width="18.4" height="15.4" rx="3.2"/><rect class="k-sky" x="5" y="6.5" width="14" height="11" rx="1.6"/><circle class="k-sun" cx="9.2" cy="10" r="1.7"/><path class="k-leaf" d="M5 16.1l4.3-3.6 3 2.4 2.5-2 4.2 3.4v.1a1.6 1.6 0 0 1-1.6 1.1H6.6A1.6 1.6 0 0 1 5 16.1z"/><rect fill="url(#${g}s)" x="2.8" y="4.3" width="18.4" height="15.4" rx="3.2" opacity=".6"/>`,
+  palette: (g) => `<path class="bd" fill="url(#${g}b)" d="M12 3.4c-4.9 0-8.7 3.7-8.7 8.3 0 4.7 3.7 8.8 8.3 8.8 1.4 0 2.2-.8 2.2-1.9 0-1.3-1.2-1.7-1.2-2.9 0-1 .8-1.8 1.9-1.8h2.2c2.5 0 4.3-1.7 4.3-4.1 0-3.7-3.9-6.4-9-6.4z"/><circle class="k-amb" cx="7.6" cy="11.3" r="1.65"/><circle class="k-rose" cx="9.7" cy="7.4" r="1.65"/><circle class="k-acc" cx="14.4" cy="7.1" r="1.65"/><circle class="k-leaf" cx="8.4" cy="15.6" r="1.5"/><path fill="url(#${g}s)" d="M12 3.4c-4.9 0-8.7 3.7-8.7 8.3 0 1.2.2 2.3.7 3.3 2.5-5 7.4-8.3 13.8-9.2A10 10 0 0 0 12 3.4z"/>`,
+  idea: (g) => `<path class="bd" fill="url(#${g}b)" d="M12 2.9a6.2 6.2 0 0 0-3.8 11.1c.7.55 1.1 1.3 1.1 2.1v.7h5.4v-.7c0-.8.4-1.55 1.1-2.1A6.2 6.2 0 0 0 12 2.9z"/><path class="ln2" d="M10.4 12.4 12 14l1.6-1.6M12 14v2.6"/><rect class="fk" x="9.4" y="18" width="5.2" height="3" rx="1.2"/><ellipse fill="url(#${g}s)" cx="10" cy="7" rx="2.3" ry="3.1" transform="rotate(-28 10 7)"/>`,
+  note: (g) => `<path class="bd" fill="url(#${g}b)" d="M5.6 3.8h12.8a1.8 1.8 0 0 1 1.8 1.8V14l-6.2 6.2H5.6a1.8 1.8 0 0 1-1.8-1.8V5.6a1.8 1.8 0 0 1 1.8-1.8z"/><path class="bd k-fold" d="M14 20.2v-4.4a1.8 1.8 0 0 1 1.8-1.8h4.4z"/><path class="ln2" d="M7.4 8.4h9.2M7.4 11.4h6"/><path fill="url(#${g}s)" d="M5.6 3.8h12.8a1.8 1.8 0 0 1 1.8 1.8v2.5C14 8 9 10 3.8 13.4V5.6a1.8 1.8 0 0 1 1.8-1.8z"/>`,
+  frame: (g) => `<rect class="k-glass" x="6.5" y="6.5" width="11" height="11" rx="1.4"/><rect fill="url(#${g}s)" x="6.5" y="6.5" width="11" height="11" rx="1.4" opacity=".35"/><path class="lxo" d="M3.9 8.6V5.7a1.8 1.8 0 0 1 1.8-1.8h2.9M15.4 3.9h2.9a1.8 1.8 0 0 1 1.8 1.8v2.9M20.1 15.4v2.9a1.8 1.8 0 0 1-1.8 1.8h-2.9M8.6 20.1H5.7a1.8 1.8 0 0 1-1.8-1.8v-2.9"/><path class="lxi" style="stroke-width:2" d="M3.9 8.6V5.7a1.8 1.8 0 0 1 1.8-1.8h2.9M15.4 3.9h2.9a1.8 1.8 0 0 1 1.8 1.8v2.9M20.1 15.4v2.9a1.8 1.8 0 0 1-1.8 1.8h-2.9M8.6 20.1H5.7a1.8 1.8 0 0 1-1.8-1.8v-2.9"/>`,
+  diagram: (g) => `<path class="lxo" d="M10.3 7h2.2a2.7 2.7 0 0 1 2.7 2.7V10M10.3 17h2.2a2.7 2.7 0 0 0 2.7-2.7V14"/><path class="lnA" d="M10.3 7h2.2a2.7 2.7 0 0 1 2.7 2.7V10M10.3 17h2.2a2.7 2.7 0 0 0 2.7-2.7V14"/><rect class="bd" fill="url(#${g}b)" x="3.3" y="3.8" width="7" height="6.4" rx="1.8"/><rect class="bd" fill="url(#${g}b)" x="3.3" y="13.8" width="7" height="6.4" rx="1.8"/><rect class="bd k-acc" x="13.7" y="8.8" width="7" height="6.4" rx="1.8"/><rect fill="url(#${g}s)" x="3.3" y="3.8" width="7" height="6.4" rx="1.8"/>`,
+  link: (g) => `<path class="lxo" d="M6.4 17.6c5.8 0 5.4-11.2 11.2-11.2"/><path class="lxi" style="stroke-width:1.8" d="M6.4 17.6c5.8 0 5.4-11.2 11.2-11.2"/><circle class="bd" fill="url(#${g}b)" cx="6.4" cy="17.6" r="2.8"/><circle class="bd k-acc" cx="17.6" cy="6.4" r="2.8"/><circle fill="url(#${g}s)" cx="6.4" cy="17.6" r="2.8"/>`,
+  kira: (g) => `<defs><linearGradient id="${g}k" x1="0" y1="0" x2="1" y2="1"><stop offset="0" class="s-kw"/><stop offset=".55" class="s-km"/><stop offset="1" class="s-kc"/></linearGradient></defs><path class="bd" fill="url(#${g}k)" d="M11 2.8c.7 4.6 3.1 7 7.7 7.7-4.6.7-7 3.1-7.7 7.7-.7-4.6-3.1-7-7.7-7.7 4.6-.7 7-3.1 7.7-7.7z"/><path class="bd" fill="url(#${g}k)" d="M18.2 15.2c.3 1.9 1.3 2.9 3.2 3.2-1.9.3-2.9 1.3-3.2 3.2-.3-1.9-1.3-2.9-3.2-3.2 1.9-.3 2.9-1.3 3.2-3.2z"/><path fill="url(#${g}s)" d="M11 2.8c.7 4.6 3.1 7 7.7 7.7-4.6.7-7 3.1-7.7 7.7-.7-4.6-3.1-7-7.7-7.7 4.6-.7 7-3.1 7.7-7.7z" opacity=".7"/>`,
+  zin: (g) => `<path class="lxo" d="M15.2 15.2l4.6 4.6"/><path class="lxi" style="stroke-width:2.2" d="M15.2 15.2l4.6 4.6"/><circle class="bd" fill="url(#${g}b)" cx="10.5" cy="10.5" r="6.6"/><path class="ln" d="M7.8 10.5h5.4M10.5 7.8v5.4"/><circle fill="url(#${g}s)" cx="10.5" cy="10.5" r="6.6"/>`,
+  zout: (g) => `<path class="lxo" d="M15.2 15.2l4.6 4.6"/><path class="lxi" style="stroke-width:2.2" d="M15.2 15.2l4.6 4.6"/><circle class="bd" fill="url(#${g}b)" cx="10.5" cy="10.5" r="6.6"/><path class="ln" d="M7.8 10.5h5.4"/><circle fill="url(#${g}s)" cx="10.5" cy="10.5" r="6.6"/>`,
+  fit: (g) => `<circle class="bd" fill="url(#${g}b)" cx="12" cy="12" r="6.6"/><path class="lxo" d="M12 2.6v3M12 18.4v3M2.6 12h3M18.4 12h3"/><path class="lxi" style="stroke-width:1.8" d="M12 2.6v3M12 18.4v3M2.6 12h3M18.4 12h3"/><circle class="k-acc" cx="12" cy="12" r="2.1"/><circle fill="url(#${g}s)" cx="12" cy="12" r="6.6"/>`,
+};
+function rico(name) {
+  const g = 'ri' + (++uid);
+  return `<svg class="ico ico-${name}" viewBox="0 0 24 24" aria-hidden="true"><defs><linearGradient id="${g}b" x1="0" y1="0" x2="0" y2="1"><stop offset="0" class="s-hi"/><stop offset="1" class="s-lo"/></linearGradient><radialGradient id="${g}s" cx=".32" cy=".18" r=".62"><stop offset="0" class="s-sp" style="stop-opacity:.85"/><stop offset=".55" class="s-sp0"/></radialGradient></defs>${RI[name](g)}</svg>`;
+}
+const TOOLS = [['select', 'mouse-pointer-2', 'Chọn'], null, ['image', 'image', 'Ảnh'], ['palette', 'palette', 'Palette'], ['idea', 'lightbulb', 'Ý tưởng'], ['note', 'sticky-note', 'Ghi chú'], ['frame', 'frame', 'Frame'], null, ['diagram', 'workflow', 'Sơ đồ'], ['link', 'spline', 'Nối']];
+const traffic = `<div class="traffic" aria-hidden="true"><i></i><i></i><i></i></div>`;
+</script>
+
+<script>
+/* =================== KIT A: Ink & Paper =================== */
+const A = (() => {
+  const btn = (cls, inner, attrs = '') => `<button type="button" class="btn ${cls}" ${attrs}>${inner}</button>`;
+  const title = ({ panel }) => `<div class="win-title a-title">${traffic}
+      <span class="a-ftab on"><i></i>Hanoi noir coffee</span><span class="a-ftab">Bảng màu quán</span>${btn('quiet c io', ic('plus'), 'aria-label="Tab mới"')}
+      <span class="spacer"></span>
+      ${btn(`quiet c${panel ? ' sel' : ''}`, `${ic('panel-right')}Kira <span class="a-badge">1</span>`, 'aria-label="Panel Kira"')}
+    </div>`;
+  const nav = ({ active }) => {
+    const n = (k, i, l) => btn(`quiet io${active === k ? ' sel-l' : ''}`, ic(i, 18, 1.8), `aria-label="${l}"`);
+    return `<nav class="nav a-nav"><div style="width:32px;height:32px;display:grid;place-items:center;margin-bottom:6px">${rico('kira')}</div>
+      ${n('library', 'image', 'Thư viện ảnh')}${n('ideas', 'lightbulb', 'Ý tưởng')}${n('links', 'link', 'Liên kết')}
+      <span class="grow"></span>${n('import', 'download', 'Nhập')}${n('open', 'folder-open', 'Mở project')}${n('save', 'save', 'Lưu')}${n('settings', 'settings', 'Cài đặt')}</nav>`;
+  };
+  const menu = () => `<div class="ovl a-menu" style="top:56px;right:12px" role="menu" aria-label="Tuỳ chọn canvas">
+      <div class="a-mi two" role="menuitemcheckbox" aria-checked="true"><span>Gợi ý liên kết<small>Hiện liên kết yếu, không lưu</small></span><span class="a-sw on"></span></div>
+      <div class="a-sep"></div><div class="a-ml">Sắp xếp</div>
+      <div class="a-mi hl" role="menuitemradio" aria-checked="true"><span class="ck">${ic('check', 14)}</span>Theo cụm<span class="sc">⇧⌘1</span></div>
+      <div class="a-mi" role="menuitemradio"><span class="ck"></span>Theo luồng<span class="sc">⇧⌘2</span></div>
+      <div class="a-mi" role="menuitemradio"><span class="ck"></span>Theo màu</div>
+      <div class="a-mi" role="menuitemradio"><span class="ck"></span>Lưới</div>
+      <div class="a-sep"></div><div class="a-ml">Hiển thị</div>
+      <div class="a-mi"><span class="ck"></span>Phạm vi<span class="sc">Tất cả ›</span></div>
+      <div class="a-mi"><span class="ck"></span>Giới hạn node<span class="sc">120 ›</span></div>
+      <div class="a-sep"></div>
+      <div class="a-mi"><span class="ck">${ic('keyboard', 14)}</span>Phím tắt<span class="sc">?</span></div>
+    </div>`;
+  const chrome = ({ screen }) => {
+    const views = VIEWS.map(([i, l], idx) => tipAt(btn(`quiet io${idx === 0 ? ' sel' : ''}`, ic(i, 16, 1.8), `aria-label="${l}"${idx === 0 ? ' aria-current="page"' : ''}`), screen === 1 && idx === 2 ? `<span class="a-tip">Trình chiếu <kbd>⌘3</kbd></span>` : '')).join('');
+    const tools = TOOLS.map(t => t ? `<button type="button" class="tool${t[0] === 'select' ? ' sel' : ''}" aria-label="${t[2]}">${rico(t[0])}</button>` : '<span class="sep"></span>').join('');
+    return `<div class="ovl a-plate" style="top:12px;left:50%;transform:translateX(-50%)" role="toolbar" aria-label="Chế độ xem">${views}</div>
+      <div class="ovl a-plate" style="top:12px;right:12px">${btn(`quiet io${screen === 1 ? ' sel' : ''}`, ic('sliders-horizontal', 16, 1.8), 'aria-label="Tuỳ chọn canvas" aria-expanded="' + (screen === 1) + '"')}</div>
+      ${screen === 1 ? menu() : ''}
+      <div class="ovl" style="bottom:16px;left:50%;transform:translateX(-50%);display:flex;gap:10px;align-items:center">
+        <div class="a-plate a-rail" role="toolbar" aria-label="Công cụ canvas">${tools}</div>
+        <div class="a-plate" style="padding:4px;border-radius:12px"><button type="button" class="tool" aria-label="Kira">${rico('kira')}</button></div>
+      </div>
+      <div class="ovl a-plate" style="bottom:16px;right:16px"><button class="tool z" aria-label="Thu nhỏ">${rico('zout')}</button><span class="a-zoom">84%</span><button class="tool z" aria-label="Phóng to">${rico('zin')}</button><button class="tool z" aria-label="Vừa khung">${rico('fit')}</button></div>`;
+  };
+  const drawer = () => `<aside class="drawer a-drawer" aria-label="Thư viện ảnh">
+      <div class="a-hd"><span class="lbl">Ảnh</span><span class="cnt">48</span><span class="spacer"></span>${btn('quiet c io', ic('image-plus', 14), 'aria-label="Nhập ảnh"')}${btn('quiet c io', ic('ellipsis', 14), 'aria-label="Thêm"')}</div>
+      <div style="padding:10px 14px 8px;display:flex;flex-direction:column;gap:8px">
+        <div class="a-in c">${ic('search', 14)}<span class="ph">Tìm ảnh, tag, nguồn</span></div>
+        <div class="a-row">${btn('quiet c io', ic('list', 14), 'aria-label="Danh sách"')}${btn('quiet c io sel', ic('layout-grid', 14), 'aria-label="Lưới" aria-pressed="true"')}
+          <span style="width:10px"></span>${ic('image', 12, 2)}<div class="a-sl" role="slider" aria-label="Cỡ ảnh" aria-valuenow="62"><b style="width:62%"></b><i style="left:62%"></i></div>${ic('image', 16, 1.8)}</div>
+      </div>
+      <div class="a-grid">${LIB.slice(0, 8).map((x, i) => `<figure class="${i === 1 ? 'sel' : ''}"><div class="th">${scene(x[2])}</div><figcaption>${x[0]}<small>${x[1]}</small></figcaption></figure>`).join('')}</div>
+    </aside>`;
+  const panel = (tab) => `<aside class="panel a-panel" aria-label="Kira">
+      <div class="a-hd"><span class="lbl">Kira</span><span class="spacer"></span>${btn('quiet c io', ic('x', 14), 'aria-label="Đóng panel"')}</div>
+      <div class="a-row" style="padding:8px 12px 0;gap:2px;box-shadow:inset 0 -1px 0 var(--hair)" role="tablist">
+        ${btn(`quiet c${tab === 'chat' ? ' sel' : ''}`, `${ic('message-square', 14)}Chat`, 'role="tab"')}${btn(`quiet c${tab === 'needs' ? ' sel' : ''}`, `${ic('git-branch', 14)}Cần bạn <span class="a-badge">1</span>`, 'role="tab"')}
+      </div>
+      ${tab === 'chat' ? `<div class="a-empty">${rico('kira').replace('class="ico', 'style="width:32px;height:32px" class="ico')}<h3>Kira cần một model</h3><p>Kết nối một model AI trong Cài đặt, rồi Kira sẽ trả lời ở đây.</p>${btn('primary', 'Kết nối model')}</div>
+        <div class="a-composer"><div class="ph">Kết nối model trong Cài đặt để nhận trả lời</div><div class="a-row"><span class="a-meta">Chưa kết nối model</span><span class="spacer"></span>${btn('c io is-dis', ic('arrow-up', 14), 'aria-label="Gửi" disabled')}</div></div>`
+      : `<div style="padding:10px 14px 8px" class="a-meta">1 cần xử lý · 2 đã áp dụng</div>
+        <div class="a-card"><div class="a-meta">${ic('pencil', 13)}Sửa text<span class="st">Chờ duyệt</span></div>
+          <div class="a-t">Hanoi noir: quán cà phê đêm</div><div class="a-diff">${DIFF}</div>
+          <div class="a-row">${btn('quiet c', `${ic('locate-fixed', 14)}Xem trên canvas`)}<span class="spacer"></span>${btn('secondary c', 'Từ chối')}${btn('primary c', 'Nhận')}</div></div>
+        <div class="a-listrow">${ic('chevron-right', 14)}Đã xử lý · 2 mục</div>`}
+    </aside>`;
+  const settings = () => `<div class="a-scrim"></div><div class="a-dlg" role="dialog" aria-label="Cài đặt">
+      <div class="a-dnav">${['General', 'Capture', 'AI Providers', 'Advanced'].map(n => btn(`quiet${n === 'AI Providers' ? ' sel-l' : ''}`, n)).join('')}</div>
+      <div style="display:flex;flex-direction:column;min-width:0">
+        <div class="a-dhd"><h2>AI Providers</h2><span class="spacer"></span>${btn('quiet io', ic('x'), 'aria-label="Đóng"')}</div>
+        <div class="a-dbody">
+          <div class="a-list">${PROVIDERS.map((p, i) => `<div class="r${i === 3 ? ' sel' : ''}"><div><strong>${p[0]}</strong><small>${p[1]}</small></div><small class="${p[3]}">${p[2]}</small></div>`).join('')}</div>
+          <div>
+            <div class="a-row" style="margin-bottom:4px"><h3 style="margin:0;font:680 15px/1.3 var(--font)">OpenAI Platform</h3><span class="spacer"></span><span class="att" style="font-size:11px;font-weight:560">Key missing</span></div>
+            <p style="margin:0 0 18px;font-size:11px;color:var(--tmu)">OpenAI · Save a key in secure storage before testing.</p>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+              <label><span class="a-lab">Name</span><div class="a-in"><span>OpenAI Platform</span></div></label>
+              <div style="position:relative"><span class="a-lab">Model</span><div class="a-in open" role="combobox" aria-expanded="true"><span style="flex:1">gpt-4.1-mini</span>${ic('chevron-down', 14)}</div>
+                <div class="a-lb" role="listbox">${MODELS.map((m, i) => `<div class="a-mi${i === 1 ? ' hl' : ''}" role="option"><span class="ck">${i === 0 ? ic('check', 14) : ''}</span>${m[0]}<span class="sc">${m[1]}</span></div>`).join('')}</div></div>
+              <label style="grid-column:1/-1"><span class="a-lab">API key</span><div class="a-in">${ic('key-round', 14)}<span class="ph">Paste your own API key (sk-...)</span></div></label>
+            </div>
+            <p style="margin:8px 0 72px;font-size:11px;color:var(--tmu)">Get an OpenAI API key ↗</p>
+            <div class="a-row" style="gap:8px">${btn('primary', 'Save key')}${btn('secondary', 'Test')}${btn('secondary', 'Models')}<span class="spacer"></span>${btn('danger', 'Delete profile')}</div>
+          </div>
+        </div>
+      </div></div>`;
+  return { cls: 'kit-a', title, nav, chrome, drawer, panel, settings };
+})();
+</script>
+
+<script>
+/* =================== KIT B: shadcn/ui (base, style nova, neutral, lucide) ===================
+   Class = class gốc trong apps/v4/registry/bases/base/ui/*.tsx + class cn-* của styles/style-nova.css (shadcn-ui/ui @ 2b3e6d4). */
+const B = (() => {
+  const BTN = 'cn-button group/button inline-flex shrink-0 items-center justify-center whitespace-nowrap transition-all outline-none select-none disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0';
+  const btn = (v, size, inner, extra = '', attrs = '') => `<button type="button" data-slot="button" data-variant="${v}" data-size="${size}" class="${BTN} cn-button-variant-${v} cn-button-size-${size} ${extra}" ${attrs}>${inner}</button>`;
+  const TOG = 'cn-toggle group/toggle inline-flex items-center justify-center whitespace-nowrap outline-none hover:bg-muted focus-visible:ring-[3px] disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0';
+  const tog = (size, inner, on, label, v = 'default') => `<button type="button" data-slot="toggle" aria-label="${label}" aria-pressed="${on}" class="${TOG} cn-toggle-variant-${v} cn-toggle-size-${size}">${inner}</button>`;
+  const badge = (v, t, extra = '') => `<span data-slot="badge" data-variant="${v}" class="cn-badge group/badge inline-flex w-fit shrink-0 items-center justify-center overflow-hidden whitespace-nowrap cn-badge-variant-${v} ${extra}">${t}</span>`;
+  const sep = (extra) => `<div data-slot="separator" data-orientation="vertical" class="cn-separator cn-separator-vertical ${extra}"></div>`;
+  const kbd = (t) => `<kbd data-slot="kbd" class="cn-kbd pointer-events-none inline-flex items-center justify-center select-none">${t}</kbd>`;
+  const plate = 'bg-popover text-popover-foreground ring-foreground/10 rounded-xl shadow-md ring-1';
+  const sw = (on) => `<span data-slot="switch" data-size="default" ${on ? 'data-checked' : 'data-unchecked'} class="cn-switch peer group/switch relative inline-flex items-center transition-all outline-none after:absolute after:-inset-x-3 after:-inset-y-2 ml-auto"><span data-slot="switch-thumb" ${on ? 'data-checked' : 'data-unchecked'} class="cn-switch-thumb pointer-events-none block ring-0 transition-transform"></span></span>`;
+  const MI = 'cn-dropdown-menu-item group/dropdown-menu-item relative flex cursor-default items-center outline-hidden select-none [&_svg]:pointer-events-none [&_svg]:shrink-0';
+  const RI = 'cn-dropdown-menu-radio-item relative flex cursor-default items-center outline-hidden select-none [&_svg]:pointer-events-none [&_svg]:shrink-0';
+
+  const title = ({ panel }) => `<div class="win-title bg-sidebar text-sidebar-foreground border-b">${traffic}
+      ${btn('ghost', 'sm', `<span class="size-1.5 rounded-full bg-muted-foreground"></span>Hanoi noir coffee`, 'bg-muted text-foreground')}${btn('ghost', 'sm', 'Bảng màu quán', 'text-muted-foreground')}${btn('ghost', 'icon-sm', ic('plus'), '', 'aria-label="Tab mới"')}
+      <span class="spacer"></span>
+      ${btn('outline', 'sm', `${ic('panel-right')}Kira ${badge('secondary', '1')}`, '', `aria-expanded="${panel}"`)}
+    </div>`;
+  const nav = ({ active }) => {
+    const n = (k, i, l) => `<button type="button" data-slot="sidebar-menu-button" data-size="default" ${active === k ? 'data-active' : ''} aria-label="${l}" class="cn-sidebar-menu-button cn-sidebar-menu-button-size-default flex size-9 items-center justify-center text-sidebar-foreground [&>svg]:size-4.5">${ic(i, 18)}</button>`;
+    return `<nav class="nav bg-sidebar border-r"><div class="mb-1.5 flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">${ic('sparkles', 16)}</div>
+      ${n('library', 'image', 'Thư viện ảnh')}${n('ideas', 'lightbulb', 'Ý tưởng')}${n('links', 'link', 'Liên kết')}<span class="grow"></span>
+      ${n('import', 'download', 'Nhập')}${n('open', 'folder-open', 'Mở project')}${n('save', 'save', 'Lưu')}${n('settings', 'settings', 'Cài đặt')}</nav>`;
+  };
+  const menu = () => `<div data-slot="dropdown-menu-content" role="menu" class="ovl cn-dropdown-menu-content cn-menu-target w-64 overflow-x-hidden overflow-y-auto outline-none" style="top:56px;right:12px">
+      <div class="${MI} items-start" role="menuitemcheckbox" aria-checked="true"><div class="flex flex-col"><span>Gợi ý liên kết</span><span class="text-xs text-muted-foreground">Hiện liên kết yếu, không lưu</span></div>${sw(true)}</div>
+      <div data-slot="dropdown-menu-separator" class="cn-dropdown-menu-separator"></div>
+      <div data-slot="dropdown-menu-label" class="cn-dropdown-menu-label">Sắp xếp</div>
+      ${[['Theo cụm', '⇧⌘1', 1], ['Theo luồng', '⇧⌘2'], ['Theo màu'], ['Lưới']].map(([t, s, on], i) => `<div data-slot="dropdown-menu-radio-item" role="menuitemradio" aria-checked="${!!on}" class="${RI}${i === 0 ? ' bg-accent text-accent-foreground' : ''}">${t}${s ? `<span data-slot="dropdown-menu-shortcut" class="cn-dropdown-menu-shortcut">${s}</span>` : ''}<span class="cn-dropdown-menu-item-indicator pointer-events-none">${on ? ic('check', 16) : ''}</span></div>`).join('')}
+      <div data-slot="dropdown-menu-separator" class="cn-dropdown-menu-separator"></div>
+      <div data-slot="dropdown-menu-label" class="cn-dropdown-menu-label">Hiển thị</div>
+      <div data-slot="dropdown-menu-item" class="${MI}">Phạm vi<span class="ml-auto text-xs text-muted-foreground">Tất cả</span>${ic('chevron-right', 16, 2, 'text-muted-foreground')}</div>
+      <div data-slot="dropdown-menu-item" class="${MI}">Giới hạn node<span class="ml-auto text-xs text-muted-foreground">120</span>${ic('chevron-right', 16, 2, 'text-muted-foreground')}</div>
+      <div data-slot="dropdown-menu-separator" class="cn-dropdown-menu-separator"></div>
+      <div data-slot="dropdown-menu-item" class="${MI}">${ic('keyboard', 16)}Phím tắt<span data-slot="dropdown-menu-shortcut" class="cn-dropdown-menu-shortcut">?</span></div>
+    </div>`;
+  const chrome = ({ screen }) => {
+    const views = VIEWS.map(([i, l], idx) => tipAt(tog('sm', ic(i), idx === 0, l), screen === 1 && idx === 2 ? `<div data-slot="tooltip-content" data-side="bottom" class="cn-tooltip-content z-50 w-fit max-w-xs bg-foreground text-background whitespace-nowrap">Trình chiếu ${kbd('⌘3')}</div>` : '')).join('');
+    const tools = TOOLS.map(t => t ? tog('default', ic(t[1]), t[0] === 'select', t[2]) : sep('mx-1 h-5')).join('');
+    return `<div data-slot="toggle-group" class="ovl cn-toggle-group group/toggle-group flex w-fit flex-row items-center gap-0.5 p-1 ${plate}" style="top:12px;left:50%;transform:translateX(-50%)" role="toolbar" aria-label="Chế độ xem">${views}</div>
+      <div class="ovl" style="top:12px;right:12px">${btn('outline', 'icon', ic('sliders-horizontal'), 'shadow-xs', `aria-label="Tuỳ chọn canvas" aria-expanded="${screen === 1}" aria-haspopup="menu"`)}</div>
+      ${screen === 1 ? menu() : ''}
+      <div class="ovl flex items-center gap-1 p-1.5 ${plate}" style="bottom:16px;left:50%;transform:translateX(-50%)" role="toolbar" aria-label="Công cụ canvas">${tools}${sep('mx-1 h-5')}${tog('default', ic('sparkles'), false, 'Kira')}</div>
+      <div class="ovl flex items-center gap-0.5 p-1 ${plate}" style="bottom:16px;right:16px">${btn('ghost', 'icon-sm', ic('zoom-out'), '', 'aria-label="Thu nhỏ"')}<span class="w-10 text-center text-xs tabular-nums text-muted-foreground">84%</span>${btn('ghost', 'icon-sm', ic('zoom-in'), '', 'aria-label="Phóng to"')}${btn('ghost', 'icon-sm', ic('locate-fixed'), '', 'aria-label="Vừa khung"')}</div>`;
+  };
+  const slider = (v) => `<div data-slot="slider" data-orientation="horizontal" class="data-horizontal:w-full flex-1" role="slider" aria-label="Cỡ ảnh" aria-valuenow="${v}"><div data-horizontal class="cn-slider relative flex w-full touch-none items-center select-none"><div data-slot="slider-track" data-horizontal class="cn-slider-track relative grow overflow-hidden select-none"><div data-slot="slider-range" data-horizontal class="cn-slider-range select-none data-horizontal:h-full" style="width:${v}%"></div></div><div data-slot="slider-thumb" class="cn-slider-thumb block shrink-0 select-none absolute" style="left:calc(${v}% - 6px)"></div></div></div>`;
+  const inputGroup = (icon, ph) => `<div data-slot="input-group" class="cn-input-group group/input-group relative flex w-full min-w-0 items-center outline-none"><div data-slot="input-group-addon" class="cn-input-group-addon cn-input-group-addon-align-inline-start flex cursor-text items-center justify-center select-none">${ic(icon)}</div><input data-slot="input-group-control" class="cn-input cn-input-group-input w-full min-w-0 flex-1 outline-none placeholder:text-muted-foreground" placeholder="${ph}"></div>`;
+  const drawer = () => `<aside class="drawer bg-sidebar text-sidebar-foreground border-r" aria-label="Thư viện ảnh">
+      <div class="flex h-10 shrink-0 items-center gap-1.5 border-b pl-3 pr-1.5"><span class="text-xs font-medium text-muted-foreground">Ảnh</span><span class="text-xs tabular-nums text-muted-foreground">48</span><span class="spacer"></span>${btn('ghost', 'icon-sm', ic('image-plus'), '', 'aria-label="Nhập ảnh"')}${btn('ghost', 'icon-sm', ic('ellipsis'), '', 'aria-label="Thêm"')}</div>
+      <div class="flex flex-col gap-2 p-3">${inputGroup('search', 'Tìm ảnh, tag, nguồn')}
+        <div class="flex items-center gap-3"><div data-slot="toggle-group" class="cn-toggle-group group/toggle-group flex w-fit flex-row items-center gap-0.5">${tog('sm', ic('list'), false, 'Danh sách', 'outline')}${tog('sm', ic('layout-grid'), true, 'Lưới', 'outline')}</div>
+          ${ic('image', 14, 2, 'text-muted-foreground')}${slider(62)}${ic('image', 18, 2, 'text-muted-foreground')}</div></div>
+      <div class="grid grid-cols-2 content-start gap-x-2.5 gap-y-3 overflow-hidden px-3 pb-3">${LIB.slice(0, 8).map((x, i) => `<figure class="m-0 flex flex-col gap-1.5"><div class="aspect-[4/3] overflow-hidden rounded-lg ring-1 ring-foreground/10 ${i === 1 ? 'ring-2 ring-primary ring-offset-2 ring-offset-sidebar' : ''} [&>svg]:size-full">${scene(x[2])}</div><figcaption class="px-0.5"><div class="truncate text-sm font-medium">${x[0]}</div><div class="text-xs text-muted-foreground">${x[1]}</div></figcaption></figure>`).join('')}</div>
+    </aside>`;
+  const TT = 'cn-tabs-trigger relative inline-flex h-[calc(100%-1px)] flex-1 items-center justify-center whitespace-nowrap text-foreground/60 transition-all hover:text-foreground dark:text-muted-foreground dark:hover:text-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 data-active:bg-background data-active:text-foreground dark:data-active:border-input dark:data-active:bg-input/30 dark:data-active:text-foreground';
+  const panel = (tab) => `<aside class="panel bg-sidebar text-sidebar-foreground border-l" aria-label="Kira">
+      <div class="flex h-10 shrink-0 items-center gap-1.5 border-b pl-3 pr-1.5"><span class="text-xs font-medium text-muted-foreground">Kira</span><span class="spacer"></span>${btn('ghost', 'icon-sm', ic('x'), '', 'aria-label="Đóng panel"')}</div>
+      <div data-slot="tabs" data-orientation="horizontal" data-horizontal class="cn-tabs group/tabs flex data-horizontal:flex-col p-3 pb-0"><div data-slot="tabs-list" data-variant="default" role="tablist" class="cn-tabs-list group/tabs-list inline-flex w-full items-center justify-center text-muted-foreground cn-tabs-list-variant-default bg-muted">
+        <button role="tab" data-slot="tabs-trigger" ${tab === 'chat' ? 'data-active' : ''} class="${TT}">${ic('message-square')}Chat</button>
+        <button role="tab" data-slot="tabs-trigger" ${tab === 'needs' ? 'data-active' : ''} class="${TT}">${ic('git-branch')}Cần bạn ${badge('secondary', '1')}</button></div></div>
+      ${tab === 'chat' ? `<div data-slot="empty" class="cn-empty flex w-full min-w-0 flex-1 flex-col items-center justify-center text-center text-balance"><div data-slot="empty-header" class="cn-empty-header flex max-w-sm flex-col items-center"><div data-slot="empty-icon" data-variant="icon" class="cn-empty-media cn-empty-media-icon flex shrink-0 items-center justify-center">${ic('sparkles')}</div><div data-slot="empty-title" class="cn-empty-title">Kira cần một model</div><div data-slot="empty-description" class="cn-empty-description text-muted-foreground">Kết nối một model AI trong Cài đặt, rồi Kira sẽ trả lời ở đây.</div></div><div data-slot="empty-content" class="cn-empty-content flex w-full max-w-sm min-w-0 flex-col items-center text-balance">${btn('default', 'default', 'Kết nối model')}</div></div>
+        <div class="p-3 pt-0"><div data-slot="input-group" class="cn-input-group group/input-group relative flex h-auto w-full min-w-0 flex-col items-stretch outline-none opacity-60"><textarea data-slot="input-group-control" disabled class="cn-textarea cn-input-group-textarea min-h-14 w-full resize-none px-2.5 outline-none placeholder:text-muted-foreground" placeholder="Kết nối model trong Cài đặt để nhận trả lời"></textarea><div class="cn-input-group-addon cn-input-group-addon-align-block-end flex items-center justify-between"><span class="text-xs">Chưa kết nối model</span>${btn('default', 'icon-xs', ic('arrow-up'), '', 'disabled aria-label="Gửi"')}</div></div></div>`
+      : `<div class="px-3 pt-3 pb-2 text-xs text-muted-foreground">1 cần xử lý · 2 đã áp dụng</div>
+        <div class="px-3"><div data-slot="item" data-variant="outline" data-size="sm" class="cn-item group/item flex w-full flex-wrap items-center transition-colors duration-100 outline-none cn-item-variant-outline cn-item-size-sm bg-card">
+          <div data-slot="item-media" data-variant="icon" class="cn-item-media cn-item-media-variant-icon flex shrink-0 items-center justify-center self-start">${ic('pencil')}</div>
+          <div data-slot="item-content" class="cn-item-content flex flex-1 flex-col"><div class="text-xs text-muted-foreground">Sửa text</div><div data-slot="item-title" class="cn-item-title line-clamp-1 flex w-fit items-center">Hanoi noir: quán cà phê đêm</div></div>
+          <div data-slot="item-actions" class="cn-item-actions flex items-center self-start">${badge('outline', '<span class="size-1.5 rounded-full bg-amber-500"></span>Chờ duyệt')}</div>
+          <div class="basis-full rounded-lg bg-muted/50 p-2.5 text-sm leading-relaxed text-muted-foreground [&_del]:opacity-70 [&_ins]:text-foreground [&_ins]:no-underline [&_ins]:underline-offset-4 [&_ins]:decoration-foreground/40 [&_ins]:underline">${DIFF}</div>
+          <div data-slot="item-footer" class="cn-item-footer flex basis-full items-center justify-between">${btn('ghost', 'sm', `${ic('locate-fixed')}Xem trên canvas`)}<div class="flex gap-1.5">${btn('outline', 'sm', 'Từ chối')}${btn('default', 'sm', 'Nhận')}</div></div>
+        </div></div>
+        <div class="mx-3 mt-2 flex h-9 items-center gap-1.5 border-t text-xs text-muted-foreground">${ic('chevron-right', 14)}Đã xử lý · 2 mục</div>`}
+    </aside>`;
+  const settings = () => `<div data-slot="dialog-overlay" class="absolute inset-0 z-40 bg-black/10 supports-backdrop-filter:backdrop-blur-xs"></div>
+    <div data-slot="dialog-content" role="dialog" aria-label="Cài đặt" class="cn-dialog-content absolute z-50 grid-cols-[196px_1fr] gap-0 overflow-hidden p-0 max-w-none sm:max-w-none" style="left:50%;top:50%;width:940px;height:640px;margin:-320px 0 0 -470px">
+      <div class="flex flex-col gap-0.5 border-r bg-muted/40 p-2">${['General', 'Capture', 'AI Providers', 'Advanced'].map(n => btn('ghost', 'default', n, `justify-start ${n === 'AI Providers' ? 'bg-muted text-foreground' : 'text-muted-foreground'}`)).join('')}</div>
+      <div class="flex min-w-0 flex-col">
+        <div class="flex h-12 items-center border-b pl-4 pr-2"><h2 data-slot="dialog-title" class="cn-dialog-title">AI Providers</h2><span class="spacer"></span>${btn('ghost', 'icon-sm', ic('x'), '', 'aria-label="Đóng"')}</div>
+        <div class="grid grid-cols-[272px_1fr] gap-5 p-4">
+          <div data-slot="item-group" class="cn-item-group group/item-group flex w-full flex-col self-start overflow-hidden rounded-lg border">${PROVIDERS.map((p, i) => `<div data-slot="item" data-size="xs" class="cn-item group/item flex w-full flex-wrap items-center rounded-none border-0 ${i ? 'border-t' : ''} cn-item-size-xs ${i === 3 ? 'bg-muted' : ''}"><div class="cn-item-content flex flex-1 flex-col"><div class="cn-item-title line-clamp-1 flex w-fit items-center">${p[0]}</div><div class="cn-item-description line-clamp-2 font-normal text-muted-foreground">${p[1]}</div></div>${badge(p[3] === 'ok' ? 'secondary' : 'outline', `${p[3] === 'att' ? '<span class="size-1.5 rounded-full bg-amber-500"></span>' : p[3] === 'ok' ? '<span class="size-1.5 rounded-full bg-emerald-500"></span>' : ''}${p[2]}`)}</div>`).join('')}</div>
+          <div data-slot="field-group" class="cn-field-group group/field-group flex w-full flex-col">
+            <div><div class="flex items-center gap-2"><h3 class="text-base font-medium">OpenAI Platform</h3>${badge('outline', '<span class="size-1.5 rounded-full bg-amber-500"></span>Key missing')}</div><p class="text-sm text-muted-foreground">OpenAI · Save a key in secure storage before testing.</p></div>
+            <div class="grid grid-cols-2 gap-4">
+              <div data-slot="field" class="cn-field group/field flex w-full flex-col"><label data-slot="label" class="cn-label flex items-center select-none">Name</label><input data-slot="input" class="cn-input w-full min-w-0 outline-none" value="OpenAI Platform"></div>
+              <div data-slot="field" class="cn-field group/field relative flex w-full flex-col"><label data-slot="label" class="cn-label flex items-center select-none">Model</label>
+                <button data-slot="select-trigger" data-size="default" aria-expanded="true" class="cn-select-trigger flex w-full items-center justify-between whitespace-nowrap outline-none border-ring ring-3 ring-ring/50"><span data-slot="select-value" class="cn-select-value flex flex-1 text-left">gpt-4.1-mini</span>${ic('chevron-down', 16, 2, 'cn-select-trigger-icon pointer-events-none')}</button>
+                <div data-slot="select-content" role="listbox" class="cn-select-content absolute top-[calc(100%+4px)] right-0 left-0 z-10 overflow-hidden"><div class="cn-select-group p-1">${MODELS.map((m, i) => `<div data-slot="select-item" role="option" class="cn-select-item relative flex w-full cursor-default items-center outline-hidden select-none ${i === 1 ? 'bg-accent text-accent-foreground' : ''}"><span class="cn-select-item-text flex flex-1 gap-2">${m[0]}<span class="text-muted-foreground">${m[1]}</span></span><span class="cn-select-item-indicator">${i === 0 ? ic('check') : ''}</span></div>`).join('')}</div></div></div>
+              <div data-slot="field" class="cn-field group/field col-span-2 flex w-full flex-col"><label data-slot="label" class="cn-label flex items-center select-none">API key</label>${inputGroup('key-round', 'Paste your own API key (sk-...)')}<p data-slot="field-description" class="cn-field-description font-normal"><a class="underline underline-offset-4">Get an OpenAI API key ↗</a></p></div>
+            </div>
+            <div class="mt-14 flex items-center gap-2">${btn('default', 'default', 'Save key')}${btn('outline', 'default', 'Test')}${btn('outline', 'default', 'Models')}<span class="spacer"></span>${btn('destructive', 'default', 'Delete profile')}</div>
+          </div>
+        </div>
+      </div></div>`;
+  return { cls: 'kit-b', title, nav, chrome, drawer, panel, settings };
+})();
+</script>
+
+<script>
+/* =================== KIT C: Untitled UI React (Tailwind v4 + React Aria) ===================
+   Class lấy từ untitleduico/react @ c981a73: buttons/button.tsx, button-utility.tsx, input/input.tsx, select/*.tsx,
+   slider/slider.tsx, toggle/toggle.tsx, tooltip/tooltip.tsx, application/tabs/tabs.tsx, dropdown/dropdown.tsx,
+   badges/badges.tsx, foundations/featured-icon, modals/modal.tsx, app-navigation/nav-button.tsx. Icon: Lucide thay cho @untitledui/icons. */
+const C = (() => {
+  const ROOT = 'group relative inline-flex h-max cursor-pointer items-center justify-center whitespace-nowrap outline-brand transition duration-100 ease-linear before:absolute focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-50 *:data-icon:pointer-events-none *:data-icon:size-5 *:data-icon:shrink-0';
+  const SIZE = { xs: 'gap-1 rounded-lg px-2.5 py-1.5 text-sm font-semibold before:rounded-[7px] data-icon-only:p-2 *:data-icon:size-4 *:data-icon:stroke-[2.25px]', sm: 'gap-1 rounded-lg px-3 py-2 text-sm font-semibold before:rounded-[7px] data-icon-only:p-2', md: 'gap-1 rounded-lg px-3.5 py-2.5 text-sm font-semibold before:rounded-[7px] data-icon-only:p-2.5' };
+  const COLOR = {
+    primary: 'bg-brand-solid text-white shadow-xs-skeuomorphic ring-1 ring-transparent ring-inset hover:bg-brand-solid_hover before:absolute before:inset-px before:border before:border-white/12 before:mask-b-from-0% *:data-icon:text-white/60',
+    secondary: 'bg-primary text-secondary shadow-xs-skeuomorphic ring-1 ring-primary ring-inset hover:bg-primary_hover *:data-icon:text-fg-quaternary',
+    tertiary: 'text-tertiary hover:bg-primary_hover *:data-icon:text-fg-quaternary',
+    'link-gray': 'justify-normal rounded p-0! text-tertiary *:data-text:underline *:data-text:decoration-transparent *:data-icon:text-fg-quaternary',
+    'secondary-destructive': 'bg-primary text-error-primary shadow-xs-skeuomorphic ring-1 ring-error_subtle outline-error ring-inset *:data-icon:text-fg-error-secondary',
+  };
+  const I = (n) => ic(n, 16, 2, '').replace('<svg ', '<svg data-icon ');
+  const btn = (color, size, text, icon = '', attrs = '') => `<button type="button" ${!text ? 'data-icon-only' : ''} class="${ROOT} ${SIZE[size]} ${COLOR[color]}" ${attrs}>${icon ? I(icon) : ''}${text ? `<span data-text class="px-0.5">${text}</span>` : ''}</button>`;
+  const util = (color, n, sel = false, label = '', extra = '') => `<button type="button" aria-label="${label}" ${sel ? 'aria-pressed="true"' : ''} class="group relative inline-flex h-max cursor-pointer items-center justify-center rounded-md p-1.5 outline-focus-ring transition duration-100 ease-linear focus-visible:outline-2 focus-visible:outline-offset-2 *:data-icon:pointer-events-none *:data-icon:shrink-0 *:data-icon:text-current *:data-icon:size-5 ${color === 'secondary' ? 'bg-primary text-fg-quaternary shadow-xs-skeuomorphic ring-1 ring-primary ring-inset hover:bg-primary_hover' : 'text-fg-quaternary hover:bg-primary_hover hover:text-fg-quaternary_hover'} ${sel ? 'bg-primary_hover text-fg-secondary' : ''} ${extra}">${I(n)}</button>`;
+  const badge = (tone, text, size = 'sm') => `<span class="size-max flex items-center whitespace-nowrap rounded-full ring-1 ring-inset bg-utility-${tone}-50 text-utility-${tone}-700 ring-utility-${tone}-200 ${size === 'sm' ? 'py-0.5 px-2 text-xs font-medium' : 'py-0.5 px-2.5 text-sm font-medium'}">${text}</span>`;
+  const badgeModern = (dot, text) => `<span class="size-max flex items-center whitespace-nowrap rounded-md ring-1 ring-inset shadow-xs bg-primary text-secondary ring-primary gap-1 py-0.5 px-1.5 text-xs font-medium"><span class="size-1.5 rounded-full ${dot}"></span>${text}</span>`;
+  const toggle = (on) => `<span class="ml-auto cursor-pointer rounded-full ${on ? 'bg-brand-solid' : 'bg-tertiary'} ring-[0.5px] ring-secondary outline-focus-ring transition duration-150 ease-linear ring-inset h-5 w-9 p-0.5 flex shrink-0"><span class="rounded-full bg-fg-white shadow-sm size-4 transition-transform ${on ? 'translate-x-4' : ''}"></span></span>`;
+  const plate = 'rounded-xl bg-primary shadow-lg ring-1 ring-secondary_alt';
+  const TAB = 'z-10 flex h-max cursor-pointer items-center justify-center gap-2 rounded-md whitespace-nowrap text-quaternary transition duration-100 ease-linear outline-focus-ring *:data-icon:text-fg-quaternary text-sm font-semibold gap-1 *:data-icon:size-4';
+  const input = (icon, ph, val = '', extra = '') => `<div class="group/input relative flex w-full flex-row place-content-center place-items-center rounded-lg bg-primary shadow-xs ring-1 ring-primary transition-shadow duration-100 ease-linear ring-inset ${extra}">${icon ? ic(icon, 16, 2.25, 'pointer-events-none absolute text-fg-quaternary left-3 size-4') : ''}<input class="m-0 w-full bg-transparent text-primary ring-0 outline-hidden placeholder:text-placeholder px-3 py-2 text-sm ${icon ? 'pl-9' : ''}" placeholder="${ph}" value="${val}"></div>`;
+  const label = (t) => `<label class="flex cursor-default items-center gap-0.5 text-sm font-medium text-secondary">${t}</label>`;
+  const DI = (inner, hl = false) => `<div class="group block cursor-pointer px-1.5 py-px outline-hidden"><div class="relative flex items-center rounded-md px-2.5 py-2 outline-focus-ring transition duration-100 ease-linear group-hover:bg-primary_hover ${hl ? 'bg-primary_hover' : ''}">${inner}</div></div>`;
+  const DT = (t, hl) => `<span class="grow truncate text-sm font-semibold text-secondary">${t}</span>`;
+  const DSEP = '<div class="my-1 h-px w-full bg-border-secondary"></div>';
+
+  const title = ({ panel }) => `<div class="win-title bg-primary border-b border-secondary">${traffic}
+      <div class="flex gap-0.5"><button class="${TAB} py-1.5 px-2.5 bg-primary_hover text-secondary"><span class="size-1.5 rounded-full bg-fg-quaternary"></span>Hanoi noir coffee</button><button class="${TAB} py-1.5 px-2.5">Bảng màu quán</button></div>${util('tertiary', 'plus', false, 'Tab mới')}
+      <span class="spacer"></span>
+      <div class="flex items-center gap-2">${btn('secondary', 'xs', `Kira`, 'panel-right', `aria-expanded="${panel}"`)}</div>
+    </div>`;
+  const nav = ({ active }) => {
+    const n = (k, i, l) => `<button aria-label="${l}" class="group/item relative flex cursor-pointer items-center justify-center gap-1 rounded-md bg-primary outline-focus-ring transition duration-100 ease-linear select-none hover:bg-primary_hover size-10 text-fg-quaternary ${active === k ? 'bg-secondary text-fg-secondary' : ''}">${ic(i, 20, 2, '')}</button>`;
+    return `<nav class="nav bg-primary border-r border-secondary"><div class="mb-1.5 flex size-8 items-center justify-center rounded-lg bg-brand-solid text-white shadow-xs-skeuomorphic">${ic('sparkles', 16, 2, '')}</div>
+      ${n('library', 'image', 'Thư viện ảnh')}${n('ideas', 'lightbulb', 'Ý tưởng')}${n('links', 'link', 'Liên kết')}<span class="grow"></span>
+      ${n('import', 'download', 'Nhập')}${n('open', 'folder-open', 'Mở project')}${n('save', 'save', 'Lưu')}${n('settings', 'settings', 'Cài đặt')}</nav>`;
+  };
+  const menu = () => `<div class="ovl w-62 origin-(--trigger-anchor-point) overflow-auto rounded-lg bg-primary shadow-lg ring-1 ring-secondary_alt" style="top:60px;right:12px;width:264px" role="menu"><div class="h-min overflow-y-auto py-1 outline-hidden select-none">
+      ${DI(`<div class="flex grow flex-col"><span class="text-sm font-semibold text-secondary">Gợi ý liên kết</span><span class="text-xs font-medium text-quaternary">Hiện liên kết yếu, không lưu</span></div>${toggle(true)}`)}
+      ${DSEP}<div class="px-4 pt-2 pb-1 text-xs font-semibold text-tertiary">Sắp xếp</div>
+      ${DI(`${ic('check', 16, 2.25, 'mr-2 size-4 shrink-0 text-fg-brand-primary')}${DT('Theo cụm')}<span class="ml-1 shrink-0 pr-1 text-xs font-medium text-quaternary">⇧⌘1</span>`, true)}
+      ${DI(`<span class="mr-2 size-4 shrink-0"></span>${DT('Theo luồng')}<span class="ml-1 shrink-0 pr-1 text-xs font-medium text-quaternary">⇧⌘2</span>`)}
+      ${DI(`<span class="mr-2 size-4 shrink-0"></span>${DT('Theo màu')}`)}${DI(`<span class="mr-2 size-4 shrink-0"></span>${DT('Lưới')}`)}
+      ${DSEP}<div class="px-4 pt-2 pb-1 text-xs font-semibold text-tertiary">Hiển thị</div>
+      ${DI(`<span class="mr-2 size-4 shrink-0"></span>${DT('Phạm vi')}<span class="ml-1 shrink-0 pr-1 text-xs font-medium text-quaternary">Tất cả</span>${ic('chevron-right', 16, 2.25, 'ml-auto size-4 shrink-0 text-fg-quaternary')}`)}
+      ${DI(`<span class="mr-2 size-4 shrink-0"></span>${DT('Giới hạn node')}<span class="ml-1 shrink-0 pr-1 text-xs font-medium text-quaternary">120</span>${ic('chevron-right', 16, 2.25, 'ml-auto size-4 shrink-0 text-fg-quaternary')}`)}
+      ${DSEP}${DI(`${ic('keyboard', 16, 2.25, 'mr-2 size-4 shrink-0 text-fg-quaternary')}${DT('Phím tắt')}<span class="ml-1 shrink-0 pr-1 text-xs font-medium text-quaternary">?</span>`)}
+    </div></div>`;
+  const chrome = ({ screen }) => {
+    const views = VIEWS.map(([i, l], idx) => tipAt(`<button aria-label="${l}" class="${TAB} p-2 ${idx === 0 ? 'bg-primary_alt text-secondary shadow-sm *:data-icon:text-fg-secondary_hover' : ''}">${I(i)}</button>`, screen === 1 && idx === 2 ? `<div class="z-50 flex max-w-xs flex-col items-start gap-1 rounded-lg bg-primary-solid px-3 py-2 shadow-lg whitespace-nowrap"><span class="text-xs font-semibold text-white">Trình chiếu</span><span class="text-xs font-medium text-tooltip-supporting-text">⌘3</span></div>` : '')).join('');
+    const tools = TOOLS.map(t => t ? util('tertiary', t[1], t[0] === 'select', t[2]) : '<span class="mx-1 h-5 w-px bg-border-secondary"></span>').join('');
+    return `<div class="ovl flex gap-1 rounded-[10px] bg-secondary_alt p-1 ring-1 ring-secondary ring-inset shadow-xs" style="top:12px;left:50%;transform:translateX(-50%)" role="tablist" aria-label="Chế độ xem">${views}</div>
+      <div class="ovl" style="top:12px;right:12px">${util('secondary', 'sliders-horizontal', screen === 1, 'Tuỳ chọn canvas', screen === 1 ? 'ring-2 ring-brand' : '')}</div>
+      ${screen === 1 ? menu() : ''}
+      <div class="ovl flex items-center gap-0.5 p-1.5 ${plate}" style="bottom:16px;left:50%;transform:translateX(-50%)" role="toolbar" aria-label="Công cụ canvas">${tools}<span class="mx-1 h-5 w-px bg-border-secondary"></span>${util('tertiary', 'sparkles', false, 'Kira')}</div>
+      <div class="ovl flex items-center gap-0.5 p-1 ${plate}" style="bottom:16px;right:16px">${util('tertiary', 'zoom-out', false, 'Thu nhỏ')}<span class="w-11 text-center text-sm font-semibold text-secondary">84%</span>${util('tertiary', 'zoom-in', false, 'Phóng to')}${util('tertiary', 'locate-fixed', false, 'Vừa khung')}</div>`;
+  };
+  const slider = (v) => `<div class="relative h-6 w-full flex-1" role="slider" aria-label="Cỡ ảnh" aria-valuenow="${v}"><span class="absolute top-1/2 h-2 w-full -translate-y-1/2 rounded-full bg-quaternary"></span><span class="absolute top-1/2 h-2 -translate-y-1/2 rounded-full bg-brand-solid" style="width:${v}%"></span><span class="absolute top-1/2 box-border size-6 -translate-x-1/2 -translate-y-1/2 cursor-grab rounded-full bg-slider-handle-bg shadow-md ring-2 ring-slider-handle-border ring-inset" style="left:${v}%"></span></div>`;
+  const drawer = () => `<aside class="drawer bg-primary border-r border-secondary" aria-label="Thư viện ảnh">
+      <div class="flex h-11 shrink-0 items-center gap-2 border-b border-secondary pl-4 pr-2"><span class="text-sm font-semibold text-primary">Ảnh</span>${badge('neutral', '48')}<span class="spacer"></span>${util('tertiary', 'image-plus', false, 'Nhập ảnh')}${util('tertiary', 'ellipsis', false, 'Thêm')}</div>
+      <div class="flex flex-col gap-3 p-4">${input('search', 'Tìm ảnh, tag, nguồn')}
+        <div class="flex items-center gap-3"><div class="flex gap-0.5 rounded-lg bg-secondary_alt ring-1 ring-inset ring-secondary"><button aria-label="Danh sách" class="${TAB} p-2">${I('list')}</button><button aria-label="Lưới" class="${TAB} p-2 rounded-lg bg-primary_alt text-secondary shadow-xs ring-1 ring-primary ring-inset *:data-icon:text-fg-secondary_hover">${I('layout-grid')}</button></div>
+          ${slider(62)}</div></div>
+      <div class="grid grid-cols-2 content-start gap-x-3 gap-y-4 overflow-hidden px-4 pb-4">${LIB.slice(0, 6).map((x, i) => `<figure class="m-0 flex flex-col gap-2"><div class="aspect-[4/3] overflow-hidden rounded-xl ring-1 ring-secondary_alt ${i === 1 ? 'ring-2 ring-brand' : ''} [&>svg]:size-full">${scene(x[2])}</div><figcaption><div class="truncate text-sm font-semibold text-primary">${x[0]}</div><div class="text-sm text-tertiary">${x[1]}</div></figcaption></figure>`).join('')}</div>
+    </aside>`;
+  const panel = (tab) => `<aside class="panel bg-primary border-l border-secondary" aria-label="Kira">
+      <div class="flex h-11 shrink-0 items-center gap-2 pl-4 pr-2"><span class="text-sm font-semibold text-primary">Kira</span><span class="spacer"></span>${util('tertiary', 'x', false, 'Đóng panel')}</div>
+      <div class="relative flex gap-4 px-4 before:absolute before:inset-x-0 before:bottom-0 before:h-px before:bg-border-secondary" role="tablist">
+        <button role="tab" class="${TAB} rounded-none border-b-2 border-transparent px-0.5 pb-2.5 pt-0 ${tab === 'chat' ? 'border-fg-brand-primary_alt text-brand-secondary *:data-icon:text-fg-brand-primary_alt' : ''}">${I('message-square')}Chat</button>
+        <button role="tab" class="${TAB} rounded-none border-b-2 border-transparent px-0.5 pb-2.5 pt-0 ${tab === 'needs' ? 'border-fg-brand-primary_alt text-brand-secondary *:data-icon:text-fg-brand-primary_alt' : ''}">${I('git-branch')}Cần bạn ${badge('brand', '1')}</button></div>
+      ${tab === 'chat' ? `<div class="flex flex-1 flex-col items-center justify-center px-6 text-center">
+          <div class="relative mb-4 flex size-12 items-center justify-center rounded-[10px] bg-primary shadow-xs-skeuomorphic ring-1 ring-primary ring-inset text-fg-secondary">${ic('sparkles', 24, 2, '')}</div>
+          <div class="z-10 mb-6 flex w-full max-w-88 flex-col items-center justify-center gap-1"><h3 class="text-md font-semibold text-primary">Kira cần một model</h3><p class="text-center text-sm text-tertiary">Kết nối một model AI trong Cài đặt, rồi Kira sẽ trả lời ở đây.</p></div>
+          <footer class="z-10 flex gap-3">${btn('primary', 'md', 'Kết nối model')}</footer></div>
+        <div class="p-4 pt-0"><div class="rounded-lg bg-primary shadow-xs ring-1 ring-primary ring-inset p-3 opacity-70"><p class="h-12 text-sm text-placeholder">Kết nối model trong Cài đặt để nhận trả lời</p><div class="flex items-center justify-between"><span class="text-xs font-medium text-quaternary">Chưa kết nối model</span>${btn('primary', 'xs', '', 'arrow-up', 'disabled aria-label="Gửi"')}</div></div></div>`
+      : `<div class="px-4 pt-4 pb-3 text-sm text-tertiary">1 cần xử lý · 2 đã áp dụng</div>
+        <div class="mx-4 rounded-xl bg-primary p-4 shadow-xs ring-1 ring-secondary ring-inset">
+          <div class="flex items-start gap-3"><div class="flex size-8 shrink-0 items-center justify-center rounded-md bg-primary shadow-xs-skeuomorphic ring-1 ring-primary ring-inset text-fg-secondary">${ic('pencil', 16, 2, '')}</div>
+            <div class="min-w-0 flex-1"><p class="text-xs font-medium text-tertiary">Sửa text</p><p class="text-sm font-semibold text-primary">Hanoi noir: quán cà phê đêm</p></div>${badgeModern('bg-fg-warning-secondary', 'Chờ duyệt')}</div>
+          <div class="mt-3 rounded-lg bg-secondary p-3 text-sm leading-relaxed text-tertiary [&_ins]:text-primary [&_ins]:no-underline [&_ins]:font-medium">${DIFF}</div>
+          <div class="mt-4 flex items-center gap-3">${btn('link-gray', 'sm', 'Xem trên canvas', 'locate-fixed')}<span class="spacer"></span>${btn('secondary', 'sm', 'Từ chối')}${btn('primary', 'sm', 'Nhận')}</div>
+        </div>
+        <div class="mx-4 mt-3 flex h-10 items-center gap-1.5 border-t border-secondary text-sm font-semibold text-tertiary">${ic('chevron-right', 16, 2, '')}Đã xử lý · 2 mục</div>`}
+    </aside>`;
+  const settings = () => `<div class="absolute inset-0 z-40 bg-overlay/70 backdrop-blur-[6px]"></div>
+    <div role="dialog" aria-label="Cài đặt" class="absolute z-50 grid grid-cols-[208px_1fr] overflow-hidden rounded-2xl bg-primary shadow-xl" style="left:50%;top:50%;width:960px;height:660px;margin:-330px 0 0 -480px">
+      <div class="flex flex-col gap-0.5 border-r border-secondary p-3">${['General', 'Capture', 'AI Providers', 'Advanced'].map(n => `<a class="group relative flex max-h-9 w-full cursor-pointer items-center rounded-md bg-primary px-3 py-2 outline-focus-ring transition duration-100 ease-linear select-none hover:bg-primary_hover text-md font-semibold ${n === 'AI Providers' ? 'bg-secondary text-secondary' : 'text-secondary'}">${n}</a>`).join('')}</div>
+      <div class="flex min-w-0 flex-col">
+        <div class="flex items-center border-b border-secondary px-6 py-4"><h2 class="text-lg font-semibold text-primary">AI Providers</h2><span class="spacer"></span>${util('tertiary', 'x', false, 'Đóng')}</div>
+        <div class="grid grid-cols-[288px_1fr] gap-6 p-6">
+          <div class="self-start overflow-hidden rounded-xl ring-1 ring-secondary ring-inset">${PROVIDERS.map((p, i) => `<div class="flex items-center gap-3 px-4 py-3 ${i ? 'border-t border-secondary' : ''} ${i === 3 ? 'bg-secondary' : ''}"><div class="min-w-0 flex-1"><p class="truncate text-sm font-semibold text-primary">${p[0]}</p><p class="truncate text-sm text-tertiary">${p[1]}</p></div>${badge(p[3] === 'ok' ? 'green' : p[3] === 'att' ? 'yellow' : 'neutral', p[2])}</div>`).join('')}</div>
+          <div class="flex flex-col gap-5">
+            <div><div class="flex items-center gap-2"><h3 class="text-md font-semibold text-primary">OpenAI Platform</h3>${badge('yellow', 'Key missing')}</div><p class="text-sm text-tertiary">OpenAI · Save a key in secure storage before testing.</p></div>
+            <div class="grid grid-cols-2 gap-4">
+              <div class="flex flex-col gap-1.5">${label('Name')}${input('', '', 'OpenAI Platform')}</div>
+              <div class="relative flex flex-col gap-1.5">${label('Model')}
+                <div class="relative flex w-full cursor-pointer items-center rounded-lg bg-primary shadow-xs ring-1 ring-primary outline-hidden transition duration-100 ease-linear ring-inset ring-2 ring-brand py-2 px-3"><p class="truncate font-medium text-primary text-sm">gpt-4.1-mini</p>${ic('chevron-down', 16, 2.25, 'ml-auto shrink-0 text-fg-quaternary size-4')}</div>
+                <div class="absolute top-[calc(100%+4px)] right-0 left-0 z-10 overflow-x-hidden overflow-y-auto rounded-lg bg-primary py-1 shadow-lg ring-1 ring-secondary_alt outline-hidden" role="listbox">${MODELS.map((m, i) => `<div class="w-full py-px outline-hidden px-1.5"><div class="flex cursor-pointer items-center rounded-md outline-hidden select-none p-2 pr-2.5 gap-2 ${i < 2 ? 'bg-primary_hover' : ''}"><span class="truncate font-medium whitespace-nowrap text-primary text-sm">${m[0]}</span><span class="whitespace-nowrap text-tertiary text-sm">${m[1]}</span>${i === 0 ? ic('check', 16, 2.25, 'ml-auto text-fg-brand-primary size-4') : ''}</div></div>`).join('')}</div></div>
+              <div class="col-span-2 flex flex-col gap-1.5">${label('API key')}${input('key-round', 'Paste your own API key (sk-...)')}<p class="text-sm text-tertiary">${btn('link-gray', 'sm', 'Get an OpenAI API key ↗')}</p></div>
+            </div>
+            <div class="mt-12 flex items-center gap-3">${btn('primary', 'sm', 'Save key')}${btn('secondary', 'sm', 'Test')}${btn('secondary', 'sm', 'Models')}<span class="spacer"></span>${btn('secondary-destructive', 'sm', 'Delete profile')}</div>
+          </div>
+        </div>
+      </div></div>`;
+  return { cls: 'kit-c', title, nav, chrome, drawer, panel, settings };
+})();
+</script>
+
+<script>
+/* =================== KIT D: Figma UI3 look (đo từ rogie/figui3) =================== */
+const D = (() => {
+  const b = (cls, inner, attrs = '') => `<button type="button" class="b ${cls}" ${attrs}>${inner}</button>`;
+  const g = (n, s = 16) => ic(n, s, 1.5);
+  const title = ({ panel }) => `<div class="win-title d-title">${traffic}
+      <span class="d-ftab on"><i></i>Hanoi noir coffee</span><span class="d-ftab">Bảng màu quán</span>${b('gh io', g('plus'), 'aria-label="Tab mới"')}
+      <span class="spacer"></span>${b('sec', `${g('panel-right')}Kira <span style="color:var(--warn);font-weight:550">1</span>`, `aria-expanded="${panel}"${panel ? ' selected' : ''}`)}
+    </div>`;
+  const nav = ({ active }) => {
+    const n = (k, i, l) => b(`gh lg io`, g(i, 18), `aria-label="${l}"${active === k ? ' selected' : ''}`);
+    return `<nav class="nav d-nav" style="gap:4px"><div style="width:32px;height:32px;border-radius:var(--r);display:grid;place-items:center;background:var(--brand);color:#fff;margin-bottom:6px">${g('sparkles')}</div>
+      ${n('library', 'image', 'Thư viện ảnh')}${n('ideas', 'lightbulb', 'Ý tưởng')}${n('links', 'link', 'Liên kết')}<span class="grow"></span>
+      ${n('import', 'download', 'Nhập')}${n('open', 'folder-open', 'Mở project')}${n('save', 'save', 'Lưu')}${n('settings', 'settings', 'Cài đặt')}</nav>`;
+  };
+  const menu = () => `<div class="ovl d-menu" style="top:52px;right:12px" role="menu">
+      <div class="mi two" role="menuitemcheckbox" aria-checked="true"><span>Gợi ý liên kết<small>Hiện liên kết yếu, không lưu</small></span><span class="sw on" style="margin-top:2px"></span></div>
+      <div class="msep"></div><div class="mh">Sắp xếp</div>
+      <div class="mi hl"><span class="ck">${ic('check', 12, 2)}</span>Theo cụm<span class="sc">⇧⌘1</span></div>
+      <div class="mi"><span class="ck"></span>Theo luồng<span class="sc">⇧⌘2</span></div>
+      <div class="mi"><span class="ck"></span>Theo màu</div><div class="mi"><span class="ck"></span>Lưới</div>
+      <div class="msep"></div><div class="mh">Hiển thị</div>
+      <div class="mi"><span class="ck"></span>Phạm vi<span class="sc">Tất cả ›</span></div>
+      <div class="mi"><span class="ck"></span>Giới hạn node<span class="sc">120 ›</span></div>
+      <div class="msep"></div><div class="mi"><span class="ck"></span>Phím tắt<span class="sc">?</span></div>
+    </div>`;
+  const chrome = ({ screen }) => {
+    const views = VIEWS.map(([i, l], idx) => tipAt(`<span class="si io${idx === 0 ? ' on' : ''}" role="radio" aria-checked="${idx === 0}" aria-label="${l}">${g(i)}</span>`, screen === 1 && idx === 2 ? `<span class="d-tip">Trình chiếu <kbd>⌘3</kbd></span>` : '')).join('');
+    const tools = TOOLS.map(t => t ? b('gh lg io', g(t[1], 18), `aria-label="${t[2]}"${t[0] === 'select' ? ' selected' : ''}`) : '<span class="sep"></span>').join('');
+    return `<div class="ovl d-plate" style="top:12px;left:50%;transform:translateX(-50%);padding:6px"><div class="seg" role="radiogroup" aria-label="Chế độ xem">${views}</div></div>
+      <div class="ovl d-plate" style="top:12px;right:12px">${b('gh io', g('sliders-horizontal'), `aria-label="Tuỳ chọn canvas" aria-expanded="${screen === 1}"${screen === 1 ? ' selected' : ''}`)}</div>
+      ${screen === 1 ? menu() : ''}
+      <div class="ovl d-plate d-rail" style="bottom:16px;left:50%;transform:translateX(-50%)" role="toolbar" aria-label="Công cụ canvas">${tools}<span class="sep"></span>${b('gh lg io', g('sparkles', 18), 'aria-label="Kira"')}</div>
+      <div class="ovl d-plate" style="bottom:16px;right:16px">${b('gh io', g('minus'), 'aria-label="Thu nhỏ"')}<span class="d-zoom">84%</span>${b('gh io', g('plus'), 'aria-label="Phóng to"')}${b('gh io', g('locate-fixed'), 'aria-label="Vừa khung"')}</div>`;
+  };
+  const drawer = () => `<aside class="drawer d-drawer" aria-label="Thư viện ảnh">
+      <div class="hdr"><h3>Ảnh <span class="cnt">48</span></h3>${b('gh io', g('image-plus'), 'aria-label="Nhập ảnh"')}${b('gh io', g('ellipsis'), 'aria-label="Thêm"')}</div>
+      <div style="display:flex;flex-direction:column;gap:8px;padding:12px 16px 8px">
+        <div class="in"><span class="slot">${g('search')}</span><span class="v ph">Tìm ảnh, tag, nguồn</span></div>
+        <div class="row"><div class="seg"><span class="si io" aria-label="Danh sách">${g('list')}</span><span class="si io on" aria-label="Lưới">${g('layout-grid')}</span></div>
+          <div class="sl" role="slider" aria-label="Cỡ ảnh" aria-valuenow="62"><div class="tr"><div class="fi" style="width:62%"></div><div class="th" style="left:62%"></div></div></div></div>
+      </div>
+      <div class="d-grid">${LIB.slice(0, 8).map((x, i) => `<figure class="${i === 1 ? 'sel' : ''}"><div class="th">${scene(x[2])}</div><figcaption>${x[0]}<small>${x[1]}</small></figcaption></figure>`).join('')}</div>
+    </aside>`;
+  const panel = (tab) => `<aside class="panel d-panel" aria-label="Kira">
+      <div class="hdr"><div class="row" role="tablist" style="flex:1;gap:2px"><span class="tab${tab === 'chat' ? ' on' : ''}" role="tab">Chat</span><span class="tab${tab === 'needs' ? ' on' : ''}" role="tab">Cần bạn <span class="n">1</span></span></div>${b('gh io', g('x'), 'aria-label="Đóng panel"')}</div>
+      ${tab === 'chat' ? `<div class="d-empty"><span style="color:var(--tx3)">${g('sparkles', 24)}</span><strong>Kira cần một model</strong><p>Kết nối một model AI trong Cài đặt, rồi Kira sẽ trả lời ở đây.</p>${b('', 'Kết nối model')}</div>
+        <div class="d-composer"><span>Kết nối model trong Cài đặt để nhận trả lời</span><div class="row"><span>Chưa kết nối model</span><span class="spacer"></span>${b('io', g('arrow-up'), 'aria-label="Gửi" style="background:var(--bg3);color:var(--tx3)"')}</div></div>`
+      : `<div class="d-sec" style="color:var(--tx2)">1 cần xử lý · 2 đã áp dụng</div>
+        <div class="d-sec"><div class="d-meta">${g('pencil')}Sửa text<span class="st">Chờ duyệt</span></div>
+          <div style="font-weight:550;margin-top:4px">Hanoi noir: quán cà phê đêm</div><div class="d-diff">${DIFF}</div>
+          <div class="row">${b('gh', `${g('locate-fixed')}Xem trên canvas`)}<span class="spacer"></span>${b('sec', 'Từ chối')}${b('', 'Nhận')}</div></div>
+        <div class="d-sec row" style="color:var(--tx2);box-shadow:none">${g('chevron-right')}Đã xử lý · 2 mục</div>`}
+    </aside>`;
+  const settings = () => `<div class="d-scrim"></div><div class="d-dlg" role="dialog" aria-label="Cài đặt">
+      <div class="d-dnav">${['General', 'Capture', 'AI Providers', 'Advanced'].map(n => `<span class="tab${n === 'AI Providers' ? ' on' : ''}">${n}</span>`).join('')}</div>
+      <div style="display:flex;flex-direction:column;min-width:0">
+        <div class="hdr"><h3>AI Providers</h3>${b('gh io', g('x'), 'aria-label="Đóng"')}</div>
+        <div class="d-dbody">
+          <div class="plist">${PROVIDERS.map((p, i) => `<div class="r${i === 3 ? ' sel' : ''}"><span>${p[0]}</span><span class="${p[3]}">${p[2]}</span></div>`).join('')}</div>
+          <div>
+            <div class="hdr" style="box-shadow:none;padding-left:8px"><h3>OpenAI Platform <span class="att" style="font-weight:450;margin-left:6px">Key missing</span></h3></div>
+            <p style="margin:-8px 16px 4px;color:var(--tx2)">OpenAI · Save a key in secure storage before testing.</p>
+            <div class="fgrid">
+              <div><span class="lab">Name</span><div class="in"><span class="v">OpenAI Platform</span></div></div>
+              <div style="position:relative"><span class="lab">Model</span><div class="in open" role="combobox" aria-expanded="true"><span class="v">gpt-4.1-mini</span><span class="slot">${g('chevron-down')}</span></div>
+                <div class="d-lb d-menu" style="width:auto" role="listbox">${MODELS.map((m, i) => `<div class="mi${i === 1 ? ' hl' : ''}" role="option"><span class="ck">${i === 0 ? ic('check', 12, 2) : ''}</span>${m[0]}<span class="sc">${m[1]}</span></div>`).join('')}</div></div>
+              <div class="full"><span class="lab">API key</span><div class="in"><span class="slot">${g('key-round')}</span><span class="v ph">Paste your own API key (sk-...)</span></div></div>
+              <div class="full" style="color:var(--icon-sel)">Get an OpenAI API key ↗</div>
+              <div class="full row" style="margin-top:72px">${b('', 'Save key')}${b('sec', 'Test')}${b('sec', 'Models')}<span class="spacer"></span>${b('dsec', 'Delete profile')}</div>
+            </div>
+          </div>
+        </div>
+      </div></div>`;
+  return { cls: 'kit-d', title, nav, chrome, drawer, panel, settings };
+})();
+</script>
+
+<script>
+const KITS = { a: A, b: B, c: C, d: D };
+const NOTES = {
+  a: { name: 'A. Ink & Paper (baseline)', src: 'Token trong <code>DESIGN.md</code> front matter và <code>.claude/skills/kira-controls</code>, icon rail trích specimen v2. Font hệ thống (SF Pro). Viết tay, không Tailwind.',
+    custom: ['View switcher dùng icon-only Regular 32px thay vì Compact 26px của skill (icon-only cần vùng bấm lớn hơn).', 'Menu canvas, listbox Model là popover đục: đúng Material-On-Chrome Rule.'],
+    look: 'Nhận diện mạnh nhất nhờ sticker rail và primary mực. Mặt yếu: chữ 11px dày đặc, nhãn hoa 800, trông "tự chế" hơn một kit đã quen mắt.' },
+  b: { name: 'B. shadcn/ui (style nova, base neutral)', src: 'shadcn-ui/ui @ <code>2b3e6d4</code> (2026-09-12), CLI 4.21.0. DEFAULT_CONFIG: base <code>base</code> (Base UI), style <code>nova</code>, theme neutral, icon lucide, font Inter, radius 0.625rem. Class = class gốc trong <code>bases/base/ui</code> + rule <code>cn-*</code> của <code>style-nova.css</code> (bỏ các utility animation).',
+    custom: ['Không đổi màu kit: neutral của shadcn tình cờ trùng cấu trúc Ink (primary gần đen/gần trắng, không có brand color).', 'Chấm màu trạng thái (amber, emerald) là thêm vào: neutral không có màu cảnh báo.', 'Overlay dialog giữ nguyên <code>backdrop-blur-xs</code> của kit: trái luật không kính, phải bỏ khi dùng thật.'],
+    look: 'Gọn, sạch, quen mắt. Rủi ro lớn nhất là trông như "lại một app shadcn": không có gì của KIRA ngoài nội dung canvas.' },
+  c: { name: 'C. Untitled UI React', src: 'untitleduico/react @ <code>c981a73</code> (MIT, Tailwind v4 + React Aria). Class chép từ button, button-utility, input, select, slider, toggle, tooltip, tabs, dropdown, badges, featured-icon, modal. Icon @untitledui/icons thay bằng Lucide cùng kiểu nét.',
+    custom: ['Thang brand tím (#7f56d9) đổi sang thang teal KIRA, vì không app KIRA nào dùng tím. Hệ quả: primary, toggle, slider, tab gạch chân đều mang teal, va thẳng One Accent Rule.', 'Overlay modal giữ nguyên <code>backdrop-blur-[6px]</code> của kit.', 'Nhãn nhóm trong menu và lưới ảnh Library là ghép từ token kit, không có component tương ứng.'],
+    look: 'Chín, có chiều sâu (skeuomorphic shadow, featured icon), nhưng chữ 14px, nút 36px, input 40px: mật độ marketing/SaaS, tốn chỗ cho app canvas pro.' },
+  d: { name: 'D. Figma UI3 look (figui3)', src: 'rogie/figui3 @ <code>d43d65e</code> (2026-09-15), <code>@rogieking/figui3</code> 9.0.10, core MIT (Editor/Lab là PolyForm Shield, không dùng). Giá trị lấy từ <code>components.css</code>: control 24px, bo 5px, menu 13px, chữ 11px weight 450/550, elevation 200/400/500, switch 32x16, slider track 16px.',
+    custom: ['Brand xanh #0c8ce9 đổi sang teal KIRA (#0e7c6b tối, #0c7a68 sáng) để chữ trắng trên primary vẫn đạt contrast.', 'figui3 là kit cho plugin Figma, không có toolbar hay panel app: cỡ toolbar đáy (48px, nút 32px) là suy luận từ token <code>size="large"</code>, không phải số đo.', 'Selected = nền <code>--figma-color-bg-selected</code> + icon brand, theo figui3. Figma thật tô tool đang chọn bằng khối brand đặc.'],
+    look: 'Mật độ cao nhất, rất "2026 pro tool". Menu luôn tối, trạng thái chọn bằng màu accent: đọc ngay ra là bản sao Figma, và teal phải gánh nghĩa "đang chọn" trên control.' },
+};
+const FEEDBACK = [
+  ['Header panel 1 dòng nhỏ', 'Màn 2 và 3: một hàng 36 đến 44px, nhãn "Ảnh" / "Kira" cỡ nhỏ, không có tiêu đề "Thư viện".'],
+  ['Ảnh Library to hơn + slider', 'Màn 2: lưới 2 cột ảnh 4:3 khoảng 170px, slider cỡ ảnh cố định cạnh List/Grid (tham chiếu Eagle, Lightroom).'],
+  ['Bỏ thanh Edit/Discover/Arrange', 'Màn 1: không còn thanh mode góc trái. "Gợi ý liên kết" là công tắc, Sắp xếp và Hiển thị nằm trong menu canvas góc phải.'],
+  ['View switcher icon-only + tooltip', 'Màn 1: 4 icon Bảng vẽ, 3D, Trình chiếu, Dàn ý; tooltip "Trình chiếu ⌘3" đang hiện.'],
+  ['Cửa sổ nền đục', 'Mọi màn: thanh tiêu đề, nav, panel, dialog đều đục. Chỉ plate nổi trên canvas của hướng A có blur (luật hiện hành).'],
+  ['Panel dính mép', 'Màn 2 và 3: Library dính mép trái, Kira dính mép phải, không nổi giữa canvas.'],
+];
+const S = { dir: 'a', screen: '1', theme: 'dark', tab: 'chat', fit: '0' };
+try { const h = new URLSearchParams(location.hash.slice(1)); for (const k of Object.keys(S)) if (h.get(k)) S[k] = h.get(k); if (h.get('cap')) document.documentElement.classList.add('cap'); } catch (e) {}
+/* tooltip neo vào nút thứ 3 của view switcher */
+const tipAt = (html, tip) => `<span style="position:relative;display:inline-flex">${html}${tip ? `<span style="position:absolute;top:calc(100% + 12px);left:50%;transform:translateX(-50%);z-index:5;display:flex">${tip}</span>` : ''}</span>`;
+
+function render() {
+  const K = KITS[S.dir], sc = +S.screen;
+  const panel = sc === 3 ? S.tab : null;
+  uid = 0;
+  document.getElementById('win').innerHTML = `<div class="win ${K.cls}" data-theme="${S.theme}">
+    ${K.title({ panel: !!panel })}
+    <div class="win-body">
+      ${K.nav({ active: sc === 2 ? 'library' : sc === 4 ? 'settings' : null })}
+      ${sc === 2 ? K.drawer() : ''}
+      <main class="canvas" aria-label="Canvas">${world()}${K.chrome({ screen: sc })}</main>
+      ${panel ? K.panel(panel) : ''}
+    </div>
+    ${sc === 4 ? K.settings() : ''}
+  </div>`;
+  document.querySelectorAll('.ctl button').forEach(bt => bt.setAttribute('aria-pressed', String(S[bt.dataset.k] === bt.dataset.v)));
+  document.getElementById('tabctl').hidden = sc !== 3;
+  const n = NOTES[S.dir];
+  document.getElementById('notes').innerHTML = `
+    <section><h2>${n.name}: nguồn</h2><p>${n.src}</p></section>
+    <section><h2>Tuỳ biến và điểm cần biết</h2><ul>${n.custom.map(x => `<li>${x}</li>`).join('')}</ul><p style="margin-top:8px">${n.look}</p></section>
+    <section><h2>Góp ý user hiện ở đâu</h2><ul>${FEEDBACK.map(f => `<li><b>${f[0]}.</b> ${f[1]}</li>`).join('')}</ul></section>`;
+  fit();
+  try { history.replaceState(null, '', '#' + new URLSearchParams(S).toString()); } catch (e) {}
+}
+function fit() {
+  const w = document.getElementById('fitwrap');
+  if (S.fit === '1') {
+    const avail = document.getElementById('stage').clientWidth - 40;
+    const s = Math.min(1, avail / 1440);
+    w.style.transform = `scale(${s})`; w.style.width = 1440 * s + 'px'; w.style.height = 900 * s + 'px';
+  } else { w.style.transform = ''; w.style.width = ''; w.style.height = ''; }
+}
+document.querySelector('.ctl').addEventListener('click', e => {
+  const bt = e.target.closest('button[data-k]'); if (!bt) return;
+  S[bt.dataset.k] = bt.dataset.v; render();
+});
+document.getElementById('win').addEventListener('click', e => {
+  const t = e.target.closest('[role="tab"]'); if (!t || S.screen !== '3') return;
+  S.tab = /Cần bạn/.test(t.textContent) ? 'needs' : 'chat'; render();
+});
+addEventListener('resize', fit);
+render();
+</script>
