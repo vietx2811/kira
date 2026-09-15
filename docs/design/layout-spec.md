@@ -193,8 +193,8 @@ Xem mục E riêng (`docs/design/right-panel/`, `DECISIONS.md`). Luật §5 áp 
 
 ---
 
-## Câu hỏi cần user hoặc Orchestrator chốt
+## User đã chốt (2026-09-15)
 
-1. **§5.2 Dock Kira:** bỏ hẳn hay thu nhỏ chỉ báo token? Hai phương án nêu ở trên, chưa chọn.
-2. **§1.3 mục 6 "Nâng cao":** gộp Routing preview + Secrets + Usage + Onboarding vào một `<details>` có làm mất khả năng tìm nhanh Usage khi debug không? Nếu user dùng Usage thường xuyên, nên giữ riêng thay vì gộp.
-3. **§8:** đổi từ `position: absolute` sang layout chia cột là việc chạm `styles.css` ở nhiều view (Slides, Outline, có thể cả 3D); cần Worker ước lượng công trước khi Orchestrator giao việc.
+1. **§5.2 Dock Kira:** **bỏ hẳn** chỉ báo token trần. Không lộ số kỹ thuật cho người không biết code.
+2. **§1.3 mục 6 "Nâng cao":** **gộp hết** Routing preview + Secrets + Usage + Onboarding vào một `<details>`. Màn chính chỉ còn chọn provider và nhập key.
+3. **§8 Slides/Outline:** **chuyển sang layout chia cột**, sửa tận gốc thay vì vá toạ độ. Worker ước lượng công trước khi bắt đầu, báo Orchestrator nếu công lớn.
