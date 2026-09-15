@@ -1565,7 +1565,7 @@ button {
 }
 
 .onboarding-kicker {
-  color: var(--accent-strong);
+  color: var(--text-muted);
   font-size: var(--text-small);
   font-weight: var(--weight-label);
   letter-spacing: 0.08em;
@@ -1868,7 +1868,7 @@ button {
 
 .panel-kicker {
   margin: 0 0 2px;
-  color: var(--accent-cyan);
+  color: var(--text-muted);
   font-size: var(--text-small);
   font-weight: var(--weight-label);
   letter-spacing: 0.08em;
@@ -3779,9 +3779,7 @@ button.mini-tags-more:focus-visible {
 .diagram-node.is-selected .node-kira-control,
 .placeholder-node.is-selected .node-kira-control {
   opacity: 1;
-  background: var(--accent-strong);
-  border-color: var(--accent-strong);
-  color: var(--bg-base);
+  border-color: color-mix(in srgb, var(--accent-cyan), transparent 54%);
   transform: scale(calc(1 / var(--node-scale, 1)));
 }
 
@@ -6438,13 +6436,6 @@ button.mini-tags-more:focus-visible {
   font-size: var(--text-small);
 }
 
-.provider-task-toggle input {
-  width: 13px;
-  height: 13px;
-  margin: 0;
-  accent-color: var(--accent-cyan);
-}
-
 .provider-meta-strip {
   display: flex;
   flex-wrap: wrap;
@@ -6721,9 +6712,9 @@ button.palette-color-segment:focus-visible code {
   min-width: 0;
   width: 100%;
   padding: 10px;
-  border: 1px solid var(--border-soft);
+  border: 1px solid transparent;
   border-radius: var(--radius-3);
-  background: var(--inset-field);
+  background: transparent;
   color: var(--text-main);
   cursor: pointer;
   gap: 10px;
@@ -6731,9 +6722,12 @@ button.palette-color-segment:focus-visible code {
 
 .project-color-summary:hover,
 .project-color-summary.is-active {
-  /* This toggles the disclosure open/closed; it isn't the project's chosen
-     accent (the swatch dot inside already shows that), so it stays ink, not
-     teal (DESIGN.md §3 One Accent Rule). */
+  /* No-Nested-Card Rule (DESIGN.md §5): the resting state stays transparent
+     so this doesn't read as a card-in-card inside .project-settings-popover;
+     border/fill only appear as an interaction state. This toggles the
+     disclosure open/closed; it isn't the project's chosen accent (the swatch
+     dot inside already shows that), so it stays ink, not teal (DESIGN.md §3
+     One Accent Rule). */
   border-color: var(--border-strong);
   background: var(--control-patch);
 }

@@ -2329,9 +2329,10 @@ function withDefaultAiProviders(providers: AiProviderProfile[]): AiProviderProfi
   return missing.length > 0 ? [...providers, ...missing] : providers
 }
 
-// Light mode is wired end to end but not offered yet; flip once every surface
-// has been verified in light.
-const SHOW_COLOR_MODE_TOGGLE = false
+// Light mode is wired end to end; Orchestrator decision 2026-09-15 to surface
+// the toggle in Settings now that projectColorTokens()/buildProjectAppearanceStyle()
+// were confirmed to compute light-theme colors correctly through React.
+const SHOW_COLOR_MODE_TOGGLE = true
 
 const projectAccentPresets: Array<{ id: ProjectAccentPreset; label: string; color: string }> = [
   { id: 'cyan', label: 'Cyan', color: '#84cdbc' },
@@ -9153,11 +9154,14 @@ function SettingsView({
                       <div className="provider-task-matrix">
                         {group.tasks.map((task) => (
                           <label key={task} className="provider-task-toggle">
-                            <input
-                              type="checkbox"
-                              checked={activeProvider.defaultFor.includes(task)}
-                              onChange={() => onProviderTaskToggle(activeProvider.id, task)}
-                            />
+                            <span className="reference-check">
+                              <input
+                                type="checkbox"
+                                checked={activeProvider.defaultFor.includes(task)}
+                                onChange={() => onProviderTaskToggle(activeProvider.id, task)}
+                              />
+                              <span />
+                            </span>
                             <span>{aiTaskLabels[task]}</span>
                           </label>
                         ))}
