@@ -58,6 +58,14 @@ Mọi report kết thúc task chia 3 phần, theo thứ tự:
 
 **Orchestrator báo cáo cho user về giao diện (kể cả report tổng kết QA/sửa) kèm screenshot thật** (chụp bằng Browser pane hoặc app native, gửi qua `SendUserFile`), không chỉ mô tả bằng chữ/bảng điểm — user cần nhìn thấy, không chỉ đọc số đo.
 
+**Cách chụp app native ra file thật (đã kiểm chứng hoạt động):** công cụ `computer` của Browser pane và `app_screenshot` nền của `computer-use` chỉ trả ảnh vào ngữ cảnh của agent, **không ghi ra đĩa** — không dùng để lấy file gửi user. Cách chụp ra file:
+1. Xác nhận app đang mở là **bản mới nhất**, không phải bản cũ cài từ trước: `mdls -name kMDItemContentModificationDate /Applications/KIRA.app` so với `git log -1 --format=%ci` trên `main`. Nếu cũ, build lại theo mục Gotcha "App native" rồi `open "<path đến bundle debug vừa build>"`.
+2. `mcp__computer-use__request_access` (app "KIRA") rồi `mcp__computer-use__request_full_control` (cần user duyệt hộp thoại, chỉ hỏi một lần mỗi phiên) để dùng được `computer_batch` (click chuột thật — `app_click` chạy nền không kích hoạt được React canvas của KIRA).
+3. Phóng to cửa sổ KIRA full màn hình (bấm nút xanh lá) để tránh chụp dính cửa sổ khác.
+4. `screencapture -x /tmp/<tên>.png` (không dùng tham số `save_to_disk` của `computer_batch`: đường dẫn nó trả về không truy cập được từ Bash).
+5. **Bắt buộc tự `Read` lại ảnh trước khi gửi** để xác nhận sạch, không dính cửa sổ khác (Finder, System Settings, sidebar các session Claude khác) — full-screen capture khi cửa sổ KIRA không full màn hình đã từng dính nội dung nhạy cảm không liên quan, phải xoá ngay khi phát hiện.
+6. Dọn file tạm trong `/tmp` sau khi gửi xong.
+
 ## Verify
 
 1. **Kiểm đúng mục tiêu.** Kiểm chứng phát hiện trên **commit SHA lúc phát hiện**, không phải working tree (`git log -S "<chuỗi>"`, `git show <sha>`), và ghi SHA vào report. Trước khi tin kết quả test, **chứng minh app đang chạy đúng code định test** (vd probe của chính bạn có mặt). Browser preview **không có Tauri runtime**: đường native (AI provider, `osascript`, sidecar) phải test trong app thật.
