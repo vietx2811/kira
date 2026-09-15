@@ -5691,8 +5691,17 @@ button.mini-tags-more:focus-visible {
   border-top: 0;
 }
 
+/* Ink, not teal: The Ink Primary Rule (DESIGN.md §3) narrows accent to
+   canvas selection, focus and status text — a selected row shows it with
+   the same left-edge ink mark as a selected secondary button's 1.5px
+   outline, not a background tint. layout-spec.md line ~49. */
 .provider-list-row[aria-pressed="true"] {
-  background: var(--glass-active);
+  background: transparent;
+  box-shadow: inset 3px 0 0 0 var(--text-main);
+}
+
+.provider-list-row[aria-pressed="true"] strong {
+  font-weight: 680;
 }
 
 .provider-list-row[aria-pressed="true"] em,
