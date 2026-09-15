@@ -71,6 +71,7 @@ import {
   StickyNote,
   Tag,
   Trash2,
+  Unplug,
   Workflow,
   ZoomOut,
   X,
@@ -807,6 +808,12 @@ const UI_STRINGS: Record<string, { en: string; vi: string }> = {
   'kira.panel.threadFallbackTitle': { en: 'New thread', vi: 'Thread mới' },
   'kira.panel.emptyTitle': { en: 'No threads yet', vi: 'Chưa có thread nào' },
   'kira.panel.emptyBody': { en: 'Ask Kira something below to start a thread.', vi: 'Hỏi Kira bên dưới để bắt đầu một thread.' },
+  'kira.panel.emptyTryLabel': { en: 'Try one of these', vi: 'Thử một trong số này' },
+  'kira.panel.emptyNoProviderTitle': { en: 'Kira needs a model', vi: 'Kira cần một model' },
+  'kira.panel.emptyNoProviderBody': { en: 'Connect an AI model in Settings, then Kira can answer here.', vi: 'Kết nối một model AI trong Cài đặt, rồi Kira sẽ trả lời ở đây.' },
+  'kira.panel.connectModel': { en: 'Connect a model', vi: 'Kết nối model' },
+  'kira.panel.noModelStatus': { en: 'No model connected', vi: 'Chưa kết nối model' },
+  'kira.panel.composerPlaceholderNoProvider': { en: 'Connect a model in Settings to get a reply', vi: 'Kết nối model trong Cài đặt để nhận trả lời' },
   'kira.panel.composerPlaceholder': { en: 'Ask Kira…', vi: 'Hỏi Kira…' },
   'kira.panel.send': { en: 'Send', vi: 'Gửi' },
   'kira.panel.you': { en: 'You', vi: 'Bạn' },
@@ -2542,13 +2549,21 @@ function KiraChatThreadView({
   aiPanelState,
   threadId,
   providerLabel,
+  hasProvider,
   onSend,
+  onOpenAiSettings,
 }: {
   lang: Lang
   aiPanelState: AiPanelState
   threadId: string
   providerLabel: string
+  // No routed provider means nothing this panel sends can ever get an answer.
+  // The whole empty state, the placeholder and the status row below the
+  // composer change together so the panel never invites a message it cannot
+  // deliver (DESIGN.md §5 Plain-Language Rule).
+  hasProvider: boolean
   onSend: (text: string) => void | Promise<void>
+  onOpenAiSettings: () => void
 }) {
   const messages = useMemo(
     () => aiPanelState.messages.filter((message) => message.threadId === threadId),
@@ -2565,6 +2580,11 @@ function KiraChatThreadView({
   const messagesRef = useRef(messages)
   messagesRef.current = messages
   const convertedMessages = useMemo(() => messages.map(toKiraThreadMessage), [messages])
+  const isThreadEmpty = convertedMessages.length === 0
+  // Two real board prompts, reused verbatim from the dock's suggestion tray so
+  // the empty state never advertises a capability the app does not have. Two,
+  // not the full four, per DESIGN.md §5 One Density Rule.
+  const emptyExamples = useMemo(() => kiraSuggestions.board.slice(0, 2), [])
 
   const onNew = useCallback(
     async (appended: AppendMessage) => {
@@ -2589,11 +2609,41 @@ function KiraChatThreadView({
       <ThreadPrimitive.Root className="kira-thread">
         <ThreadPrimitive.Viewport className="kira-thread-viewport" role="log" aria-live="polite" aria-label={t('kira.panel.tabChat', lang)}>
           <ThreadPrimitive.Empty>
-            <div className="kp-empty">
-              <MessageSquare size={22} />
-              <h4>{t('kira.panel.emptyTitle', lang)}</h4>
-              <p>{t('kira.panel.emptyBody', lang)}</p>
-            </div>
+            {hasProvider ? (
+              <div className="kp-empty">
+                <MessageSquare size={22} />
+                <h4>{t('kira.panel.emptyTitle', lang)}</h4>
+                <p>{t('kira.panel.emptyBody', lang)}</p>
+                <div className="kp-empty-examples">
+                  <span className="kp-empty-examples-label">{t('kira.panel.emptyTryLabel', lang)}</span>
+                  {emptyExamples.map((example) => (
+                    <button
+                      key={example.id}
+                      type="button"
+                      className="quiet-button sm kp-empty-example"
+                      onClick={() => void onSend(example.prompt)}
+                    >
+                      <Sparkles size={13} />
+                      <span>{example.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="kp-empty">
+                <Unplug size={22} />
+                <h4>{t('kira.panel.emptyNoProviderTitle', lang)}</h4>
+                <p>{t('kira.panel.emptyNoProviderBody', lang)}</p>
+                <button
+                  type="button"
+                  className="secondary-button sm kp-empty-action"
+                  onClick={onOpenAiSettings}
+                >
+                  <Settings size={13} />
+                  <span>{t('kira.panel.connectModel', lang)}</span>
+                </button>
+              </div>
+            )}
           </ThreadPrimitive.Empty>
           <ThreadPrimitive.Messages>
             {({ message }) => {
@@ -2632,7 +2682,9 @@ function KiraChatThreadView({
         <ComposerPrimitive.Root className="composer">
           <ComposerPrimitive.Input
             className="composer-input"
-            placeholder={t('kira.panel.composerPlaceholder', lang)}
+            placeholder={hasProvider
+              ? t('kira.panel.composerPlaceholder', lang)
+              : t('kira.panel.composerPlaceholderNoProvider', lang)}
             aria-label={t('kira.panel.send', lang)}
             rows={1}
           />
@@ -2640,8 +2692,23 @@ function KiraChatThreadView({
             <ArrowUp size={14} />
           </ComposerPrimitive.Send>
         </ComposerPrimitive.Root>
-        <div className="composer-meta">
-          <span>{providerLabel}</span>
+        <div className={hasProvider ? 'composer-meta' : 'composer-meta is-blocked'}>
+          {hasProvider ? (
+            <span>{providerLabel}</span>
+          ) : (
+            <>
+              <span>{t('kira.panel.noModelStatus', lang)}</span>
+              {/* The empty state already carries this action, so the row only
+                  repeats it once the thread has content and the empty state is
+                  gone: a user who typed and got the "not connected" reply still
+                  has a way out, without two identical buttons on one screen. */}
+              {!isThreadEmpty && (
+                <button type="button" className="quiet-button sm" onClick={onOpenAiSettings}>
+                  {t('kira.panel.connectModel', lang)}
+                </button>
+              )}
+            </>
+          )}
         </div>
       </ThreadPrimitive.Root>
     </AssistantRuntimeProvider>
@@ -4768,6 +4835,15 @@ function FileWorkspace({
     setIsSettingsOpen(true)
     setIsOnboardingOpen(true)
     setAiSettingsStatus('Onboarding reset')
+  }
+
+  // Settings has no route of its own: the dialog picks its tab from
+  // `settingsFocusNonce` (see SettingsDialog's focusNonce effect). Opening it
+  // without bumping the nonce lands on General, which is why the Kira dock's
+  // "Open AI settings" used to go to the wrong tab.
+  function openAiProviderSettings() {
+    setIsSettingsOpen(true)
+    setSettingsFocusNonce((nonce) => nonce + 1)
   }
 
   function focusProviderSetup(providerId: string) {
@@ -7114,7 +7190,7 @@ function FileWorkspace({
   function renderKiraPanel() {
     const routeForLabel = selectAiProviderForTask('generate_node', aiProviders, aiRoutingMode, selectedAiProviderId, undefined)
     const routedProviderForLabel = routeForLabel.providerId ? aiProviders.find((provider) => provider.id === routeForLabel.providerId) : undefined
-    const providerLabel = routedProviderForLabel?.name ?? t('kira.placeholderNoProvider', lang)
+    const providerLabel = routedProviderForLabel?.name ?? ''
     return (
       <div
         className={kiraPanelMountState.entered ? 'kira-panel is-entered' : 'kira-panel'}
@@ -7163,7 +7239,9 @@ function FileWorkspace({
                 aiPanelState={aiPanelState}
                 threadId={kiraActiveThread?.id ?? 'draft'}
                 providerLabel={providerLabel}
+                hasProvider={Boolean(routedProviderForLabel)}
                 onSend={sendKiraChatMessage}
+                onOpenAiSettings={openAiProviderSettings}
               />
             </>
           ) : (
@@ -7394,7 +7472,7 @@ function FileWorkspace({
                 aiRoutingMode={aiRoutingMode}
                 selectedAiProviderId={selectedAiProviderId}
                 onSelectedAiProviderIdChange={setSelectedAiProviderId}
-                onOpenAiSettings={() => setIsSettingsOpen(true)}
+                onOpenAiSettings={openAiProviderSettings}
                 onApplyProjectTemplate={applyProjectTemplate}
                 onGeneratePromptStarter={generatePromptStarter}
                 onActiveCanvasToolChange={setActiveCanvasTool}
