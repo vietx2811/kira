@@ -2669,6 +2669,10 @@ function FileWorkspace({
   isKiraPanelOpen,
   onKiraPanelOpenChange,
   onKiraNeedsYouCountChange,
+  pendingCloseFile,
+  closeFileDialogRef,
+  onCancelCloseFile,
+  onConfirmCloseFile,
 }: {
   fileId: string
   isActive: boolean
@@ -2687,6 +2691,16 @@ function FileWorkspace({
   isKiraPanelOpen: boolean
   onKiraPanelOpenChange: (open: boolean) => void
   onKiraNeedsYouCountChange: (count: number) => void
+  // Lifted to App() (like `files`/`activeFileId`) because the tab being
+  // closed isn't necessarily this file — the close button on any tab in the
+  // App()-owned tab bar can target a background file. Rendered inside this
+  // component's .app-shell (only the active instance ever reaches that
+  // JSX — see the isActive bail-out below) so the dialog picks up this
+  // project's themed color tokens instead of the :root dark fallback.
+  pendingCloseFile: OpenFile | null
+  closeFileDialogRef: React.RefObject<HTMLElement | null>
+  onCancelCloseFile: () => void
+  onConfirmCloseFile: (fileId: string) => void
 }) {
   const initialProject = useMemo(() => initialSnapshot ?? readProjectSnapshot(), [initialSnapshot])
   const lang = useLangStore((state) => state.lang)
@@ -7587,6 +7601,31 @@ function FileWorkspace({
           onExtensionRefresh={refreshExtensionInstallStatus}
         />
       )}
+      {pendingCloseFile && (
+        <div className="dialog-overlay">
+          <section
+            ref={closeFileDialogRef}
+            tabIndex={-1}
+            aria-modal="true"
+            className="confirm-dialog"
+            role="alertdialog"
+            aria-labelledby="close-file-dialog-title"
+          >
+            <div>
+              <h2 id="close-file-dialog-title">Close {pendingCloseFile.title}?</h2>
+              <p>This file has unsaved changes. Closing the tab discards them.</p>
+            </div>
+            <div className="dialog-actions">
+              <button className="secondary-button" type="button" onClick={onCancelCloseFile}>
+                Cancel
+              </button>
+              <button className="danger-button" type="button" onClick={() => onConfirmCloseFile(pendingCloseFile.id)}>
+                Close without saving
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
     </main>
   )
 }
@@ -7987,33 +8026,12 @@ function App() {
           isKiraPanelOpen={kiraPanelOpenByFile[file.id] ?? false}
           onKiraPanelOpenChange={getKiraPanelOpenChangeHandler(file.id)}
           onKiraNeedsYouCountChange={getKiraNeedsYouCountChangeHandler(file.id)}
+          pendingCloseFile={pendingCloseFile}
+          closeFileDialogRef={closeFileDialogRef}
+          onCancelCloseFile={() => setPendingCloseFileId(null)}
+          onConfirmCloseFile={closeFile}
         />
       ))}
-      {pendingCloseFile && (
-        <div className="dialog-overlay">
-          <section
-            ref={closeFileDialogRef}
-            tabIndex={-1}
-            aria-modal="true"
-            className="confirm-dialog"
-            role="alertdialog"
-            aria-labelledby="close-file-dialog-title"
-          >
-            <div>
-              <h2 id="close-file-dialog-title">Close {pendingCloseFile.title}?</h2>
-              <p>This file has unsaved changes. Closing the tab discards them.</p>
-            </div>
-            <div className="dialog-actions">
-              <button className="secondary-button" type="button" onClick={() => setPendingCloseFileId(null)}>
-                Cancel
-              </button>
-              <button className="danger-button" type="button" onClick={() => closeFile(pendingCloseFile.id)}>
-                Close without saving
-              </button>
-            </div>
-          </section>
-        </div>
-      )}
     </>
   )
 }

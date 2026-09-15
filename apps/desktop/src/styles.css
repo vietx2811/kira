@@ -2206,7 +2206,10 @@ small {
   place-items: center;
   width: 13px;
   height: 13px;
-  border: 1.5px solid var(--edge-stroke);
+  /* Was --edge-stroke (2.71:1 dark / 1.97:1 light) — under WCAG 1.4.11's
+     3:1 floor for an unchecked control boundary. --field-edge is the
+     dedicated field-boundary token, same fix as the form fields above. */
+  border: 1.5px solid var(--field-edge);
   border-radius: 3px;
   background: var(--control-patch-strong);
   transition: background 120ms ease, border-color 120ms ease;
@@ -6202,7 +6205,10 @@ button.mini-tags-more:focus-visible {
   height: 32px;
   min-width: 0;
   padding: 0 var(--space-2);
-  border: 0;
+  /* Was border: 0 — 1.02-1.04:1 against --surface-inset in both themes,
+     under WCAG 1.4.11's 3:1 floor. --field-edge is the dedicated
+     field-boundary token, same fix as the other form fields. */
+  border: 1px solid var(--field-edge);
   border-radius: var(--radius-1);
   background: var(--surface-inset);
   color: var(--text-main);
@@ -6234,6 +6240,10 @@ button.mini-tags-more:focus-visible {
 
 .provider-list-row:first-child {
   border-top: 0;
+}
+
+.provider-list-row:hover {
+  background: var(--glass-hover);
 }
 
 /* Ink, not teal: The Ink Primary Rule (DESIGN.md §3) narrows accent to
@@ -6855,6 +6865,12 @@ button.palette-color-segment:focus-visible code {
   white-space: nowrap;
 }
 
+.project-color-summary strong {
+  /* Was unset, silently inheriting the 14px root size (off the type scale —
+     see styles.css "type scale" note at the top of the file). */
+  font-size: var(--text-body);
+}
+
 .project-color-summary small {
   color: var(--text-soft);
   font-size: var(--text-small);
@@ -6944,6 +6960,9 @@ button.palette-color-segment:focus-visible code {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  /* Was unset, silently inheriting the 14px root size (off the type scale —
+     see styles.css "type scale" note at the top of the file). */
+  font-size: var(--text-body);
 }
 
 .color-inline-row {
@@ -8352,8 +8371,13 @@ textarea,
   /* Was --border-soft (a subtle card/panel divider token, ~1.1-1.5:1 on
      this app's dark surfaces) — under WCAG 1.4.11's 3:1 floor for a form
      field boundary. --field-edge is the dedicated field-boundary token.
-     .title-input overrides straight back to border: 0 below, unaffected —
-     it already sits inside a bordered card. */
+     .title-input and .note-input override straight back to border: 0
+     below for most uses (source-url-row, node notes/details) where the
+     field genuinely sits inside a bordered card. The Project Settings
+     popover's own NAME/DESCRIPTION/AUTHOR/KIND/STYLE NOTE fields do not —
+     audited three ancestor levels up and found no real border anywhere,
+     measured 1.00:1 in both themes — so a scoped rule further down
+     reinstates the boundary for those five only. */
   border: 1px solid var(--field-edge);
   border-radius: var(--radius-2);
   background: rgb(0 0 0 / 0.18);
@@ -8392,6 +8416,22 @@ textarea {
   background: transparent;
   color: var(--text-soft);
   resize: none;
+}
+
+.project-settings-popover .title-input,
+.project-settings-popover .note-input {
+  /* NAME/DESCRIPTION/AUTHOR/KIND/STYLE NOTE: unlike the other uses of these
+     shared classes, this popover's own fields don't actually sit inside a
+     bordered card (checked three ancestor levels up, none carry a real
+     border) — measured contrast was 1.00:1 in both themes, well under
+     WCAG 1.4.11's 3:1 floor. Reinstate the field boundary here only. */
+  border: 1px solid var(--field-edge);
+}
+
+.project-settings-popover .note-input {
+  /* Was unset, silently inheriting the 14px root size (off the type scale —
+     see styles.css "type scale" note at the top of the file). */
+  font-size: var(--text-body);
 }
 
 .diagram-source-input {
