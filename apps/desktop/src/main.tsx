@@ -125,6 +125,7 @@ import {
   rejectItem as aiPanelRejectItem,
   removeAppliedNode as aiPanelRemoveAppliedNode,
   revertAcceptedItem as aiPanelRevertAcceptedItem,
+  revertRemovedItem as aiPanelRevertRemovedItem,
   setNodeProvenance as aiPanelSetNodeProvenance,
   summaryLine as aiPanelSummaryLine,
   toSnapshot as aiPanelToSnapshot,
@@ -706,10 +707,13 @@ type AiTaskRoute = {
 // react to more than just the canvas fields. undoCanvas() reads this off the
 // entry being undone away to revert the matching "Cần bạn" item(s), which
 // acceptChangeItem()/acceptChangeSetBulk() left as 'accepted' with no action
-// row (P1: accept -> Cmd+Z orphaned the item permanently).
+// row (P1: accept -> Cmd+Z orphaned the item permanently), and which
+// removeAppliedAiNode() left as 'removed' with no action row (same class of
+// bug, for "Gỡ node" -> Cmd+Z).
 type CanvasHistorySource =
   | { kind: 'ai-accept'; changeSetId: string; itemId: string }
   | { kind: 'ai-accept-bulk'; changeSetId: string; itemIds: string[] }
+  | { kind: 'ai-remove-node'; changeSetId: string; itemId: string }
 type CanvasHistoryEntry = Pick<ProjectSnapshot, 'ideas' | 'images' | 'palettes' | 'diagrams' | 'placeholders' | 'links'> & {
   frames: FrameNode[]
   selection: Selection
@@ -868,6 +872,7 @@ const UI_STRINGS: Record<string, { en: string; vi: string }> = {
   'library.filter.remove': { en: 'Remove {tag} filter', vi: 'Xóa bộ lọc {tag}' },
   'library.tags.label': { en: 'Tags for {title}', vi: 'Các thẻ của {title}' },
   'library.tags.more': { en: '{count} more tags', vi: 'Còn {count} thẻ' },
+  'outline.diagnostics.more': { en: '{count} more issues', vi: 'Còn {count} vấn đề' },
 }
 
 function readStoredLang(): Lang {
@@ -2715,6 +2720,14 @@ function FileWorkspace({
   const [pendingRemoveNodeGuard, setPendingRemoveNodeGuard] = useState<{ nodeKind: GraphNodeKind; nodeId: string } | null>(null)
   const removeNodeGuardDialogRef = useRef<HTMLElement>(null)
   useFocusTrap(removeNodeGuardDialogRef, Boolean(pendingRemoveNodeGuard))
+  useEffect(() => {
+    if (!pendingRemoveNodeGuard) return
+    function handleKeydown(event: KeyboardEvent) {
+      if (event.key === 'Escape') setPendingRemoveNodeGuard(null)
+    }
+    window.addEventListener('keydown', handleKeydown)
+    return () => window.removeEventListener('keydown', handleKeydown)
+  }, [pendingRemoveNodeGuard])
   const kiraPanelWidth = useKiraPanelWidthStore((state) => state.width)
   const setKiraPanelWidth = useKiraPanelWidthStore((state) => state.setWidth)
   const [lastSavedHash, setLastSavedHash] = useState(() => JSON.stringify(initialProject))
@@ -3468,6 +3481,10 @@ function FileWorkspace({
         if (result.ok) nextAiPanelState = result.state
       }
       if (nextAiPanelState !== aiPanelState) setAiPanelState(nextAiPanelState)
+    } else if (undoneEntry?.source?.kind === 'ai-remove-node') {
+      const { changeSetId, itemId } = undoneEntry.source
+      const result = aiPanelRevertRemovedItem(aiPanelState, changeSetId, itemId)
+      if (result.ok) setAiPanelState(result.state)
     }
   }
 
@@ -5425,13 +5442,33 @@ function FileWorkspace({
   // for confirmation first (pendingRemoveNodeGuard), otherwise applies right
   // away. force=true retries after the user confirms the guard dialog.
   function removeAppliedAiNode(nodeKind: GraphNodeKind, nodeId: string, force = false) {
+    // Look up which ChangeSet/item this node's create-node entry lives in
+    // BEFORE mutating, so the canvas-history entry this push commits can be
+    // tagged with it — same as acceptChangeItem's 'ai-accept' tag — letting
+    // undoCanvas() flip the "Cần bạn" item back to 'applied' if this removal
+    // is later undone (Cmd+Z).
+    let removedTarget: { changeSetId: string; itemId: string } | null = null
+    for (const changeSet of aiPanelState.changeSets) {
+      const item = changeSet.items.find(
+        (candidate) =>
+          candidate.kind === 'create-node' &&
+          candidate.nodeKind === nodeKind &&
+          candidate.nodeId === nodeId &&
+          candidate.status === 'applied',
+      )
+      if (item) {
+        removedTarget = { changeSetId: changeSet.id, itemId: item.id }
+        break
+      }
+    }
+
     const result = aiPanelRemoveAppliedNode(aiPanelState, nodeKind, nodeId, { force })
     if (!result.ok) {
       if (result.reason === 'needs-force') setPendingRemoveNodeGuard({ nodeKind, nodeId })
       return
     }
     setPendingRemoveNodeGuard(null)
-    pushCanvasHistory()
+    pushCanvasHistory(removedTarget ? { kind: 'ai-remove-node', changeSetId: removedTarget.changeSetId, itemId: removedTarget.itemId } : undefined)
     applyAiCanvasOperations(result.operations)
     setAiPanelState(result.state)
   }
@@ -7762,6 +7799,14 @@ function App() {
 
   const pendingCloseFile = pendingCloseFileId ? files.find((file) => file.id === pendingCloseFileId) ?? null : null
   useFocusTrap(closeFileDialogRef, Boolean(pendingCloseFile))
+  useEffect(() => {
+    if (!pendingCloseFile) return
+    function handleKeydown(event: KeyboardEvent) {
+      if (event.key === 'Escape') setPendingCloseFileId(null)
+    }
+    window.addEventListener('keydown', handleKeydown)
+    return () => window.removeEventListener('keydown', handleKeydown)
+  }, [pendingCloseFile])
   const [dragOverTabId, setDragOverTabId] = useState<string | null>(null)
   const draggingTabIdRef = useRef<string | null>(null)
 
@@ -13895,6 +13940,15 @@ function OutlineView({
   )
 }
 
+// Fixed cap on how many diagnostic chips render inline before the rest fold
+// into the "+N" popover below — matches the chip-strip pattern ReferenceTags
+// uses for overflowing tags (mini-tags-more / mini-tags-popover), minus that
+// component's ResizeObserver-driven width fitting: the chip list here isn't
+// measured to the container width, so a static cap plus a trigger for the
+// remainder is the lower-risk fix (P2 gap: 30 issues reported, only 4
+// chips rendered, no way to reach the other 26).
+const DIAGNOSTICS_VISIBLE_CHIP_LIMIT = 4
+
 function ProjectDiagnostics({
   diagnostics,
   onSelect,
@@ -13902,6 +13956,12 @@ function ProjectDiagnostics({
   diagnostics: ProjectDiagnostic[]
   onSelect: (selection: Selection) => void
 }) {
+  const lang = useLangStore((state) => state.lang)
+  const moreTriggerRef = useRef<HTMLButtonElement>(null)
+  const popoverRef = useRef<HTMLDivElement>(null)
+  const popoverId = useId()
+  const [isPopoverOpen, setIsPopoverOpen] = useState(false)
+
   if (diagnostics.length === 0) {
     return (
       <div className="diagnostics-row" aria-label="Project diagnostics">
@@ -13912,7 +13972,8 @@ function ProjectDiagnostics({
 
   const dangerCount = diagnostics.filter((diagnostic) => diagnostic.severity === 'danger').length
   const warningCount = diagnostics.filter((diagnostic) => diagnostic.severity === 'warning').length
-  const visibleDiagnostics = diagnostics.slice(0, 4)
+  const visibleDiagnostics = diagnostics.slice(0, DIAGNOSTICS_VISIBLE_CHIP_LIMIT)
+  const hiddenDiagnostics = diagnostics.slice(DIAGNOSTICS_VISIBLE_CHIP_LIMIT)
 
   return (
     <div className="diagnostics-row" aria-label="Project diagnostics">
@@ -13933,6 +13994,56 @@ function ProjectDiagnostics({
             <small>{diagnostic.meta}</small>
           </button>
         ))}
+        {hiddenDiagnostics.length > 0 && (
+          <>
+            <button
+              ref={moreTriggerRef}
+              className="diagnostics-more"
+              type="button"
+              aria-expanded={isPopoverOpen}
+              aria-label={t('outline.diagnostics.more', lang, { count: String(hiddenDiagnostics.length) })}
+              popoverTarget={popoverId}
+            >
+              +{hiddenDiagnostics.length}
+            </button>
+            <div
+              ref={popoverRef}
+              id={popoverId}
+              className="mini-tags-popover diagnostics-popover"
+              popover="auto"
+              aria-label={t('outline.diagnostics.more', lang, { count: String(hiddenDiagnostics.length) })}
+              onBeforeToggle={(event) => {
+                if (event.newState !== 'open' || !moreTriggerRef.current) return
+                positionReferenceTagPopover(moreTriggerRef.current, event.currentTarget)
+              }}
+              onToggle={(event) => {
+                const isOpen = event.newState === 'open'
+                setIsPopoverOpen(isOpen)
+                if (isOpen && moreTriggerRef.current) {
+                  positionReferenceTagPopover(moreTriggerRef.current, event.currentTarget)
+                }
+              }}
+            >
+              <strong>{t('outline.diagnostics.more', lang, { count: String(hiddenDiagnostics.length) })}</strong>
+              <span className="diagnostics-popover-list">
+                {hiddenDiagnostics.map((diagnostic) => (
+                  <button
+                    key={diagnostic.id}
+                    className={`diagnostic-chip diagnostic-chip--${diagnostic.severity}`}
+                    type="button"
+                    onClick={() => {
+                      popoverRef.current?.hidePopover()
+                      onSelect(diagnostic.selection)
+                    }}
+                  >
+                    <span>{diagnostic.label}</span>
+                    <small>{diagnostic.meta}</small>
+                  </button>
+                ))}
+              </span>
+            </div>
+          </>
+        )}
       </div>
     </div>
   )

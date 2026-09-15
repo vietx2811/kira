@@ -7676,6 +7676,50 @@ button.palette-color-segment:focus-visible code {
   color: var(--accent-amber);
 }
 
+.diagnostics-more {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  min-height: 32px;
+  padding: 4px var(--space-2);
+  border: 1px solid color-mix(in srgb, var(--text-main) 8%, transparent);
+  border-radius: var(--radius-2);
+  background: color-mix(in srgb, var(--text-main) 4%, transparent);
+  color: var(--text-muted);
+  font-size: var(--text-small);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.diagnostics-more:hover,
+.diagnostics-more:focus-visible {
+  background: color-mix(in srgb, var(--text-main) 6.5%, transparent);
+  color: var(--text-main);
+}
+
+.diagnostics-more:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+/* Overrides .mini-tags-popover's narrower max-width — diagnostic chips
+   carry a label + meta line, wider than a bare tag string. */
+.diagnostics-popover {
+  max-width: min(280px, calc(100vw - 16px));
+}
+
+.diagnostics-popover-list {
+  display: grid;
+  gap: 4px;
+}
+
+.diagnostics-popover-list .diagnostic-chip {
+  max-width: none;
+}
+
 .outline-section {
   padding: var(--space-4) 0;
   border-top: 1px solid color-mix(in srgb, var(--text-main) 5.5%, transparent);

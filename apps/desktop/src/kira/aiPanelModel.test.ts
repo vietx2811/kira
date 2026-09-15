@@ -19,6 +19,7 @@ import {
   rejectItem,
   removeAppliedNode,
   revertAcceptedItem,
+  revertRemovedItem,
   threadsForNode,
   toSnapshot,
   visibleCheckpoints,
@@ -422,6 +423,53 @@ describe('revertAcceptedItem', () => {
   test('refuses an unknown item id', () => {
     const state: AiPanelState = { ...createEmptyAiPanelState(), changeSets: [branchesChangeSet()] }
     const result = revertAcceptedItem(state, 'cs-branches', 'item-does-not-exist')
+    expect(result.ok).toBe(false)
+    if (result.ok) throw new Error('unreachable')
+    expect(result.reason).toBe('not-found')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// revertRemovedItem — P2 fix, same class as revertAcceptedItem: Cmd+Z after
+// "Gỡ node" (removeAppliedNode) was leaving the "Cần bạn" item stuck at
+// 'removed' with no action row.
+// ---------------------------------------------------------------------------
+
+describe('revertRemovedItem', () => {
+  test('reverts a removed create-node item back to applied', () => {
+    const state: AiPanelState = {
+      ...createEmptyAiPanelState(),
+      changeSets: [{ ...branchesChangeSet(), items: [{ ...appliedPlainItem(), status: 'removed' }] }],
+    }
+    const result = revertRemovedItem(state, 'cs-branches', 'item-applied-plain')
+    expect(result.ok).toBe(true)
+    if (!result.ok) throw new Error('unreachable')
+    const item = result.state.changeSets[0]?.items[0] as AiCreateNodeItem
+    expect(item.status).toBe('applied')
+    // Pure status change — the canvas side was already restored by the
+    // caller's own undo, so no operations are returned here.
+    expect(result.operations).toEqual([])
+  })
+
+  test('refuses a non-create-node item', () => {
+    const state: AiPanelState = { ...createEmptyAiPanelState(), changeSets: [branchesChangeSet()] }
+    const result = revertRemovedItem(state, 'cs-branches', 'item-text-edit')
+    expect(result.ok).toBe(false)
+    if (result.ok) throw new Error('unreachable')
+    expect(result.reason).toBe('wrong-kind')
+  })
+
+  test('refuses a create-node item that is not currently removed', () => {
+    const state: AiPanelState = { ...createEmptyAiPanelState(), changeSets: [branchesChangeSet()] }
+    const result = revertRemovedItem(state, 'cs-branches', 'item-applied-plain') // still 'applied'
+    expect(result.ok).toBe(false)
+    if (result.ok) throw new Error('unreachable')
+    expect(result.reason).toBe('not-removed:applied')
+  })
+
+  test('refuses an unknown item id', () => {
+    const state: AiPanelState = { ...createEmptyAiPanelState(), changeSets: [branchesChangeSet()] }
+    const result = revertRemovedItem(state, 'cs-branches', 'item-does-not-exist')
     expect(result.ok).toBe(false)
     if (result.ok) throw new Error('unreachable')
     expect(result.reason).toBe('not-found')
