@@ -94,6 +94,10 @@ Mọi `font-size` là token: `--text-mini` 10px, `--text-small` 11px, `--text-bo
 - Ngoại lệ ngoài token duy nhất: 2 display heading `clamp()` (onboarding hero, slide title).
 - Cần cỡ mới thì thêm bậc vào scale, đừng viết giá trị dùng một lần. Không để phần tử nào inherit 14px từ root.
 
+## UI kit
+
+User chốt 2026-09-16: **Untitled UI React** (Tailwind CSS v4 + React Aria, untitledui.com/react) là bộ component chính. **Khai thác tối đa component viết sẵn của kit** — chỉ tự viết khi kit không có (vd panel resize, canvas, node). Migrate từng màn, CSS thuần cũ (`styles.css`) chung sống tới khi màn cuối chuyển xong. Căn cứ: `docs/research/2026-09-16-tailwind-kit-migration.md`, `docs/research/2026-09-16-art-direction-v3-kit-directions.md` (hướng C). Ink & Paper và `kira-controls` chỉ còn áp cho phần chưa migrate và phần kit không có.
+
 ## Skill thiết kế
 
 User chốt 2026-09-15 (báo cáo `docs/research/2026-09-15-design-skills-github.md`):
