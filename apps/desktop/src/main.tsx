@@ -18,6 +18,14 @@ import { ReferenceThumb, referenceAspect } from './components/ReferenceThumb'
 import { SettingsView } from './components/application/settings/SettingsView'
 import { EvidenceInbox } from './components/application/library/EvidenceInbox'
 import { positionReferenceTagPopover } from './components/application/library/ReferenceTags'
+import { Button } from '@/components/base/buttons/button'
+import { Tooltip } from '@/components/base/tooltip/tooltip'
+import { UiKitPortalHost } from '@/kira/uikit/PortalHost'
+import { KiraPanel } from './components/application/kira-panel/KiraPanel'
+import { KiraChangesTab } from './components/application/kira-panel/KiraChangesTab'
+import { KiraThreadList } from './components/application/kira-panel/KiraThreadList'
+import { KiraChatThreadView } from './components/application/kira-panel/KiraChatThreadView'
+import { RemoveNodeGuardDialog } from './components/application/kira-panel/RemoveNodeGuardDialog'
 import {
   type AiTaskKind,
   type AiProviderType,
@@ -91,7 +99,6 @@ import {
   ListTree,
   LocateFixed,
   Maximize2,
-  MessageSquare,
   Minimize2,
   Network,
   Palette,
@@ -111,7 +118,6 @@ import {
   StickyNote,
   Tag,
   Trash2,
-  Unplug,
   Workflow,
   ZoomOut,
   X,
@@ -130,15 +136,11 @@ import {
 import { HexColorPicker } from 'react-colorful'
 import Cropper, { type Area as CropArea } from 'react-easy-crop'
 import { converter, formatHex } from 'culori'
-import {
-  AssistantRuntimeProvider,
-  ComposerPrimitive,
-  MessagePrimitive,
-  ThreadPrimitive,
-  useExternalStoreRuntime,
-  type AppendMessage,
-  type ThreadMessageLike,
-} from '@assistant-ui/react'
+// assistant-ui primitives (AssistantRuntimeProvider/ComposerPrimitive/
+// MessagePrimitive/ThreadPrimitive/useExternalStoreRuntime/AppendMessage/
+// ThreadMessageLike) moved to components/application/kira-panel/
+// KiraChatThreadView.tsx (PHA 3 Untitled UI migration, 2026-09-16) — no
+// longer imported here.
 import type {
   AiCanvasOperation,
   AiChangeItem,
@@ -2076,289 +2078,13 @@ function kiraChatThreadTitle(text: string, lang: Lang): string {
   return trimmed.length > 0 ? trimmed.slice(0, 60) : t('kira.panel.threadFallbackTitle', lang)
 }
 
-function kiraMessageRole(message: AiMessage): 'user' | 'assistant' | 'system' {
-  return message.role === 'system-error' ? 'system' : message.role
-}
-
-/** Word-level diff for the "Cần bạn" tab's edit-text preview (mockup.js
- *  .diff — <del>/<ins> spans). Standard LCS-on-words DP; short node text
- *  keeps this well within a trivial cost. */
-function diffWords(before: string, after: string): Array<{ type: 'same' | 'del' | 'ins'; text: string }> {
-  const a = before.split(/(\s+)/)
-  const b = after.split(/(\s+)/)
-  const dp: number[][] = Array.from({ length: a.length + 1 }, () => new Array(b.length + 1).fill(0))
-  for (let i = a.length - 1; i >= 0; i--) {
-    for (let j = b.length - 1; j >= 0; j--) {
-      dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1])
-    }
-  }
-  const segments: Array<{ type: 'same' | 'del' | 'ins'; text: string }> = []
-  let i = 0
-  let j = 0
-  while (i < a.length && j < b.length) {
-    if (a[i] === b[j]) {
-      segments.push({ type: 'same', text: a[i] })
-      i += 1
-      j += 1
-    } else if (dp[i + 1][j] >= dp[i][j + 1]) {
-      segments.push({ type: 'del', text: a[i] })
-      i += 1
-    } else {
-      segments.push({ type: 'ins', text: b[j] })
-      j += 1
-    }
-  }
-  while (i < a.length) {
-    segments.push({ type: 'del', text: a[i] })
-    i += 1
-  }
-  while (j < b.length) {
-    segments.push({ type: 'ins', text: b[j] })
-    j += 1
-  }
-  const merged: typeof segments = []
-  for (const segment of segments) {
-    const last = merged[merged.length - 1]
-    if (last && last.type === segment.type) last.text += segment.text
-    else merged.push({ ...segment })
-  }
-  return merged
-}
-
-function toKiraThreadMessage(message: AiMessage): ThreadMessageLike {
-  return {
-    role: kiraMessageRole(message),
-    id: message.id,
-    createdAt: new Date(message.createdAt),
-    content: message.text,
-  }
-}
-
 function formatKiraClockTime(iso: string, lang: Lang): string {
   return new Date(iso).toLocaleTimeString(lang === 'vi' ? 'vi-VN' : 'en-US', { hour: '2-digit', minute: '2-digit' })
 }
 
-/** "Cần bạn" tab's edit-text preview (mockup.js .diff). Word-level, not
- *  character-level — plenty for a node's title/content paragraph. */
-function DiffText({ before, after }: { before: string; after: string }) {
-  const segments = useMemo(() => diffWords(before, after), [before, after])
-  return (
-    <p className="diff">
-      {segments.map((segment, index) => {
-        if (segment.type === 'del') return <del key={index}>{segment.text}</del>
-        if (segment.type === 'ins') return <ins key={index}>{segment.text}</ins>
-        return <React.Fragment key={index}>{segment.text}</React.Fragment>
-      })}
-    </p>
-  )
-}
-
-function RunDetailRow({ run, lang }: { run: AiRun | undefined; lang: Lang }) {
-  const [open, setOpen] = useState(false)
-  if (!run) return null
-  const elapsedMs = run.finishedAt ? new Date(run.finishedAt).getTime() - new Date(run.startedAt).getTime() : null
-  return (
-    <div className="run-line">
-      <span className={run.status === 'error' ? 'state-err' : run.status === 'running' ? 'state-idle' : 'state-ok'}>
-        {run.status === 'error' ? <AlertTriangle size={11} /> : run.status === 'running' ? null : <Check size={11} />}
-        {run.status === 'error' ? t('kira.run.error', lang) : run.status === 'running' ? t('kira.run.running', lang) : t('kira.run.done', lang)}
-      </span>
-      <span className="row-sub">
-        {run.modelLabel}
-        {elapsedMs != null ? ` · ${(elapsedMs / 1000).toFixed(1)}s` : ''}
-      </span>
-      <button type="button" className="quiet-button sm run-disclosure" aria-expanded={open} onClick={() => setOpen((current) => !current)}>
-        {t('kira.run.detail', lang)}
-        <ChevronDown size={11} />
-      </button>
-      {open && (
-        <dl className="run-detail">
-          <div><dt>{t('kira.run.provider', lang)}</dt><dd>{run.providerType}</dd></div>
-          <div><dt>{t('kira.run.model', lang)}</dt><dd className="run-detail-model">{run.modelLabel}</dd></div>
-          <div><dt>{t('kira.run.started', lang)}</dt><dd className="num">{formatKiraClockTime(run.startedAt, lang)}</dd></div>
-          <div><dt>{t('kira.run.prompt', lang)}</dt><dd className="run-detail-prompt">{run.promptPreview}</dd></div>
-        </dl>
-      )}
-    </div>
-  )
-}
-
-/**
- * Chat tab content: thread messages + composer, on assistant-ui's headless
- * primitives (ThreadPrimitive/ComposerPrimitive/MessagePrimitive) driven by
- * ExternalStoreRuntime over AiPanelState — the library never touches the
- * network itself; `onSend` is the only call-out (spike report §3).
- */
-function KiraChatThreadView({
-  lang,
-  aiPanelState,
-  threadId,
-  providerLabel,
-  hasProvider,
-  onSend,
-  onOpenAiSettings,
-}: {
-  lang: Lang
-  aiPanelState: AiPanelState
-  threadId: string
-  providerLabel: string
-  // No routed provider means nothing this panel sends can ever get an answer.
-  // The whole empty state, the placeholder and the status row below the
-  // composer change together so the panel never invites a message it cannot
-  // deliver (DESIGN.md §5 Plain-Language Rule).
-  hasProvider: boolean
-  onSend: (text: string) => void | Promise<void>
-  onOpenAiSettings: () => void
-}) {
-  const messages = useMemo(
-    () => aiPanelState.messages.filter((message) => message.threadId === threadId),
-    [aiPanelState.messages, threadId],
-  )
-  const runsById = useMemo(
-    () => new Map(aiPanelState.runs.filter((run) => run.threadId === threadId).map((run) => [run.id, run] as const)),
-    [aiPanelState.runs, threadId],
-  )
-  const isRunning = useMemo(
-    () => aiPanelState.runs.some((run) => run.threadId === threadId && run.status === 'running'),
-    [aiPanelState.runs, threadId],
-  )
-  const messagesRef = useRef(messages)
-  messagesRef.current = messages
-  const convertedMessages = useMemo(() => messages.map(toKiraThreadMessage), [messages])
-  const isThreadEmpty = convertedMessages.length === 0
-  // Two real board prompts, reused verbatim from the dock's suggestion tray so
-  // the empty state never advertises a capability the app does not have. Two,
-  // not the full four, per DESIGN.md §5 One Density Rule.
-  const emptyExamples = useMemo(() => kiraSuggestions.board.slice(0, 2), [])
-
-  const onNew = useCallback(
-    async (appended: AppendMessage) => {
-      const text = appended.content
-        .filter((part): part is { type: 'text'; text: string } => part.type === 'text')
-        .map((part) => part.text)
-        .join('')
-      await onSend(text)
-    },
-    [onSend],
-  )
-
-  const runtime = useExternalStoreRuntime({
-    messages: convertedMessages,
-    isRunning,
-    onNew,
-    convertMessage: (message) => message,
-  })
-
-  return (
-    <AssistantRuntimeProvider runtime={runtime}>
-      <ThreadPrimitive.Root className="kira-thread">
-        <ThreadPrimitive.Viewport className="kira-thread-viewport" role="log" aria-live="polite" aria-label={t('kira.panel.tabChat', lang)}>
-          <ThreadPrimitive.Empty>
-            {hasProvider ? (
-              <div className="kp-empty">
-                <MessageSquare size={22} />
-                <h4>{t('kira.panel.emptyTitle', lang)}</h4>
-                <p>{t('kira.panel.emptyBody', lang)}</p>
-                <div className="kp-empty-examples">
-                  <span className="kp-empty-examples-label">{t('kira.panel.emptyTryLabel', lang)}</span>
-                  {emptyExamples.map((example) => (
-                    <button
-                      key={example.id}
-                      type="button"
-                      className="quiet-button sm kp-empty-example"
-                      onClick={() => void onSend(example.prompt)}
-                    >
-                      <Sparkles size={13} />
-                      <span>{example.label}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              <div className="kp-empty">
-                <Unplug size={22} />
-                <h4>{t('kira.panel.emptyNoProviderTitle', lang)}</h4>
-                <p>{t('kira.panel.emptyNoProviderBody', lang)}</p>
-                <button
-                  type="button"
-                  className="secondary-button sm kp-empty-action"
-                  onClick={onOpenAiSettings}
-                >
-                  <Settings size={13} />
-                  <span>{t('kira.panel.connectModel', lang)}</span>
-                </button>
-              </div>
-            )}
-          </ThreadPrimitive.Empty>
-          <ThreadPrimitive.Messages>
-            {({ message }) => {
-              const source = messagesRef.current.find((candidate) => candidate.id === message.id)
-              const createdAt = source?.createdAt ?? new Date().toISOString()
-              const run = source?.runId ? runsById.get(source.runId) : undefined
-              if (message.role === 'user') {
-                return (
-                  <MessagePrimitive.Root className="msg">
-                    <div className="msg-head"><b>{t('kira.panel.you', lang)}</b><span className="num">{formatKiraClockTime(createdAt, lang)}</span></div>
-                    <div className="msg-user"><MessagePrimitive.Content /></div>
-                  </MessagePrimitive.Root>
-                )
-              }
-              if (message.role === 'system') {
-                return (
-                  <MessagePrimitive.Root className="msg">
-                    <div className="msg-head"><b>Kira</b><span className="num">{formatKiraClockTime(createdAt, lang)}</span></div>
-                    <div className="run-error" role="status">
-                      <span className="state-err"><AlertTriangle size={11} />{t('kira.run.error', lang)}</span>{' '}
-                      <MessagePrimitive.Content />
-                    </div>
-                  </MessagePrimitive.Root>
-                )
-              }
-              return (
-                <MessagePrimitive.Root className="msg">
-                  <div className="msg-head"><b>Kira</b><span className="num">{formatKiraClockTime(createdAt, lang)}</span></div>
-                  <div className="msg-ai"><MessagePrimitive.Content /></div>
-                  <RunDetailRow run={run} lang={lang} />
-                </MessagePrimitive.Root>
-              )
-            }}
-          </ThreadPrimitive.Messages>
-        </ThreadPrimitive.Viewport>
-        <ComposerPrimitive.Root className="composer">
-          <ComposerPrimitive.Input
-            className="composer-input"
-            placeholder={hasProvider
-              ? t('kira.panel.composerPlaceholder', lang)
-              : t('kira.panel.composerPlaceholderNoProvider', lang)}
-            aria-label={t('kira.panel.send', lang)}
-            rows={1}
-          />
-          <ComposerPrimitive.Send className="send" aria-label={t('kira.panel.send', lang)}>
-            <ArrowUp size={14} />
-          </ComposerPrimitive.Send>
-        </ComposerPrimitive.Root>
-        <div className={hasProvider ? 'composer-meta' : 'composer-meta is-blocked'}>
-          {hasProvider ? (
-            <span>{providerLabel}</span>
-          ) : (
-            <>
-              <span>{t('kira.panel.noModelStatus', lang)}</span>
-              {/* The empty state already carries this action, so the row only
-                  repeats it once the thread has content and the empty state is
-                  gone: a user who typed and got the "not connected" reply still
-                  has a way out, without two identical buttons on one screen. */}
-              {!isThreadEmpty && (
-                <button type="button" className="quiet-button sm" onClick={onOpenAiSettings}>
-                  {t('kira.panel.connectModel', lang)}
-                </button>
-              )}
-            </>
-          )}
-        </div>
-      </ThreadPrimitive.Root>
-    </AssistantRuntimeProvider>
-  )
-}
+// diffWords/DiffText, RunDetailRow, toKiraThreadMessage and KiraChatThreadView
+// moved to components/application/kira-panel/ (PHA 3 Untitled UI migration,
+// 2026-09-16, see that folder's header comments) — imported above.
 
 /**
  * One open file. Every instance owns its own board state, undo stack, selection
@@ -2445,18 +2171,13 @@ function FileWorkspace({
   const [kiraPanelTab, setKiraPanelTab] = useState<'chat' | 'needs-you'>('chat')
   const [activeKiraThreadId, setActiveKiraThreadId] = useState<string | null>(null)
   // "Gỡ node" guard: set when removeAppliedAiNode refuses a node edited
-  // after Kira created it, until the user confirms via the dialog.
+  // after Kira created it, until the user confirms via the dialog. Dialog is
+  // kit Modal/Dialog (RemoveNodeGuardDialog.tsx, PHA 3 Untitled UI
+  // migration, 2026-09-16) — React Aria's Modal owns its own focus trap and
+  // Escape-to-close, so the `useFocusTrap` ref + manual Escape `keydown`
+  // listener this used to need are dropped (same call DeleteProviderDialog
+  // made in PHA 1).
   const [pendingRemoveNodeGuard, setPendingRemoveNodeGuard] = useState<{ nodeKind: GraphNodeKind; nodeId: string } | null>(null)
-  const removeNodeGuardDialogRef = useRef<HTMLElement>(null)
-  useFocusTrap(removeNodeGuardDialogRef, Boolean(pendingRemoveNodeGuard))
-  useEffect(() => {
-    if (!pendingRemoveNodeGuard) return
-    function handleKeydown(event: KeyboardEvent) {
-      if (event.key === 'Escape') setPendingRemoveNodeGuard(null)
-    }
-    window.addEventListener('keydown', handleKeydown)
-    return () => window.removeEventListener('keydown', handleKeydown)
-  }, [pendingRemoveNodeGuard])
   const kiraPanelWidth = useKiraPanelWidthStore((state) => state.width)
   const setKiraPanelWidth = useKiraPanelWidthStore((state) => state.setWidth)
   const [lastSavedHash, setLastSavedHash] = useState(() => JSON.stringify(initialProject))
@@ -6507,55 +6228,12 @@ function FileWorkspace({
     }
   }
 
-  function renderKiraThreadList() {
-    const sorted = [...aiPanelState.threads].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-    return (
-      <>
-        <div className="list-tools">
-          <button
-            type="button"
-            className="quiet-button sm"
-            onClick={() => {
-              setActiveKiraThreadId(null)
-              setKiraPanelTab('chat')
-            }}
-          >
-            <Plus size={11} />
-            {t('kira.panel.newThread', lang)}
-          </button>
-        </div>
-        {sorted.length > 0 && (
-          <ul className="list">
-            {sorted.map((thread) => (
-              <li key={thread.id}>
-                <button
-                  type="button"
-                  className={thread.id === activeKiraThreadId ? 'thread-row is-current' : 'thread-row'}
-                  aria-current={thread.id === activeKiraThreadId ? 'true' : undefined}
-                  onClick={() => {
-                    setActiveKiraThreadId(thread.id)
-                    setKiraPanelTab('chat')
-                  }}
-                >
-                  <strong>{thread.title}</strong>
-                  <span className="when">{formatKiraClockTime(thread.updatedAt, lang)}</span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </>
-    )
-  }
-
-  // ---------------------------------------------------------------------
-  // "Cần bạn" tab (mockup.js changesView) — kira/README.md §8. Scope cuts
-  // from the mockup, noted in the report: no per-changeset collapse (every
-  // ChangeSet renders in full), no "Đã xử lý" fold for terminal items
-  // (everything stays visible with its own status label instead — nothing
-  // hidden, just less progressive disclosure), and "View on canvas" only
-  // selects the node (no auto-pan camera move).
-  // ---------------------------------------------------------------------
+  // renderKiraThreadList / renderChangeItem / renderSkillCheckpoint /
+  // renderChangeSetSection / renderKiraChangesTab moved to
+  // components/application/kira-panel/ (PHA 3 Untitled UI migration,
+  // 2026-09-16, see that folder's header comments) — imported above.
+  // viewNodeOnCanvas and targetNodeTitle stay here (still plain FileWorkspace
+  // handlers/selectors, passed down as props to the new components).
   function viewNodeOnCanvas(nodeKind: GraphNodeKind, nodeId: string) {
     if (nodeKind === 'idea') setSelection({ type: 'idea', id: nodeId })
     else if (nodeKind === 'image') setSelection({ type: 'image', id: nodeId })
@@ -6564,364 +6242,90 @@ function FileWorkspace({
     else setSelection({ type: 'placeholder', id: nodeId })
   }
 
-  function renderChangeItem(changeSet: AiChangeSet, item: AiChangeItem) {
-    if (item.kind === 'create-node') {
-      return (
-        <li className="item" key={item.id}>
-          <span className="op"><Plus size={11} /></span>
-          <div className="item-line">
-            <div>
-              <span className="item-kind">{t('kira.change.itemCreateNode', lang)}</span>
-              <span className="item-target">{item.title}</span>
-            </div>
-            <span className="item-status state-ok">
-              <Check size={11} />
-              {item.status === 'applied' ? t('kira.change.statusApplied', lang) : t('kira.change.statusRemoved', lang)}
-            </span>
-          </div>
-          {item.status === 'applied' && (
-            <div className="item-body">
-              {item.editedByUserAfterApply && (
-                <p className="stale-note"><AlertTriangle size={11} className="ic" /><span>{t('kira.change.editedGuard', lang)}</span></p>
-              )}
-              <div className="item-foot">
-                <button type="button" className="quiet-button sm" onClick={() => viewNodeOnCanvas(item.nodeKind, item.nodeId)}>
-                  <LocateFixed size={11} />
-                  {t('kira.change.viewOnCanvas', lang)}
-                </button>
-                <div className="acts">
-                  <button type="button" className="quiet-button sm" onClick={() => removeAppliedAiNode(item.nodeKind, item.nodeId)}>
-                    {t('kira.change.removeNode', lang)}
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-        </li>
-      )
-    }
-
-    if (item.kind === 'edit-text') {
-      const isPending = item.status === 'pending'
-      const isStale = item.status === 'stale'
-      return (
-        <li className={isPending || isStale ? 'item is-focused' : 'item'} key={item.id} aria-current={isPending ? 'true' : undefined}>
-          <span className="op"><Pencil size={11} /></span>
-          <div className="item-line">
-            <div>
-              <span className="item-kind">{t('kira.change.itemEditText', lang)}</span>
-              <span className="item-target">{targetNodeTitle(item.targetNodeKind, item.targetNodeId)}</span>
-            </div>
-            <span className={isStale ? 'item-status state-attn' : isPending ? 'item-status state-wait' : 'item-status state-ok'}>
-              {isStale && <AlertTriangle size={11} />}
-              {isStale ? t('kira.change.statusStale', lang) : isPending ? t('kira.change.statusPending', lang) : t(`kira.change.status${item.status === 'accepted' ? 'Accepted' : 'Rejected'}`, lang)}
-            </span>
-          </div>
-          {(isPending || isStale) && (
-            <div className="item-body">
-              {isStale && <p className="item-summary-line"><AlertTriangle size={11} className="ic" />{t('kira.change.staleNote', lang)}</p>}
-              {isPending && <DiffText before={item.before} after={item.after} />}
-              <div className="item-foot">
-                <button type="button" className="quiet-button sm" onClick={() => viewNodeOnCanvas(item.targetNodeKind, item.targetNodeId)}>
-                  <LocateFixed size={11} />
-                  {t('kira.change.viewOnCanvas', lang)}
-                </button>
-                <div className="acts">
-                  <button type="button" className="quiet-button sm" onClick={() => rejectChangeItem(changeSet.id, item.id)}>
-                    {t('kira.change.reject', lang)}
-                  </button>
-                  {isPending && (
-                    <button type="button" className="primary-button sm" onClick={() => acceptChangeItem(changeSet.id, item.id)}>
-                      {t('kira.change.accept', lang)}
-                    </button>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
-        </li>
-      )
-    }
-
-    if (item.kind === 'edit-palette') {
-      const isPending = item.status === 'pending'
-      const isStale = item.status === 'stale'
-      return (
-        <li className={isPending || isStale ? 'item is-focused' : 'item'} key={item.id}>
-          <span className="op"><Palette size={11} /></span>
-          <div className="item-line">
-            <div>
-              <span className="item-kind">{t('kira.change.itemEditPalette', lang)}</span>
-              <span className="item-target">{targetNodeTitle('palette', item.targetNodeId)}</span>
-            </div>
-            <span className={isStale ? 'item-status state-attn' : isPending ? 'item-status state-wait' : 'item-status state-ok'}>
-              {isStale && <AlertTriangle size={11} />}
-              {isStale ? t('kira.change.statusStale', lang) : isPending ? t('kira.change.statusPending', lang) : t(`kira.change.status${item.status === 'accepted' ? 'Accepted' : 'Rejected'}`, lang)}
-            </span>
-          </div>
-          {(isPending || isStale) && (
-            <div className="item-body">
-              {isStale && <p className="item-summary-line"><AlertTriangle size={11} className="ic" />{t('kira.change.staleNote', lang)}</p>}
-              {isPending && (
-                <div className="pal-compare">
-                  <span className="lbl">{t('kira.change.before', lang)}</span>
-                  <span className="swatches">{item.beforeColors.map((color, index) => <i key={index} style={{ background: color }} />)}</span>
-                  <span className="lbl">{t('kira.change.after', lang)}</span>
-                  <span className="swatches">{item.afterColors.map((color, index) => <i key={index} style={{ background: color }} />)}</span>
-                </div>
-              )}
-              <div className="item-foot">
-                <button type="button" className="quiet-button sm" onClick={() => viewNodeOnCanvas('palette', item.targetNodeId)}>
-                  <LocateFixed size={11} />
-                  {t('kira.change.viewOnCanvas', lang)}
-                </button>
-                <div className="acts">
-                  <button type="button" className="quiet-button sm" onClick={() => rejectChangeItem(changeSet.id, item.id)}>
-                    {t('kira.change.reject', lang)}
-                  </button>
-                  {isPending && (
-                    <button type="button" className="primary-button sm" onClick={() => acceptChangeItem(changeSet.id, item.id)}>
-                      {t('kira.change.accept', lang)}
-                    </button>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
-        </li>
-      )
-    }
-
-    // delete-node
-    const isPending = item.status === 'pending'
-    return (
-      <li className={isPending ? 'item is-focused' : 'item'} key={item.id}>
-        <span className="op is-delete"><Trash2 size={11} /></span>
-        <div className="item-line">
-          <div>
-            <span className="item-kind is-delete">{t('kira.change.itemDeleteNode', lang)}</span>
-            <span className="item-target">{item.targetTitle}</span>
-          </div>
-          <span className={isPending ? 'item-status state-wait' : 'item-status state-ok'}>
-            {isPending ? t('kira.change.statusPending', lang) : t(`kira.change.status${item.status === 'accepted' ? 'Accepted' : 'Kept'}`, lang)}
-          </span>
-        </div>
-        {isPending && (
-          <div className="item-body">
-            {typeof item.linkCountAffected === 'number' && item.linkCountAffected > 0 && (
-              <p className="item-summary-line">{t('kira.change.linksAffected', lang, { count: String(item.linkCountAffected) })}</p>
-            )}
-            <div className="item-foot">
-              <button type="button" className="quiet-button sm" onClick={() => viewNodeOnCanvas(item.targetNodeKind, item.targetNodeId)}>
-                <LocateFixed size={11} />
-                {t('kira.change.viewOnCanvas', lang)}
-              </button>
-              <div className="acts">
-                <button type="button" className="quiet-button sm" onClick={() => keepDeletedNode(changeSet.id, item.id)}>
-                  {t('kira.change.keepNode', lang)}
-                </button>
-                <button type="button" className="danger-button sm" onClick={() => acceptChangeItem(changeSet.id, item.id)}>
-                  {t('kira.change.deleteNode', lang)}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-      </li>
-    )
-  }
-
-  // A waiting skill checkpoint (e.g. a multi-step pipeline paused for
-  // review). Bug fix: needsYouCount already folded these into the badge
-  // total, but renderKiraChangesTab never rendered anything for them — the
-  // badge showed a number the tab had nothing to show. Deliberate minimal
-  // placeholder per product call below (not "exclude checkpoints from the
-  // count", since DECISIONS.md #6 wants one number that includes them):
-  // shows skill + step, and only a "Seen" dismiss action, since there is no
-  // real stop/resume API for the skill harness yet.
-  function renderSkillCheckpoint(checkpoint: AiSkillCheckpoint) {
-    return (
-      <li className="item is-focused" key={checkpoint.id} aria-current="true">
-        <span className="op"><Pause size={11} /></span>
-        <div className="item-line">
-          <div>
-            <span className="item-kind">{checkpoint.skill}</span>
-            <span className="item-target">{checkpoint.stepLabel}</span>
-          </div>
-          <span className="item-status state-wait">{t('kira.checkpoint.statusWaiting', lang)}</span>
-        </div>
-        <div className="item-body">
-          <div className="item-foot">
-            <div className="acts">
-              <button type="button" className="quiet-button sm" onClick={() => dismissKiraCheckpoint(checkpoint.id)}>
-                {t('kira.checkpoint.dismiss', lang)}
-              </button>
-            </div>
-          </div>
-        </div>
-      </li>
-    )
-  }
-
   function targetNodeTitle(nodeKind: GraphNodeKind, nodeId: string): string {
     return findNodeRecordByKind(nodeKind, nodeId)?.title ?? nodeId
-  }
-
-  function renderChangeSetSection(changeSet: AiChangeSet) {
-    const run = aiPanelState.runs.find((candidate) => candidate.id === changeSet.runId)
-    const deleteItems = changeSet.items.filter((item): item is Extract<AiChangeItem, { kind: 'delete-node' }> => item.kind === 'delete-node')
-    const mainItems = changeSet.items.filter((item) => item.kind !== 'delete-node')
-    const bulk = aiPanelBulkAcceptable(changeSet)
-    return (
-      <section className="changeset" aria-label={changeSet.title} key={changeSet.id}>
-        <div className="cs-head">
-          <h4>{changeSet.title}</h4>
-          <span className="row-sub">{run ? `${run.modelLabel} · ${formatKiraClockTime(run.startedAt, lang)}` : formatKiraClockTime(changeSet.createdAt, lang)}</span>
-        </div>
-        {bulk.length > 0 && (
-          <div className="cs-actions">
-            <button type="button" className="quiet-button sm" onClick={() => acceptChangeSetBulk(changeSet.id)}>
-              <Check size={11} />
-              {t('kira.change.acceptAll', lang, { count: String(bulk.length) })}
-            </button>
-          </div>
-        )}
-        {mainItems.some((item) => item.kind === 'edit-text' || item.kind === 'edit-palette') && (
-          <p className="cs-rule">{t('kira.change.bulkRule', lang)}</p>
-        )}
-        {mainItems.length > 0 && <ul className="list">{mainItems.map((item) => renderChangeItem(changeSet, item))}</ul>}
-        {deleteItems.length > 0 && (
-          <>
-            <div className="group-label"><span>{t('kira.change.deleteRule', lang)}</span><span className="num">{deleteItems.length}</span></div>
-            <ul className="list">{deleteItems.map((item) => renderChangeItem(changeSet, item))}</ul>
-          </>
-        )}
-      </section>
-    )
-  }
-
-  function renderKiraChangesTab() {
-    const checkpoints = aiPanelVisibleCheckpoints(aiPanelState)
-    if (aiPanelState.changeSets.length === 0 && checkpoints.length === 0) {
-      return (
-        <div className="kp-empty">
-          <Check size={22} />
-          <h4>{t('kira.panel.tabNeedsYou', lang)}</h4>
-          <p>{t('kira.panel.needsYouEmpty', lang)}</p>
-        </div>
-      )
-    }
-    const summary = aiPanelSummaryLine(aiPanelState)
-    const sortedChangeSets = [...aiPanelState.changeSets].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-    return (
-      <>
-        <p className="cs-summary">
-          <span><b>{summary.needsYou}</b> {t('kira.change.needsYou', lang)}</span>
-          <span className="muted">·</span>
-          <span><b>{summary.applied}</b> {t('kira.change.applied', lang)}</span>
-          {summary.accepted > 0 && (
-            <>
-              <span className="muted">·</span>
-              <span><b>{summary.accepted}</b> {t('kira.change.accepted', lang)}</span>
-            </>
-          )}
-        </p>
-        {checkpoints.length > 0 && (
-          <section className="changeset" aria-label={t('kira.checkpoint.groupLabel', lang)}>
-            <div className="group-label">
-              <span>{t('kira.checkpoint.groupLabel', lang)}</span>
-              <span className="num">{checkpoints.length}</span>
-            </div>
-            <ul className="list">{checkpoints.map((checkpoint) => renderSkillCheckpoint(checkpoint))}</ul>
-          </section>
-        )}
-        {sortedChangeSets.map((changeSet) => renderChangeSetSection(changeSet))}
-      </>
-    )
   }
 
   function renderKiraPanel() {
     const routeForLabel = selectAiProviderForTask('generate_node', aiProviders, aiRoutingMode, selectedAiProviderId, undefined)
     const routedProviderForLabel = routeForLabel.providerId ? aiProviders.find((provider) => provider.id === routeForLabel.providerId) : undefined
     const providerLabel = routedProviderForLabel?.name ?? ''
+    const tt = (key: string, vars?: Record<string, string>) => t(key, lang, vars)
+    const formatClockTime = (iso: string) => formatKiraClockTime(iso, lang)
     return (
-      <div
-        className={kiraPanelMountState.entered ? 'kira-panel is-entered' : 'kira-panel'}
-        style={{ '--kira-panel-width': `${kiraPanelWidth}px` } as React.CSSProperties}
-        aria-label="Kira"
-      >
-        <div className="kp-head">
-          <div className="kp-title">
-            <h3>Kira</h3>
-            <Segmented
-              className="kp-tabs"
-              ariaLabel="Kira"
-              value={kiraPanelTab}
-              onChange={setKiraPanelTab}
-              options={[
-                { value: 'chat', label: t('kira.panel.tabChat', lang) },
-                {
-                  value: 'needs-you',
-                  label: (
-                    <>
-                      {t('kira.panel.tabNeedsYou', lang)}
-                      {kiraNeedsYouCount > 0 && <span className="count">{kiraNeedsYouCount}</span>}
-                    </>
-                  ),
-                },
-              ]}
+      <KiraPanel
+        width={kiraPanelWidth}
+        isEntered={kiraPanelMountState.entered}
+        activeTab={kiraPanelTab}
+        needsYouCount={kiraNeedsYouCount}
+        closeLabel={t('kira.panel.closeButton', lang)}
+        chatLabel={t('kira.panel.tabChat', lang)}
+        needsYouLabel={t('kira.panel.tabNeedsYou', lang)}
+        onTabChange={setKiraPanelTab}
+        onClose={() => onKiraPanelOpenChange(false)}
+        onResizeStart={(event) => {
+          event.preventDefault()
+          const startX = event.clientX
+          const startWidth = kiraPanelWidth
+          function handleMove(moveEvent: PointerEvent) {
+            setKiraPanelWidth(startWidth - (moveEvent.clientX - startX))
+          }
+          function handleUp() {
+            window.removeEventListener('pointermove', handleMove)
+            window.removeEventListener('pointerup', handleUp)
+          }
+          window.addEventListener('pointermove', handleMove)
+          window.addEventListener('pointerup', handleUp)
+        }}
+        chatBody={
+          <>
+            <KiraThreadList
+              threads={aiPanelState.threads}
+              activeThreadId={activeKiraThreadId}
+              t={tt}
+              formatClockTime={formatClockTime}
+              onNewThread={() => {
+                setActiveKiraThreadId(null)
+                setKiraPanelTab('chat')
+              }}
+              onSelectThread={(threadId) => {
+                setActiveKiraThreadId(threadId)
+                setKiraPanelTab('chat')
+              }}
             />
-            <span className="spacer" />
-            <button
-              type="button"
-              className="icon-button sm"
-              aria-label={t('kira.panel.closeButton', lang)}
-              onClick={() => onKiraPanelOpenChange(false)}
-            >
-              <X size={13} />
-            </button>
-          </div>
-        </div>
-        <div className="kp-body">
-          {kiraPanelTab === 'chat' ? (
-            <>
-              {renderKiraThreadList()}
-              <KiraChatThreadView
-                key={kiraActiveThread?.id ?? 'draft'}
-                lang={lang}
-                aiPanelState={aiPanelState}
-                threadId={kiraActiveThread?.id ?? 'draft'}
-                providerLabel={providerLabel}
-                hasProvider={Boolean(routedProviderForLabel)}
-                onSend={sendKiraChatMessage}
-                onOpenAiSettings={openAiProviderSettings}
-              />
-            </>
-          ) : (
-            renderKiraChangesTab()
-          )}
-        </div>
-        <div
-          className="kira-panel-resize-handle"
-          aria-hidden="true"
-          onPointerDown={(event) => {
-            event.preventDefault()
-            const startX = event.clientX
-            const startWidth = kiraPanelWidth
-            function handleMove(moveEvent: PointerEvent) {
-              setKiraPanelWidth(startWidth - (moveEvent.clientX - startX))
-            }
-            function handleUp() {
-              window.removeEventListener('pointermove', handleMove)
-              window.removeEventListener('pointerup', handleUp)
-            }
-            window.addEventListener('pointermove', handleMove)
-            window.addEventListener('pointerup', handleUp)
-          }}
-        />
-      </div>
+            <KiraChatThreadView
+              key={kiraActiveThread?.id ?? 'draft'}
+              aiPanelState={aiPanelState}
+              threadId={kiraActiveThread?.id ?? 'draft'}
+              providerLabel={providerLabel}
+              hasProvider={Boolean(routedProviderForLabel)}
+              t={tt}
+              formatClockTime={formatClockTime}
+              emptyExamples={kiraSuggestions.board.slice(0, 2)}
+              onSend={sendKiraChatMessage}
+              onOpenAiSettings={openAiProviderSettings}
+            />
+          </>
+        }
+        changesBody={
+          <KiraChangesTab
+            aiPanelState={aiPanelState}
+            t={tt}
+            formatClockTime={formatClockTime}
+            targetTitle={targetNodeTitle}
+            onViewOnCanvas={viewNodeOnCanvas}
+            onAccept={acceptChangeItem}
+            onReject={rejectChangeItem}
+            onKeepNode={keepDeletedNode}
+            onRemoveNode={removeAppliedAiNode}
+            onAcceptBulk={acceptChangeSetBulk}
+            onDismissCheckpoint={dismissKiraCheckpoint}
+          />
+        }
+      />
     )
   }
+
 
   function renderKiraPanelDockStatus() {
     if (isKiraPanelOpen || kiraNeedsYouCount === 0) return null
@@ -7216,36 +6620,12 @@ function FileWorkspace({
         onCancel={() => setPendingDelete(null)}
         onConfirm={confirmPendingDelete}
       />
-      {pendingRemoveNodeGuard && (
-        <div className="dialog-overlay">
-          <section
-            ref={removeNodeGuardDialogRef}
-            tabIndex={-1}
-            aria-describedby="remove-ai-node-dialog-copy"
-            aria-labelledby="remove-ai-node-dialog-title"
-            aria-modal="true"
-            className="confirm-dialog"
-            role="alertdialog"
-          >
-            <div>
-              <h2 id="remove-ai-node-dialog-title">{t('kira.change.removeNode', lang)}</h2>
-              <p id="remove-ai-node-dialog-copy">{t('kira.change.editedGuard', lang)}</p>
-            </div>
-            <div className="dialog-actions">
-              <button className="secondary-button" type="button" onClick={() => setPendingRemoveNodeGuard(null)}>
-                {t('kira.change.editedGuardCancel', lang)}
-              </button>
-              <button
-                className="danger-button"
-                type="button"
-                onClick={() => removeAppliedAiNode(pendingRemoveNodeGuard.nodeKind, pendingRemoveNodeGuard.nodeId, true)}
-              >
-                {t('kira.change.editedGuardConfirm', lang)}
-              </button>
-            </div>
-          </section>
-        </div>
-      )}
+      <RemoveNodeGuardDialog
+        guard={pendingRemoveNodeGuard}
+        t={(key, vars) => t(key, lang, vars)}
+        onCancel={() => setPendingRemoveNodeGuard(null)}
+        onConfirm={(nodeKind, nodeId) => removeAppliedAiNode(nodeKind, nodeId, true)}
+      />
       {cropTargetImageId && (() => {
         const image = images.find((candidate) => candidate.id === cropTargetImageId)
         if (!image) return null
@@ -9922,6 +9302,14 @@ function GraphCanvas({
         : t('kira.placeholderBoard', lang)
 
     return (
+      // Wrapped in `.kira-uikit` + `UiKitPortalHost` (PHA 3 Untitled UI
+      // migration, 2026-09-16) — same reasoning as KiraPanel.tsx: `.kira-dock`
+      // stays `position: absolute` against `.app-shell` regardless of this
+      // (position: static) wrapper div. Most of the dock's own controls stay
+      // hand-rolled on purpose (see the per-control notes below and the PHA 3
+      // report) — this wrapper exists so the two spots that DID move to kit
+      // `Button` get the Tailwind preflight reset + themed portal container.
+      <UiKitPortalHost className="kira-uikit">
       <div
         ref={kiraDockRef}
         className={[
@@ -10127,25 +9515,35 @@ function GraphCanvas({
               </div>
 
               <div className="kira-dock-footer-right">
-                <button
-                  type="button"
-                  className="kira-dock-submit"
-                  aria-label={t('kira.askLabel', lang)}
-                  title="Send prompt (Enter)"
-                  disabled={!canSubmitKira()}
-                  onClick={() => void submitKiraSession()}
-                >
-                  {isThinking ? <KiraMark size={13} state="thinking" /> : <ArrowUp size={14} />}
-                </button>
-                <button
-                  type="button"
-                  className="kira-dock-close-btn"
-                  aria-label="Close Kira"
-                  title="Close (Esc)"
-                  onClick={closeKiraSession}
-                >
-                  <X size={13} />
-                </button>
+                {/* "nút gửi" — kit Button + Tooltip (PHA 3, replaces the old
+                    native `title=` tooltip — kit Button's props don't accept
+                    `title`). Icon passed as an already-instantiated element
+                    (not a component reference) so kit's own data-icon
+                    size/color utilities never attach — this keeps the exact
+                    13/14px icon + 26px box from the Ink & Paper spec instead
+                    of kit's 20px default (see .kira-dock-submit's comment in
+                    styles.css). */}
+                <Tooltip title="Send prompt (Enter)" delay={200}>
+                  <Button
+                    color="tertiary"
+                    size="sm"
+                    className="kira-dock-submit"
+                    aria-label={t('kira.askLabel', lang)}
+                    isDisabled={!canSubmitKira()}
+                    onPress={() => void submitKiraSession()}
+                    iconLeading={isThinking ? <KiraMark size={13} state="thinking" /> : <ArrowUp size={14} />}
+                  />
+                </Tooltip>
+                <Tooltip title="Close (Esc)" delay={200}>
+                  <Button
+                    color="tertiary"
+                    size="sm"
+                    className="kira-dock-close-btn"
+                    aria-label="Close Kira"
+                    onPress={closeKiraSession}
+                    iconLeading={<X size={13} />}
+                  />
+                </Tooltip>
               </div>
             </div>
           </div>
@@ -10199,6 +9597,7 @@ function GraphCanvas({
           </div>
         )}
       </div>
+      </UiKitPortalHost>
     )
   }
 
