@@ -8110,6 +8110,27 @@ textarea {
   color: var(--text-muted);
 }
 
+/* PHA 3 fix (2026-09-16): same bug and same fix as `.library-uikit-host`
+   above (see its comment) — `UiKitPortalHost`'s wrapper div is `position:
+   static`, so any self-positioned overlay rendered inside it (`.kira-panel`,
+   or RemoveNodeGuardDialog.tsx's kit `Modal`) that sits as a direct sibling
+   of `.content-region` (under `.workspace`, or directly under `.app-shell`)
+   painted fully behind the canvas despite its own z-index, because a static
+   box always paints below a positioned sibling regardless of DOM order, and
+   `isolation: isolate` traps that z-index inside the wrapper's own stacking
+   context instead of letting it compete with `.content-region`. `display:
+   contents` removes the wrapper's box so the overlay's own `position` and
+   `z-index` resolve directly against its real ancestor again, exactly like
+   before `UiKitPortalHost` wrapped it. Shared by every `UiKitPortalHost`
+   usage that has no already-positioned, already-elevated ancestor of its
+   own to rely on (unlike SettingsView.tsx's, nested inside `.dialog-overlay`,
+   or the Kira dock's, nested inside the already-elevated `.canvas-bottom-bar`
+   toolbar) — apply it wherever a new bare `UiKitPortalHost` is added
+   directly under `.workspace`/`.app-shell` and needs its own z-index to win. */
+.uikit-passthrough-host {
+  display: contents;
+}
+
 /* Panel shell — same floating-glass language as .inspector (DESIGN.md §5
    Object Card Rule: a real overlay surface, not a config group). */
 .kira-panel {
