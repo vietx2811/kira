@@ -162,6 +162,43 @@
   --outline-color-brand-solid_hover: var(--color-bg-brand-solid_hover);
 }
 
+/* Dark-mode fix (found during PHA 1 Settings migration, 2026-09-16 — not
+   part of the original PHA 0 pass, kept narrowly scoped rather than
+   rewriting the whole file's formula; see CLAUDE.md, this file is still
+   "PHA 0 — TẠM" pending Art Director's full formula).
+
+   BUG: the block above overrides --color-text-brand-secondary/-tertiary
+   (and their _hover/_alt siblings) unconditionally, with a value built to
+   read as dark text on a LIGHT surface (brand-700/600, i.e.
+   color-mix(..., black) — see the brand-50..950 comment above: darker
+   toward 950 regardless of mode). theme.css's own dark-mode block (grep
+   `--color-text-brand-secondary: var(--color-neutral-300)` around line 662)
+   already has the correct dark-mode answer for these specific tokens —
+   plain light neutral text, not a brand-tinted one — but this file's
+   unconditional override shadows it in BOTH modes, so dark mode was
+   rendering ~1.5:1 text (measured on Settings' active nav tab: kit `Tabs`
+   type="line" applies text-brand-secondary to the selected tab label,
+   Untitled UI React's own choice, not a KIRA-specific class), far under
+   WCAG's 4.5:1 floor. Same class of bug hits every `text-brand-tertiary`/
+   `text-brand-secondary_hover`/`text-brand-tertiary_alt` use in dark mode
+   (e.g. the "Get an API key" links, "Open it again"/"cancel" links, and
+   "Use an API key instead" disclosure summary added in
+   components/application/settings/).
+
+   FIX SCOPE: only the 4 TEXT tokens actually proven to fail contrast are
+   set here, copied verbatim from theme.css's own dark-mode values (not
+   invented) — the ~25 other brand-derived tokens this file overrides
+   (bg/border/fg/icon/focus-ring) are NOT touched: none were measured
+   failing, and picking the right dark-mode formula for those is a real
+   design call (exactly what CLAUDE.md flags as pending Art Director
+   review), not a mechanical copy like this one. */
+.app-shell[data-color-mode="dark"] {
+  --color-text-brand-secondary: var(--color-neutral-300);
+  --color-text-brand-secondary_hover: var(--color-neutral-200);
+  --color-text-brand-tertiary: var(--color-neutral-400);
+  --color-text-brand-tertiary_alt: var(--color-neutral-50);
+}
+
 /* @theme (không inline) CHỈ để Tailwind biết tên token brand-* mà sinh
    utility class (.bg-brand-500, .text-brand-600...) cho component ngoài
    phạm vi pha 0 — giá trị THẬT SỰ dùng lúc render luôn lấy từ khối

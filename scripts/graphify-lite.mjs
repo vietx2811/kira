@@ -44,7 +44,43 @@ function commitSha() {
   }
 }
 
+function walkSourceFiles(rootDir) {
+  // Recursively collects every .ts/.tsx file under rootDir, skipping any
+  // node_modules directory at any depth. Returns paths relative to repoRoot,
+  // sorted for stable, diffable output.
+  const results = []
+  function walk(dir) {
+    let entries
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true })
+    } catch {
+      return
+    }
+    for (const entry of entries) {
+      if (entry.name === 'node_modules') continue
+      const full = path.join(dir, entry.name)
+      if (entry.isDirectory()) {
+        walk(full)
+      } else if (entry.isFile() && (full.endsWith('.ts') || full.endsWith('.tsx'))) {
+        results.push(full)
+      }
+    }
+  }
+  walk(rootDir)
+  return results.sort().map((p) => path.relative(repoRoot, p))
+}
+
 const mainTsx = readFileOrExit(MAIN_TSX)
+// main.tsx is a 20k-line monolith being broken up incrementally (see
+// components/application/settings/ — PHA 1 Untitled UI migration,
+// 2026-09-16): a Tauri invoke() call, or a JS-set CSS custom property like
+// Segmented's --seg-count/--seg-index, can now legitimately live in an
+// extracted component file instead of main.tsx. Sections 1 and 2 below treat
+// "found literally anywhere under apps/desktop/src" as satisfying those
+// checks, not just "found in main.tsx", so an extraction doesn't produce a
+// false-positive error/warning purely for moving code to its own file.
+const desktopSrcFiles = walkSourceFiles(path.join(repoRoot, 'apps/desktop/src'))
+const desktopSrcConcat = desktopSrcFiles.map((relPath) => readFileOrExit(path.join(repoRoot, relPath))).join('\n')
 const stylesCss = readFileOrExit(STYLES_CSS)
 const libRs = readFileOrExit(LIB_RS)
 
@@ -157,9 +193,10 @@ for (const name of commandFns) {
     tauriErrors.push(`#[tauri::command] fn '${name}' is never registered in generate_handler![...]`)
   }
 }
+const invokedAnywhere = extractInvokedNames(desktopSrcConcat)
 for (const name of registered) {
-  if (!invoked.has(name)) {
-    tauriWarnings.push(`'${name}' is registered and has a command fn, but no literal invoke('${name}') was found in main.tsx (may be called via a non-literal expression, from Rust itself, or by the OS opening a file)`)
+  if (!invokedAnywhere.has(name)) {
+    tauriWarnings.push(`'${name}' is registered and has a command fn, but no literal invoke('${name}') was found in main.tsx or any file under apps/desktop/src (may be called via a non-literal expression, from Rust itself, or by the OS opening a file)`)
   }
 }
 
@@ -235,6 +272,10 @@ function extractJsSetCssVars(ts) {
   // same shape) returns an object literal keyed by CSS custom-property
   // names, applied as inline style per project. A var() resolved only
   // through this path has no :root declaration and must not be flagged.
+  // Also matches a component setting a one-off custom property inline (e.g.
+  // Segmented.tsx's `style={{ '--seg-count': ..., '--seg-index': ... }}`),
+  // wherever in apps/desktop/src it lives — see the desktopSrcConcat comment
+  // above.
   const names = new Set()
   const re = /['"`](--[a-zA-Z0-9-]+)['"`]\s*:/g
   let m
@@ -252,7 +293,7 @@ say()
 const cssNoComments = stripCssComments(stylesCss)
 const declaredCssVars = extractDeclaredCssVars(cssNoComments)
 const usedCssVars = extractUsedCssVars(cssNoComments)
-const jsSetVars = extractJsSetCssVars(mainTsx)
+const jsSetVars = extractJsSetCssVars(desktopSrcConcat)
 
 say(`declared in styles.css :root: ${declaredCssVars.size}`)
 say(`set from JS (buildProjectAppearanceStyle-style): ${jsSetVars.size}`)
@@ -323,9 +364,9 @@ function providerDispatchedInRust(rs, type) {
 say('## 3. AI provider type <-> Rust dispatch (informational, human review — no error/warning criteria set)')
 say()
 
-const providerTypes = extractProviderTypeUnion(mainTsx)
+const providerTypes = extractProviderTypeUnion(desktopSrcConcat)
 if (providerTypes.length === 0) {
-  say('Could not locate `type AiProviderType = ...` in main.tsx — skipped.')
+  say('Could not locate `type AiProviderType = ...` in main.tsx or any file under apps/desktop/src — skipped.')
 } else {
   say(`AiProviderType union: ${providerTypes.length} types`)
   for (const type of providerTypes) {
@@ -419,37 +460,12 @@ function extractClassNameLiteralsAndPrefixes(ts) {
   return { literals, prefixes }
 }
 
-function walkSourceFiles(rootDir) {
-  // Recursively collects every .ts/.tsx file under rootDir, skipping any
-  // node_modules directory at any depth. Returns paths relative to repoRoot,
-  // sorted for stable, diffable output.
-  const results = []
-  function walk(dir) {
-    let entries
-    try {
-      entries = fs.readdirSync(dir, { withFileTypes: true })
-    } catch {
-      return
-    }
-    for (const entry of entries) {
-      if (entry.name === 'node_modules') continue
-      const full = path.join(dir, entry.name)
-      if (entry.isDirectory()) {
-        walk(full)
-      } else if (entry.isFile() && (full.endsWith('.ts') || full.endsWith('.tsx'))) {
-        results.push(full)
-      }
-    }
-  }
-  walk(rootDir)
-  return results.sort().map((p) => path.relative(repoRoot, p))
-}
-
 say('## 4. CSS class <-> className candidates (informational only — not an error)')
 say()
 
-const DESKTOP_SRC_DIR = path.join(repoRoot, 'apps/desktop/src')
-const scannedFiles = walkSourceFiles(DESKTOP_SRC_DIR)
+// walkSourceFiles/desktopSrcFiles computed once, up top — reused here so
+// this list stays identical to what sections 1 and 2 scanned.
+const scannedFiles = desktopSrcFiles
 
 const cssClasses = extractSelectorClassNames(cssNoComments)
 const tsClassLiterals = new Set()

@@ -12,6 +12,45 @@ import StarterKit from '@tiptap/starter-kit'
 import TiptapLink from '@tiptap/extension-link'
 import TiptapPlaceholder from '@tiptap/extension-placeholder'
 import { Markdown } from 'tiptap-markdown'
+import { useFocusTrap } from './hooks/useFocusTrap'
+import { Segmented } from './components/Segmented'
+import { SettingsView } from './components/application/settings/SettingsView'
+import {
+  type AiTaskKind,
+  type AiProviderType,
+  type AiAuthMode,
+  type AiProviderStatus,
+  type AiRoutingMode,
+  type AiProviderProfile,
+  type AiSettingsSnapshot,
+  type AiProviderTestResult,
+  type AiModelListResult,
+  type AiGenerationResult,
+  type ExtensionTargetStatus,
+  type ExtensionInstallStatus,
+  type AiTaskRoute,
+  type CodexLoginEvent,
+  aiTaskLabels,
+  aiTaskGroups,
+  aiProviderTypeLabels,
+  aiProviderStatusLabels,
+  aiProviderStatusCopy,
+  aiRoutingLabels,
+  providerConnectionNotes,
+  aiProviderKeyHelp,
+  extensionInstallTargets,
+  extensionStatusForTarget,
+  aiProviderTemplates,
+  addableProviderTypes,
+  primaryProviderTypeOrder,
+  formatMetadataTime,
+  requestCodexLogin,
+  cancelCodexLogin,
+  codexLogout,
+  openClaudeCodeLoginTerminal,
+  onCodexLoginProgress,
+  isCodexLoggedOutError,
+} from './kira/ai/aiProviderDomain'
 import {
   AlertTriangle,
   ArrowDownToLine,
@@ -133,6 +172,13 @@ import {
   visibleCheckpoints as aiPanelVisibleCheckpoints,
 } from './kira/aiPanelModel'
 import { DevRoot } from './kira/dev/DevRoot'
+import './styles/fonts/inter.css'
+// Untitled UI React + Tailwind v4 entry (theme.css + bridge.css + Tailwind
+// utilities, see that file's own header comment on import order and layer
+// precedence). PHA 0 kept this dev-only (imported from UiKitGallery.tsx
+// behind ?uikit) — PHA 1 (2026-09-16) makes SettingsView a real consumer of
+// the kit, so it now has to load for every user, not just ?uikit.
+import './styles/uikit/globals.css'
 import './styles.css'
 
 type Relation = 'supports' | 'contrasts' | 'example' | 'mood' | 'material' | 'reference' | 'related' | 'derived-from' | 'contains'
@@ -631,80 +677,11 @@ type DroppedReferenceTarget =
   | { kind: 'idea'; ideaId: string; position?: Pick<Idea, 'x' | 'y'> }
   | { kind: 'image'; imageId: string }
   | { kind: 'placeholder'; placeholderId: string; position?: Pick<Idea, 'x' | 'y'> }
-type AiTaskKind =
-  | 'tag_reference'
-  | 'classify_reference'
-  | 'find_similar'
-  | 'generate_palette'
-  | 'rebalance_palette'
-  | 'generate_outline'
-  | 'generate_node'
-  | 'summarize_diagram'
-type AiProviderType =
-  | 'apple_foundation'
-  | 'openai'
-  | 'anthropic'
-  | 'gemini'
-  | 'openrouter'
-  | 'ollama'
-  | 'lm_studio'
-  | 'custom_openai_compatible'
-  | 'codex'
-  | 'claude_code'
-type AiAuthMode = 'local' | 'api_key' | 'oauth' | 'openai_compatible'
-type AiProviderStatus = 'connected' | 'unavailable' | 'billing_separate' | 'key_missing'
-type AiRoutingMode = 'local_only' | 'prefer_local' | 'selected_remote'
-type AiProviderProfile = {
-  id: string
-  type: AiProviderType
-  name: string
-  authMode: AiAuthMode
-  baseUrl?: string
-  model: string
-  status: AiProviderStatus
-  secretRef?: string
-  defaultFor: AiTaskKind[]
-  discoveredModels?: string[]
-  lastTestedAt?: string
-  lastMessage?: string
-  userManaged?: boolean
-}
-type AiSettingsSnapshot = {
-  providers: AiProviderProfile[]
-  routingMode: AiRoutingMode
-  selectedProviderId: string
-}
-type AiProviderTestResult = {
-  connected: boolean
-  status: string
-  message: string
-}
-type AiModelListResult = {
-  status: string
-  models: string[]
-}
-type AiGenerationResult = {
-  status: string
-  content: string
-}
-type ExtensionTargetStatus = {
-  installed: boolean
-  disabled: boolean
-  available: boolean
-  detail: string
-  installPath: string
-}
-type ExtensionInstallStatus = {
-  chrome: ExtensionTargetStatus
-  safari: ExtensionTargetStatus
-}
-type AiTaskRoute = {
-  task: AiTaskKind
-  providerId: string | null
-  providerName: string
-  status: AiProviderStatus | 'local_fallback'
-  reason: string
-}
+// AiTaskKind / AiProviderType / AiAuthMode / AiProviderStatus / AiRoutingMode /
+// AiProviderProfile / AiSettingsSnapshot / AiProviderTestResult /
+// AiModelListResult / AiGenerationResult / ExtensionTargetStatus /
+// ExtensionInstallStatus / AiTaskRoute moved to kira/ai/aiProviderDomain.ts
+// (PHA 1 Untitled UI migration, 2026-09-16) — imported above.
 // Tags a canvas-history entry with what produced it, so undoing past it can
 // react to more than just the canvas fields. undoCanvas() reads this off the
 // entry being undone away to revert the matching "Cần bạn" item(s), which
@@ -1031,99 +1008,8 @@ function t(key: string, lang: Lang, vars?: Record<string, string>): string {
   return template.replace(/\{(\w+)\}/g, (match, name) => vars[name] ?? match)
 }
 
-type SegmentedOption<T extends string> = { value: T; label: React.ReactNode; ariaLabel?: string; title?: string; tooltip?: string }
-
-/**
- * One shared segmented control for every "pick one of N" picker in the app —
- * replaces nine hand-rolled variants (view tabs, List/Grid, density, Edit/
- * Discover, outline filter, 3D scope, the language toggle, settings nav) that
- * each reinvented radius, active fill, and transitions differently, and none
- * of which animated the selection. `variant="tabs"` renders a real
- * `role="tablist"`/`role="tab"` group (mutually exclusive *views*);
- * `variant="radio"` renders `role="radiogroup"`/`role="radio"` (mutually
- * exclusive *settings*) — the app previously used `aria-pressed` toggle-button
- * semantics for both, which announces "pressed/not pressed" instead of
- * "2 of 4, selected".
- */
-function Segmented<T extends string>({
-  options,
-  value,
-  onChange,
-  ariaLabel,
-  variant = 'tabs',
-  className,
-}: {
-  options: SegmentedOption<T>[]
-  value: T
-  onChange: (value: T) => void
-  ariaLabel: string
-  variant?: 'tabs' | 'radio'
-  className?: string
-}): React.ReactElement {
-  const groupRole = variant === 'tabs' ? 'tablist' : 'radiogroup'
-  const itemRole = variant === 'tabs' ? 'tab' : 'radio'
-  const activeIndex = Math.max(0, options.findIndex((option) => option.value === value))
-  const rootRef = useRef<HTMLDivElement | null>(null)
-
-  function focusOption(index: number) {
-    const buttons = rootRef.current?.querySelectorAll<HTMLButtonElement>('.segmented-option')
-    buttons?.[index]?.focus()
-  }
-
-  function handleKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
-    // radiogroup also expects vertical arrows to move the selection, per the
-    // WAI-ARIA radio-group pattern; Home/End are the expected shortcuts for
-    // both variants to jump to the first/last option.
-    let nextIndex: number
-    if (event.key === 'ArrowRight' || (variant === 'radio' && event.key === 'ArrowDown')) {
-      nextIndex = (activeIndex + 1) % options.length
-    } else if (event.key === 'ArrowLeft' || (variant === 'radio' && event.key === 'ArrowUp')) {
-      nextIndex = (activeIndex - 1 + options.length) % options.length
-    } else if (event.key === 'Home') {
-      nextIndex = 0
-    } else if (event.key === 'End') {
-      nextIndex = options.length - 1
-    } else {
-      return
-    }
-    event.preventDefault()
-    onChange(options[nextIndex].value)
-    focusOption(nextIndex)
-  }
-
-  return (
-    <div
-      ref={rootRef}
-      className={className ? `segmented ${className}` : 'segmented'}
-      role={groupRole}
-      aria-label={ariaLabel}
-      style={{ '--seg-count': options.length, '--seg-index': activeIndex } as React.CSSProperties}
-      onKeyDown={handleKeyDown}
-    >
-      <span className="segmented-thumb" aria-hidden="true" />
-      {options.map((option, index) => {
-        const selected = option.value === value
-        return (
-          <button
-            key={option.value}
-            type="button"
-            role={itemRole}
-            className={selected ? 'segmented-option is-active' : 'segmented-option'}
-            aria-label={option.ariaLabel}
-            title={option.title}
-            data-tooltip={option.tooltip}
-            aria-selected={variant === 'tabs' ? selected : undefined}
-            aria-checked={variant === 'radio' ? selected : undefined}
-            tabIndex={selected ? 0 : -1}
-            onClick={() => onChange(option.value)}
-          >
-            {option.label}
-          </button>
-        )
-      })}
-    </div>
-  )
-}
+// SegmentedOption / Segmented moved to components/Segmented.tsx (PHA 1
+// Untitled UI migration, 2026-09-16) — imported above.
 
 /** Shared rich-text renderer backing every node's caption — a Tiptap
     instance per visible node, markdown in and out via tiptap-markdown. The
@@ -1736,137 +1622,10 @@ const outlineFilterLabels: Record<OutlineFilter, string> = {
   weak: 'Needs work',
 }
 
-const aiTaskLabels: Record<AiTaskKind, string> = {
-  tag_reference: 'Tag reference',
-  classify_reference: 'Classify reference',
-  find_similar: 'Find similar',
-  generate_palette: 'Generate palette',
-  rebalance_palette: 'Rebalance palette',
-  generate_outline: 'Generate outline',
-  generate_node: 'Generate node',
-  summarize_diagram: 'Summarize diagram',
-}
-
-// Grouped for the provider capability picker so 8 flat checkboxes read as
-// two clusters instead of one dense row (DESIGN.md §2.1 — group before you
-// dump everything at one altitude).
-const aiTaskGroups: { label: string; tasks: AiTaskKind[] }[] = [
-  { label: 'Tagging', tasks: ['tag_reference', 'classify_reference', 'find_similar'] },
-  {
-    label: 'Canvas generation',
-    tasks: ['generate_palette', 'rebalance_palette', 'generate_outline', 'generate_node', 'summarize_diagram'],
-  },
-]
-
-const aiProviderTypeLabels: Record<AiProviderType, string> = {
-  apple_foundation: 'Apple Foundation Models',
-  openai: 'OpenAI',
-  anthropic: 'Anthropic',
-  gemini: 'Gemini',
-  openrouter: 'OpenRouter',
-  ollama: 'Ollama',
-  lm_studio: 'LM Studio',
-  custom_openai_compatible: 'OpenAI-compatible',
-  codex: 'Codex',
-  claude_code: 'Claude Code',
-}
-
-const aiProviderStatusLabels: Record<AiProviderStatus, string> = {
-  connected: 'connected',
-  unavailable: 'unavailable',
-  billing_separate: 'billing separate',
-  key_missing: 'key missing',
-}
-
-const aiProviderStatusCopy: Record<AiProviderStatus, string> = {
-  connected: 'Ready for routed tasks.',
-  unavailable: 'Configured, but not reachable from this device.',
-  billing_separate: 'Subscription and API billing are separate.',
-  key_missing: 'Save a key in secure storage before testing.',
-}
-
-const aiRoutingLabels: Record<AiRoutingMode, string> = {
-  local_only: 'Local only',
-  prefer_local: 'Prefer local, fallback remote',
-  selected_remote: 'Selected remote provider',
-}
-
-const providerConnectionNotes = [
-  {
-    id: 'openai',
-    title: 'OpenAI / ChatGPT',
-    providerId: 'openai',
-    truth: 'A ChatGPT subscription cannot be connected as API billing. KIRA needs an OpenAI Platform API key.',
-    action: 'Paste an OpenAI API key',
-    href: 'https://platform.openai.com/api-keys',
-  },
-  {
-    id: 'anthropic',
-    title: 'Anthropic / Claude',
-    providerId: 'anthropic',
-    truth: 'A Claude subscription cannot be connected as API billing. KIRA needs an Anthropic Console API key.',
-    action: 'Paste an Anthropic API key',
-    href: 'https://console.anthropic.com/settings/keys',
-  },
-  {
-    id: 'local',
-    title: 'Local models',
-    providerId: 'apple-foundation',
-    truth: 'Local providers keep routing available when remote billing or keys are not ready.',
-    action: 'Check local runtime',
-    href: '',
-  },
-  {
-    id: 'codex',
-    title: 'Codex (ChatGPT login)',
-    providerId: 'codex',
-    truth: 'KIRA can sign you in with ChatGPT (or reuse an existing Codex login). Auth is owned by the Codex CLI; billing follows your ChatGPT/Codex plan.',
-    action: 'Sign in with ChatGPT',
-    href: '',
-  },
-]
-
-// Where to mint a personal API key for the "bring your own key" flow, per provider type.
-function aiProviderKeyHelp(type: AiProviderType): { href: string; label: string } | null {
-  switch (type) {
-    case 'openai':
-      return { href: 'https://platform.openai.com/api-keys', label: 'Get an OpenAI API key' }
-    case 'anthropic':
-      return { href: 'https://console.anthropic.com/settings/keys', label: 'Get an Anthropic API key' }
-    case 'codex':
-    case 'claude_code':
-      return null
-    default:
-      return null
-  }
-}
-
-const extensionInstallTargets = [
-  {
-    id: 'chrome',
-    title: 'Chrome / Chromium',
-    status: 'Manual load',
-    primary: 'Open bundled dist',
-    secondary: 'Open extensions page',
-    instruction: 'Open the bundled dist folder, then in Chrome Extensions enable Developer mode and Load unpacked.',
-    path: 'Bundled in KIRA.app/Contents/Resources/.../extension/dist',
-    href: 'chrome://extensions',
-    installActionId: 'chrome_dist',
-    settingsActionId: 'chrome',
-  },
-  {
-    id: 'safari',
-    title: 'Safari',
-    status: 'Embedded',
-    primary: 'Enable in Safari',
-    secondary: 'Open Safari settings',
-    instruction: 'KIRA includes the Safari extension. Enable KIRA Capture in Safari Extensions.',
-    path: 'Embedded in KIRA.app/Contents/PlugIns',
-    href: 'x-apple.systempreferences:com.apple.Safari-Settings.extension',
-    installActionId: 'safari_app',
-    settingsActionId: 'safari',
-  },
-]
+// aiTaskLabels / aiTaskGroups / aiProviderTypeLabels / aiProviderStatusLabels /
+// aiProviderStatusCopy / aiRoutingLabels / providerConnectionNotes /
+// aiProviderKeyHelp / extensionInstallTargets moved to
+// kira/ai/aiProviderDomain.ts (PHA 1 Untitled UI migration, 2026-09-16).
 
 function defaultExtensionInstallStatus(): ExtensionInstallStatus {
   return {
@@ -1910,63 +1669,8 @@ function useDismissableLayer(active: boolean, ignoreSelector: string, onDismiss:
   }, [active, ignoreSelector, onDismiss])
 }
 
-// Shared focus trap for modal dialogs (Settings, confirm/alert dialogs). While `isOpen`:
-// moves focus into the container's first focusable descendant (or the container itself,
-// which needs tabIndex={-1} for this to work) as soon as it opens, keeps Tab/Shift+Tab
-// cycling within the container instead of leaking to whatever sits underneath it, and
-// restores focus to whatever was focused right before it opened (normally the trigger
-// button) once it closes or unmounts. Esc-to-close stays owned by each dialog's own
-// handler; this hook only concerns itself with focus.
-function useFocusTrap<T extends HTMLElement>(containerRef: React.RefObject<T | null>, isOpen: boolean) {
-  const previouslyFocusedRef = useRef<HTMLElement | null>(null)
-
-  useEffect(() => {
-    if (!isOpen) return
-    const container = containerRef.current
-    if (!container) return
-
-    previouslyFocusedRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
-
-    const focusableSelector =
-      'a[href]:not([tabindex="-1"]), button:not([disabled]):not([tabindex="-1"]), textarea:not([disabled]):not([tabindex="-1"]), input:not([disabled]):not([tabindex="-1"]), select:not([disabled]):not([tabindex="-1"]), [tabindex]:not([tabindex="-1"])'
-    function getFocusable(): HTMLElement[] {
-      return Array.from(container!.querySelectorAll<HTMLElement>(focusableSelector))
-    }
-
-    const initialTarget = getFocusable()[0] ?? container
-    initialTarget.focus()
-
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key !== 'Tab') return
-      const items = getFocusable()
-      if (items.length === 0) {
-        event.preventDefault()
-        container!.focus()
-        return
-      }
-      const first = items[0]
-      const last = items[items.length - 1]
-      const active = document.activeElement
-      if (event.shiftKey) {
-        if (active === first || !container!.contains(active)) {
-          event.preventDefault()
-          last.focus()
-        }
-      } else if (active === last || !container!.contains(active)) {
-        event.preventDefault()
-        first.focus()
-      }
-    }
-
-    container.addEventListener('keydown', handleKeyDown)
-    return () => {
-      container.removeEventListener('keydown', handleKeyDown)
-      const toRestore = previouslyFocusedRef.current
-      previouslyFocusedRef.current = null
-      if (toRestore && document.contains(toRestore)) toRestore.focus()
-    }
-  }, [isOpen, containerRef])
-}
+// useFocusTrap moved to hooks/useFocusTrap.ts (PHA 1 Untitled UI migration,
+// 2026-09-16) — imported above.
 
 type DockSelectOption = { value: string; label: string; meta?: string }
 
@@ -2283,98 +1987,8 @@ const defaultAiProviderProfiles: AiProviderProfile[] = [
   },
 ]
 
-const aiProviderTemplates: Record<Exclude<AiProviderType, 'apple_foundation'>, Omit<AiProviderProfile, 'id' | 'userManaged'>> = {
-  openai: {
-    type: 'openai',
-    name: 'OpenAI Platform',
-    authMode: 'api_key',
-    baseUrl: 'https://api.openai.com/v1',
-    model: 'gpt-4.1-mini',
-    status: 'key_missing',
-    defaultFor: ['generate_outline', 'generate_node', 'summarize_diagram'],
-  },
-  anthropic: {
-    type: 'anthropic',
-    name: 'Anthropic Console',
-    authMode: 'api_key',
-    baseUrl: 'https://api.anthropic.com',
-    model: 'claude-sonnet-4-6',
-    status: 'key_missing',
-    defaultFor: ['generate_outline', 'generate_node'],
-  },
-  gemini: {
-    type: 'gemini',
-    name: 'Gemini API',
-    authMode: 'api_key',
-    baseUrl: 'https://generativelanguage.googleapis.com',
-    model: 'gemini-1.5-pro',
-    status: 'key_missing',
-    defaultFor: ['classify_reference', 'generate_palette', 'generate_node'],
-  },
-  openrouter: {
-    type: 'openrouter',
-    name: 'OpenRouter',
-    authMode: 'openai_compatible',
-    baseUrl: 'https://openrouter.ai/api/v1',
-    model: 'auto',
-    status: 'key_missing',
-    defaultFor: ['find_similar', 'generate_outline', 'generate_node'],
-  },
-  ollama: {
-    type: 'ollama',
-    name: 'Ollama',
-    authMode: 'openai_compatible',
-    baseUrl: 'http://localhost:11434/v1',
-    model: 'llama3.2',
-    status: 'unavailable',
-    defaultFor: ['tag_reference', 'classify_reference', 'generate_node'],
-  },
-  lm_studio: {
-    type: 'lm_studio',
-    name: 'LM Studio',
-    authMode: 'openai_compatible',
-    baseUrl: 'http://localhost:1234/v1',
-    model: 'local-model',
-    status: 'unavailable',
-    defaultFor: ['tag_reference', 'generate_node'],
-  },
-  custom_openai_compatible: {
-    type: 'custom_openai_compatible',
-    name: 'Custom OpenAI-compatible',
-    authMode: 'openai_compatible',
-    baseUrl: 'http://localhost:8000/v1',
-    model: 'model-id',
-    status: 'key_missing',
-    defaultFor: ['generate_node'],
-  },
-  codex: {
-    type: 'codex',
-    name: 'Codex CLI (ChatGPT login)',
-    authMode: 'oauth',
-    model: 'gpt-5.5',
-    status: 'unavailable',
-    defaultFor: ['generate_outline', 'generate_node', 'summarize_diagram'],
-  },
-  claude_code: {
-    type: 'claude_code',
-    name: 'Claude Code (CLI)',
-    authMode: 'oauth',
-    model: 'claude-sonnet-4-6',
-    status: 'unavailable',
-    defaultFor: [],
-  },
-}
-
-// Types addable a second time from "Add other provider" — CLI singletons (codex, claude_code) and the
-// local runtime (apple_foundation) are fixed default entries, not user-instantiable duplicates.
-const addableProviderTypes = (Object.keys(aiProviderTemplates) as Exclude<AiProviderType, 'apple_foundation'>[]).filter(
-  (type) => type !== 'codex' && type !== 'claude_code',
-)
-
-// The handful of providers shown up front in Settings > AI Providers; everything else (extra
-// OpenAI-compatible endpoints, Ollama, LM Studio, OpenRouter, Gemini, duplicate profiles) lives
-// behind the "More providers" disclosure so the default view stays a short, obvious list.
-const primaryProviderTypeOrder: AiProviderType[] = ['apple_foundation', 'claude_code', 'codex', 'openai', 'anthropic']
+// aiProviderTemplates / addableProviderTypes / primaryProviderTypeOrder moved
+// to kira/ai/aiProviderDomain.ts (PHA 1 Untitled UI migration, 2026-09-16).
 
 function defaultAiSettingsSnapshot(): AiSettingsSnapshot {
   return {
@@ -2822,7 +2436,9 @@ function FileWorkspace({
 }) {
   const initialProject = useMemo(() => initialSnapshot ?? readProjectSnapshot(), [initialSnapshot])
   const lang = useLangStore((state) => state.lang)
+  const setLang = useLangStore((state) => state.setLang)
   const railIconMode = useRailIconModeStore((state) => state.mode)
+  const setRailIconMode = useRailIconModeStore((state) => state.setMode)
   const [canvasHistoryStore] = useState(createCanvasHistoryStore)
   // Browser-mode (non-Tauri) fallback storage is namespaced per tab so a second
   // open file can't overwrite the first's autosave under the same key.
@@ -7686,6 +7302,11 @@ function FileWorkspace({
             localModelStatus={localModelStatus}
             extensionInstallStatus={extensionInstallStatus}
             status={aiSettingsStatus}
+            lang={lang}
+            setLang={setLang}
+            railIconMode={railIconMode}
+            setRailIconMode={setRailIconMode}
+            T={T}
             onActiveProviderChange={setActiveAiProviderId}
             onProviderAdd={addAiProvider}
             onProviderChange={updateAiProvider}
@@ -8611,863 +8232,9 @@ function SecondaryRail({
   )
 }
 
-function CodexApiKeyField({ busy, onSubmit }: { busy: boolean; onSubmit: (key: string) => void }) {
-  const [value, setValue] = useState('')
-  return (
-    <div className="codex-login__apikey">
-      <input
-        type="password"
-        value={value}
-        placeholder="sk-…"
-        onChange={(e) => setValue(e.target.value)}
-      />
-      <button className="quiet-button" type="button" disabled={busy || value.trim().length === 0} onClick={() => onSubmit(value.trim())}>
-        Save key
-      </button>
-    </div>
-  )
-}
-
-function ClaudeCodeStatus({ provider }: { provider: AiProviderProfile }) {
-  const connected = provider.status === 'connected'
-  const [launchError, setLaunchError] = useState<string | null>(null)
-  return (
-    <div className="cli-status" data-status={connected ? 'connected' : 'not-connected'}>
-      <div className="cli-status__row">
-        <span className="cli-status__dot" aria-hidden="true" />
-        {/* Without a lastMessage nothing has actually run yet, so this can only report that.
-            Claiming the CLI is missing here was wrong whenever it was simply unchecked. */}
-        <span>{provider.lastMessage ?? (connected ? 'Claude Code CLI detected and signed in' : 'Not checked yet. Run Test to look for the CLI on this machine.')}</span>
-      </div>
-      <p className="cli-status__hint">
-        KIRA never renders or stores your Claude.ai login itself. Signing in opens Terminal and runs{' '}
-        <code>claude auth login</code> there, so the CLI completes the flow and keeps the session; KIRA only
-        checks status and runs tasks through it. Run Test once the terminal reports you are signed in.
-      </p>
-      {!connected && (
-        <button
-          className="quiet-button"
-          type="button"
-          onClick={() => {
-            setLaunchError(null)
-            void openClaudeCodeLoginTerminal().catch((error) => setLaunchError(String(error)))
-          }}
-        >
-          Sign in in Terminal
-        </button>
-      )}
-      {launchError && (
-        <p className="cli-status__hint" role="alert">
-          {launchError}
-        </p>
-      )}
-    </div>
-  )
-}
-
-// aiSettingsStatus is a free-text line shared by secret save/delete, provider
-// test, and model-list calls — this keyword sniff is how the status pill
-// tells a failure apart from a routine result without each call site having
-// to also thread a separate ok/error flag through.
-function isLikelySettingsError(status: string): boolean {
-  return /fail|error|not signed in/i.test(status)
-}
-
-function SettingsView({
-  providers,
-  taskRoutes,
-  routingMode,
-  selectedProviderId,
-  activeProviderId,
-  focusNonce,
-  localModelAvailable,
-  localModelStatus,
-  extensionInstallStatus,
-  status,
-  onActiveProviderChange,
-  onProviderAdd,
-  onProviderChange,
-  onProviderDelete,
-  onProviderSecretSave,
-  onProviderSecretDelete,
-  onProviderTest,
-  onProviderModelsList,
-  onProviderTaskToggle,
-  onRoutingModeChange,
-  onSelectedProviderChange,
-  onOnboardingReset,
-  onWelcomeOpen,
-  onExtensionAction,
-  onExtensionRefresh,
-  onCopyChromeDistPath,
-  onClose,
-}: {
-  providers: AiProviderProfile[]
-  taskRoutes: AiTaskRoute[]
-  routingMode: AiRoutingMode
-  selectedProviderId: string
-  activeProviderId: string
-  focusNonce: number
-  localModelAvailable: boolean
-  localModelStatus: string
-  extensionInstallStatus: ExtensionInstallStatus
-  status: string
-  onActiveProviderChange: (providerId: string) => void
-  onProviderAdd: (type: Exclude<AiProviderType, 'apple_foundation'>) => void
-  onProviderChange: (providerId: string, patch: Partial<Pick<AiProviderProfile, 'name' | 'baseUrl' | 'model' | 'authMode'>>) => void
-  onProviderDelete: (providerId: string) => void
-  onProviderSecretSave: (providerId: string, secret: string) => void
-  onProviderSecretDelete: (providerId: string) => void
-  onProviderTest: (providerId: string) => void | Promise<void>
-  onProviderModelsList: (providerId: string) => void | Promise<void>
-  onProviderTaskToggle: (providerId: string, task: AiTaskKind) => void
-  onRoutingModeChange: (mode: AiRoutingMode) => void
-  onSelectedProviderChange: (providerId: string) => void
-  onOnboardingReset: () => void
-  onWelcomeOpen: () => void
-  onExtensionAction: (targetId: string) => void
-  onExtensionRefresh: () => void
-  onCopyChromeDistPath: () => void | Promise<void>
-  onClose: () => void
-}) {
-  const remoteProviders = providers.filter((provider) => provider.authMode !== 'local')
-  const selectedRemoteProvider = remoteProviders.find((provider) => provider.id === selectedProviderId) ?? remoteProviders[0]
-  const activeProvider = providers.find((provider) => provider.id === activeProviderId) ?? providers[0]
-  const primaryProviders = primaryProviderTypeOrder
-    .map((type) => providers.find((provider) => provider.type === type))
-    .filter((provider): provider is AiProviderProfile => Boolean(provider))
-  const primaryProviderIds = new Set(primaryProviders.map((provider) => provider.id))
-  const moreProviders = providers.filter((provider) => !primaryProviderIds.has(provider.id))
-  const [secretDrafts, setSecretDrafts] = useState<Record<string, string>>({})
-  const [codexLoginBusy, setCodexLoginBusy] = useState(false)
-  const [codexLoginEvent, setCodexLoginEvent] = useState<CodexLoginEvent | null>(null)
-  const [codexLoginSlow, setCodexLoginSlow] = useState(false)
-  const codexAutoOpenedUrlRef = useRef<string | null>(null)
-  // onProviderTest/onProviderModelsList are async under the hood (native IPC
-  // calls) but were previously fired with no feedback at all — not even a
-  // disabled button — so a double-click could fire the same probe twice.
-  const [providerBusy, setProviderBusy] = useState<{ id: string; action: 'test' | 'models' } | null>(null)
-  const [pendingDeleteProviderId, setPendingDeleteProviderId] = useState<string | null>(null)
-  const pendingDeleteProvider = pendingDeleteProviderId
-    ? providers.find((provider) => provider.id === pendingDeleteProviderId) ?? null
-    : null
-  const deleteProviderDialogRef = useRef<HTMLElement>(null)
-  useFocusTrap(deleteProviderDialogRef, Boolean(pendingDeleteProvider))
-  const settingsShellRef = useRef<HTMLElement>(null)
-  // SettingsView only exists in the tree while the dialog is open (the parent conditionally
-  // mounts it), so the trap is simply "always on" from this component's own perspective —
-  // its cleanup runs on unmount, i.e. exactly when the dialog closes.
-  useFocusTrap(settingsShellRef, true)
-  async function handleProviderTest(providerId: string) {
-    setProviderBusy({ id: providerId, action: 'test' })
-    try {
-      await onProviderTest(providerId)
-    } finally {
-      setProviderBusy((current) => (current?.id === providerId && current.action === 'test' ? null : current))
-    }
-  }
-  async function handleProviderModelsList(providerId: string) {
-    setProviderBusy({ id: providerId, action: 'models' })
-    try {
-      await onProviderModelsList(providerId)
-    } finally {
-      setProviderBusy((current) => (current?.id === providerId && current.action === 'models' ? null : current))
-    }
-  }
-
-  const activeProviderType = activeProvider?.type
-  const activeProviderId_ = activeProvider?.id
-
-  useEffect(() => {
-    if (activeProviderType !== 'codex') return
-    let unlisten: (() => void) | undefined
-    void onCodexLoginProgress((event) => {
-      setCodexLoginEvent(event)
-      // The bundled codex binary is spawned headlessly (no TTY), so its own browser-open
-      // attempt isn't reliable. Open the sign-in URL ourselves the moment it arrives, instead
-      // of leaving the user staring at a spinner with only a small fallback link to notice.
-      const urlToOpen = event.type === 'oauth_url' ? event.url : event.type === 'device_code' ? event.verificationUrl : null
-      if (urlToOpen && codexAutoOpenedUrlRef.current !== urlToOpen) {
-        codexAutoOpenedUrlRef.current = urlToOpen
-        window.open(urlToOpen, '_blank', 'noopener,noreferrer')
-      }
-    }).then((u) => { unlisten = u })
-    return () => unlisten?.()
-  }, [activeProviderType])
-
-  // If the login flow stays busy with no resolution for a while, surface a reassurance/escape
-  // hatch instead of leaving the user guessing whether the app is stuck.
-  useEffect(() => {
-    if (!codexLoginBusy) {
-      setCodexLoginSlow(false)
-      return
-    }
-    const timer = window.setTimeout(() => setCodexLoginSlow(true), 15000)
-    return () => window.clearTimeout(timer)
-  }, [codexLoginBusy])
-
-  // Reuse the existing Test-button handler (onProviderTest -> testAiProvider) to refresh provider status.
-  function refreshCodexStatus() {
-    if (activeProviderId_) onProviderTest(activeProviderId_)
-  }
-
-  async function startCodexLogin(method: 'chatgpt' | 'device' | 'api-key', apiKey?: string) {
-    setCodexLoginBusy(true)
-    setCodexLoginEvent(null)
-    codexAutoOpenedUrlRef.current = null
-    try {
-      await requestCodexLogin(method, apiKey)
-      refreshCodexStatus()
-    } catch (error) {
-      setCodexLoginEvent({ type: 'error', message: error instanceof Error ? error.message : String(error) })
-    } finally {
-      setCodexLoginBusy(false)
-    }
-  }
-  const [providerTypeDraft, setProviderTypeDraft] = useState<Exclude<AiProviderType, 'apple_foundation'>>(addableProviderTypes[0])
-  const connectedProviderCount = providers.filter((provider) => provider.status === 'connected').length
-  const storedSecretCount = providers.filter((provider) => provider.secretRef).length
-  const billingSeparatedCount = remoteProviders.filter((provider) => provider.status === 'billing_separate').length
-  const [activeSettingsTab, setActiveSettingsTab] = useState<'general' | 'ai' | 'capture' | 'advanced'>('general')
-  // When a provider is focused from elsewhere (onboarding, logged-out prompt), jump to the AI tab.
-  useEffect(() => {
-    if (focusNonce > 0) setActiveSettingsTab('ai')
-  }, [focusNonce])
-  const lang = useLangStore((state) => state.lang)
-  const setLang = useLangStore((state) => state.setLang)
-  const railIconMode = useRailIconModeStore((state) => state.mode)
-  const setRailIconMode = useRailIconModeStore((state) => state.setMode)
-
-  useEffect(() => {
-    function handleKeydown(event: KeyboardEvent) {
-      if (event.key === 'Escape') onClose()
-    }
-    window.addEventListener('keydown', handleKeydown)
-    return () => window.removeEventListener('keydown', handleKeydown)
-  }, [onClose])
-
-  const settingsSections = [
-    { id: 'general' as const, label: 'General' },
-    { id: 'capture' as const, label: 'Capture' },
-    { id: 'ai' as const, label: 'AI Providers' },
-    { id: 'advanced' as const, label: 'Advanced' },
-  ]
-
-  function renderProviderRow(provider: AiProviderProfile) {
-    return (
-      <button
-        className="provider-list-row"
-        type="button"
-        key={provider.id}
-        aria-pressed={provider.id === activeProvider.id}
-        data-status={provider.status}
-        onClick={() => onActiveProviderChange(provider.id)}
-      >
-        <span>
-          <strong title={provider.name}>{provider.name}</strong>
-          <em title={aiProviderTypeLabels[provider.type]}>{aiProviderTypeLabels[provider.type]}</em>
-        </span>
-        <small>{aiProviderStatusLabels[provider.status]}</small>
-      </button>
-    )
-  }
-
-  return (
-    <section ref={settingsShellRef} tabIndex={-1} className="settings-shell" aria-label="Settings" aria-modal="true" role="dialog">
-      <nav className="settings-nav" aria-label="Settings sections">
-        {settingsSections.map((section) => (
-          <button
-            key={section.id}
-            type="button"
-            className={activeSettingsTab === section.id ? 'settings-nav-item is-active' : 'settings-nav-item'}
-            aria-pressed={activeSettingsTab === section.id}
-            onClick={() => setActiveSettingsTab(section.id)}
-          >
-            {section.label}
-          </button>
-        ))}
-      </nav>
-
-      <div className="settings-scroll">
-        <div className="settings-header">
-          <h2>{settingsSections.find((section) => section.id === activeSettingsTab)?.label}</h2>
-          <div className="settings-header-actions">
-            <span className={['settings-status', isLikelySettingsError(status) ? 'is-error' : ''].filter(Boolean).join(' ')}>{status}</span>
-            <button className="icon-button" type="button" aria-label="Close settings" onClick={onClose}>
-              <X size={15} />
-            </button>
-          </div>
-        </div>
-
-        {activeSettingsTab === 'general' && (
-          <>
-            <section className="settings-control-strip" aria-label="AI defaults">
-              <label>
-                <span>Routing</span>
-                <select value={routingMode} onChange={(event) => onRoutingModeChange(event.target.value as AiRoutingMode)}>
-                  {Object.keys(aiRoutingLabels).map((mode) => (
-                    <option key={mode} value={mode}>
-                      {aiRoutingLabels[mode as AiRoutingMode]}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                <span>Remote</span>
-                <select value={selectedProviderId} onChange={(event) => onSelectedProviderChange(event.target.value)} disabled={remoteProviders.length === 0}>
-                  {remoteProviders.map((provider) => (
-                    <option key={provider.id} value={provider.id}>
-                      {provider.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <div className="settings-chip">
-                <span>Providers</span>
-                <strong>{connectedProviderCount}/{providers.length}</strong>
-              </div>
-              <div className="settings-chip">
-                <span>Local</span>
-                <strong>{localModelAvailable ? 'available' : 'unavailable'}</strong>
-              </div>
-            </section>
-
-            <section className="settings-panel" aria-label="Language">
-              <h3><T k="lang.label" /></h3>
-              <p className="settings-language__hint"><T k="lang.hint" /></p>
-              <Segmented
-                ariaLabel="Language"
-                variant="radio"
-                value={lang}
-                onChange={setLang}
-                options={[
-                  { value: 'en', label: 'English' },
-                  { value: 'vi', label: 'Tiếng Việt' },
-                ]}
-              />
-            </section>
-
-            <section className="settings-panel" aria-label="Rail icons">
-              <h3>Rail icons</h3>
-              <p>Color identifies each tool by node kind. Monochrome keeps the same drawings in a single ink tone.</p>
-              <Segmented
-                ariaLabel="Rail icons"
-                variant="radio"
-                value={railIconMode}
-                onChange={setRailIconMode}
-                options={[
-                  { value: 'color', label: 'Color' },
-                  { value: 'mono', label: 'Monochrome' },
-                ]}
-              />
-            </section>
-
-            <section className="settings-panel" aria-label="Local model">
-              <h3>Local</h3>
-              <dl className="settings-definition-list">
-                <div>
-                  <dt>Apple Foundation Models</dt>
-                  <dd>{localModelAvailable ? 'available' : 'unavailable'}</dd>
-                </div>
-                <div>
-                  <dt>Status</dt>
-                  <dd>{localModelStatus}</dd>
-                </div>
-                <div>
-                  <dt>Default use</dt>
-                  <dd>Tagging, classification</dd>
-                </div>
-              </dl>
-            </section>
-          </>
-        )}
-
-        {activeSettingsTab === 'capture' && (
-        <section className="settings-section" aria-label="Extensions">
-          <article className="settings-panel settings-action-panel">
-            <div>
-              <h3>Extensions</h3>
-              <p>The fastest way material enters a project: drag an image off any page straight into a node, no upload step. Install the bundled helper into Chrome/Chromium or Safari to turn it on.</p>
-            </div>
-            <button className="icon-button" type="button" onClick={onExtensionRefresh} aria-label="Detect installed extensions" title="Detect installed extensions">
-              <RotateCcw size={15} />
-            </button>
-          </article>
-          <div className="capture-list" role="list">
-            {extensionInstallTargets.map((target) => {
-              const status = extensionStatusForTarget(extensionInstallStatus, target.id)
-              if (target.id === 'chrome') {
-                return (
-                  <div className="capture-row capture-row--steps" role="listitem" data-status={status.installed && !status.disabled ? 'installed' : 'not-detected'} key={target.id}>
-                    <div className="capture-row-head">
-                      <strong>{target.title}</strong>
-                      <small>{status.installed && !status.disabled ? 'Installed' : status.detail}</small>
-                    </div>
-                    <details className="settings-disclosure">
-                      <summary>
-                        <span>Install steps</span>
-                      </summary>
-                      <ol className="capture-steps">
-                        <li>
-                          <span>Copy the install folder path</span>
-                          <button className="quiet-button" type="button" onClick={() => void onCopyChromeDistPath()}>
-                            <Clipboard size={13} />
-                            Copy path
-                          </button>
-                        </li>
-                        <li>
-                          <span>Open chrome://extensions</span>
-                          <button
-                            className="icon-button"
-                            type="button"
-                            onClick={() => onExtensionAction(target.settingsActionId)}
-                            aria-label="Open chrome://extensions"
-                            title="Open chrome://extensions"
-                          >
-                            <ExternalLink size={14} />
-                          </button>
-                        </li>
-                        <li><span>Turn on Developer mode (top right of that page)</span></li>
-                        <li><span>Click "Load unpacked" and paste the copied path</span></li>
-                      </ol>
-                    </details>
-                  </div>
-                )
-              }
-              return (
-                <div className="capture-row" role="listitem" data-status={status.installed && !status.disabled ? 'installed' : 'not-detected'} key={target.id}>
-                  <div>
-                    <strong>{target.title}</strong>
-                    <small>{status.installed && !status.disabled ? 'Installed' : status.detail}</small>
-                  </div>
-                  <div className="capture-row-actions">
-                    <button className="quiet-button" type="button" onClick={() => onExtensionAction(target.installActionId)}>
-                      {target.primary}
-                    </button>
-                    <button className="icon-button" type="button" onClick={() => onExtensionAction(target.settingsActionId)} aria-label={target.secondary} title={target.secondary}>
-                      <ExternalLink size={14} />
-                    </button>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        </section>
-        )}
-
-        {activeSettingsTab === 'ai' && (
-        <>
-        <section className="settings-section" id="settings-providers">
-          <div className="provider-workbench-grid">
-            <aside className="provider-registry" aria-label="Provider registry">
-              <div className="provider-list">
-                {primaryProviders.map(renderProviderRow)}
-              </div>
-
-              <details className="settings-disclosure provider-more">
-                <summary>
-                  <h3>More providers</h3>
-                  <span>{moreProviders.length}</span>
-                </summary>
-                <div className="provider-list">
-                  {moreProviders.map(renderProviderRow)}
-                </div>
-                <div className="provider-add-row">
-                  <select value={providerTypeDraft} onChange={(event) => setProviderTypeDraft(event.target.value as Exclude<AiProviderType, 'apple_foundation'>)}>
-                    {addableProviderTypes.map((type) => (
-                      <option key={type} value={type}>
-                        {aiProviderTypeLabels[type]}
-                      </option>
-                    ))}
-                  </select>
-                  <button className="quiet-button" type="button" onClick={() => onProviderAdd(providerTypeDraft)}>
-                    Add
-                  </button>
-                </div>
-              </details>
-            </aside>
-
-            {activeProvider && (
-              <article className="provider-card provider-card--detail" data-status={activeProvider.status}>
-                <div className="provider-card-header">
-                  <div>
-                    <strong>{activeProvider.name}</strong>
-                    <span>{aiProviderTypeLabels[activeProvider.type]} · {aiProviderStatusCopy[activeProvider.status]}</span>
-                  </div>
-                  <em>{aiProviderStatusLabels[activeProvider.status]}</em>
-                </div>
-
-                <div className="provider-detail-grid">
-                  <label>
-                    <span>Name</span>
-                    <input
-                      value={activeProvider.name}
-                      onChange={(event) => onProviderChange(activeProvider.id, { name: event.target.value })}
-                      disabled={activeProvider.authMode === 'local'}
-                    />
-                  </label>
-                  <label>
-                    <span>Model</span>
-                    {activeProvider.discoveredModels && activeProvider.discoveredModels.length > 0 ? (
-                      <select value={activeProvider.model} onChange={(event) => onProviderChange(activeProvider.id, { model: event.target.value })}>
-                        {activeProvider.discoveredModels.map((model) => (
-                          <option key={model} value={model}>{model}</option>
-                        ))}
-                      </select>
-                    ) : (
-                      <input
-                        value={activeProvider.model}
-                        onChange={(event) => onProviderChange(activeProvider.id, { model: event.target.value })}
-                        disabled={activeProvider.authMode === 'local'}
-                      />
-                    )}
-                  </label>
-                </div>
-
-                {activeProvider.type !== 'codex' && activeProvider.type !== 'claude_code' && (
-                  <details className="settings-disclosure provider-advanced-fields">
-                    <summary>
-                      <h3>Advanced</h3>
-                      <span>Auth mode · Base URL</span>
-                    </summary>
-                    <div className="provider-detail-grid">
-                      <label>
-                        <span>Auth mode</span>
-                        <select
-                          value={activeProvider.authMode}
-                          onChange={(event) => onProviderChange(activeProvider.id, { authMode: event.target.value as AiAuthMode })}
-                          disabled={activeProvider.authMode === 'local'}
-                        >
-                          <option value="local">local</option>
-                          <option value="api_key">api_key</option>
-                          <option value="oauth">oauth</option>
-                          <option value="openai_compatible">openai_compatible</option>
-                        </select>
-                      </label>
-                      <label>
-                        <span>Base URL</span>
-                        <input
-                          value={activeProvider.baseUrl ?? ''}
-                          placeholder={activeProvider.authMode === 'local' ? 'local runtime' : 'https://api.example.com/v1'}
-                          onChange={(event) => onProviderChange(activeProvider.id, { baseUrl: event.target.value })}
-                          disabled={activeProvider.authMode === 'local'}
-                        />
-                      </label>
-                    </div>
-
-                    {activeProvider.authMode === 'oauth' && (
-                      <div className="oauth-ready-note">
-                        <strong>OAuth is for enterprise gateways only</strong>
-                        <span>
-                          Claude Pro/Max and ChatGPT Plus subscriptions cannot be connected by OAuth. Since
-                          February 2026 Anthropic and OpenAI restrict subscription tokens to their own apps.
-                          For Claude or OpenAI, switch this profile to <strong>API key</strong> and bring your own key.
-                        </span>
-                      </div>
-                    )}
-                  </details>
-                )}
-
-                {activeProvider.type === 'codex' ? (
-                  <div className="codex-login" data-status={activeProvider.status === 'connected' ? 'connected' : 'signed-out'}>
-                    {activeProvider.status === 'connected' ? (
-                      <div className="codex-login__signed-in">
-                        <span className="codex-login__status-dot" aria-hidden="true" />
-                        <span className="codex-login__status-text">{activeProvider.lastMessage ?? 'Signed in to Codex'}</span>
-                        <button className="quiet-button" type="button" onClick={() => { void codexLogout().then(() => refreshCodexStatus()) }}>
-                          Sign out
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="codex-login__actions">
-                        <button className="primary-button is-wide" type="button" disabled={codexLoginBusy} onClick={() => startCodexLogin('chatgpt')}>
-                          {codexLoginBusy ? (
-                            <>
-                              <span className="codex-login__spinner" aria-hidden="true" />
-                              Waiting for browser…
-                            </>
-                          ) : (
-                            'Sign in with ChatGPT'
-                          )}
-                        </button>
-                        <div className="codex-login__alt">
-                          <button className="secondary-button" type="button" disabled={codexLoginBusy} onClick={() => startCodexLogin('device')}>
-                            Use a sign-in code
-                          </button>
-                          {codexLoginBusy && (
-                            <button className="secondary-button" type="button" onClick={() => { void cancelCodexLogin() }}>Cancel</button>
-                          )}
-                        </div>
-                        <details className="codex-login__details">
-                          <summary>Use an API key instead</summary>
-                          <CodexApiKeyField busy={codexLoginBusy} onSubmit={(key) => startCodexLogin('api-key', key)} />
-                        </details>
-                      </div>
-                    )}
-                    {codexLoginEvent?.type === 'oauth_url' && (
-                      <p className="codex-login__hint">
-                        Opened a sign-in tab. Didn’t see it?{' '}
-                        <a
-                          href={codexLoginEvent.url}
-                          onClick={(event) => {
-                            event.preventDefault()
-                            window.open(codexLoginEvent.url, '_blank', 'noopener,noreferrer')
-                          }}
-                        >
-                          Open it again
-                        </a>
-                      </p>
-                    )}
-                    {codexLoginBusy && codexLoginSlow && (
-                      <p className="codex-login__hint">
-                        Still waiting on the browser sign-in. Finish it in the opened tab, or{' '}
-                        <a
-                          href="#"
-                          onClick={(event) => {
-                            event.preventDefault()
-                            void cancelCodexLogin()
-                          }}
-                        >
-                          cancel
-                        </a>{' '}
-                        and try a sign-in code instead.
-                      </p>
-                    )}
-                    {codexLoginEvent?.type === 'device_code' && (
-                      <div className="codex-login__device">
-                        <span>
-                          Open{' '}
-                          <a
-                            href={codexLoginEvent.verificationUrl}
-                            onClick={(event) => {
-                              event.preventDefault()
-                              window.open(codexLoginEvent.verificationUrl, '_blank', 'noopener,noreferrer')
-                            }}
-                          >
-                            {codexLoginEvent.verificationUrl}
-                          </a>{' '}
-                          and enter
-                        </span>
-                        <code>{codexLoginEvent.userCode}</code>
-                        <button className="quiet-button" type="button" onClick={() => { void navigator.clipboard.writeText(codexLoginEvent.userCode) }}>Copy</button>
-                      </div>
-                    )}
-                    {codexLoginEvent?.type === 'error' && <p className="codex-login__error">{codexLoginEvent.message}</p>}
-                  </div>
-                ) : activeProvider.type === 'claude_code' ? (
-                  <ClaudeCodeStatus provider={activeProvider} />
-                ) : activeProvider.authMode !== 'local' ? (
-                  <label>
-                    <span>API key</span>
-                    <input
-                      value={secretDrafts[activeProvider.id] ?? ''}
-                      type="password"
-                      placeholder={activeProvider.secretRef ? 'Stored in Keychain' : 'Paste your own API key (sk-…)'}
-                      onChange={(event) =>
-                        setSecretDrafts((current) => ({ ...current, [activeProvider.id]: event.target.value }))
-                      }
-                    />
-                    {(() => {
-                      const help = aiProviderKeyHelp(activeProvider.type)
-                      return help ? (
-                        <a className="provider-key-help" href={help.href} target="_blank" rel="noreferrer">
-                          {help.label} ↗
-                        </a>
-                      ) : null
-                    })()}
-                  </label>
-                ) : null}
-
-                <div className="provider-actions-row">
-                  {activeProvider.authMode !== 'local' && activeProvider.type !== 'codex' && activeProvider.type !== 'claude_code' && (
-                    <>
-                      <button
-                        className={activeProvider.secretRef ? 'secondary-button provider-test-button' : 'primary-button provider-test-button'}
-                        type="button"
-                        onClick={() => {
-                          onProviderSecretSave(activeProvider.id, secretDrafts[activeProvider.id] ?? '')
-                          setSecretDrafts((current) => ({ ...current, [activeProvider.id]: '' }))
-                        }}
-                      >
-                        Save key
-                      </button>
-                      {activeProvider.secretRef && (
-                        <button className="secondary-button provider-test-button" type="button" onClick={() => onProviderSecretDelete(activeProvider.id)}>
-                          Remove key
-                        </button>
-                      )}
-                    </>
-                  )}
-                  <button
-                    className="secondary-button provider-test-button"
-                    type="button"
-                    disabled={providerBusy?.id === activeProvider.id}
-                    onClick={() => void handleProviderTest(activeProvider.id)}
-                  >
-                    {providerBusy?.id === activeProvider.id && providerBusy.action === 'test' && (
-                      <span className="ai-inline-spinner" aria-hidden="true" />
-                    )}
-                    Test
-                  </button>
-                  <button
-                    className="quiet-button provider-test-button"
-                    type="button"
-                    disabled={providerBusy?.id === activeProvider.id}
-                    onClick={() => void handleProviderModelsList(activeProvider.id)}
-                  >
-                    {providerBusy?.id === activeProvider.id && providerBusy.action === 'models' && (
-                      <span className="ai-inline-spinner" aria-hidden="true" />
-                    )}
-                    Models
-                  </button>
-                  {activeProvider.authMode !== 'local' && (
-                    <button className="danger-inline-button" type="button" onClick={() => setPendingDeleteProviderId(activeProvider.id)}>
-                      Delete profile
-                    </button>
-                  )}
-                </div>
-
-                <div className="provider-task-groups" aria-label="Default tasks for active provider">
-                  {aiTaskGroups.map((group) => (
-                    <div className="provider-task-group" key={group.label}>
-                      <span className="provider-task-group-label">{group.label}</span>
-                      <div className="provider-task-matrix">
-                        {group.tasks.map((task) => (
-                          <label key={task} className="provider-task-toggle">
-                            <span className="reference-check">
-                              <input
-                                type="checkbox"
-                                checked={activeProvider.defaultFor.includes(task)}
-                                onChange={() => onProviderTaskToggle(activeProvider.id, task)}
-                              />
-                              <span />
-                            </span>
-                            <span>{aiTaskLabels[task]}</span>
-                          </label>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="provider-meta-strip" aria-label="Provider runtime status">
-                  <span>{activeProvider.authMode === 'local' ? 'Local runtime' : activeProvider.secretRef ? 'Keychain secret' : 'No secret'}</span>
-                  <span>{activeProvider.lastTestedAt ? `Tested ${formatMetadataTime(activeProvider.lastTestedAt)}` : 'Untested'}</span>
-                  {activeProvider.lastMessage && <span>{activeProvider.lastMessage}</span>}
-                </div>
-              </article>
-            )}
-          </div>
-        </section>
-        </>
-        )}
-
-        {activeSettingsTab === 'advanced' && (
-        <section className="settings-section settings-compact-disclosures">
-          {/* User decision 2026-09-15: Routing preview (previously its own
-              disclosure under AI Providers) + Secrets + Usage + Onboarding
-              merged into one disclosure instead of four stacked cards
-              (DESIGN.md §5 One Density Rule / No-Nested-Card Rule). */}
-          <details className="settings-panel settings-disclosure" id="settings-advanced-detail">
-            <summary>
-              <h3>Advanced</h3>
-              <span>Routing, secrets, usage, onboarding</span>
-            </summary>
-
-            <div className="settings-advanced-group">
-              <div className="settings-advanced-group-head">
-                <h4>Routing preview</h4>
-                <span>{taskRoutes.length} tasks</span>
-              </div>
-              <div className="task-route-list" aria-label="AI task routing preview">
-                {taskRoutes.map((route) => (
-                  <div className="task-route-row" key={route.task}>
-                    <span>{aiTaskLabels[route.task]}</span>
-                    <strong>{route.providerName}</strong>
-                    <em>{route.reason}</em>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="settings-advanced-group" id="settings-secrets">
-              <div className="settings-advanced-group-head">
-                <h4>Secrets</h4>
-                <span>{storedSecretCount} stored</span>
-              </div>
-              <div className="settings-chip-grid">
-                <span><Check size={13} /> macOS Keychain</span>
-                <span><ShieldCheck size={13} /> No browser tokens</span>
-                <span><Database size={13} /> {storedSecretCount}/{remoteProviders.length} remote</span>
-              </div>
-            </div>
-
-            <div className="settings-advanced-group">
-              <div className="settings-advanced-group-head">
-                <h4>Usage</h4>
-                <span>{billingSeparatedCount} API billed</span>
-              </div>
-              <div className="settings-chip-grid">
-                <span><Bot size={13} /> Bring your own API key</span>
-                <span><Sparkles size={13} /> Local-first fallback</span>
-                <span><Check size={13} /> No subscription passthrough</span>
-              </div>
-            </div>
-
-            <div className="settings-advanced-group">
-              <div className="settings-advanced-group-head">
-                <h4>Onboarding</h4>
-                <span>Replay / reset</span>
-              </div>
-              <p>Replay first-run setup for AI providers, local fallback, and browser capture.</p>
-              <div className="settings-action-row">
-                <button className="quiet-button" type="button" onClick={onWelcomeOpen}>
-                  Open Welcome.kira
-                </button>
-                <button className="quiet-button" type="button" onClick={onOnboardingReset}>
-                  Reset onboarding
-                </button>
-              </div>
-            </div>
-          </details>
-        </section>
-        )}
-      </div>
-      {pendingDeleteProvider && (
-        <div className="dialog-overlay">
-          <section
-            ref={deleteProviderDialogRef}
-            tabIndex={-1}
-            aria-modal="true"
-            className="confirm-dialog"
-            role="alertdialog"
-            aria-labelledby="delete-provider-dialog-title"
-          >
-            <div>
-              <h2 id="delete-provider-dialog-title">Delete {pendingDeleteProvider.name}?</h2>
-              <p>This removes the profile and its stored API key from the macOS Keychain. This can't be undone.</p>
-            </div>
-            <div className="dialog-actions">
-              <button className="secondary-button" type="button" onClick={() => setPendingDeleteProviderId(null)}>
-                Cancel
-              </button>
-              <button
-                className="danger-button"
-                type="button"
-                onClick={() => {
-                  onProviderDelete(pendingDeleteProvider.id)
-                  setPendingDeleteProviderId(null)
-                }}
-              >
-                Delete profile
-              </button>
-            </div>
-          </section>
-        </div>
-      )}
-    </section>
-  )
-}
+// CodexApiKeyField / ClaudeCodeStatus / isLikelySettingsError / SettingsView
+// moved to components/application/settings/ (PHA 1 Untitled UI migration,
+// 2026-09-16) — imported above.
 
 function startWindowDrag(event: React.PointerEvent<HTMLElement>) {
   if (!isTauriRuntime() || event.button !== 0) return
@@ -14725,10 +13492,8 @@ function formatImportance(value: number | undefined) {
   return `${(value ?? 1).toFixed(1)}x`
 }
 
-function formatMetadataTime(value: string) {
-  const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
-}
+// formatMetadataTime moved to kira/ai/aiProviderDomain.ts (PHA 1 Untitled UI
+// migration, 2026-09-16) — imported above.
 
 async function copyColorSet(colors: string[]) {
   if (!navigator.clipboard?.writeText) return
@@ -19813,40 +18578,10 @@ function parseAiJson<T>(content: string): T | null {
   }
 }
 
-// Detects the native error surfaced when a Codex (ChatGPT OAuth) provider runs a
-// generation while the user is signed out. Used to turn a raw error into an
-// actionable "sign in" prompt instead of dumping the message into the node body.
-function isCodexLoggedOutError(message: string): boolean {
-  return /not signed in|sign in with chatgpt|not logged in/i.test(message)
-}
-
-type CodexLoginEvent =
-  | { type: 'oauth_url'; url: string }
-  | { type: 'device_code'; verificationUrl: string; userCode: string }
-  | { type: 'success' }
-  | { type: 'error'; message: string }
-
-function requestCodexLogin(method: 'chatgpt' | 'device' | 'api-key', apiKey?: string) {
-  return invoke<void>('codex_login', { method, apiKey })
-}
-
-function cancelCodexLogin() {
-  return invoke<void>('codex_cancel_login')
-}
-
-function codexLogout() {
-  return invoke<void>('codex_logout')
-}
-
-// Opens Terminal with `claude auth login` running. KIRA shows no login UI of its own and never
-// handles the token — the CLI owns the flow end to end.
-function openClaudeCodeLoginTerminal() {
-  return invoke<void>('claude_code_open_login_terminal')
-}
-
-function onCodexLoginProgress(callback: (event: CodexLoginEvent) => void) {
-  return listen<CodexLoginEvent>('codex://login', (event) => callback(event.payload))
-}
+// isCodexLoggedOutError / CodexLoginEvent / requestCodexLogin /
+// cancelCodexLogin / codexLogout / openClaudeCodeLoginTerminal /
+// onCodexLoginProgress moved to kira/ai/aiProviderDomain.ts (PHA 1 Untitled
+// UI migration, 2026-09-16) — imported above.
 
 async function getNativeExtensionInstallStatus() {
   if (!isTauriRuntime()) return defaultExtensionInstallStatus()
@@ -19867,9 +18602,8 @@ async function syncChromeExtensionDist(): Promise<string | null> {
   return invoke<string>('sync_chrome_extension_dist_command')
 }
 
-function extensionStatusForTarget(status: ExtensionInstallStatus, targetId: string) {
-  return targetId === 'safari' ? status.safari : status.chrome
-}
+// extensionStatusForTarget moved to kira/ai/aiProviderDomain.ts (PHA 1
+// Untitled UI migration, 2026-09-16) — imported above.
 
 function providerRequestPayload(provider: AiProviderProfile) {
   return {
