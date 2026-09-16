@@ -14,7 +14,10 @@ import TiptapPlaceholder from '@tiptap/extension-placeholder'
 import { Markdown } from 'tiptap-markdown'
 import { useFocusTrap } from './hooks/useFocusTrap'
 import { Segmented } from './components/Segmented'
+import { ReferenceThumb, referenceAspect } from './components/ReferenceThumb'
 import { SettingsView } from './components/application/settings/SettingsView'
+import { EvidenceInbox } from './components/application/library/EvidenceInbox'
+import { positionReferenceTagPopover } from './components/application/library/ReferenceTags'
 import {
   type AiTaskKind,
   type AiProviderType,
@@ -59,7 +62,6 @@ import {
   Bot,
   Box,
   Brain,
-  Camera,
   Check,
   ChevronDown,
   ChevronLeft,
@@ -91,7 +93,6 @@ import {
   Maximize2,
   MessageSquare,
   Minimize2,
-  MoreHorizontal,
   Network,
   Palette,
   PanelRight,
@@ -181,8 +182,8 @@ import './styles/fonts/inter.css'
 import './styles/uikit/globals.css'
 import './styles.css'
 
-type Relation = 'supports' | 'contrasts' | 'example' | 'mood' | 'material' | 'reference' | 'related' | 'derived-from' | 'contains'
-type Selection =
+export type Relation = 'supports' | 'contrasts' | 'example' | 'mood' | 'material' | 'reference' | 'related' | 'derived-from' | 'contains'
+export type Selection =
   | { type: 'project' }
   | { type: 'idea'; id: string }
   | { type: 'image'; id: string }
@@ -306,7 +307,7 @@ type PendingDelete =
   | { type: 'link'; id: string; title: string }
   | { type: 'frame'; id: string; title: string }
 
-type Idea = {
+export type Idea = {
   id: string
   title: string
   // Markdown, backing the inline rich-text editor (NodeRichEditor). `title`
@@ -328,7 +329,7 @@ type Idea = {
   variant?: 'sticker'
 }
 
-type EvidenceImage = {
+export type EvidenceImage = {
   id: string
   title: string
   // Markdown caption, backing the inline rich-text editor (NodeRichEditor).
@@ -385,7 +386,7 @@ type TagSuggestionRecord = {
 
 type TagSuggestion = string | TagSuggestionRecord
 
-type EvidenceLink = {
+export type EvidenceLink = {
   id: string
   imageId: string
   ideaId: string
@@ -654,10 +655,10 @@ type KiraCaptureContext = {
   updatedAt: string
 }
 
-type LibraryDensity = 'compact' | 'relaxed'
-type LibraryBrowseMode = 'list' | 'grid'
-type LibraryPanelMode = 'images' | 'ideas' | 'links'
-type SortMode = 'recent' | 'title' | 'source'
+export type LibraryDensity = 'compact' | 'relaxed'
+export type LibraryBrowseMode = 'list' | 'grid'
+export type LibraryPanelMode = 'images' | 'ideas' | 'links'
+export type SortMode = 'recent' | 'title' | 'source'
 type GraphNodeKind = 'idea' | 'image' | 'palette' | 'diagram' | 'placeholder'
 type GraphMode = 'edit' | 'discover'
 type GraphScope = 'all' | 'linked' | 'selection'
@@ -728,7 +729,7 @@ function createCanvasHistoryStore() {
 type CanvasHistoryStoreApi = ReturnType<typeof createCanvasHistoryStore>
 
 // ── Lightweight bilingual i18n (en / vi) ─────────────────────────────────────
-type Lang = 'en' | 'vi'
+export type Lang = 'en' | 'vi'
 
 // Covers the highest-visibility chrome — view switcher, tool rail groups,
 // Kira dock, and the library empty state — on top of the inspector/library
@@ -862,6 +863,44 @@ const UI_STRINGS: Record<string, { en: string; vi: string }> = {
   'library.filter.remove': { en: 'Remove {tag} filter', vi: 'Xóa bộ lọc {tag}' },
   'library.tags.label': { en: 'Tags for {title}', vi: 'Các thẻ của {title}' },
   'library.tags.more': { en: '{count} more tags', vi: 'Còn {count} thẻ' },
+  'library.panel.images': { en: 'Images', vi: 'Hình ảnh' },
+  'library.panel.ideas': { en: 'Ideas', vi: 'Ý tưởng' },
+  'library.panel.links': { en: 'Links', vi: 'Liên kết' },
+  'library.aria.importImage': { en: 'Import image', vi: 'Nhập hình ảnh' },
+  'library.aria.toolsMenu': { en: 'Library tools', vi: 'Công cụ thư viện' },
+  'library.aria.importReferences': { en: 'Import reference images', vi: 'Nhập hình ảnh tham khảo' },
+  'library.aria.referenceImages': { en: 'Reference images', vi: 'Hình ảnh tham khảo' },
+  'library.aria.selectImage': { en: 'Select {title}', vi: 'Chọn {title}' },
+  'library.aria.tagsGroup': { en: 'Tags', vi: 'Thẻ' },
+  'library.search.open': { en: 'Search', vi: 'Tìm kiếm' },
+  'library.search.close': { en: 'Close search', vi: 'Đóng tìm kiếm' },
+  'library.search.images': { en: 'Search images', vi: 'Tìm hình ảnh' },
+  'library.search.ideas': { en: 'Search ideas', vi: 'Tìm ý tưởng' },
+  'library.search.links': { en: 'Search links', vi: 'Tìm liên kết' },
+  'library.aria.browseMode': { en: 'Browse mode', vi: 'Chế độ xem' },
+  'library.aria.density': { en: 'Density', vi: 'Mật độ' },
+  'library.aria.toolbarRow': { en: 'Library browse controls', vi: 'Điều khiển thư viện' },
+  'library.tools.pasteUrl': { en: 'Paste URL', vi: 'Dán URL' },
+  'library.tools.export': { en: 'Export', vi: 'Xuất' },
+  'library.tools.screen': { en: 'Screen', vi: 'Màn hình' },
+  'library.tools.eagle': { en: 'Eagle', vi: 'Eagle' },
+  'library.tools.folder': { en: 'Folder', vi: 'Thư mục' },
+  'library.tools.sortAria': { en: 'Sort references', vi: 'Sắp xếp' },
+  'library.tools.sortRecent': { en: 'Recent', vi: 'Gần đây' },
+  'library.tools.sortTitle': { en: 'Title', vi: 'Tên' },
+  'library.tools.sortSource': { en: 'Source', vi: 'Nguồn' },
+  'library.ideas.empty.title': { en: 'No ideas', vi: 'Chưa có ý tưởng' },
+  'library.ideas.empty.body': { en: 'Captured text ideas will appear here.', vi: 'Ý tưởng đã ghi lại sẽ hiện ở đây.' },
+  'library.links.empty.title': { en: 'No links', vi: 'Chưa có liên kết' },
+  'library.links.empty.body': { en: 'Browser link captures and graph relations will appear here.', vi: 'Liên kết ghi từ trình duyệt và quan hệ trên sơ đồ sẽ hiện ở đây.' },
+  'library.dropHint': { en: 'Drop images into Library', vi: 'Thả hình ảnh vào Thư viện' },
+  'library.download.label': { en: 'Downloading original · {title}', vi: 'Đang tải bản gốc · {title}' },
+  'library.download.labelWithProgress': { en: 'Downloading original · {title} ({percent}%)', vi: 'Đang tải bản gốc · {title} ({percent}%)' },
+  'library.batch.selected': { en: '{count} selected', vi: 'Đã chọn {count}' },
+  'library.batch.tagAria': { en: 'Batch tag', vi: 'Gắn thẻ hàng loạt' },
+  'library.batch.tagPlaceholder': { en: 'Tag', vi: 'Thẻ' },
+  'library.batch.apply': { en: 'Apply', vi: 'Áp dụng' },
+  'library.batch.clear': { en: 'Clear', vi: 'Bỏ chọn' },
   'outline.diagnostics.more': { en: '{count} more issues', vi: 'Còn {count} vấn đề' },
 }
 
@@ -946,51 +985,10 @@ const useKiraPanelWidthStore = create<{ width: number; setWidth: (width: number)
   },
 }))
 
-// Percent 0-100 along the slider's travel; converted to actual pixel sizes
-// by libraryGridMinPxFor/libraryListThumbWidthFor below. App-level, not
-// project-level, same reasoning as panel width/rail icon mode above: how
-// big someone likes their reference thumbnails doesn't change per project.
-const LIBRARY_THUMB_SIZE_MIN = 0
-const LIBRARY_THUMB_SIZE_MAX = 100
-const LIBRARY_THUMB_SIZE_DEFAULT = 60
-const LIBRARY_GRID_MIN_PX = 110
-const LIBRARY_GRID_MAX_PX = 260
-const LIBRARY_LIST_THUMB_MIN_PX = 46
-const LIBRARY_LIST_THUMB_MAX_PX = 100
-
-function clampLibraryThumbSize(pct: number) {
-  return Math.min(LIBRARY_THUMB_SIZE_MAX, Math.max(LIBRARY_THUMB_SIZE_MIN, Math.round(pct)))
-}
-
-function readStoredLibraryThumbSize(): number {
-  try {
-    const stored = Number(localStorage.getItem('kira:libraryThumbSize'))
-    return Number.isFinite(stored) && stored >= 0 ? clampLibraryThumbSize(stored) : LIBRARY_THUMB_SIZE_DEFAULT
-  } catch {
-    return LIBRARY_THUMB_SIZE_DEFAULT
-  }
-}
-
-const useLibraryThumbSizeStore = create<{ pct: number; setPct: (pct: number) => void }>()((set) => ({
-  pct: readStoredLibraryThumbSize(),
-  setPct: (pct) => {
-    const next = clampLibraryThumbSize(pct)
-    try {
-      localStorage.setItem('kira:libraryThumbSize', String(next))
-    } catch {
-      // ignore persistence failures (private mode, etc.)
-    }
-    set({ pct: next })
-  },
-}))
-
-function libraryGridMinPxFor(pct: number) {
-  return Math.round(LIBRARY_GRID_MIN_PX + (LIBRARY_GRID_MAX_PX - LIBRARY_GRID_MIN_PX) * (pct / 100))
-}
-
-function libraryListThumbWidthFor(pct: number) {
-  return Math.round(LIBRARY_LIST_THUMB_MIN_PX + (LIBRARY_LIST_THUMB_MAX_PX - LIBRARY_LIST_THUMB_MIN_PX) * (pct / 100))
-}
+// Library thumbnail-size store + layout constants moved to
+// components/application/library/libraryLayout.ts (PHA 2 Untitled UI
+// migration, 2026-09-16) — imported by EvidenceInbox.tsx there, not needed
+// in main.tsx.
 
 /** Inline translated label. Subscribes to the language store so it re-renders on toggle. */
 function T({ k }: { k: string }): React.ReactElement {
@@ -1239,28 +1237,10 @@ function makeFileId() {
 const onboardingStorageKey = 'kira.onboarding.v1.completed'
 const inspectorLinkedListLimit = 8
 const outlineReferenceLimit = 6
-const libraryOverscan = 5
 const duplicateCandidateThreshold = 8
-// The virtualized list positions rows via `transform: translateY(...)`
-// every rowHeight px (thumb height + chrome below + this gutter), so the
-// estimate must stay >= the tallest actual row or rows will visually
-// overlap; this is a deliberate gutter between rows, not slack to trim.
-const libraryRowGutter = 6
-// Everything in a list row besides the thumbnail itself (title/meta text,
-// row padding) — density still controls this. The thumbnail's own size now
-// comes from the size slider instead of density (libraryListThumbWidthFor
-// above), so this is what's left over once the (measured) row box heights
-// of 86px compact / 100px relaxed have the old fixed 48px/58px thumb
-// subtracted back out.
-const libraryRowChromeHeights: Record<LibraryDensity, number> = {
-  compact: 38,
-  relaxed: 42,
-}
-// Same shape as the grid card at rest (thumb aspect-ratio ~1.16 plus title/
-// meta/padding below it) — used only to estimate virtualized row height,
-// not to size anything directly (the actual card uses CSS aspect-ratio).
-const libraryGridItemChromeHeight = 74
-const libraryGridItemAspect = 1.16
+// libraryOverscan / libraryRowGutter / libraryRowChromeHeights /
+// libraryGridItemChromeHeight / libraryGridItemAspect moved to
+// components/application/library/libraryLayout.ts (PHA 2, 2026-09-16).
 
 type GraphMetrics = {
   mode: GraphMode
@@ -7033,6 +7013,11 @@ function FileWorkspace({
           downloadProgress={pinDownload}
           selectedReferenceIds={selectedReferenceIds}
           selected={selection}
+          lang={lang}
+          T={T}
+          t={(key, vars) => t(key, lang, vars)}
+          relationLabels={relationLabels}
+          isTauriRuntime={isTauriRuntime()}
           onBrowseModeChange={setLibraryBrowseMode}
           onPanelModeChange={setLibraryPanelMode}
           onCaptureClipboard={pasteReferenceFromClipboard}
@@ -8242,271 +8227,6 @@ function startWindowDrag(event: React.PointerEvent<HTMLElement>) {
   void getCurrentWindow().startDragging().catch(() => undefined)
 }
 
-// A row's second line falls back through source -> dimensions -> relative
-// added-time so every row keeps the same two-line rhythm; without a
-// guaranteed fallback, rows for locally-imported or untagged images render
-// with a blank second line and break the list's scan rhythm.
-function formatReferenceDetail(image: EvidenceImage, lang: Lang): string {
-  if (image.source) return image.source
-  if (image.width && image.height) return `${image.width}×${image.height}`
-  const addedAt = image.addedAt ?? image.createdAt
-  if (!addedAt) return t('library.detail.untitled', lang)
-  const elapsedMs = Date.now() - new Date(addedAt).getTime()
-  if (!Number.isFinite(elapsedMs) || elapsedMs < 0) return t('library.detail.untitled', lang)
-  const minutes = Math.floor(elapsedMs / 60_000)
-  if (minutes < 1) return t('library.detail.addedJustNow', lang)
-  if (minutes < 60) return t('library.detail.addedMinutes', lang, { count: String(minutes) })
-  const hours = Math.floor(minutes / 60)
-  if (hours < 24) return t('library.detail.addedHours', lang, { count: String(hours) })
-  const days = Math.floor(hours / 24)
-  if (days < 30) return t('library.detail.addedDays', lang, { count: String(days) })
-  const date = new Date(addedAt).toLocaleDateString(lang === 'vi' ? 'vi-VN' : 'en-US', { month: 'short', day: 'numeric' })
-  return t('library.detail.addedOn', lang, { date })
-}
-
-function fitReferenceTagCount(
-  availableWidth: number,
-  tagWidths: number[],
-  moreWidths: Map<number, number>,
-  gap: number,
-): number {
-  const totalTagWidth = tagWidths.reduce((total, width) => total + width, 0) + gap * Math.max(0, tagWidths.length - 1)
-  if (totalTagWidth <= availableWidth) return tagWidths.length
-
-  let bestFit = 0
-  let visibleWidth = 0
-  for (let visibleCount = 0; visibleCount < tagWidths.length; visibleCount += 1) {
-    if (visibleCount > 0) visibleWidth += gap
-    visibleWidth += tagWidths[visibleCount] ?? 0
-    const hiddenCount = tagWidths.length - visibleCount - 1
-    if (hiddenCount <= 0) break
-    const moreWidth = moreWidths.get(hiddenCount) ?? 0
-    if (visibleWidth + gap + moreWidth <= availableWidth) bestFit = visibleCount + 1
-  }
-  return bestFit
-}
-
-function positionReferenceTagPopover(trigger: HTMLElement, popover: HTMLElement) {
-  const viewportPadding = 8
-  const popoverGap = 6
-  const triggerRect = trigger.getBoundingClientRect()
-
-  // Give the top-layer popover a stable first position before it opens. A
-  // second call from `onToggle` sees its real dimensions and clamps it to the
-  // viewport, including flipping above the chip near the bottom edge.
-  popover.style.left = `${Math.max(viewportPadding, triggerRect.left)}px`
-  popover.style.top = `${triggerRect.bottom + popoverGap}px`
-  const popoverRect = popover.getBoundingClientRect()
-  if (popoverRect.width === 0 || popoverRect.height === 0) return
-
-  const left = Math.min(
-    Math.max(viewportPadding, triggerRect.left),
-    Math.max(viewportPadding, window.innerWidth - popoverRect.width - viewportPadding),
-  )
-  const spaceBelow = window.innerHeight - triggerRect.bottom - popoverGap - viewportPadding
-  const top = spaceBelow >= popoverRect.height
-    ? triggerRect.bottom + popoverGap
-    : Math.max(viewportPadding, triggerRect.top - popoverRect.height - popoverGap)
-  popover.style.left = `${left}px`
-  popover.style.top = `${top}px`
-}
-
-function ReferenceTags({
-  image,
-  selectedTag,
-  lang,
-  onTagClick,
-}: {
-  image: EvidenceImage
-  selectedTag: string | null
-  lang: Lang
-  onTagClick: (tag: string) => void
-}) {
-  const stripRef = useRef<HTMLSpanElement>(null)
-  const moreTriggerRef = useRef<HTMLButtonElement>(null)
-  const popoverRef = useRef<HTMLDivElement>(null)
-  const popoverId = useId()
-  const [visibleTagCount, setVisibleTagCount] = useState(image.tags.length)
-  const [isPopoverOpen, setIsPopoverOpen] = useState(false)
-  const visibleTags = image.tags.slice(0, visibleTagCount)
-  const hiddenTags = image.tags.slice(visibleTagCount)
-
-  useLayoutEffect(() => {
-    const strip = stripRef.current
-    if (!strip) return
-
-    function updateVisibleTagCount() {
-      if (!strip) return
-      const tagWidths = [...strip.querySelectorAll<HTMLElement>('[data-tag-measure]')]
-        .map((element) => element.getBoundingClientRect().width)
-      const moreWidths = new Map(
-        [...strip.querySelectorAll<HTMLElement>('[data-more-measure]')]
-          .map((element) => [Number(element.dataset.moreMeasure), element.getBoundingClientRect().width]),
-      )
-      const gap = Number.parseFloat(getComputedStyle(strip).columnGap) || 0
-      const nextCount = fitReferenceTagCount(strip.clientWidth, tagWidths, moreWidths, gap)
-      setVisibleTagCount((currentCount) => currentCount === nextCount ? currentCount : nextCount)
-    }
-
-    updateVisibleTagCount()
-    const observer = new ResizeObserver(updateVisibleTagCount)
-    observer.observe(strip)
-    return () => observer.disconnect()
-  }, [image.tags])
-
-  return (
-    <span
-      ref={stripRef}
-      className="mini-tags"
-      role="group"
-      aria-label={t('library.tags.label', lang, { title: image.title })}
-    >
-      {visibleTags.map((tag, index) => (
-        <button
-          key={`${tag}-${index}`}
-          className={selectedTag === tag ? 'mini-tag-chip is-active' : 'mini-tag-chip'}
-          type="button"
-          title={tag}
-          aria-pressed={selectedTag === tag}
-          onClick={() => onTagClick(tag)}
-        >
-          {tag}
-        </button>
-      ))}
-      {hiddenTags.length > 0 && (
-        <>
-          <button
-            ref={moreTriggerRef}
-            className="mini-tags-more"
-            type="button"
-            aria-expanded={isPopoverOpen}
-            aria-label={t('library.tags.more', lang, { count: String(hiddenTags.length) })}
-            popoverTarget={popoverId}
-          >
-            +{hiddenTags.length}
-          </button>
-          <div
-            ref={popoverRef}
-            id={popoverId}
-            className="mini-tags-popover"
-            popover="auto"
-            aria-label={t('library.tags.more', lang, { count: String(hiddenTags.length) })}
-            onBeforeToggle={(event) => {
-              if (event.newState !== 'open' || !moreTriggerRef.current) return
-              positionReferenceTagPopover(moreTriggerRef.current, event.currentTarget)
-            }}
-            onToggle={(event) => {
-              const isOpen = event.newState === 'open'
-              setIsPopoverOpen(isOpen)
-              if (isOpen && moreTriggerRef.current) {
-                positionReferenceTagPopover(moreTriggerRef.current, event.currentTarget)
-              }
-            }}
-          >
-            <strong>{t('library.tags.more', lang, { count: String(hiddenTags.length) })}</strong>
-            <span className="mini-tags-popover-list">
-              {hiddenTags.map((tag, index) => (
-                <button
-                  key={`${tag}-${index}`}
-                  className={selectedTag === tag ? 'mini-tag-chip is-active' : 'mini-tag-chip'}
-                  type="button"
-                  title={tag}
-                  aria-pressed={selectedTag === tag}
-                  onClick={() => {
-                    popoverRef.current?.hidePopover()
-                    onTagClick(tag)
-                  }}
-                >
-                  {tag}
-                </button>
-              ))}
-            </span>
-          </div>
-        </>
-      )}
-      <span className="mini-tags-measure" aria-hidden="true">
-        {image.tags.map((tag, index) => (
-          <span key={`tag-${tag}-${index}`} className="mini-tag-chip" data-tag-measure>{tag}</span>
-        ))}
-        {image.tags.map((_, index) => {
-          const hiddenCount = image.tags.length - index
-          return <span key={`more-${hiddenCount}`} className="mini-tags-more" data-more-measure={hiddenCount}>+{hiddenCount}</span>
-        })}
-      </span>
-    </span>
-  )
-}
-
-/** Shared markup for one reference in the library — used by both the
-    virtualized list row and the grid tile, which previously duplicated this
-    ~20-line body verbatim. Tags render as a sibling of the select button
-    (not nested inside it) — they're independently interactive filters, and
-    an interactive control inside a `<button>` breaks its accessible
-    activation semantics. */
-function ReferenceCard({
-  image,
-  variant,
-  isSelected,
-  isChecked,
-  selectedTag,
-  lang,
-  style,
-  onSelect,
-  onToggle,
-  onTagClick,
-}: {
-  image: EvidenceImage
-  variant: 'row' | 'grid'
-  isSelected: boolean
-  isChecked: boolean
-  selectedTag: string | null
-  lang: Lang
-  style?: React.CSSProperties
-  onSelect: (id: string) => void
-  onToggle: (id: string) => void
-  onTagClick: (tag: string) => void
-}) {
-  const baseClass = variant === 'row' ? 'image-row' : 'image-grid-card'
-  return (
-    <div
-      className={isSelected ? `${baseClass} is-selected` : baseClass}
-      id={`library-reference-${image.id}`}
-      role="option"
-      aria-selected={isSelected}
-      style={style}
-    >
-      <label className="reference-check">
-        <input
-          aria-label={`Select ${image.title}`}
-          checked={isChecked}
-          type="checkbox"
-          onChange={() => onToggle(image.id)}
-        />
-        <span aria-hidden="true" />
-      </label>
-      <button
-        draggable
-        type="button"
-        title={[image.source, image.tags.join(', ')].filter(Boolean).join(' · ')}
-        onClick={() => onSelect(image.id)}
-        onDragStart={(event) => {
-          event.dataTransfer.setData('application/x-kira-image-id', image.id)
-          event.dataTransfer.setData('text/plain', image.id)
-        }}
-      >
-        <ReferenceThumb image={image} />
-        <span className="image-row-copy">
-          <strong>{image.title}</strong>
-          <small>{formatReferenceDetail(image, lang)}</small>
-        </span>
-      </button>
-      {image.tags.length > 0 && (
-        <ReferenceTags image={image} selectedTag={selectedTag} lang={lang} onTagClick={onTagClick} />
-      )}
-    </div>
-  )
-}
-
 function toggleWindowMaximizeFromChrome(event: React.MouseEvent<HTMLElement>) {
   if (!isTauriRuntime()) return
   if (isInteractiveChromeTarget(event.target)) return
@@ -8517,531 +8237,9 @@ function isInteractiveChromeTarget(target: EventTarget | null) {
   return target instanceof Element && Boolean(target.closest('button, input, textarea, select, a, [role="button"]'))
 }
 
-function EvidenceInbox({
-  allTags,
-  browseMode,
-  density,
-  ideas,
-  isCollapsed,
-  images,
-  links,
-  panelMode,
-  selectedTag,
-  sortMode,
-  totalCount,
-  batchTag,
-  searchQuery,
-  status,
-  downloadProgress,
-  selectedReferenceIds,
-  selected,
-  onBrowseModeChange,
-  onPanelModeChange,
-  onCaptureClipboard,
-  onCaptureScreen,
-  onBatchTagChange,
-  onApplyBatchTag,
-  onClearSelection,
-  onDensityChange,
-  onExportContactSheet,
-  onImportEagleWebItems,
-  onImportFolder,
-  onImportReferences,
-  onSearchChange,
-  onSelectedTagChange,
-  onSortModeChange,
-  onToggleReference,
-  onSelect,
-  onSelectIdea,
-  onSelectLink,
-  onToggleCollapsed,
-}: {
-  allTags: string[]
-  browseMode: LibraryBrowseMode
-  density: LibraryDensity
-  ideas: Idea[]
-  isCollapsed: boolean
-  images: EvidenceImage[]
-  links: EvidenceLink[]
-  panelMode: LibraryPanelMode
-  selectedTag: string | null
-  sortMode: SortMode
-  totalCount: number
-  batchTag: string
-  searchQuery: string
-  status: string
-  downloadProgress: { imageId: string; title: string; progress: number | null } | null
-  selectedReferenceIds: Set<string>
-  selected: Selection
-  onBrowseModeChange: (mode: LibraryBrowseMode) => void
-  onPanelModeChange: (mode: LibraryPanelMode) => void
-  onCaptureClipboard: () => void
-  onCaptureScreen: () => void
-  onBatchTagChange: (value: string) => void
-  onApplyBatchTag: () => void
-  onClearSelection: () => void
-  onDensityChange: (density: LibraryDensity) => void
-  onExportContactSheet: () => void
-  onImportEagleWebItems: () => void
-  onImportFolder: () => void
-  onImportReferences: (files: FileList | File[]) => void
-  onSearchChange: (value: string) => void
-  onSelectedTagChange: (tag: string) => void
-  onSortModeChange: (mode: SortMode) => void
-  onToggleReference: (id: string) => void
-  onSelect: (id: string) => void
-  onSelectIdea: (id: string) => void
-  onSelectLink: (id: string) => void
-  onToggleCollapsed: () => void
-}) {
-  const lang = useLangStore((state) => state.lang)
-  const importInput = useRef<HTMLInputElement>(null)
-  const listRef = useRef<HTMLDivElement>(null)
-  const [isDraggingFiles, setIsDraggingFiles] = useState(false)
-  const [isToolsOpen, setIsToolsOpen] = useState(false)
-  const [libraryScrollTop, setLibraryScrollTop] = useState(0)
-  const [libraryViewportHeight, setLibraryViewportHeight] = useState(0)
-  const [libraryViewportWidth, setLibraryViewportWidth] = useState(0)
-  const thumbSizePct = useLibraryThumbSizeStore((state) => state.pct)
-  const setThumbSizePct = useLibraryThumbSizeStore((state) => state.setPct)
-  const unassigned = images.filter((image) => image.suggestions.length > 0)
-  const selectedCount = selectedReferenceIds.size
-  const panelCounts: Record<LibraryPanelMode, number> = {
-    images: images.length,
-    ideas: ideas.length,
-    links: links.length,
-  }
-  const visibleIdeas = useMemo(
-    () => ideas.filter((idea) => {
-      const query = searchQuery.trim().toLowerCase()
-      return !query || `${idea.title} ${idea.content} ${idea.notes ?? ''}`.toLowerCase().includes(query)
-    }),
-    [ideas, searchQuery],
-  )
-  const imageTitleById = useMemo(() => new Map(images.map((image) => [image.id, image.title])), [images])
-  const ideaTitleById = useMemo(() => new Map(ideas.map((idea) => [idea.id, idea.title])), [ideas])
-  const visibleLinks = useMemo(
-    () => links.filter((link) => {
-      const query = searchQuery.trim().toLowerCase()
-      if (!query) return true
-      const sourceTitle = imageTitleById.get(link.imageId) ?? link.sourceNodeId ?? ''
-      const targetTitle = ideaTitleById.get(link.ideaId) ?? link.targetNodeId ?? ''
-      return `${sourceTitle} ${targetTitle} ${link.relation} ${link.note}`.toLowerCase().includes(query)
-    }),
-    [ideaTitleById, imageTitleById, links, searchQuery],
-  )
-  // Thumbnail size slider (task 2): the grid's card width and the list's
-  // thumb width both derive from the same 0-100 store value, at their own
-  // pixel ranges — grid cards are much bigger than a list thumbnail, so a
-  // shared "percent along the slider" keeps the two in step without forcing
-  // one literal px value onto both layouts.
-  const libraryThumbWidth = libraryListThumbWidthFor(thumbSizePct)
-  const libraryThumbHeight = Math.round(libraryThumbWidth / 1.25)
-  const rowHeight = libraryThumbHeight + libraryRowChromeHeights[density] + libraryRowGutter
-  const totalListHeight = images.length * rowHeight
-  const startIndex = Math.max(0, Math.floor(libraryScrollTop / rowHeight) - libraryOverscan)
-  const visibleCount = Math.ceil((libraryViewportHeight || 1) / rowHeight) + libraryOverscan * 2
-  const endIndex = Math.min(images.length, startIndex + visibleCount)
-  const visibleImages = images.slice(startIndex, endIndex)
-
-  // Grid virtualization windows by ROW, not by item — a CSS `auto-fill` grid
-  // has no per-item position to transform individually, so this re-derives
-  // the same column count the CSS's `repeat(auto-fill, minmax(var(--library-
-  // grid-min), 1fr))` would produce, then renders (and vertically offsets)
-  // only the visible rows' items, same overscan/scroll-driven approach as
-  // the list above. These constants are read off styles.css and hand-kept
-  // in sync — change `.image-grid-window`'s gap or `.image-list--grid`'s
-  // padding (styles.css, near `.image-grid-window`) and update here too, or
-  // the estimated column count drifts from what actually renders.
-  const gridGap = 12 // var(--space-3)
-  const gridItemMinWidth = libraryGridMinPxFor(thumbSizePct)
-  const gridHorizontalPadding = 32 // var(--space-4) * 2, matches .image-list--grid
-  const gridAvailableWidth = Math.max(0, libraryViewportWidth - gridHorizontalPadding)
-  const gridColumns = Math.max(1, Math.floor((gridAvailableWidth + gridGap) / (gridItemMinWidth + gridGap)))
-  const libraryGridItemHeight = Math.round(gridItemMinWidth / libraryGridItemAspect) + libraryGridItemChromeHeight
-  const gridRowHeight = libraryGridItemHeight + gridGap
-  const totalGridRows = Math.ceil(images.length / gridColumns)
-  const totalGridHeight = totalGridRows * gridRowHeight
-  const startGridRow = Math.max(0, Math.floor(libraryScrollTop / gridRowHeight) - libraryOverscan)
-  const visibleGridRowCount = Math.ceil((libraryViewportHeight || 1) / gridRowHeight) + libraryOverscan * 2
-  const endGridRow = Math.min(totalGridRows, startGridRow + visibleGridRowCount)
-  const visibleGridImages = images.slice(startGridRow * gridColumns, endGridRow * gridColumns)
-  const gridTranslateY = startGridRow * gridRowHeight
-
-  useEffect(() => {
-    const element = listRef.current
-    if (!element) return
-
-    function updateViewportSize() {
-      setLibraryViewportHeight(element?.clientHeight ?? 0)
-      setLibraryViewportWidth(element?.clientWidth ?? 0)
-    }
-
-    updateViewportSize()
-    const observer = new ResizeObserver(updateViewportSize)
-    observer.observe(element)
-    return () => observer.disconnect()
-    // `.image-list` only renders while panelMode === 'images' (EvidenceInbox
-    // itself stays mounted across panel switches), so listRef.current is a
-    // brand new node each time the user comes back to Images — re-run to
-    // reattach, or the viewport size sticks at 0 and virtualization collapses.
-  }, [panelMode])
-
-  useEffect(() => {
-    setLibraryScrollTop(0)
-    listRef.current?.scrollTo({ top: 0 })
-  }, [browseMode, density, searchQuery, selectedTag, sortMode])
-
-  useDismissableLayer(isToolsOpen, '.library-drawer-panel, [data-menu-trigger="library-tools"]', () => setIsToolsOpen(false))
-
-  return (
-    <aside
-      className={[
-        'inbox panel library-drawer-panel',
-        isDraggingFiles ? 'is-dragging-files' : '',
-        isCollapsed ? 'is-closed' : '',
-      ].filter(Boolean).join(' ')}
-      onDragLeave={(event) => {
-        const relatedTarget = event.relatedTarget as Node | null
-        if (relatedTarget && event.currentTarget.contains(relatedTarget)) return
-        setIsDraggingFiles(false)
-      }}
-      onDragOver={(event) => {
-        if ([...event.dataTransfer.items].some((item) => item.kind === 'file')) {
-          event.preventDefault()
-          setIsDraggingFiles(true)
-        }
-      }}
-      onDrop={(event) => {
-        event.preventDefault()
-        setIsDraggingFiles(false)
-        onImportReferences(event.dataTransfer.files)
-      }}
-    >
-      <div className="panel-header">
-        <div className="panel-title-row">
-          <h2>{panelMode === 'images' ? 'Images' : panelMode === 'ideas' ? 'Ideas' : 'Links'}</h2>
-          <span className="panel-meta">
-            {t(panelCounts[panelMode] === 1 ? 'library.meta.item' : 'library.meta.items', lang, { count: String(panelCounts[panelMode]) })}
-            {panelMode === 'images' && unassigned.length > 0 && (
-              <span className="panel-meta-badge">{t('library.meta.suggested', lang, { count: String(unassigned.length) })}</span>
-            )}
-          </span>
-        </div>
-        <div className="panel-actions">
-          <button className="icon-button" type="button" aria-label="Import image" onClick={() => importInput.current?.click()}>
-            <ImagePlus size={16} />
-          </button>
-          <button
-            aria-expanded={isToolsOpen}
-            className={isToolsOpen ? 'icon-button is-active' : 'icon-button'}
-            data-menu-trigger="library-tools"
-            type="button"
-            aria-label="Library tools"
-            onClick={() => setIsToolsOpen((current) => !current)}
-          >
-            <MoreHorizontal size={16} />
-          </button>
-        </div>
-        <input
-          ref={importInput}
-          aria-label="Import reference images"
-          className="file-input"
-          accept="image/*"
-          multiple
-          type="file"
-          onChange={(event) => {
-            if (event.target.files) onImportReferences(event.target.files)
-            event.target.value = ''
-          }}
-        />
-      </div>
-
-      <div className="search-field">
-        <Search size={15} />
-        <input
-          aria-label="Search library"
-          value={searchQuery}
-          placeholder={panelMode === 'images' ? 'Search images' : panelMode === 'ideas' ? 'Search ideas' : 'Search links'}
-          onChange={(event) => onSearchChange(event.target.value)}
-        />
-      </div>
-
-      {panelMode === 'images' && (
-      <div className="library-browse-bar" aria-label="Library browse controls">
-        <Segmented
-          className="library-browse-mode"
-          ariaLabel="Browse mode"
-          variant="radio"
-          value={browseMode}
-          onChange={onBrowseModeChange}
-          options={[
-            { value: 'list', label: t('library.browseMode.list', lang) },
-            { value: 'grid', label: t('library.browseMode.grid', lang) },
-          ]}
-        />
-        <input
-          className="library-size-slider"
-          aria-label={t('library.thumbSize.label', lang)}
-          type="range"
-          min={LIBRARY_THUMB_SIZE_MIN}
-          max={LIBRARY_THUMB_SIZE_MAX}
-          step={5}
-          value={thumbSizePct}
-          onChange={(event) => setThumbSizePct(Number(event.currentTarget.value))}
-        />
-        {selectedTag ? (
-          <button
-            className="active-filter-chip"
-            type="button"
-            aria-label={t('library.filter.remove', lang, { tag: selectedTag })}
-            onClick={() => onSelectedTagChange(selectedTag)}
-          >
-            <span>{selectedTag}</span>
-            <X size={11} aria-hidden="true" />
-          </button>
-        ) : (searchQuery.trim() || totalCount !== images.length) ? (
-          <span>{t('library.meta.filteredCount', lang, { visible: String(images.length), total: String(totalCount) })}</span>
-        ) : (
-          <span>{t('library.meta.visible', lang, { count: String(images.length) })}</span>
-        )}
-      </div>
-      )}
-
-      {isToolsOpen && (
-        <div className="library-tools-popover">
-          <div className="library-command-menu" aria-label="Library actions">
-            <button type="button" onClick={onCaptureClipboard}>
-              <Clipboard size={14} />
-              Paste URL
-            </button>
-            <button type="button" onClick={onExportContactSheet}>
-              <ArrowUpFromLine size={14} />
-              Export
-            </button>
-            {isTauriRuntime() && (
-              <>
-                <button type="button" onClick={onCaptureScreen}>
-                  <Camera size={14} />
-                  Screen
-                </button>
-                <button type="button" onClick={onImportEagleWebItems}>
-                  <Database size={14} />
-                  Eagle
-                </button>
-                <button type="button" onClick={onImportFolder}>
-                  <FolderOpen size={14} />
-                  Folder
-                </button>
-              </>
-            )}
-          </div>
-          {panelMode === 'images' && (
-          <div className="filter-chips" aria-label="Tags">
-            {allTags.slice(0, 5).map((tag) => (
-              <button
-                key={tag}
-                className={selectedTag === tag ? 'filter-chip is-active' : 'filter-chip'}
-                type="button"
-                onClick={() => onSelectedTagChange(tag)}
-              >
-                {tag}
-              </button>
-            ))}
-          </div>
-          )}
-          {panelMode === 'images' && (
-          <div className="library-tools">
-            <select aria-label="Sort references" value={sortMode} onChange={(event) => onSortModeChange(event.target.value as SortMode)}>
-              <option value="recent">Recent</option>
-              <option value="title">Title</option>
-              <option value="source">Source</option>
-            </select>
-            <Segmented
-              className="density-toggle"
-              ariaLabel="Density"
-              variant="radio"
-              value={density}
-              onChange={onDensityChange}
-              options={[
-                { value: 'compact', label: t('library.density.compact', lang) },
-                { value: 'relaxed', label: t('library.density.relaxed', lang) },
-              ]}
-            />
-          </div>
-          )}
-        </div>
-      )}
-
-      {panelMode === 'images' ? (
-        <div
-          className={`image-list image-list--${density} image-list--${browseMode}`}
-          style={{
-            '--library-thumb-w': `${libraryThumbWidth}px`,
-            '--library-thumb-h': `${libraryThumbHeight}px`,
-            '--library-grid-min': `${gridItemMinWidth}px`,
-          } as React.CSSProperties}
-          data-rendered-count={browseMode === 'grid' ? visibleGridImages.length : visibleImages.length}
-          data-total-count={images.length}
-          ref={listRef}
-          role="listbox"
-          aria-label="Reference images"
-          aria-activedescendant={selected.type === 'image' ? `library-reference-${selected.id}` : undefined}
-          tabIndex={0}
-          onScroll={(event) => setLibraryScrollTop(event.currentTarget.scrollTop)}
-          onKeyDown={(event) => {
-            if (browseMode !== 'list' || images.length === 0) return
-            if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return
-            event.preventDefault()
-            const currentIndex = selected.type === 'image' ? images.findIndex((image) => image.id === selected.id) : -1
-            const nextIndex = event.key === 'ArrowDown'
-              ? Math.min(images.length - 1, currentIndex + 1)
-              : Math.max(0, currentIndex - 1)
-            const nextImage = images[nextIndex]
-            if (!nextImage) return
-            onSelect(nextImage.id)
-            const element = listRef.current
-            if (!element) return
-            const rowTop = nextIndex * rowHeight
-            const rowBottom = rowTop + rowHeight
-            if (rowTop < element.scrollTop) element.scrollTo({ top: rowTop })
-            else if (rowBottom > element.scrollTop + element.clientHeight) element.scrollTo({ top: rowBottom - element.clientHeight })
-          }}
-        >
-          {images.length > 0 && browseMode === 'grid' ? (
-            <div className="image-grid-outer" style={{ height: totalGridHeight }}>
-              <div className="image-grid-window" style={{ transform: `translateY(${gridTranslateY}px)` }}>
-                {visibleGridImages.map((image) => (
-                  <ReferenceCard
-                    key={image.id}
-                    image={image}
-                    variant="grid"
-                    isSelected={selected.type === 'image' && selected.id === image.id}
-                    isChecked={selectedReferenceIds.has(image.id)}
-                    selectedTag={selectedTag}
-                    lang={lang}
-                    onSelect={onSelect}
-                    onToggle={onToggleReference}
-                    onTagClick={onSelectedTagChange}
-                  />
-                ))}
-              </div>
-            </div>
-          ) : images.length > 0 ? (
-            <div className="image-list-window" style={{ height: totalListHeight }}>
-              {visibleImages.map((image, visibleIndex) => {
-                const index = startIndex + visibleIndex
-                return (
-                  <ReferenceCard
-                    key={image.id}
-                    image={image}
-                    variant="row"
-                    isSelected={selected.type === 'image' && selected.id === image.id}
-                    isChecked={selectedReferenceIds.has(image.id)}
-                    selectedTag={selectedTag}
-                    lang={lang}
-                    style={{ transform: `translateY(${index * rowHeight}px)` }}
-                    onSelect={onSelect}
-                    onToggle={onToggleReference}
-                    onTagClick={onSelectedTagChange}
-                  />
-                )
-              })}
-            </div>
-          ) : (
-            <div className="empty-state">
-              <strong><T k="library.empty.title" /></strong>
-              <span><T k="library.empty.body" /></span>
-              <button className="primary-button" type="button" onClick={() => importInput.current?.click()}>
-                <T k="library.empty.import" />
-              </button>
-            </div>
-          )}
-        </div>
-      ) : panelMode === 'ideas' ? (
-        <div className="library-node-list" role="list" aria-label="Ideas">
-          {visibleIdeas.map((idea) => (
-            <button
-              key={idea.id}
-              className={selected.type === 'idea' && selected.id === idea.id ? 'library-node-row is-selected' : 'library-node-row'}
-              type="button"
-              onClick={() => onSelectIdea(idea.id)}
-            >
-              <Lightbulb size={15} />
-              <span>
-                <strong>{idea.title}</strong>
-                <small>{idea.status} · {idea.content}</small>
-              </span>
-            </button>
-          ))}
-          {visibleIdeas.length === 0 && <div className="empty-state"><strong>No ideas</strong><span>Captured text ideas will appear here.</span></div>}
-          {/* .library-node-row small is hidden by default and revealed on
-              hover/selection in CSS — see .library-node-row small. */}
-        </div>
-      ) : (
-        <div className="library-node-list" role="list" aria-label="Links">
-          {visibleLinks.map((link) => (
-            <button
-              key={link.id}
-              className={selected.type === 'link' && selected.id === link.id ? 'library-node-row is-selected' : 'library-node-row'}
-              type="button"
-              onClick={() => onSelectLink(link.id)}
-            >
-              <Workflow size={15} />
-              <span>
-                <strong>{relationLabels[link.relation]}</strong>
-                <small>{imageTitleById.get(link.imageId) ?? link.imageId} {'->'} {ideaTitleById.get(link.ideaId) ?? link.ideaId}</small>
-              </span>
-            </button>
-          ))}
-          {visibleLinks.length === 0 && <div className="empty-state"><strong>No links</strong><span>Browser link captures and graph relations will appear here.</span></div>}
-        </div>
-      )}
-      {isDraggingFiles && <div className="drop-copy">Drop images into Library</div>}
-      {downloadProgress && (
-        <div className="library-download-bar" role="status">
-          <span className="library-download-label">
-            Downloading original · {downloadProgress.title}
-            {downloadProgress.progress != null ? ` (${Math.round(downloadProgress.progress * 100)}%)` : ''}
-          </span>
-          <div className="library-download-track">
-            <div
-              className={downloadProgress.progress == null ? 'library-download-fill is-indeterminate' : 'library-download-fill'}
-              style={downloadProgress.progress == null ? undefined : { transform: `scaleX(${Math.min(1, downloadProgress.progress)})` }}
-            />
-          </div>
-        </div>
-      )}
-      <div className="library-footer">
-        {selectedCount > 0 ? (
-          <div className="batch-bar">
-            <span className="selection-count">{selectedCount} selected</span>
-            <input
-              aria-label="Batch tag"
-              value={batchTag}
-              placeholder="Tag"
-              onChange={(event) => onBatchTagChange(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter') onApplyBatchTag()
-              }}
-            />
-            <button type="button" onClick={onApplyBatchTag}>
-              Apply
-            </button>
-            <button type="button" onClick={onClearSelection}>
-              Clear
-            </button>
-          </div>
-        ) : (
-          <div className="inbox-footer-action" role="status">
-            <Sparkles size={14} />
-            {status}
-          </div>
-        )}
-      </div>
-    </aside>
-  )
-}
+// EvidenceInbox / ReferenceCard / ReferenceTags / formatReferenceDetail
+// moved to components/application/library/ (PHA 2 Untitled UI migration,
+// 2026-09-16) — imported above.
 
 function GraphCanvas({
   ideas,
@@ -13107,64 +12305,9 @@ function KiraGradientDefs() {
   )
 }
 
-function ReferenceThumb({
-  image,
-  className = '',
-}: {
-  image: Pick<EvidenceImage, 'thumb' | 'title' | 'width' | 'height' | 'cropRect'>
-  className?: string
-}) {
-  const [isMissing, setIsMissing] = useState(false)
-  const hostRef = useRef<HTMLSpanElement>(null)
-  const classes = ['reference-thumb', className, isMissing ? 'is-missing' : ''].filter(Boolean).join(' ')
-  const storedAspect = image.width && image.height ? referenceAspect(image) : null
-  const crop = image.cropRect
-
-  // The non-destructive crop trick: blow the <img> up past its container by
-  // exactly 1/cropWidth and shift it so the crop rect's corner lands at the
-  // container's corner, then let overflow:hidden do the clipping. The file on
-  // disk never changes — only what fraction of it this element shows.
-  const cropStyle: React.CSSProperties | undefined =
-    crop && crop.width > 0 && crop.height > 0
-      ? {
-          position: 'absolute',
-          width: `${100 / crop.width}%`,
-          height: `${100 / crop.height}%`,
-          maxWidth: 'none',
-          left: `${(-crop.x / crop.width) * 100}%`,
-          top: `${(-crop.y / crop.height) * 100}%`,
-        }
-      : undefined
-
-  return (
-    <span
-      ref={hostRef}
-      className={classes}
-      aria-label={isMissing ? `${image.title} missing` : undefined}
-      style={storedAspect ? { '--thumb-aspect': storedAspect } as React.CSSProperties : undefined}
-    >
-      {isMissing ? (
-        <ImagePlus size={16} aria-hidden="true" />
-      ) : (
-        <img
-          src={image.thumb}
-          alt=""
-          draggable={false}
-          style={cropStyle}
-          onError={() => setIsMissing(true)}
-          // Captures from the web usually arrive without stored dimensions, so
-          // the true ratio is read off the decoded image rather than guessed.
-          onLoad={(event) => {
-            if (storedAspect) return
-            const { naturalWidth, naturalHeight } = event.currentTarget
-            if (!naturalWidth || !naturalHeight) return
-            hostRef.current?.style.setProperty('--thumb-aspect', String(referenceAspect({ width: naturalWidth, height: naturalHeight })))
-          }}
-        />
-      )}
-    </span>
-  )
-}
+// ReferenceThumb / referenceAspect moved to components/ReferenceThumb.tsx
+// (PHA 2 Untitled UI migration, 2026-09-16) — imported above; shared by
+// canvas nodes, slides and the Library drawer.
 
 function ReferenceCropDialog({
   image,
@@ -16827,21 +15970,6 @@ function stickerRotationDeg(id: string) {
   hash ^= hash >>> 16
   const unit = (hash >>> 0) % 1000 / 1000 // 0..1
   return Number((unit * 5 - 2.5).toFixed(2)) // -2.5deg..2.5deg
-}
-
-// Reference nodes render at their real aspect ratio instead of a fixed crop box.
-function referenceAspect(image: Pick<EvidenceImage, 'width' | 'height'> & Partial<Pick<EvidenceImage, 'cropRect'>>) {
-  if (!image.width || !image.height) return 4 / 3
-  // Everything that lays out or sizes a reference (canvas nodes, shelf-pack,
-  // cluster-force collision radius, library thumbnails) already funnels
-  // through this one function, so a crop just needs to change what it
-  // reports here — nothing downstream needs to know cropping exists.
-  if (image.cropRect && image.cropRect.width > 0 && image.cropRect.height > 0) {
-    const croppedWidthPx = image.width * image.cropRect.width
-    const croppedHeightPx = image.height * image.cropRect.height
-    return clamp(croppedWidthPx / croppedHeightPx, 0.3, 3.5)
-  }
-  return clamp(image.width / image.height, 0.3, 3.5)
 }
 
 function layoutDensityScale(nodeCount: number) {
