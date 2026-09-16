@@ -4858,10 +4858,22 @@ button.mini-tags-more:focus-visible {
 /* Primary tier (ink block), same material as every other committing action
    in the app (DESIGN.md §7 Buttons) — not a solid teal fill. Send is the
    dock's one primary action. */
+/* PHA 3 Untitled UI migration (2026-09-16): this is now a kit `Button`
+   (color="tertiary", icon passed as an already-instantiated element so kit's
+   own `data-icon` size/color utilities never attach — see
+   KiraDockComposer-equivalent wiring in main.tsx `renderKiraDock`). Every
+   property the button actually needs (box, radius, color, background) is
+   set here in plain (unlayered) CSS, which always outranks Tailwind's
+   `@layer utilities` regardless of source order — CLAUDE.md's cascade-layer
+   note applies here too. `padding: 0` is the one addition load-bearing for
+   the swap: kit's own size classes (`px-3 py-2` for `size="sm"`) would
+   otherwise still apply inside this fixed 26x26 box since nothing here set
+   `padding` before. */
 .kira-dock-submit {
   display: grid;
   width: 26px;
   height: 26px;
+  padding: 0;
   place-items: center;
   border: 0;
   border-radius: var(--radius-1);
@@ -4886,10 +4898,12 @@ button.mini-tags-more:focus-visible {
   transform: scale(1);
 }
 
+/* Same kit-Button note as .kira-dock-submit above. */
 .kira-dock-close-btn {
   display: grid;
   width: 24px;
   height: 24px;
+  padding: 0;
   place-items: center;
   border: 0;
   border-radius: var(--radius-1);
@@ -8162,18 +8176,21 @@ textarea {
   flex: 1;
 }
 
-.kp-tabs .count {
-  display: inline-grid;
-  min-width: 16px;
-  height: 16px;
-  margin-left: 4px;
-  padding: 0 4px;
-  place-items: center;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--text-main) 16%, transparent);
-  color: inherit;
-  font-size: var(--text-mini);
-  font-variant-numeric: tabular-nums;
+/* kit `TabList type="button-gray"` (KiraPanel.tsx, PHA 3 Untitled UI
+   migration, 2026-09-16) colors an unselected tab with Tailwind's
+   `text-quaternary` token. Measured contrast against `--surface-inspector`
+   (KiraPanel.tsx's own panel surface, via `.kira-uikit`'s bridge.css):
+   dark + default accent 7.58:1 (fine), but light theme + Violet accent only
+   3.50:1 — under kira-controls §8's 4.5:1 text floor (still clears 3:1, so
+   not a WCAG non-text-UI failure, but the tab LABEL itself is text).
+   bridge.css is off-limits to edit here (its own header comment: measure
+   and report, don't patch shared tokens) — this overrides only the two
+   Kira-panel tabs with the same `--text-muted` token already proven at
+   ≥4.5:1 across themes everywhere else in this file (e.g. `.item-kind`,
+   `.row-sub`). Selected tab keeps the kit's own color (already ≥8:1 in both
+   themes measured) — only the unselected label needed the floor raised. */
+.kp-title [role='tab'][aria-selected='false'] {
+  color: var(--text-muted);
 }
 
 .kp-body {
@@ -8661,12 +8678,16 @@ textarea {
   white-space: nowrap;
 }
 
-.item-status {
+/* Status pill for a "Cần bạn" row (chờ duyệt / đã áp dụng / đã cũ / ...) —
+   kit `Badge` (KiraChangeItem.tsx, PHA 3 Untitled UI migration, 2026-09-16)
+   sitting in `.item-line`'s `align-items: baseline` row; `flex: 0 0 auto`
+   keeps it from being squeezed by the long `.item-kind`/`.item-target`
+   text next to it, same as the `.item-status` span it replaced. Replaces
+   `.item-status`/`.state-wait`/`.state-attn` (removed — dead per
+   `graphify-lite.mjs`, no longer referenced by any className). */
+.item-status-badge {
   flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: var(--text-small);
+  align-self: center;
 }
 
 .item-body {
@@ -8719,19 +8740,6 @@ textarea {
 }
 
 .stale-note b {
-  color: var(--text-main);
-  font-weight: var(--weight-title);
-}
-
-.state-wait {
-  color: var(--text-soft);
-  font-weight: var(--weight-title);
-}
-
-/* The amber that would usually flag "outdated" reads too close to this
-   preset's accent in cyan-leaning themes — weight and the warning icon
-   carry the meaning instead of hue (DESIGN.md §5 Ví dụ đúng và sai). */
-.state-attn {
   color: var(--text-main);
   font-weight: var(--weight-title);
 }
