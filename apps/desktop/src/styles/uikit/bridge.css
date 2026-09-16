@@ -33,7 +33,34 @@
    theo đúng cơ chế đã verify ở trên. CSS này cũng KHÔNG nằm trong layer nào
    (không @layer) nên tự động thắng bản @theme (nằm trong layer "theme") mà
    không cần tăng specificity — đúng cơ chế "CSS chưa vào layer luôn thắng
-   CSS đã vào layer" đã ghi trong docs/research/2026-09-16-tailwind-kit-migration.md §5. */
+   CSS đã vào layer" đã ghi trong docs/research/2026-09-16-tailwind-kit-migration.md §5.
+
+   CẢNH BÁO cho người sau sửa file này (rút ra từ 2 vòng vá dark-mode
+   2026-09-16, xem hai khối comment "Dark-mode fix" / "PHA 2 dark-mode audit"
+   phía dưới):
+   1) Token brand-* PHẢI khai trên .app-shell (hoặc .app-shell[data-color-
+      mode="dark"] khi cần giá trị riêng cho dark), KHÔNG BAO GIỜ ở :root —
+      xem cơ chế "TẠM" ở đầu file này.
+   2) Thêm một override brand-* mới vào khối `.app-shell { ... }` KHÔNG bọc
+      @layer nghĩa là nó LUÔN thắng theme.css, kể cả nhánh
+      `.app-shell[data-color-mode="dark"] { ... }` của theme.css (dù nhánh
+      đó có specificity cao hơn — layer thắng trước specificity). Nếu
+      theme.css có giá trị dark KHÁC giá trị light cho token bạn sắp
+      override, và bạn chỉ override một lần (không tách dark riêng), bạn
+      ĐÃ che mất nhánh dark của kit — dù không cố ý. Trước khi thêm token
+      brand-* mới vào khối đó: grep tên token trong theme.css, so giá trị ở
+      khối `@theme { ... }` (light) với khối
+      `.app-shell[data-color-mode="dark"] { ... }` (dark). Khác nhau thì
+      hoặc thêm override dark riêng (ưu tiên copy nguyên giá trị dark của
+      kit), hoặc đo thật (không suy luận) để chứng minh giá trị light vẫn
+      đạt ngưỡng contrast ở dark trước khi để chung một dòng.
+   3) "Đo thật" nghĩa là getComputedStyle trong app đang chạy + composite
+      lên nền thật (kira-controls §8), không phải đọc hex tĩnh — biến
+      accent-cyan/accent-strong đổi theo project và theo mode, nên cùng một
+      token có thể đạt ở accent này và hỏng ở accent khác (xem BUG B trong
+      khối "PHA 2 dark-mode audit": lỗi không phụ thuộc theme.css shadow mà
+      phụ thuộc công thức accent-strong tự nó, chỉ lộ ra khi đo bằng giá trị
+      accent-strong thật của app, không phải bằng cặp demo tĩnh của gallery). */
 
 .app-shell {
   /* Thang brand-50..950: brand-500/600 LÀ accent runtime của project (đã
@@ -185,18 +212,102 @@
    "Use an API key instead" disclosure summary added in
    components/application/settings/).
 
-   FIX SCOPE: only the 4 TEXT tokens actually proven to fail contrast are
-   set here, copied verbatim from theme.css's own dark-mode values (not
-   invented) — the ~25 other brand-derived tokens this file overrides
-   (bg/border/fg/icon/focus-ring) are NOT touched: none were measured
-   failing, and picking the right dark-mode formula for those is a real
-   design call (exactly what CLAUDE.md flags as pending Art Director
-   review), not a mechanical copy like this one. */
+   FIX SCOPE (PHA 1, this block): only the 4 TEXT tokens actually proven to
+   fail contrast are set here, copied verbatim from theme.css's own
+   dark-mode values (not invented). PHA 2 (below, 2026-09-16) audited the
+   remaining ~25 brand-derived overrides in the block above and found 2 more
+   that measurably fail in dark mode — see that block for what was fixed and
+   what was checked-and-left-alone. */
 .app-shell[data-color-mode="dark"] {
   --color-text-brand-secondary: var(--color-neutral-300);
   --color-text-brand-secondary_hover: var(--color-neutral-200);
   --color-text-brand-tertiary: var(--color-neutral-400);
   --color-text-brand-tertiary_alt: var(--color-neutral-50);
+}
+
+/* PHA 2 dark-mode audit (2026-09-16) — full pass over every accent-derived
+   token the top `.app-shell {}` block overrides unconditionally (grep
+   color-mix/--color-brand/brand-/focus-ring/slider-/utility-brand- there),
+   cross-checked against theme.css's own light vs dark branch, MEASURED live
+   in the running app (real getComputedStyle + canvas-resolved sRGB, and
+   real elementFromPoint compositing on rendered elements — not guessed) in
+   both dark/light and against 5 accent presets (cyan/amber/sage/violet/
+   rose) plus a real Rose project via the app's own Color Scheme panel.
+   Full before/after number table is in the task report, not repeated here.
+   Two tokens measured broken; both fixed below. Everything else in the top
+   block (bg-brand-primary bare, bg-brand-section/-section_subtle,
+   border-brand_alt, icon-fg-brand, icon-fg-brand_on-brand,
+   utility-brand-100..900 beyond what Badge uses, text-*_on-brand,
+   featured-icon-light-fg-brand) is either unreachable from any of the 12
+   migrated components today (grepped: no .tsx references it — Badge's own
+   utility-brand-50/700/200 and border-brand/focus-ring/fg-brand-primary,
+   fg-brand-secondary (and its _alt/_hover) and fg-brand-primary_alt ARE
+   reachable and DID get measured, 5.7:1-16:1, all pass) or, where reachable, cleared its
+   threshold with margin. Left untouched on purpose, per this file's own
+   rule: only fix what's measured failing.
+
+   BUG A — --color-bg-brand-primary_alt: same shadowing bug as PHA 1 above,
+   different token. The block above always sets it to kira-uikit-brand-50 (a
+   near-white accent wash, meant for a LIGHT surface — see the brand-50..950
+   comment: lighter toward 50 regardless of mode). theme.css's own dark
+   branch (grep `--color-bg-brand-primary_alt: var(--color-bg-secondary)`)
+   wants a plain neutral dark surface instead, shadowed the same way the 4
+   text tokens were. Real hit: kit `Tabs` type="button-brand" (rendered by
+   both the gallery's Tabs demo and any future selected-pill-style tab)
+   applies bg-brand-primary_alt as the SELECTED tab's pill background, with
+   text-brand-secondary (the PHA 1 fix, now correctly neutral-300) sitting
+   on top. Selected "Chat" tab, dark, teal accent, measured live in the
+   gallery: bg resolved to oklch(0.98 0.008 177.8) (~#f3faf8, near white),
+   text oklch(0.87 0 0) (~#d4d4d4) → 1.40:1. Fix: copied verbatim from
+   theme.css's dark branch, same as the PHA 1 text tokens.
+
+   BUG B — --color-bg-brand-solid / --color-bg-brand-solid_hover: NOT a
+   shadowed-branch bug like A — theme.css itself uses the same formula
+   (var(--color-brand-600)) in both its light and dark blocks, so there is
+   no kit dark value to restore here. The break is in what kira-uikit-brand
+   -600 (this file's stand-in for brand-600) IS in dark mode: accent-strong,
+   which main.tsx's accentThemeRecipe() intentionally pins to a fixed OKLCH
+   lightness (~0.78) in dark mode for every hue, because that recipe tunes
+   accent-strong for legibility as an accent ON the dark canvas (icon/text
+   tint against a near-black surface) — the opposite polarity of what a
+   *solid filled* control needs when it then hosts white text/icon on top.
+   Real hits, all measured live (real getComputedStyle + canvas-resolved
+   sRGB, not guessed), white text/icon on the unfixed bg-brand-solid:
+     - Settings "Save key" button (kit Button color="primary"), real
+       project accent: teal 1.94:1, rose 2.09:1 — both real accent-strong
+       values pulled from the app's own Color Scheme panel, not a demo.
+     - Same bg feeds Checkbox's checked fill + white check icon
+       (checkbox.tsx: bg-brand-solid ring-brand-solid), Toggle's selected
+       track (toggle.tsx: bg-brand-solid), and Slider's filled track
+       (slider.tsx: bg-brand-solid) — all inherit the same failure since
+       they all read the same custom property.
+   accentStrong's OKLCH lightness is fixed by the recipe regardless of hue,
+   so this isn't Rose-specific: sampled all 5 built-in presets (cyan
+   #7fc8b7, rose #f29e8f, amber #dfae67, sage #adbf94, violet #bface7) and
+   white-text contrast was 1.9-2.2:1 across the board.
+   Light mode does NOT need this fix: accentThemeRecipe() targets the
+   OPPOSITE lightness there (~0.44), so accent-strong already lands dark
+   enough for white text (measured 9.4-10.5:1 across the same 5 presets) —
+   confirmed this is genuinely dark-mode-only, not touched below.
+   FIX: darken accent-strong further, dark mode only, enough to clear 4.5:1
+   for every hue with real margin, without touching --accent-strong itself
+   (other consumers, e.g. --color-fg-brand-primary, rely on accent-strong
+   staying light-on-dark-canvas legible, and measured fine at 9.5-10.2:1 —
+   changing accent-strong itself would break those). Percentages chosen by
+   testing color-mix(in oklch, accent-strong X%, black) against white for
+   all 5 presets: 65% (base, lighter of the two) → 5.66-6.05:1; 60% (hover,
+   darker — mirrors kit's own light-mode convention where -solid_hover
+   is darker than -solid) → 6.72-7.09:1. Both comfortably clear 4.5:1 with
+   margin without going near-black. Every alias of these two tokens in the
+   unconditional block above (background-color-brand-solid(_hover),
+   border/ring/outline-color-brand-solid(_hover), and
+   --color-toggle-slim-border_pressed(-hover), which literally reads
+   var(--color-bg-brand-solid(_hover))) resolves through this var() chain
+   automatically — no need to redeclare each one here. */
+.app-shell[data-color-mode="dark"] {
+  --color-bg-brand-primary_alt: var(--color-bg-secondary);
+  --color-bg-brand-solid: color-mix(in oklch, var(--accent-strong) 65%, black);
+  --color-bg-brand-solid_hover: color-mix(in oklch, var(--accent-strong) 60%, black);
 }
 
 /* @theme (không inline) CHỈ để Tailwind biết tên token brand-* mà sinh
