@@ -19,9 +19,32 @@
 // SettingsView.tsx (PHA 1) and EvidenceInbox.tsx (PHA 2) — Modal/Tooltip/Tab
 // popovers this panel now uses need to portal inside `.app-shell` to see the
 // per-project accent + dark/light tokens (CLAUDE.md "phần tử portal ra
-// document.body cũng không thấy token theme"). `.kira-panel` itself stays
-// `position: absolute` against `.app-shell`, unaffected by the extra
-// (position: static) wrapper div — verified against styles.css:8101.
+// document.body cũng không thấy token theme").
+//
+// `.uikit-passthrough-host` (styles.css) forces `display: contents` on the
+// wrapper, same fix EvidenceInbox.tsx/PHA 2 already applied via
+// `.library-uikit-host` and for the exact same reason (see that rule's
+// comment): `UiKitPortalHost`'s div is a normal `position: static` box, and
+// `.kira-panel` sits inside it as a DIRECT sibling of `.content-region`
+// (the canvas) under `.workspace`. A static, non-positioned box always
+// paints BELOW any positioned sibling regardless of DOM order or the
+// z-index set on its own descendants (`isolation: isolate` traps
+// `.kira-panel`'s `z-index: 60` inside this wrapper's own stacking
+// context instead of letting it compete with `.content-region`) — so with
+// the plain wrapper the panel opens (state flips, correct geometry) but
+// renders fully behind the canvas, invisible and unclickable. Also tried
+// `position: relative` on the wrapper to fix that (PHA 2's first attempt
+// hit the same thing): that makes the wrapper `.kira-panel`'s containing
+// block instead of `.workspace`, and since the wrapper has no in-flow
+// content of its own its height collapses to 0, so `.kira-panel`'s
+// `position: absolute; top/right/bottom` resolves against a 0-height box.
+// `display: contents` removes the wrapper's own box entirely, so
+// `.kira-panel` resolves position AND stacking directly against
+// `.workspace` again (its original, correct containing block) — verified
+// live via `getBoundingClientRect`/`elementFromPoint` in the browser
+// preview: before the fix the topmost element over `.kira-panel`'s own
+// rect was the canvas's `svg.edge-layer`, after it's `.kira-panel`'s own
+// `.kp-head`.
 import type { CSSProperties, ReactNode } from 'react'
 import { X } from 'lucide-react'
 import { Tab, TabList, Tabs } from '@/components/application/tabs/tabs'
@@ -57,7 +80,7 @@ export function KiraPanel({
   onResizeStart: (event: React.PointerEvent<HTMLDivElement>) => void
 }) {
   return (
-    <UiKitPortalHost className="kira-uikit">
+    <UiKitPortalHost className="kira-uikit uikit-passthrough-host">
       <div
         className={isEntered ? 'kira-panel is-entered' : 'kira-panel'}
         style={{ '--kira-panel-width': `${width}px` } as CSSProperties}
