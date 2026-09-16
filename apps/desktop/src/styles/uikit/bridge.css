@@ -1,0 +1,182 @@
+/* Cầu nối theme: Untitled UI React <-> hệ theme runtime của KIRA.
+   PHA 0 — TẠM, một chỗ duy nhất để chỉnh khi Art Director/UI-UX chốt công
+   thức chính xác. Không thêm cơ chế theme thứ hai: dùng đúng biến runtime
+   KIRA đã có (--accent-cyan/--accent-strong, đặt inline theo project trên
+   .app-shell bởi buildProjectAppearanceStyle() trong main.tsx) và đúng
+   thuộc tính dark/light đã có (data-color-mode trên .app-shell).
+
+   ĐÃ ĐO THẬT TRONG BROWSER (không phải suy luận): mọi token Tailwind sinh
+   qua @theme (kể cả @theme inline) đều bị Tailwind emit vào
+   `@layer theme { :root, :host { ... } }`. Khi giá trị đó là var() trỏ tới
+   một biến chỉ khai trên .app-shell (không có ở :root), việc đọc token đó
+   TỪ MỘT PHẦN TỬ CON của .app-shell KHÔNG resolve — rơi về giá trị kế thừa/
+   initial, dù .app-shell đã có --kira-uikit-brand-* đúng giá trị. Test tối
+   thiểu tái hiện lỗi (không cần Tailwind, không cần Untitled UI):
+
+     :root { --a: var(--b); }
+     .app-shell { --b: blue; }
+     // (phần tử con của .app-shell) style.color = 'var(--a)'
+     // => KHÔNG ra blue, rơi về màu chữ kế thừa
+
+   Đây đúng là điều CLAUDE.md đã cảnh báo ("alias ở :root được tính một lần
+   tại root và không thấy style inline") — hoá ra áp dụng cả cho alias khai
+   bằng stylesheet thường (không chỉ inline style React), và Tailwind
+   @theme luôn khai ở :root nên KHÔNG dùng được cho token phụ thuộc runtime
+   theo project. Test còn lại trong git history của nhánh này (đã gỡ khỏi
+   file, xem log commit) nếu cần chạy lại.
+
+   CÁCH SỬA: không dựa vào token @theme cho phần liên quan brand. Thay vào
+   đó, override lại ĐÚNG TÊN các custom property mà theme.css (Untitled UI
+   gốc) và Tailwind đã emit — nhưng khai trực tiếp trên .app-shell (CSS
+   thường, KHÔNG bọc @theme => không bị đẩy lên :root). Vì .app-shell tự
+   khai trực tiếp (không phải kế thừa từ :root), phần tử con resolve đúng
+   theo đúng cơ chế đã verify ở trên. CSS này cũng KHÔNG nằm trong layer nào
+   (không @layer) nên tự động thắng bản @theme (nằm trong layer "theme") mà
+   không cần tăng specificity — đúng cơ chế "CSS chưa vào layer luôn thắng
+   CSS đã vào layer" đã ghi trong docs/research/2026-09-16-tailwind-kit-migration.md §5. */
+
+.app-shell {
+  /* Thang brand-50..950: brand-500/600 LÀ accent runtime của project (đã
+     mode-aware sẵn qua buildProjectAppearanceStyle); các bậc còn lại suy ra
+     bằng color-mix theo đúng hướng thang màu Tailwind gốc (sáng dần về 50,
+     tối dần về 950) — không đổi hướng theo dark/light app vì bản thân
+     --accent-cyan/--accent-strong đã đổi theo mode rồi. Đổi tỉ lệ ở đây để
+     retune thang brand mà không đụng theme.css hay component nào. */
+  --kira-uikit-brand-50: color-mix(in oklch, var(--accent-cyan) 10%, white);
+  --kira-uikit-brand-100: color-mix(in oklch, var(--accent-cyan) 18%, white);
+  --kira-uikit-brand-200: color-mix(in oklch, var(--accent-cyan) 32%, white);
+  --kira-uikit-brand-300: color-mix(in oklch, var(--accent-cyan) 48%, white);
+  --kira-uikit-brand-400: color-mix(in oklch, var(--accent-cyan) 68%, white);
+  --kira-uikit-brand-500: var(--accent-cyan);
+  --kira-uikit-brand-600: var(--accent-strong);
+  --kira-uikit-brand-700: color-mix(in oklch, var(--accent-strong) 82%, black);
+  --kira-uikit-brand-800: color-mix(in oklch, var(--accent-strong) 68%, black);
+  --kira-uikit-brand-900: color-mix(in oklch, var(--accent-strong) 54%, black);
+  --kira-uikit-brand-950: color-mix(in oklch, var(--accent-strong) 40%, black);
+
+  /* Thang gốc brand-50..950 của kit — override lại tên gốc phòng khi có
+     component dùng thẳng bg-brand-500/text-brand-500... (12 component pha 0
+     không dùng, nhưng để không vỡ nếu migrate thêm component sau này). */
+  --color-brand-50: var(--kira-uikit-brand-50);
+  --color-brand-100: var(--kira-uikit-brand-100);
+  --color-brand-200: var(--kira-uikit-brand-200);
+  --color-brand-300: var(--kira-uikit-brand-300);
+  --color-brand-400: var(--kira-uikit-brand-400);
+  --color-brand-500: var(--kira-uikit-brand-500);
+  --color-brand-600: var(--kira-uikit-brand-600);
+  --color-brand-700: var(--kira-uikit-brand-700);
+  --color-brand-800: var(--kira-uikit-brand-800);
+  --color-brand-900: var(--kira-uikit-brand-900);
+  --color-brand-950: var(--kira-uikit-brand-950);
+
+  /* Toàn bộ alias "brand" còn lại của theme.css (utility-brand-*,
+     text-brand-*, bg-brand-*, fg-brand-*, border-brand*, focus-ring,
+     icon-fg-brand*, slider-handle-border, toggle-slim-border_pressed*,
+     cộng bản sao theo namespace background-color, text-color, border-color,
+     ring-color, outline-color mà Tailwind dùng cho từng nhóm utility)
+     — SINH TỰ ĐỘNG từ theme.css bằng script một lần
+     (không phải chép tay), thay mọi var(--color-brand-N) bằng
+     var(--kira-uikit-brand-N); phần còn lại giữ nguyên logic gốc của kit
+     (vd fg-brand-primary_alt vẫn trỏ qua fg-brand-primary, không trỏ thẳng
+     brand-N) vì mọi alias ở đây cùng khai trên .app-shell nên chain vẫn
+     resolve đúng. */
+  --color-utility-brand-50: var(--kira-uikit-brand-50);
+  --color-utility-brand-50_alt: var(--kira-uikit-brand-50);
+  --color-utility-brand-100: var(--kira-uikit-brand-100);
+  --color-utility-brand-100_alt: var(--kira-uikit-brand-100);
+  --color-utility-brand-200: var(--kira-uikit-brand-200);
+  --color-utility-brand-200_alt: var(--kira-uikit-brand-200);
+  --color-utility-brand-300: var(--kira-uikit-brand-300);
+  --color-utility-brand-300_alt: var(--kira-uikit-brand-300);
+  --color-utility-brand-400: var(--kira-uikit-brand-400);
+  --color-utility-brand-400_alt: var(--kira-uikit-brand-400);
+  --color-utility-brand-500: var(--kira-uikit-brand-500);
+  --color-utility-brand-500_alt: var(--kira-uikit-brand-500);
+  --color-utility-brand-600: var(--kira-uikit-brand-600);
+  --color-utility-brand-600_alt: var(--kira-uikit-brand-600);
+  --color-utility-brand-700: var(--kira-uikit-brand-700);
+  --color-utility-brand-700_alt: var(--kira-uikit-brand-700);
+  --color-utility-brand-800: var(--kira-uikit-brand-800);
+  --color-utility-brand-800_alt: var(--kira-uikit-brand-800);
+  --color-utility-brand-900: var(--kira-uikit-brand-900);
+  --color-utility-brand-900_alt: var(--kira-uikit-brand-900);
+  --color-text-brand-secondary: var(--kira-uikit-brand-700);
+  --color-text-brand-tertiary: var(--kira-uikit-brand-600);
+  --color-text-brand-primary: var(--kira-uikit-brand-900);
+  --color-text-primary_on-brand: var(--color-white);
+  --color-text-secondary_on-brand: var(--kira-uikit-brand-200);
+  --color-text-tertiary_on-brand: var(--kira-uikit-brand-200);
+  --color-text-quaternary_on-brand: var(--kira-uikit-brand-300);
+  --color-text-brand-tertiary_alt: var(--kira-uikit-brand-600);
+  --color-text-brand-secondary_hover: var(--kira-uikit-brand-800);
+  --color-border-brand: var(--kira-uikit-brand-500);
+  --color-border-brand_alt: var(--kira-uikit-brand-600);
+  --color-fg-brand-secondary: var(--kira-uikit-brand-500);
+  --color-fg-brand-primary: var(--kira-uikit-brand-600);
+  --color-fg-brand-primary_alt: var(--color-fg-brand-primary);
+  --color-fg-brand-secondary_alt: var(--color-fg-brand-secondary);
+  --color-fg-brand-secondary_hover: var(--kira-uikit-brand-600);
+  --color-bg-brand-primary: var(--kira-uikit-brand-50);
+  --color-bg-brand-solid: var(--kira-uikit-brand-600);
+  --color-bg-brand-solid_hover: var(--kira-uikit-brand-700);
+  --color-bg-brand-secondary: var(--kira-uikit-brand-100);
+  --color-bg-brand-primary_alt: var(--kira-uikit-brand-50);
+  --color-bg-brand-section: var(--kira-uikit-brand-800);
+  --color-bg-brand-section_subtle: var(--kira-uikit-brand-700);
+  --color-featured-icon-light-fg-brand: var(--kira-uikit-brand-600);
+  --color-focus-ring: var(--kira-uikit-brand-500);
+  --color-icon-fg-brand: var(--kira-uikit-brand-600);
+  --color-icon-fg-brand_on-brand: var(--kira-uikit-brand-200);
+  --color-slider-handle-border: var(--kira-uikit-brand-600);
+  --color-toggle-slim-border_pressed-hover: var(--color-bg-brand-solid_hover);
+  --color-toggle-slim-border_pressed: var(--color-bg-brand-solid);
+  --background-color-brand-primary: var(--color-bg-brand-primary);
+  --background-color-brand-solid: var(--color-bg-brand-solid);
+  --background-color-brand-solid_hover: var(--color-bg-brand-solid_hover);
+  --background-color-brand-secondary: var(--color-bg-brand-secondary);
+  --background-color-brand-primary_alt: var(--color-bg-brand-primary_alt);
+  --background-color-brand-section: var(--color-bg-brand-section);
+  --background-color-brand-section_subtle: var(--color-bg-brand-section_subtle);
+  --background-color-border-brand: var(--color-border-brand);
+  --background-color-border-brand_alt: var(--color-border-brand_alt);
+  --text-color-brand-secondary: var(--color-text-brand-secondary);
+  --text-color-brand-tertiary: var(--color-text-brand-tertiary);
+  --text-color-brand-primary: var(--color-text-brand-primary);
+  --text-color-primary_on-brand: var(--color-text-primary_on-brand);
+  --text-color-secondary_on-brand: var(--color-text-secondary_on-brand);
+  --text-color-tertiary_on-brand: var(--color-text-tertiary_on-brand);
+  --text-color-quaternary_on-brand: var(--color-text-quaternary_on-brand);
+  --text-color-brand-tertiary_alt: var(--color-text-brand-tertiary_alt);
+  --text-color-brand-secondary_hover: var(--color-text-brand-secondary_hover);
+  --border-color-brand: var(--color-border-brand);
+  --border-color-brand_alt: var(--color-border-brand_alt);
+  --border-color-brand-solid: var(--color-bg-brand-solid);
+  --border-color-brand-solid_hover: var(--color-bg-brand-solid_hover);
+  --ring-color-brand: var(--color-border-brand);
+  --ring-color-brand_alt: var(--color-border-brand_alt);
+  --ring-color-brand-solid: var(--color-bg-brand-solid);
+  --ring-color-brand-solid_hover: var(--color-bg-brand-solid_hover);
+  --outline-color-brand: var(--color-border-brand);
+  --outline-color-brand_alt: var(--color-border-brand_alt);
+  --outline-color-brand-solid: var(--color-bg-brand-solid);
+  --outline-color-brand-solid_hover: var(--color-bg-brand-solid_hover);
+}
+
+/* @theme (không inline) CHỈ để Tailwind biết tên token brand-* mà sinh
+   utility class (.bg-brand-500, .text-brand-600...) cho component ngoài
+   phạm vi pha 0 — giá trị THẬT SỰ dùng lúc render luôn lấy từ khối
+   .app-shell phía trên (CSS thường thắng CSS trong layer, xem comment đầu
+   file), khối @theme này chỉ đăng ký token, không phải nguồn giá trị. */
+@theme {
+  --color-brand-50: var(--kira-uikit-brand-50);
+  --color-brand-100: var(--kira-uikit-brand-100);
+  --color-brand-200: var(--kira-uikit-brand-200);
+  --color-brand-300: var(--kira-uikit-brand-300);
+  --color-brand-400: var(--kira-uikit-brand-400);
+  --color-brand-500: var(--kira-uikit-brand-500);
+  --color-brand-600: var(--kira-uikit-brand-600);
+  --color-brand-700: var(--kira-uikit-brand-700);
+  --color-brand-800: var(--kira-uikit-brand-800);
+  --color-brand-900: var(--kira-uikit-brand-900);
+  --color-brand-950: var(--kira-uikit-brand-950);
+}
