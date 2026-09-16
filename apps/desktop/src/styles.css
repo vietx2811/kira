@@ -211,10 +211,10 @@
   --duration-base: 160ms;
   --duration-panel: 200ms;
   --duration-slow: 420ms;
-  /* Box-shadow substitute for the 2 controls that can't take a real outline
-     (the focused element is visually hidden — see .reference-check and
-     .mini-tag-chip below). Solid, not tinted, for the same contrast reason
-     as the :focus-visible outline above. */
+  /* Box-shadow substitute for controls that can't take a real outline (the
+     focused element sits flush against a sibling — see .mini-tag-chip
+     below). Solid, not tinted, for the same contrast reason as the
+     :focus-visible outline above. */
   --focus-ring: 0 0 0 2px var(--accent-cyan);
   --shadow-soft: 0 20px 70px rgb(0 0 0 / 0.28);
   --shell-shadow: inset 0 1px 0 rgb(255 255 255 / 0.08);
@@ -1347,6 +1347,29 @@ button {
   min-height: 0;
 }
 
+/* PHA 2 (2026-09-16): EvidenceInbox is wrapped in `UiKitPortalHost` (see
+   components/application/library/EvidenceInbox.tsx) so its kit Popover/
+   Menu/Tooltip portal inside `.app-shell` instead of `document.body` and
+   keep the per-project theme tokens (same reasoning as Settings' PHA 1
+   wrap). `display: contents` makes that wrapper div generate no box of its
+   own, so `.library-drawer-panel`'s `position: absolute; top/left/bottom`
+   still resolves against `.workspace` (unchanged containing block) and its
+   z-index: 50 still stacks directly against true siblings like
+   .library-resize-handle (z-index: 40) — tried `position: relative` +
+   matching z-index here first (to let the wrapper's own `isolation:
+   isolate`, set by PortalHost.tsx, keep working): that made the wrapper
+   itself the containing block instead, and since it has no absolutely-
+   positioned content contributing to its auto height, the drawer collapsed
+   to height: 0 (caught in this phase's own browser verification — confirmed
+   via a real `.library-drawer-panel` `getBoundingClientRect()` read).
+   `display: contents` also makes `isolation` a no-op (no box to isolate),
+   which is fine: without a box there is nothing for it to protect anyway,
+   and the drawer's own z-index escaping to compete with true siblings is
+   exactly the original, correct behavior. */
+.library-uikit-host {
+  display: contents;
+}
+
 .library-drawer-panel {
   position: absolute;
   top: var(--shell-card-inset);
@@ -1961,14 +1984,9 @@ h2 {
   white-space: nowrap;
 }
 
-.panel-meta-badge {
-  padding: 1px 6px;
-  border-radius: var(--radius-2);
-  background: var(--accent-faint);
-  color: var(--accent-strong);
-  font-size: var(--text-small);
-  font-weight: var(--weight-title);
-}
+/* .panel-meta-badge removed (PHA 2, 2026-09-16) — the "N suggested" chip is
+   now the kit `Badge` (color="brand"), styled from its own component, not
+   this class. */
 
 h3 {
   margin-bottom: var(--space-2);
@@ -1988,26 +2006,14 @@ small {
   font-size: var(--text-small);
 }
 
-.search-field {
-  display: flex;
-  align-items: center;
-  height: 34px;
-  margin: 0 var(--space-4) var(--space-2);
-  padding: 0 var(--space-3);
-  /* Was border: 0 with only a near-invisible 5.5%-alpha bottom hairline
-     (1.18:1 light) to mark the field's edge — under WCAG 1.4.11's 3:1
-     floor. --field-edge is the dedicated field-boundary token; the old
-     hairline stays as a subtle inner top highlight, not the edge itself. */
-  border: 1px solid var(--field-edge);
-  border-radius: 0;
-  background: var(--inset-field);
-  box-shadow: inset 0 -1px 0 var(--border-soft);
-  color: var(--text-muted);
-  gap: var(--space-2);
-  font-size: var(--text-small);
-}
-
-.library-browse-bar {
+/* Header row 2 (PHA 2, 2026-09-16): search + List/Grid + thumbnail-size
+   slider share one row — was 2 separate rows (.search-field / .library-
+   browse-bar, both removed below) before this phase. Collapsed, this row
+   holds [search icon button, Segmented, .library-thumb-slider, trailing
+   Badge]; open (`.library-search-active`, EvidenceInbox's `isSearchOpen`)
+   it holds just [kit Input, close button] — the browse controls step aside
+   rather than fitting all of it plus an expanded field across ~330px. */
+.library-toolbar-row {
   display: flex;
   align-items: center;
   min-height: 32px;
@@ -2019,103 +2025,55 @@ small {
 
 /* Filter chip or item count is the row's least important content once the
    size slider is added — always trail it, whichever sits there. */
-.library-browse-bar > :last-child {
+.library-toolbar-row > :last-child {
   flex: 0 1 auto;
   min-width: 0;
   margin-left: auto;
 }
 
-/* Thumbnail-size slider (task 2): shares the browse-mode row instead of
-   taking its own line. Native range track, themed only via accent-color —
-   same recipe as .range-field input, just without the stacked label. */
-.library-size-slider {
-  width: 72px;
-  flex: 0 0 auto;
-  accent-color: var(--accent-cyan);
-}
-
-.active-filter-chip {
-  display: inline-flex;
+.library-search-active {
+  display: flex;
+  flex: 1 1 auto;
   align-items: center;
-  max-width: 140px;
-  padding: 3px 6px 3px 9px;
-  border-radius: var(--radius-2);
-  background: var(--accent-faint);
-  color: var(--accent-strong);
-  cursor: pointer;
-  gap: 4px;
-  font-size: var(--text-small);
-  font-weight: var(--weight-title);
+  min-width: 0;
+  gap: var(--space-2);
 }
 
-.active-filter-chip span,
-.active-filter-chip {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.library-search-active > *:first-child {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
-.active-filter-chip svg {
-  flex: none;
-  opacity: 0.75;
-}
-
-.active-filter-chip:hover svg {
-  opacity: 1;
-}
-
-.search-field input {
-  width: 100%;
-  border: 0;
-  background: transparent;
-  color: var(--text-main);
-  outline: none;
-}
-
-.search-field input::placeholder {
+/* Thumbnail-size slider: small/large image glyphs bracket the kit `Slider`
+   so its travel reads as a size control at a glance, not a stray on/off
+   switch (the bug report this phase fixes — the bare kit track alone reads
+   like a toggle). */
+.library-thumb-slider {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  width: 108px;
+  gap: 6px;
   color: var(--text-muted);
 }
 
-.library-tools-popover {
-  position: absolute;
-  top: 54px;
-  right: 14px;
-  z-index: 30;
-  display: grid;
-  width: min(260px, calc(100% - 28px));
-  padding: 10px;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-3);
-  background: color-mix(in srgb, var(--surface-2) 97%, transparent);
-  box-shadow: var(--shadow-soft);
-  gap: 8px;
-  transform-origin: top right;
-  animation: popoverIn var(--duration-base) var(--ease-out-soft) both;
+.library-thumb-slider svg {
+  flex: none;
 }
 
-.library-command-menu {
-  display: grid;
-  gap: 3px;
-}
-
-.library-command-menu button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: flex-start;
+.library-thumb-slider-root {
+  flex: 1 1 auto;
   min-width: 0;
-  height: 30px;
-  padding: 0 8px;
-  border-radius: var(--radius-1);
-  background: transparent;
-  color: var(--text-soft);
-  cursor: pointer;
-  gap: 6px;
-  font-size: var(--text-small);
 }
 
-.library-command-menu button:hover {
-  background: var(--control-patch);
-  color: var(--text-main);
+/* Extra content inside the kit Dropdown's Popover, below its Menu — tag
+   filters + sort + density aren't menu actions (independently toggleable
+   filters/settings, not a single-select command list), so they render as
+   plain content beside `Dropdown.Menu` rather than as menu items. */
+.library-tools-extra {
+  display: grid;
+  padding: 0 4px 4px;
+  gap: 8px;
 }
 
 .filter-chips {
@@ -2146,17 +2104,6 @@ small {
   align-items: center;
   justify-content: space-between;
   gap: var(--space-2);
-}
-
-.library-tools select {
-  width: 100%;
-  height: 28px;
-  padding: 0 var(--space-2);
-  border: 0;
-  border-radius: var(--radius-1);
-  background: var(--control-patch-weak);
-  color: var(--text-soft);
-  outline: none;
 }
 
 .image-list {
@@ -2206,76 +2153,20 @@ small {
   padding: var(--space-2) var(--space-3);
 }
 
-/* Custom checkbox (native <input> hidden, .reference-check draws the box)
-   so hover/checked states are consistent and, in the grid, so it can sit on
-   a scrim — a bare native checkbox with only `accent-color` was invisible
-   against light reference images. */
-.reference-check {
-  display: inline-grid;
-  place-items: center;
-  width: 18px;
-  height: 18px;
-  cursor: pointer;
-}
-
-.reference-check input {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  opacity: 0;
-  pointer-events: none;
-}
-
-.reference-check span {
-  display: grid;
-  place-items: center;
-  width: 13px;
-  height: 13px;
-  /* Was --edge-stroke (2.71:1 dark / 1.97:1 light) — under WCAG 1.4.11's
-     3:1 floor for an unchecked control boundary. --field-edge is the
-     dedicated field-boundary token, same fix as the form fields above. */
-  border: 1.5px solid var(--field-edge);
-  border-radius: 3px;
-  background: var(--control-patch-strong);
-  transition: background 120ms ease, border-color 120ms ease;
-}
-
-/* Tick glyph, drawn with a rotated border rather than an icon component so
-   the checkbox stays a plain <span> — no glyph existed before, so a checked
-   reference read only as a teal ring, indistinguishable from unchecked at a
-   glance (QA, light-mode pass). */
-.reference-check span::after {
-  content: "";
-  width: 3px;
-  height: 6px;
-  border: solid var(--bg-base);
-  border-width: 0 1.5px 1.5px 0;
-  transform: rotate(45deg) translateY(-1px);
-  opacity: 0;
-  transition: opacity 100ms ease;
-}
-
-.reference-check input:checked + span {
-  border-color: var(--accent-cyan);
-  background: var(--accent-cyan);
-  box-shadow: inset 0 0 0 2px var(--bg-base);
-}
-
-.reference-check input:checked + span::after {
-  opacity: 1;
-}
-
-.reference-check input:focus-visible + span {
-  box-shadow: var(--focus-ring);
-}
-
+/* Selection checkbox is the kit `Checkbox` (components/base/checkbox) as of
+   PHA 2 (2026-09-16) — `.reference-check` only positions/reveals it now; the
+   box glyph, checked fill and focus ring are the kit's own (state driven from
+   React via `isSelected`, not CSS `:checked`/`:has()`, since the kit's
+   internal DOM no longer matches the old input+span sibling shape). The kit
+   sizes itself; `is-checked` is a plain class toggle passed down by
+   ReferenceCard (`isChecked`), not a CSS state selector. */
 .image-row > .reference-check {
   opacity: 0.55;
 }
 
 .image-row > .reference-check:hover,
 .image-row:hover > .reference-check,
-.image-row > .reference-check:has(input:checked) {
+.image-row > .reference-check.is-checked {
   opacity: 1;
 }
 
@@ -2394,7 +2285,7 @@ small {
 
 .image-grid-card:hover > .reference-check,
 .image-grid-card.is-selected > .reference-check,
-.image-grid-card > .reference-check:has(input:checked),
+.image-grid-card > .reference-check.is-checked,
 .image-grid-card > .reference-check:focus-within {
   opacity: 1;
 }
@@ -2731,32 +2622,19 @@ button.mini-tags-more:focus-visible {
   gap: var(--space-2);
 }
 
-.batch-bar input {
-  min-width: 0;
-  height: 30px;
-  padding: 0 var(--space-2);
-  border: 0;
-  border-radius: var(--radius-1);
-  background: var(--control-patch-weak);
-  color: var(--text-main);
-  outline: none;
-}
-
-.batch-bar button {
-  height: 30px;
-  padding: 0 var(--space-2);
-  border-radius: var(--radius-1);
-  background: var(--control-patch-weak);
-  color: var(--text-soft);
-  cursor: pointer;
-  font-size: var(--text-small);
-}
-
-.batch-bar button:hover {
-  /* Hover is a paper patch, not teal (DESIGN.md §3, kira-controls §2.4). */
-  background: var(--control-patch);
-  color: var(--text-main);
-}
+/* .batch-bar input / .batch-bar button removed (PHA 2, 2026-09-16): the Tag
+   field and Apply/Clear are now the kit `Input`/`Button` (EvidenceInbox.tsx)
+   with their own complete styling. Both are still real `<input>`/`<button>`
+   elements, so these old bare-tag rules — un-layered CSS, which always wins
+   over Tailwind's layered utility classes (see bridge.css's file-header
+   comment) — were silently overriding the kit's `bg-brand-solid text-white`
+   / `bg-primary text-secondary` with old muted `--control-patch-weak` /
+   `--text-soft` colors. Caught in this phase's own browser verification: a
+   computed-style read showed Apply resolving to `rgb(181,180,175)` on
+   `rgba(255,255,255,.035)` — 2.08:1, under WCAG 4.5:1 — while its own
+   `--color-bg-brand-solid` custom property was already correct (`#7fc8b7`,
+   proving the token chain worked and this rule, not a broken token, was the
+   cause). */
 
 .selection-count {
   color: var(--accent-cyan);
