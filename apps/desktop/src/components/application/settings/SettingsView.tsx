@@ -128,6 +128,25 @@ export function SettingsView({
   // nowhere on first opening Settings.
   const [isPortalReady, setIsPortalReady] = useState(false)
   useEffect(() => setIsPortalReady(true), [])
+  // React Aria hangs its Escape handler off the modal overlay element, so it
+  // only fires once focus is inside the dialog. Measured at 4093015: the kit
+  // focuses the dialog ~0.4s after it mounts, something blurs it again, and
+  // focus only settles back ~1-2.5s in. Escape did nothing during that window,
+  // which is exactly when a user reaches for it. This closes Settings from the
+  // document instead, and yields to any overlay stacked on top of it.
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key !== 'Escape' || event.defaultPrevented) return
+      // An overlay stacked on top owns Escape first. [data-rac][data-trigger] is
+      // the kit popover wrapper (a select menu); it is only in the DOM while one
+      // is open. The delete confirmation is matched by role, because closing
+      // Settings out from under it would drop the choice being made.
+      if (document.querySelector('[role="alertdialog"], [data-rac][data-trigger]')) return
+      onClose()
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [onClose])
   // When a provider is focused from elsewhere (onboarding, logged-out prompt), jump to the AI tab.
   useEffect(() => {
     if (focusNonce > 0) setActiveSettingsTab('ai')
