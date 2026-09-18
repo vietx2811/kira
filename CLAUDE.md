@@ -66,6 +66,12 @@ Mọi report kết thúc task chia 3 phần, theo thứ tự:
 5. **Bắt buộc tự `Read` lại ảnh trước khi gửi** để xác nhận sạch, không dính cửa sổ khác (Finder, System Settings, sidebar các session Claude khác) — full-screen capture khi cửa sổ KIRA không full màn hình đã từng dính nội dung nhạy cảm không liên quan, phải xoá ngay khi phát hiện.
 6. Dọn file tạm trong `/tmp` sau khi gửi xong.
 
+**Máy đang khoá màn hình:** `screencapture` trả ảnh đen, `app_screenshot` báo "audio/video capture failure", và `computer_batch` báo `loginwindow` đang ở trước. Không chụp được app native. Đường thay thế đã kiểm chứng: chạy Chrome headless có CDP rồi chụp ra file thật.
+- `"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new --disable-gpu --remote-debugging-port=9333 --user-data-dir=<scratch>/chrome-profile --no-first-run about:blank &`
+- Node 22 có `WebSocket` sẵn, không cần cài gì: nối tới `webSocketDebuggerUrl` từ `http://127.0.0.1:9333/json/list`, rồi `Emulation.setDeviceMetricsOverride` (đặt `deviceScaleFactor: 2` cho ảnh nét), `Page.navigate`, `Runtime.evaluate` (`awaitPromise: true`) để bấm nút và gọi `window.__kiraDev.loadFixture(...)`, cuối cùng `Page.captureScreenshot` và ghi base64 ra file.
+- So sánh trước/sau: `git worktree add … --detach <sha cũ>`, symlink `node_modules` + `apps/desktop/node_modules`, chạy `npx vite --port <port khác>`, chụp cùng một kịch bản trên hai port.
+- Cắt ảnh bằng `sips -c <cao> <rộng> --cropOffset <y> <x>` (offset là Y trước, X sau; đừng dùng 0, xem mục Gotcha).
+
 ## Verify
 
 1. **Kiểm đúng mục tiêu.** Kiểm chứng phát hiện trên **commit SHA lúc phát hiện**, không phải working tree (`git log -S "<chuỗi>"`, `git show <sha>`), và ghi SHA vào report. Trước khi tin kết quả test, **chứng minh app đang chạy đúng code định test** (vd probe của chính bạn có mặt). Browser preview **không có Tauri runtime**: đường native (AI provider, `osascript`, sidecar) phải test trong app thật.
