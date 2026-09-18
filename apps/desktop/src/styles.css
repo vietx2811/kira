@@ -3233,18 +3233,33 @@ button.mini-tags-more:focus-visible {
     calc(var(--canvas-overlay-left-inset, 0px) + 120px),
     min(var(--link-popover-x), calc(100% - var(--canvas-right-inset, 0px) - 120px))
   );
+  /* The popover opens upward, so an edge near the top of the canvas used to
+     push it under the topbar and cut its endpoints row off. --link-popover-lift
+     is the height budget that upward flip needs (max-height keeps the budget
+     honest even when the note field is dragged taller); below that much
+     headroom main.tsx sets data-flip="down" and the card opens under the edge
+     instead. Both constants are mirrored in LINK_POPOVER_LIFT/GAP there. */
+  --link-popover-lift: 260px;
+  --link-popover-gap: 14px;
   top: var(--link-popover-y);
   z-index: 9;
   display: grid;
   gap: 6px;
   width: 220px;
+  max-height: var(--link-popover-lift);
   padding: 10px;
+  overflow: auto;
+  overscroll-behavior: contain;
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-3);
   background: var(--node-surface-selected);
   pointer-events: auto;
-  transform: translate(-50%, calc(-100% - 14px));
+  transform: translate(-50%, calc(-100% - var(--link-popover-gap)));
   font-size: var(--text-small);
+}
+
+.link-popover[data-flip='down'] {
+  transform: translate(-50%, var(--link-popover-gap));
 }
 
 .link-popover-endpoints {

@@ -1212,6 +1212,11 @@ const DEFAULT_FILE_ID = 'primary'
 // Matches .file-tab-bar's rendered height with a little slack, so dragging a
 // node just past the top edge of the canvas reliably counts as "over tabs".
 const FILE_TAB_DROP_ZONE_HEIGHT = 48
+// Height budget the link popover needs above an edge, kept in step with
+// --link-popover-lift and --link-popover-gap in styles.css. Below this much
+// headroom the popover flips under the edge instead of off the canvas.
+const LINK_POPOVER_LIFT = 260
+const LINK_POPOVER_GAP = 14
 let sessionUidCounter = 0
 // A monotonic counter beats plain Date.now() for ids minted in the same tick
 // (e.g. rapid double-clicks), where two calls could otherwise collide.
@@ -7565,6 +7570,12 @@ function GraphCanvas({
   // outer App shell), so hit-testing it during a drag is a direct DOM query
   // rather than a prop — cheap and avoids re-rendering on every pointermove.
   const dragTabHoverRef = useRef<string | null>(null)
+  // The link popover opens upward, so an edge in the top band of the canvas has
+  // no room for it. Edge positions arrive as percentages of the panning layer,
+  // so deciding that needs the canvas height in pixels (plus the pan offset,
+  // which shifts the layer against the canvas). Measured here; only the popover
+  // reads it.
+  const [canvasHeight, setCanvasHeight] = useState(0)
 
   function updateFileTabDropHover(clientX: number, clientY: number): string | null {
     if (clientY > FILE_TAB_DROP_ZONE_HEIGHT) {
@@ -8014,11 +8025,19 @@ function GraphCanvas({
 
   useEffect(() => {
     function handleCanvasKeydown(event: KeyboardEvent) {
-      if (isEditableEventTarget(event.target)) return
       const key = event.key.toLowerCase()
+      // Context menus close on Escape even while a node's rich text holds the
+      // caret: right-clicking a node focuses its editor, so the editable guard
+      // below would otherwise swallow the Escape that should dismiss the menu.
+      // The canvas menu (canvas, frame and link variants) needs clearing here
+      // too, not just the node menu.
+      if (key === 'escape') {
+        setNodeContextMenu(null)
+        setCanvasContextMenu(null)
+      }
+      if (isEditableEventTarget(event.target)) return
       if (key === 'escape') {
         setArcMenu(null)
-        setNodeContextMenu(null)
         setMultiSelectedNodes([])
         onPendingLinkSourceChange(null)
         onActiveCanvasToolChange('select')
@@ -8231,9 +8250,18 @@ function GraphCanvas({
     const nodes = multiSelectedNodes.some((node) => nodeSelectionKey(node) === clickedKey) ? multiSelectedNodes : [clicked]
     setMultiSelectedNodes(nodes)
     onSelect({ type: kind, id } as Selection)
+    // Same clamp as the canvas, frame and link menus: without it a node near
+    // the right or bottom edge opens its menu past the canvas, where the items
+    // are unreachable (at narrow widths the whole card lands off-screen).
+    const menuWidth = 172
+    const menuHeight = 238
     setNodeContextMenu({
-      x: event.clientX - (rect?.left ?? 0),
-      y: event.clientY - (rect?.top ?? 0),
+      x: rect
+        ? clamp(event.clientX - rect.left, 8, Math.max(8, rect.width - menuWidth))
+        : event.clientX,
+      y: rect
+        ? clamp(event.clientY - rect.top, 8, Math.max(8, rect.height - menuHeight))
+        : event.clientY,
       nodes,
     })
     setCanvasContextMenu(null)
@@ -9493,8 +9521,12 @@ function GraphCanvas({
     if (!canvas) return
 
     function handleCanvasWheel(event: WheelEvent) {
-      if (event.target instanceof Element && event.target.closest('input, textarea, select, .graph-tools-drawer, .node-context-menu, .node-arc-menu, .kira-dock')) return
+      if (event.target instanceof Element && event.target.closest('input, textarea, select, .graph-tools-drawer, .node-context-menu, .canvas-context-menu, .node-arc-menu, .kira-dock')) return
       event.preventDefault()
+      // Panning or zooming moves the board out from under an open context menu,
+      // which is anchored to the viewport and would be left pointing at nothing.
+      setNodeContextMenu(null)
+      setCanvasContextMenu(null)
       if (event.ctrlKey || event.metaKey) {
         const rect = canvas!.getBoundingClientRect()
         const pointerX = event.clientX - rect.left
@@ -9519,6 +9551,18 @@ function GraphCanvas({
 
     canvas.addEventListener('wheel', handleCanvasWheel, { passive: false })
     return () => canvas.removeEventListener('wheel', handleCanvasWheel)
+  }, [])
+
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    setCanvasHeight(canvas.getBoundingClientRect().height)
+    const observer = new ResizeObserver((entries) => {
+      const height = entries[0]?.contentRect.height
+      if (typeof height === 'number') setCanvasHeight(height)
+    })
+    observer.observe(canvas)
+    return () => observer.disconnect()
   }, [])
 
   function updateCanvasGridHotspot(event: React.PointerEvent<HTMLDivElement>) {
@@ -9925,6 +9969,7 @@ function GraphCanvas({
                 {active && (
                   <div
                     className="link-popover"
+                    data-flip={canvasHeight > 0 && graphTransform.y + (curve.midY / 100) * canvasHeight < LINK_POPOVER_LIFT + LINK_POPOVER_GAP + 8 ? 'down' : 'up'}
                     style={{
                       '--link-popover-x': `${curve.midX}%`,
                       '--link-popover-y': `${curve.midY}%`,
