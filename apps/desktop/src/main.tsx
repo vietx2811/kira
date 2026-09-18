@@ -8845,6 +8845,19 @@ function GraphCanvas({
                   add-new/AI actions plus the kind-specific ones — is
                   consolidated into this single icon row, so the node face
                   itself stays down to a single (i) affordance while closed. */}
+              {/* Icon row -> kit Button (icon-only, color="tertiary") + kit
+                  Tooltip in place of raw <button title=...>, same idiom as
+                  the kira-dock submit/close buttons and the rich-text
+                  formatting toolbar above (PHA 4). The exact 26x26 Ink & Paper
+                  box, hover/disabled/is-active/is-danger states stay driven
+                  by the existing plain (unlayered) `.node-details-actionbar
+                  button` CSS, which always outranks kit's own `@layer
+                  utilities` classes — no visual change, only the underlying
+                  element swaps from a native <button> to react-aria-components'
+                  Button (still a real <button> under the hood, so every
+                  existing selector keeps matching). File inputs stay raw
+                  <label>+<input type="file">: the kit has no file-picker
+                  control. */}
               <div className="node-details-actionbar">
               {kind === 'image' && (
                 <>
@@ -8859,21 +8872,22 @@ function GraphCanvas({
                       }}
                     />
                   </label>
-                  <button
-                    type="button"
-                    aria-label="Find similar"
-                    title={findSimilarRunningId === id ? 'Finding similar…' : 'Find similar'}
-                    disabled={findSimilarRunningId === id}
-                    onClick={() => void onReferenceFindSimilar(id)}
-                  >
-                    {findSimilarRunningId === id ? <span className="ai-inline-spinner" aria-hidden="true" /> : <Search size={13} />}
-                  </button>
-                  <button type="button" aria-label="Crop image" title="Crop" onClick={() => onReferenceCrop(id)}>
-                    <CropIcon size={13} />
-                  </button>
-                  <button type="button" aria-label="Extract palette" title="Extract palette" onClick={() => onReferenceConvertToPalette(id)}>
-                    <PaletteIcon size={13} />
-                  </button>
+                  <Tooltip title={findSimilarRunningId === id ? 'Finding similar…' : 'Find similar'} delay={200}>
+                    <Button
+                      color="tertiary"
+                      size="sm"
+                      aria-label="Find similar"
+                      isDisabled={findSimilarRunningId === id}
+                      onPress={() => void onReferenceFindSimilar(id)}
+                      iconLeading={findSimilarRunningId === id ? <span className="ai-inline-spinner" aria-hidden="true" /> : <Search size={13} />}
+                    />
+                  </Tooltip>
+                  <Tooltip title="Crop" delay={200}>
+                    <Button color="tertiary" size="sm" aria-label="Crop image" onPress={() => onReferenceCrop(id)} iconLeading={<CropIcon size={13} />} />
+                  </Tooltip>
+                  <Tooltip title="Extract palette" delay={200}>
+                    <Button color="tertiary" size="sm" aria-label="Extract palette" onPress={() => onReferenceConvertToPalette(id)} iconLeading={<PaletteIcon size={13} />} />
+                  </Tooltip>
                 </>
               )}
               {kind === 'placeholder' && (
@@ -8891,58 +8905,69 @@ function GraphCanvas({
               )}
               {kind === 'palette' && (
                 <>
-                  <button type="button" aria-label="Add color" title="Add color" onClick={() => onPaletteColorAdd(id)}>
-                    <Plus size={13} />
-                  </button>
-                  <button
-                    type="button"
-                    aria-label="Rebalance palette"
-                    title={paletteRegeneratingId === id ? 'Rebalancing…' : 'Rebalance'}
-                    disabled={paletteRegeneratingId === id}
-                    onClick={() => void onPaletteRegenerate(id, 'analogous')}
-                  >
-                    {paletteRegeneratingId === id ? <span className="ai-inline-spinner" aria-hidden="true" /> : <Sparkles size={13} />}
-                  </button>
+                  <Tooltip title="Add color" delay={200}>
+                    <Button color="tertiary" size="sm" aria-label="Add color" onPress={() => onPaletteColorAdd(id)} iconLeading={<Plus size={13} />} />
+                  </Tooltip>
+                  <Tooltip title={paletteRegeneratingId === id ? 'Rebalancing…' : 'Rebalance'} delay={200}>
+                    <Button
+                      color="tertiary"
+                      size="sm"
+                      aria-label="Rebalance palette"
+                      isDisabled={paletteRegeneratingId === id}
+                      onPress={() => void onPaletteRegenerate(id, 'analogous')}
+                      iconLeading={paletteRegeneratingId === id ? <span className="ai-inline-spinner" aria-hidden="true" /> : <Sparkles size={13} />}
+                    />
+                  </Tooltip>
                 </>
               )}
               {kind === 'idea' && (
-                <button
-                  type="button"
-                  aria-label="Create outline"
-                  title={isRebuildingOutline ? 'Creating outline…' : 'Create outline'}
-                  disabled={isRebuildingOutline}
-                  onClick={() => void onRebuildOutline()}
-                >
-                  {isRebuildingOutline ? <span className="ai-inline-spinner" aria-hidden="true" /> : <Bot size={13} />}
-                </button>
+                <Tooltip title={isRebuildingOutline ? 'Creating outline…' : 'Create outline'} delay={200}>
+                  <Button
+                    color="tertiary"
+                    size="sm"
+                    aria-label="Create outline"
+                    isDisabled={isRebuildingOutline}
+                    onPress={() => void onRebuildOutline()}
+                    iconLeading={isRebuildingOutline ? <span className="ai-inline-spinner" aria-hidden="true" /> : <Bot size={13} />}
+                  />
+                </Tooltip>
               )}
               {/* Visually separates "do something to this node" (edit/replace/
                   crop/history — left) from "how it behaves" (AI inclusion —
                   right) so the row doesn't read as one undifferentiated
-                  strip of identical icons. */}
+                  strip of identical icons. Kept as a plain hairline <span>,
+                  not a kit ButtonGroup: ButtonGroup renders a joined,
+                  ring-bordered segmented pill (react-aria ToggleButtonGroup
+                  with shared selection state) — exactly the "boxed pill"
+                  DESIGN.md §5's Space-and-Line-First Rule steers away from
+                  for a row like this, and these are one-shot commands, not a
+                  mutually exclusive toggle set. A hairline divider is the
+                  designed tool here, so the CSS for it is not dead. */}
               <span className="node-details-actionbar-sep" aria-hidden="true" />
-              <button
-                type="button"
-                aria-label={node.aiExcluded ? 'Excluded from AI, click to include' : 'Included in AI context, click to exclude'}
-                title={node.aiExcluded ? 'Excluded from AI' : 'Included in AI context'}
-                className={node.aiExcluded ? 'is-active' : ''}
-                onClick={() => onToggleAiExcluded(kind, id)}
-              >
-                {node.aiExcluded ? <EyeOff size={13} /> : <Eye size={13} />}
-              </button>
-              <button
-                type="button"
-                aria-label="Delete node"
-                title="Delete"
-                className="is-danger"
-                onClick={() => onDeleteNodes([{ kind, id }])}
-              >
-                <Trash2 size={13} />
-              </button>
+              <Tooltip title={node.aiExcluded ? 'Excluded from AI' : 'Included in AI context'} delay={200}>
+                <Button
+                  color="tertiary"
+                  size="sm"
+                  aria-label={node.aiExcluded ? 'Excluded from AI, click to include' : 'Included in AI context, click to exclude'}
+                  className={node.aiExcluded ? 'is-active' : ''}
+                  onPress={() => onToggleAiExcluded(kind, id)}
+                  iconLeading={node.aiExcluded ? <EyeOff size={13} /> : <Eye size={13} />}
+                />
+              </Tooltip>
+              <Tooltip title="Delete" delay={200}>
+                <Button
+                  color="tertiary"
+                  size="sm"
+                  aria-label="Delete node"
+                  className="is-danger"
+                  onPress={() => onDeleteNodes([{ kind, id }])}
+                  iconLeading={<Trash2 size={13} />}
+                />
+              </Tooltip>
               <span className="node-details-actionbar-sep" aria-hidden="true" />
-              <button type="button" aria-label="Close" title="Close" className="node-details-close" onClick={closeDetails}>
-                <X size={13} />
-              </button>
+              <Tooltip title="Close" delay={200}>
+                <Button color="tertiary" size="sm" aria-label="Close" className="node-details-close" onPress={closeDetails} iconLeading={<X size={13} />} />
+              </Tooltip>
             </div>
             <NodeRichEditor
               kind={kind}
@@ -11945,9 +11970,15 @@ function NodeVersionTimeline({
                 <span>{version.summary}</span>
                 <small>{formatNodeVersionMeta(version)}</small>
               </div>
-              <button type="button" aria-label={`Restore node version ${version.versionNumber}`} onClick={() => onRestore(version.id)}>
-                <RotateCcw size={13} />
-              </button>
+              <Tooltip title="Restore this version" delay={200}>
+                <Button
+                  color="tertiary"
+                  size="sm"
+                  aria-label={`Restore node version ${version.versionNumber}`}
+                  onPress={() => onRestore(version.id)}
+                  iconLeading={<RotateCcw size={13} />}
+                />
+              </Tooltip>
             </article>
           ))}
         </div>
@@ -12840,16 +12871,20 @@ function PaletteColorEditor({
             onClick={() => setSelectedIndex(index)}
           >
             <code>{normalizeHexInput(color)}</code>
-            <button
-              type="button"
-              aria-label={`Remove palette color ${index + 1}`}
-              onClick={(event) => {
-                event.stopPropagation()
-                onColorRemove(index)
-              }}
-            >
-              <X size={12} />
-            </button>
+            {/* No manual stopPropagation needed here (unlike the old raw
+                <button>'s onClick): react-aria's usePress stops native event
+                propagation by default (PressEvent.shouldStopPropagation
+                defaults to true), so this kit Button's press never reaches
+                the row's onClick above. */}
+            <Tooltip title="Remove color" delay={200}>
+              <Button
+                color="tertiary"
+                size="sm"
+                aria-label={`Remove palette color ${index + 1}`}
+                onPress={() => onColorRemove(index)}
+                iconLeading={<X size={12} />}
+              />
+            </Tooltip>
           </div>
         ))}
       </div>
@@ -12972,24 +13007,41 @@ function TagBlock({
         tools={
           <span className="section-tools">
             {canRunOcr && (
-              <button className="section-tool" type="button" disabled={isOcrRunning} onClick={onRunOcr} title={isOcrRunning ? 'Reading text…' : 'Read text from image (OCR)'}>
-                {isOcrRunning ? <span className="ai-inline-spinner" aria-hidden="true" /> : <Sparkles size={12} />}
-              </button>
+              <Tooltip title={isOcrRunning ? 'Reading text…' : 'Read text from image (OCR)'} delay={200}>
+                <Button
+                  color="tertiary"
+                  size="sm"
+                  className="section-tool"
+                  aria-label={isOcrRunning ? 'Reading text…' : 'Read text from image (OCR)'}
+                  isDisabled={isOcrRunning}
+                  onPress={onRunOcr}
+                  iconLeading={isOcrRunning ? <span className="ai-inline-spinner" aria-hidden="true" /> : <Sparkles size={12} />}
+                />
+              </Tooltip>
             )}
             {canRefineTags && (
-              <button className="section-tool" type="button" disabled={isRefiningTags} onClick={onRefineTags} title={isRefiningTags ? 'Refining tags…' : 'Refine tags with AI'}>
-                {isRefiningTags ? <span className="ai-inline-spinner" aria-hidden="true" /> : <Brain size={12} />}
-              </button>
+              <Tooltip title={isRefiningTags ? 'Refining tags…' : 'Refine tags with AI'} delay={200}>
+                <Button
+                  color="tertiary"
+                  size="sm"
+                  className="section-tool"
+                  aria-label={isRefiningTags ? 'Refining tags…' : 'Refine tags with AI'}
+                  isDisabled={isRefiningTags}
+                  onPress={onRefineTags}
+                  iconLeading={isRefiningTags ? <span className="ai-inline-spinner" aria-hidden="true" /> : <Brain size={12} />}
+                />
+              </Tooltip>
             )}
-            <button
-              type="button"
-              className={pinned ? 'section-tool is-active' : 'section-tool'}
-              aria-label={pinned ? 'Always shown on node, click to hide' : 'Hidden on node, click to always show'}
-              title={pinned ? 'Always shown on node' : 'Show on node'}
-              onClick={onTogglePinned}
-            >
-              {pinned ? <Eye size={12} /> : <EyeOff size={12} />}
-            </button>
+            <Tooltip title={pinned ? 'Always shown on node' : 'Show on node'} delay={200}>
+              <Button
+                color="tertiary"
+                size="sm"
+                className={pinned ? 'section-tool is-active' : 'section-tool'}
+                aria-label={pinned ? 'Always shown on node, click to hide' : 'Hidden on node, click to always show'}
+                onPress={onTogglePinned}
+                iconLeading={pinned ? <Eye size={12} /> : <EyeOff size={12} />}
+              />
+            </Tooltip>
           </span>
         }
       />
@@ -13099,19 +13151,24 @@ function PaletteBlock({
         dragHandleProps={dragHandleProps}
         tools={
           <span className="section-tools">
-            <button
-              type="button"
-              className={pinned ? 'section-tool is-active' : 'section-tool'}
-              aria-label={pinned ? 'Always shown on node, click to hide' : 'Hidden on node, click to always show'}
-              title={pinned ? 'Always shown on node' : 'Show on node'}
-              onClick={onTogglePinned}
-            >
-              {pinned ? <Eye size={12} /> : <EyeOff size={12} />}
-            </button>
+            <Tooltip title={pinned ? 'Always shown on node' : 'Show on node'} delay={200}>
+              <Button
+                color="tertiary"
+                size="sm"
+                className={pinned ? 'section-tool is-active' : 'section-tool'}
+                aria-label={pinned ? 'Always shown on node, click to hide' : 'Hidden on node, click to always show'}
+                onPress={onTogglePinned}
+                iconLeading={pinned ? <Eye size={12} /> : <EyeOff size={12} />}
+              />
+            </Tooltip>
           </span>
         }
       />
       {!collapsed && (
+      /* Color swatches, not generic icon buttons: each renders the actual
+         extracted color as its own inline background plus the hex code, a
+         color-preview/copy control rather than a labeled action — kept raw
+         like the color-input exception in the task brief. */
       <div className="palette-color-strip" aria-label="Extracted image colors">
         {image.palette.slice(0, 7).map((color, index) => (
           <button

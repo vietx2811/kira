@@ -4042,13 +4042,22 @@ button.mini-tags-more:focus-visible {
 
 /* Was missing the reset every other button class gets, so these fell back to
    UA button chrome — a grey ButtonFace fill on macOS/dark (art-direction
-   round 2, C.1). Same treatment as .icon-button, at this bar's own 26px. */
+   round 2, C.1). Same treatment as .icon-button, at this bar's own 26px.
+   PHA 4 kit migration (2026-09-19): these buttons are now kit `Button`
+   (color="tertiary"); this plain (unlayered) CSS still outranks kit's own
+   `@layer utilities` classes regardless of source order (CLAUDE.md's
+   cascade-layer note). `padding: 0` is the one addition load-bearing for the
+   swap, same reason as `.kira-dock-submit` below: kit's own size classes
+   (`px-3 py-2` for size="sm") would otherwise still apply inside this fixed
+   26x26 box since nothing here set `padding` before. react-aria's Button
+   still renders a native <button>, so `:hover`/`:disabled` keep matching. */
 .node-details-actionbar button,
 .node-details-actionbar .file-action {
   display: grid;
   place-items: center;
   width: 26px;
   height: 26px;
+  padding: 0;
   border: 0;
   border-radius: var(--radius-1);
   background: transparent;
@@ -4067,6 +4076,10 @@ button.mini-tags-more:focus-visible {
   background: transparent;
   color: var(--text-muted);
   cursor: default;
+  /* Cancels kit's own `disabled:opacity-50` utility, which would otherwise
+     stack with the muted text color above and dim the icon more than the
+     rest of the app's disabled controls. */
+  opacity: 1;
 }
 
 /* Same ink underline as .icon-button.is-active, not the accent tint this
@@ -7132,10 +7145,15 @@ button.palette-color-segment:focus-visible code {
   font-size: var(--text-small);
 }
 
+/* PHA 4 kit migration (2026-09-19): kit `Button` (color="tertiary"); see the
+   `.node-details-actionbar button` comment above for why `padding: 0` is
+   the load-bearing addition here and why this plain CSS still wins over
+   kit's own `@layer utilities` box classes. */
 .node-version-row button {
   display: grid;
   width: 28px;
   height: 28px;
+  padding: 0;
   place-items: center;
   border: 0;
   border-radius: var(--radius-1);
@@ -7447,10 +7465,15 @@ textarea {
   color: var(--accent-strong);
 }
 
+/* PHA 4 kit migration (2026-09-19): kit `Button` (color="tertiary"); see the
+   `.node-details-actionbar button` comment above for why `padding: 0` and
+   `border: 0` are the load-bearing additions here. */
 .palette-color-row button {
   display: grid;
   width: 28px;
   height: 26px;
+  padding: 0;
+  border: 0;
   place-items: center;
   border-radius: 6px;
   background: var(--control-patch);
