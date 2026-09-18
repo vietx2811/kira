@@ -12,14 +12,22 @@ import StarterKit from '@tiptap/starter-kit'
 import TiptapLink from '@tiptap/extension-link'
 import TiptapPlaceholder from '@tiptap/extension-placeholder'
 import { Markdown } from 'tiptap-markdown'
-import { useFocusTrap } from './hooks/useFocusTrap'
 import { Segmented } from './components/Segmented'
 import { ReferenceThumb, referenceAspect } from './components/ReferenceThumb'
 import { SettingsView } from './components/application/settings/SettingsView'
 import { EvidenceInbox } from './components/application/library/EvidenceInbox'
 import { positionReferenceTagPopover } from './components/application/library/ReferenceTags'
+import { WorkspaceChrome } from './components/application/workspace-chrome/WorkspaceChrome'
 import { Button } from '@/components/base/buttons/button'
+import { ButtonGroup, ButtonGroupItem } from '@/components/base/button-group/button-group'
+import { Dropdown } from '@/components/base/dropdown/dropdown'
+import { Input, InputBase } from '@/components/base/input/input'
+import { Select } from '@/components/base/select/select'
+import { Slider } from '@/components/base/slider/slider'
+import { TextArea, TextAreaBase } from '@/components/base/textarea/textarea'
+import { Toggle } from '@/components/base/toggle/toggle'
 import { Tooltip } from '@/components/base/tooltip/tooltip'
+import { Dialog, Modal, ModalOverlay } from '@/components/application/modals/modal'
 import { UiKitPortalHost } from '@/kira/uikit/PortalHost'
 import { KiraPanel } from './components/application/kira-panel/KiraPanel'
 import { KiraChangesTab } from './components/application/kira-panel/KiraChangesTab'
@@ -196,6 +204,11 @@ export type Selection =
   | { type: 'frame'; id: string }
 
 type CanvasNodeSelection = Pick<GraphNodeRef, 'kind' | 'id'>
+
+type CanvasContextMenu =
+  | { type: 'canvas'; x: number; y: number; position: Pick<Idea, 'x' | 'y'> }
+  | { type: 'frame'; x: number; y: number; frameId: string }
+  | { type: 'link'; x: number; y: number; linkId: string }
 
 // A node in transit between two open tabs — carried by the outer App shell
 // from the moment the source file drops it until the target file mounts
@@ -1044,6 +1057,7 @@ function NodeRichEditor({
   const onEscapeRef = useRef(onEscape)
   onEscapeRef.current = onEscape
   const [isFocused, setIsFocused] = useState(false)
+  const [, setToolbarRevision] = useState(0)
 
   const editor = useEditor({
     extensions: [
@@ -1112,6 +1126,19 @@ function NodeRichEditor({
   if (!editor) return <></>
 
   const showToolbar = overlayMode || isFocused
+  const activeToolbarItems = [
+    editor.isActive('bold') && 'bold',
+    editor.isActive('italic') && 'italic',
+    editor.isActive('heading') && 'heading',
+    editor.isActive('bulletList') && 'bullets',
+    editor.isActive('orderedList') && 'ordered',
+    editor.isActive('blockquote') && 'quote',
+    editor.isActive('link') && 'link',
+  ].filter(Boolean) as string[]
+  const runToolbarCommand = (command: () => void) => {
+    command()
+    setToolbarRevision((revision) => revision + 1)
+  }
 
   return (
     <>
@@ -1121,31 +1148,15 @@ function NodeRichEditor({
           formatting is discoverable the moment typing starts. */}
       {showToolbar && (
         <div className={overlayMode ? 'node-rich-editor-toolbar is-static' : 'node-rich-editor-toolbar'}>
-          <button
-            type="button"
-            className={editor.isActive('bold') ? 'is-active' : ''}
-            aria-label="Bold"
-            onMouseDown={(event) => event.preventDefault()}
-            onClick={() => editor.chain().focus().toggleBold().run()}
-          >
-            <TextB size={13} weight="bold" />
-          </button>
-          <button
-            type="button"
-            className={editor.isActive('italic') ? 'is-active' : ''}
-            aria-label="Italic"
-            onMouseDown={(event) => event.preventDefault()}
-            onClick={() => editor.chain().focus().toggleItalic().run()}
-          >
-            <TextItalic size={13} />
-          </button>
-          <button
-            type="button"
-            className={editor.isActive('heading') ? 'is-active' : ''}
-            aria-label="Heading"
-            title="Heading (cycles H1 → H2 → H3 → off)"
-            onMouseDown={(event) => event.preventDefault()}
-            onClick={() => {
+          <ButtonGroup aria-label="Text formatting" size="sm" selectionMode="multiple" selectedKeys={new Set(activeToolbarItems)}>
+            <ButtonGroupItem id="bold" aria-label="Bold" iconLeading={<TextB size={13} weight="bold" />} onMouseDown={(event) => event.preventDefault()} onPress={() => runToolbarCommand(() => editor.chain().focus().toggleBold().run())} />
+            <ButtonGroupItem id="italic" aria-label="Italic" iconLeading={<TextItalic size={13} />} onMouseDown={(event) => event.preventDefault()} onPress={() => runToolbarCommand(() => editor.chain().focus().toggleItalic().run())} />
+            <ButtonGroupItem
+              id="heading"
+              aria-label="Heading"
+              iconLeading={<TextH size={13} />}
+              onMouseDown={(event) => event.preventDefault()}
+              onPress={() => runToolbarCommand(() => {
               const nextLevel = editor.isActive('heading', { level: 1 })
                 ? 2
                 : editor.isActive('heading', { level: 2 })
@@ -1155,54 +1166,29 @@ function NodeRichEditor({
                     : 1
               if (nextLevel) editor.chain().focus().setHeading({ level: nextLevel as 1 | 2 | 3 }).run()
               else editor.chain().focus().setParagraph().run()
-            }}
-          >
-            <TextH size={13} />
-          </button>
-          <button
-            type="button"
-            className={editor.isActive('bulletList') ? 'is-active' : ''}
-            aria-label="Bullet list"
-            onMouseDown={(event) => event.preventDefault()}
-            onClick={() => editor.chain().focus().toggleBulletList().run()}
-          >
-            <ListBullets size={13} />
-          </button>
-          <button
-            type="button"
-            className={editor.isActive('orderedList') ? 'is-active' : ''}
-            aria-label="Numbered list"
-            onMouseDown={(event) => event.preventDefault()}
-            onClick={() => editor.chain().focus().toggleOrderedList().run()}
-          >
-            <ListNumbers size={13} />
-          </button>
-          <button
-            type="button"
-            className={editor.isActive('blockquote') ? 'is-active' : ''}
-            aria-label="Quote"
-            onMouseDown={(event) => event.preventDefault()}
-            onClick={() => editor.chain().focus().toggleBlockquote().run()}
-          >
-            <Quotes size={13} />
-          </button>
+              })}
+            />
+            <ButtonGroupItem id="bullets" aria-label="Bullet list" iconLeading={<ListBullets size={13} />} onMouseDown={(event) => event.preventDefault()} onPress={() => runToolbarCommand(() => editor.chain().focus().toggleBulletList().run())} />
+            <ButtonGroupItem id="ordered" aria-label="Numbered list" iconLeading={<ListNumbers size={13} />} onMouseDown={(event) => event.preventDefault()} onPress={() => runToolbarCommand(() => editor.chain().focus().toggleOrderedList().run())} />
+            <ButtonGroupItem id="quote" aria-label="Quote" iconLeading={<Quotes size={13} />} onMouseDown={(event) => event.preventDefault()} onPress={() => runToolbarCommand(() => editor.chain().focus().toggleBlockquote().run())} />
+          </ButtonGroup>
           <span className="node-rich-editor-toolbar-divider" />
-          <button
-            type="button"
-            className={editor.isActive('link') ? 'is-active' : ''}
-            aria-label="Link"
-            onMouseDown={(event) => event.preventDefault()}
-            onClick={() => {
+          <ButtonGroup aria-label="Link formatting" size="sm" selectionMode="multiple" selectedKeys={new Set(activeToolbarItems)}>
+            <ButtonGroupItem
+              id="link"
+              aria-label="Link"
+              iconLeading={<LinkSimple size={13} />}
+              onMouseDown={(event) => event.preventDefault()}
+              onPress={() => runToolbarCommand(() => {
               if (editor.isActive('link')) {
                 editor.chain().focus().unsetLink().run()
                 return
               }
               const url = window.prompt('Link URL')
               if (url) editor.chain().focus().setLink({ href: url }).run()
-            }}
-          >
-            <LinkSimple size={13} />
-          </button>
+              })}
+            />
+          </ButtonGroup>
         </div>
       )}
       <EditorContent
@@ -1650,9 +1636,6 @@ function useDismissableLayer(active: boolean, ignoreSelector: string, onDismiss:
     }
   }, [active, ignoreSelector, onDismiss])
 }
-
-// useFocusTrap moved to hooks/useFocusTrap.ts (PHA 1 Untitled UI migration,
-// 2026-09-16) — imported above.
 
 type DockSelectOption = { value: string; label: string; meta?: string }
 
@@ -2108,7 +2091,6 @@ function FileWorkspace({
   onKiraPanelOpenChange,
   onKiraNeedsYouCountChange,
   pendingCloseFile,
-  closeFileDialogRef,
   onCancelCloseFile,
   onConfirmCloseFile,
 }: {
@@ -2136,7 +2118,6 @@ function FileWorkspace({
   // JSX — see the isActive bail-out below) so the dialog picks up this
   // project's themed color tokens instead of the :root dark fallback.
   pendingCloseFile: OpenFile | null
-  closeFileDialogRef: React.RefObject<HTMLElement | null>
   onCancelCloseFile: () => void
   onConfirmCloseFile: (fileId: string) => void
 }) {
@@ -2190,7 +2171,7 @@ function FileWorkspace({
   const [density, setDensity] = useState<LibraryDensity>('compact')
   const [libraryBrowseMode, setLibraryBrowseMode] = useState<LibraryBrowseMode>('list')
   const [libraryPanelMode, setLibraryPanelMode] = useState<LibraryPanelMode>('images')
-  const [libraryDrawerWidth, setLibraryDrawerWidth] = useState(360)
+  const [libraryDrawerWidth, setLibraryDrawerWidth] = useState(320)
   const [sortMode, setSortMode] = useState<SortMode>('recent')
   const [batchTag, setBatchTag] = useState('')
   const [libraryStatus, setLibraryStatus] = useState('Ready')
@@ -2269,7 +2250,7 @@ function FileWorkspace({
 
   useDismissableLayer(
     isProjectSettingsOpen,
-    '.project-settings-popover, .top-inspector-button',
+    '.project-settings-popover, .workspace-project-settings-button',
     () => setIsProjectSettingsOpen(false),
   )
   const [cropTargetImageId, setCropTargetImageId] = useState<string | null>(null)
@@ -2354,7 +2335,7 @@ function FileWorkspace({
     const startWidth = libraryDrawerWidth
 
     function handlePointerMove(moveEvent: PointerEvent) {
-      setLibraryDrawerWidth(clamp(startWidth + moveEvent.clientX - startX, 320, 480))
+      setLibraryDrawerWidth(clamp(startWidth + moveEvent.clientX - startX, 260, 440))
     }
 
     function handlePointerUp() {
@@ -4528,16 +4509,16 @@ function FileWorkspace({
     }
   }
 
-  function createIdea(options: { focusTitle?: boolean } = {}) {
+  function createIdea(options: { focusTitle?: boolean; position?: Pick<Idea, 'x' | 'y'> } = {}) {
     pushCanvasHistory()
     const timestamp = nowIso()
+    const position = options.position ?? { x: 58, y: 42 }
     const idea: Idea = {
       id: `idea-${Date.now()}`,
       title: 'Untitled idea',
       content: 'Untitled idea',
       status: 'thin',
-      x: 58,
-      y: 42,
+      ...position,
       importance: 1,
       createdAt: timestamp,
       addedAt: timestamp,
@@ -4549,7 +4530,7 @@ function FileWorkspace({
     if (options.focusTitle) setIdeaTitleFocusId(idea.id)
   }
 
-  function createPlaceholder() {
+  function createPlaceholder(position: Pick<PlaceholderNode, 'x' | 'y'> = { x: 62, y: 38 }) {
     pushCanvasHistory()
     const timestamp = nowIso()
     const placeholder: PlaceholderNode = {
@@ -4557,8 +4538,7 @@ function FileWorkspace({
       title: 'Image placeholder',
       content: 'Image placeholder',
       targetKind: 'image',
-      x: 62,
-      y: 38,
+      ...position,
       importance: 1,
       createdAt: timestamp,
       addedAt: timestamp,
@@ -4571,15 +4551,14 @@ function FileWorkspace({
 
   // Frames don't go through recordNodeVersion/GraphNodeKind — they're a plain
   // named rectangle, not a node with links, importance, or version history.
-  function createFrame() {
+  function createFrame(position: Pick<FrameNode, 'x' | 'y'> = { x: 50, y: 50 }) {
     pushCanvasHistory()
     const timestamp = nowIso()
     const frame: FrameNode = {
       id: `frame-${Date.now()}`,
       title: 'New frame',
       description: 'Group related references',
-      x: 50,
-      y: 50,
+      ...position,
       width: 34,
       height: 26,
       createdAt: timestamp,
@@ -4594,7 +4573,7 @@ function FileWorkspace({
     setFrames((current) => current.map((frame) => (frame.id === frameId ? { ...frame, ...patch, updatedAt: nowIso() } : frame)))
   }
 
-  function createSticker() {
+  function createSticker(position: Pick<Idea, 'x' | 'y'> = { x: 54, y: 46 }) {
     pushCanvasHistory()
     const timestamp = nowIso()
     const sticker: Idea = {
@@ -4603,8 +4582,7 @@ function FileWorkspace({
       content: 'Quick note',
       status: 'forming',
       variant: 'sticker',
-      x: 54,
-      y: 46,
+      ...position,
       importance: 1,
       createdAt: timestamp,
       addedAt: timestamp,
@@ -4635,7 +4613,7 @@ function FileWorkspace({
     setSelection({ type: 'project' })
   }
 
-  function createPaletteNode(sourceImage?: EvidenceImage) {
+  function createPaletteNode(sourceImage?: EvidenceImage, position?: Pick<PaletteNode, 'x' | 'y'>) {
     pushCanvasHistory()
     const timestamp = nowIso()
     const base = sourceImage?.palette?.[0] ?? '#84cdbc'
@@ -4646,8 +4624,9 @@ function FileWorkspace({
       colors: sourceImage?.palette?.length ? sourceImage.palette.slice(0, 7) : generatePaletteHarmony(base, 'analogous').slice(0, 7),
       algorithm: sourceImage ? 'image_extract' : 'analogous',
       sourceImageId: sourceImage?.id,
-      x: sourceImage ? clamp(sourceImage.x + 10, 8, 92) : 60,
-      y: sourceImage ? clamp(sourceImage.y + 10, 8, 92) : 58,
+      ...(position ?? (sourceImage
+        ? { x: clamp(sourceImage.x + 10, 8, 92), y: clamp(sourceImage.y + 10, 8, 92) }
+        : { x: 60, y: 58 })),
       importance: sourceImage?.importance ?? 1,
       createdAt: timestamp,
       addedAt: timestamp,
@@ -6333,16 +6312,16 @@ function FileWorkspace({
       <div className="dock-status" role="status">
         <GitBranch size={13} className="ic" />
         <span>{t('kira.dock.needsYou', lang, { count: String(kiraNeedsYouCount) })}</span>
-        <button
-          type="button"
-          className="quiet-button sm"
-          onClick={() => {
+        <Button
+          color="tertiary"
+          size="xs"
+          onPress={() => {
             onKiraPanelOpenChange(true)
             setKiraPanelTab('needs-you')
           }}
         >
           {t('kira.dock.open', lang)}
-        </button>
+        </Button>
       </div>
     )
   }
@@ -6366,11 +6345,31 @@ function FileWorkspace({
           '--canvas-right-inset': `${canvasRightInset}px`,
         } as React.CSSProperties}
       >
-        <TopBar
+        <WorkspaceChrome
           activeView={activeView}
+          isLibraryCollapsed={isLibraryCollapsed}
           isProjectSettingsOpen={isProjectSettingsOpen}
+          isSettingsOpen={isSettingsOpen}
+          isTauriRuntime={isTauriRuntime()}
+          libraryPanelMode={libraryPanelMode}
+          saveLabel={projectHash === lastSavedHash ? 'Saved' : 'Save'}
           setActiveView={setActiveView}
+          viewLabels={{
+            Canvas: t('view.canvas', lang),
+            '3D': t('view.3d', lang),
+            Slides: t('view.slides', lang),
+            Outline: t('view.outline', lang),
+          }}
+          onImportProject={importProject}
+          onNewProject={newProject}
+          onOpenProject={openProject}
+          onSaveProject={saveProject}
+          onLibraryPanelModeChange={setLibraryPanelMode}
+          onOpenSettings={() => setIsSettingsOpen(true)}
+          onToggleLibrary={() => setIsLibraryCollapsed((current) => !current)}
           onToggleProjectSettings={() => setIsProjectSettingsOpen((current) => !current)}
+          onWindowDrag={startWindowDrag}
+          onWindowMaximize={toggleWindowMaximizeFromChrome}
         />
         {isProjectSettingsOpen && (
           <ProjectSettingsPopover
@@ -6380,25 +6379,6 @@ function FileWorkspace({
             onProjectAppearanceChange={updateProjectAppearance}
           />
         )}
-        <SystemSidebar
-          canRedo={canRedoCanvas}
-          canUndo={canUndoCanvas}
-          isLibraryCollapsed={isLibraryCollapsed}
-          isSettingsOpen={isSettingsOpen}
-          libraryPanelMode={libraryPanelMode}
-          saveLabel={projectHash === lastSavedHash ? 'Saved' : 'Save'}
-          onImportProject={importProject}
-          onNewProject={newProject}
-          onOpenProject={openProject}
-          onRedo={redoCanvas}
-          onSaveProject={saveProject}
-          onSaveVersion={saveProjectAsNewVersion}
-          onLibraryPanelModeChange={setLibraryPanelMode}
-          onOpenVersionHistory={() => setIsVersionHistoryOpen(true)}
-          onOpenSettings={() => setIsSettingsOpen(true)}
-          onToggleLibrary={() => setIsLibraryCollapsed((current) => !current)}
-          onUndo={undoCanvas}
-        />
         {libraryPanelMountState.mounted && <EvidenceInbox
           allTags={libraryTags}
           browseMode={libraryBrowseMode}
@@ -6539,8 +6519,8 @@ function FileWorkspace({
                 onGeneratePromptStarter={generatePromptStarter}
                 onActiveCanvasToolChange={setActiveCanvasTool}
                 onPendingLinkSourceChange={setPendingLinkSource}
-                onCreateIdea={() => createIdea({ focusTitle: true })}
-                onCreatePalette={() => createPaletteNode(selection.type === 'image' ? images.find((image) => image.id === selection.id) : undefined)}
+                onCreateIdea={(position) => createIdea({ focusTitle: true, position })}
+                onCreatePalette={(position) => createPaletteNode(selection.type === 'image' ? images.find((image) => image.id === selection.id) : undefined, position)}
                 onCreatePlaceholder={createPlaceholder}
                 onCreateFrame={createFrame}
                 onCreateSticker={createSticker}
@@ -6708,31 +6688,28 @@ function FileWorkspace({
           onExtensionRefresh={refreshExtensionInstallStatus}
         />
       )}
-      {pendingCloseFile && (
-        <div className="dialog-overlay">
-          <section
-            ref={closeFileDialogRef}
-            tabIndex={-1}
-            aria-modal="true"
-            className="confirm-dialog"
-            role="alertdialog"
-            aria-labelledby="close-file-dialog-title"
-          >
-            <div>
-              <h2 id="close-file-dialog-title">Close {pendingCloseFile.title}?</h2>
-              <p>This file has unsaved changes. Closing the tab discards them.</p>
-            </div>
-            <div className="dialog-actions">
-              <button className="secondary-button" type="button" onClick={onCancelCloseFile}>
-                Cancel
-              </button>
-              <button className="danger-button" type="button" onClick={() => onConfirmCloseFile(pendingCloseFile.id)}>
-                Close without saving
-              </button>
-            </div>
-          </section>
-        </div>
-      )}
+      <UiKitPortalHost className="kira-uikit uikit-passthrough-host">
+        <ModalOverlay isOpen={pendingCloseFile != null} onOpenChange={(isOpen) => !isOpen && onCancelCloseFile()} isDismissable>
+          <Modal className="max-h-none bg-transparent shadow-none">
+            {pendingCloseFile && (
+              <Dialog aria-labelledby="close-file-dialog-title" className="confirm-dialog" role="alertdialog">
+                <div>
+                  <h2 id="close-file-dialog-title">Close {pendingCloseFile.title}?</h2>
+                  <p>This file has unsaved changes. Closing the tab discards them.</p>
+                </div>
+                <div className="dialog-actions">
+                  <Button color="secondary" size="sm" onPress={onCancelCloseFile}>
+                    Cancel
+                  </Button>
+                  <Button color="secondary-destructive" size="sm" onPress={() => onConfirmCloseFile(pendingCloseFile.id)}>
+                    Close without saving
+                  </Button>
+                </div>
+              </Dialog>
+            )}
+          </Modal>
+        </ModalOverlay>
+      </UiKitPortalHost>
     </main>
   )
 }
@@ -6785,7 +6762,6 @@ function App() {
   const [files, setFiles] = useState<OpenFile[]>(() => [createUntitledFile(DEFAULT_FILE_ID)])
   const [activeFileId, setActiveFileId] = useState<string>(DEFAULT_FILE_ID)
   const [pendingCloseFileId, setPendingCloseFileId] = useState<string | null>(null)
-  const closeFileDialogRef = useRef<HTMLElement>(null)
   const [showSplash, setShowSplash] = useState(true)
   // Lifted here (like `files`/`activeFileId`) because the toggle button
   // lives in the file-tab-bar row this component builds, while the panel's
@@ -6945,15 +6921,6 @@ function App() {
   }
 
   const pendingCloseFile = pendingCloseFileId ? files.find((file) => file.id === pendingCloseFileId) ?? null : null
-  useFocusTrap(closeFileDialogRef, Boolean(pendingCloseFile))
-  useEffect(() => {
-    if (!pendingCloseFile) return
-    function handleKeydown(event: KeyboardEvent) {
-      if (event.key === 'Escape') setPendingCloseFileId(null)
-    }
-    window.addEventListener('keydown', handleKeydown)
-    return () => window.removeEventListener('keydown', handleKeydown)
-  }, [pendingCloseFile])
   const [dragOverTabId, setDragOverTabId] = useState<string | null>(null)
   const draggingTabIdRef = useRef<string | null>(null)
 
@@ -7134,7 +7101,6 @@ function App() {
           onKiraPanelOpenChange={getKiraPanelOpenChangeHandler(file.id)}
           onKiraNeedsYouCountChange={getKiraNeedsYouCountChangeHandler(file.id)}
           pendingCloseFile={pendingCloseFile}
-          closeFileDialogRef={closeFileDialogRef}
           onCancelCloseFile={() => setPendingCloseFileId(null)}
           onConfirmCloseFile={closeFile}
         />
@@ -7179,9 +7145,7 @@ function OnboardingOverlay({
   return (
     <div className="onboarding-backdrop" role="dialog" aria-modal="true" aria-label="KIRA onboarding">
       <section className="onboarding-shell">
-        <button className="icon-button onboarding-close" type="button" aria-label="Close onboarding" onClick={onClose}>
-          <X size={16} />
-        </button>
+        <Button className="onboarding-close p-0!" color="tertiary" size="xs" iconLeading={X} aria-label="Close onboarding" onPress={onClose} />
 
         <div className="onboarding-hero">
           <span className="onboarding-brand-mark" aria-hidden="true">
@@ -7198,174 +7162,45 @@ function OnboardingOverlay({
         </div>
 
         <div className="onboarding-steps">
-          <button type="button" className="onboarding-primary-cta" onClick={() => { onWelcomeOpen(); onClose() }}>
+          <Button color="secondary" size="sm" className="onboarding-primary-cta" onPress={() => { onWelcomeOpen(); onClose() }}>
             <span className="onboarding-step-icon"><Layers size={17} aria-hidden="true" /></span>
             <span className="onboarding-cta-body">
               <strong>Open the guided board</strong>
               <small>A small editable example</small>
             </span>
             <ChevronRight size={18} aria-hidden="true" />
-          </button>
+          </Button>
 
           <div className="onboarding-secondary">
             <span className="onboarding-secondary-label">Set up anytime</span>
-            <button type="button" className="onboarding-link-row" onClick={() => { onProviderFocus('codex'); onClose() }}>
+            <Button color="tertiary" size="sm" className="onboarding-link-row" onPress={() => { onProviderFocus('codex'); onClose() }}>
               <Bot size={15} aria-hidden="true" />
               <span className="onboarding-link-text">
                 <strong>Connect AI</strong>
                 <small>Claude Code, Codex, or an API key</small>
               </span>
               <ChevronRight size={15} aria-hidden="true" />
-            </button>
-            <button type="button" className="onboarding-link-row" onClick={() => { onExtensionRefresh(); onClose() }}>
+            </Button>
+            <Button color="tertiary" size="sm" className="onboarding-link-row" onPress={() => { onExtensionRefresh(); onClose() }}>
               <Sparkles size={15} aria-hidden="true" />
               <span className="onboarding-link-text">
                 <strong>Capture from browser</strong>
                 <small>Drag images from any page</small>
               </span>
               <ChevronRight size={15} aria-hidden="true" />
-            </button>
+            </Button>
           </div>
         </div>
 
         {/* "Open Welcome.kira" lived here too, running the same onWelcomeOpen as the
             primary CTA above but without closing the dialog. One way in is enough. */}
         <footer className="onboarding-footer">
-          <button className="primary-button" type="button" onClick={onClose}>
+          <Button color="primary" size="sm" onPress={onClose}>
             Start workspace
-          </button>
+          </Button>
         </footer>
       </section>
     </div>
-  )
-}
-
-function SystemSidebar({
-  canRedo,
-  canUndo,
-  isLibraryCollapsed,
-  isSettingsOpen,
-  libraryPanelMode,
-  saveLabel,
-  onImportProject,
-  onNewProject,
-  onOpenProject,
-  onOpenSettings,
-  onOpenVersionHistory,
-  onRedo,
-  onSaveProject,
-  onSaveVersion,
-  onLibraryPanelModeChange,
-  onToggleLibrary,
-  onUndo,
-}: {
-  canRedo: boolean
-  canUndo: boolean
-  isLibraryCollapsed: boolean
-  isSettingsOpen: boolean
-  libraryPanelMode: LibraryPanelMode
-  saveLabel: string
-  onImportProject: (file: File) => void
-  onNewProject: () => void
-  onOpenProject: () => void
-  onOpenSettings: () => void
-  onOpenVersionHistory: () => void
-  onRedo: () => void
-  onSaveProject: () => void
-  onSaveVersion: () => void
-  onLibraryPanelModeChange: (mode: LibraryPanelMode) => void
-  onToggleLibrary: () => void
-  onUndo: () => void
-}) {
-  const importInput = useRef<HTMLInputElement>(null)
-
-  return (
-    <aside
-      className="system-sidebar"
-      data-tauri-drag-region
-      aria-label="Workspace"
-      onDoubleClick={toggleWindowMaximizeFromChrome}
-      onPointerDown={startWindowDrag}
-    >
-      {/* Window controls now live in the file tab bar at the true top of the
-          window — the sidebar starts below it, so they no longer belong here. */}
-      <div className="system-sidebar-top" data-tauri-drag-region>
-        <div className="brand-mark sidebar-brand" data-tauri-drag-region>
-          <img src="/kira-icon.png" alt="" />
-        </div>
-      </div>
-
-      <div className="sidebar-source-group" aria-label="Content sources">
-        {[
-          { mode: 'images' as const, label: 'Images', icon: ImageIcon },
-          { mode: 'ideas' as const, label: 'Ideas', icon: Lightbulb },
-          { mode: 'links' as const, label: 'Links', icon: Workflow },
-        ].map(({ mode, label, icon: Icon }) => (
-          <button
-            key={mode}
-            className={!isLibraryCollapsed && libraryPanelMode === mode ? 'sidebar-view-button is-active' : 'sidebar-view-button'}
-            type="button"
-            aria-label={
-              !isLibraryCollapsed && libraryPanelMode === mode
-                ? `Close ${label}`
-                : `Open ${label}`
-            }
-            aria-pressed={!isLibraryCollapsed && libraryPanelMode === mode}
-            title={label}
-            onClick={() => {
-              if (!isLibraryCollapsed && libraryPanelMode === mode) {
-                onToggleLibrary()
-                return
-              }
-              onLibraryPanelModeChange(mode)
-              if (isLibraryCollapsed) onToggleLibrary()
-            }}
-          >
-            <Icon size={18} />
-          </button>
-        ))}
-      </div>
-
-      <div className="sidebar-app-actions" aria-label="File actions">
-        <button className="sidebar-view-button" type="button" aria-label="Import project" title="Import" onClick={() => importInput.current?.click()}>
-          <ArrowDownToLine size={18} />
-        </button>
-        <input
-          ref={importInput}
-          aria-label="Import project file"
-          className="file-input"
-          accept="application/json"
-          type="file"
-          onChange={(event) => {
-            const file = event.target.files?.[0]
-            if (file) onImportProject(file)
-            event.target.value = ''
-          }}
-        />
-        <SecondaryRail
-          canRedo={canRedo}
-          canUndo={canUndo}
-          saveLabel={saveLabel}
-          onNewProject={onNewProject}
-          onOpenProject={onOpenProject}
-          onOpenVersionHistory={onOpenVersionHistory}
-          onRedo={onRedo}
-          onSaveProject={onSaveProject}
-          onSaveVersion={onSaveVersion}
-          onUndo={onUndo}
-        />
-        <button
-          className={isSettingsOpen ? 'sidebar-view-button sidebar-settings is-active' : 'sidebar-view-button sidebar-settings'}
-          type="button"
-          aria-label="Open Settings"
-          aria-pressed={isSettingsOpen}
-          title="Settings"
-          onClick={onOpenSettings}
-        >
-          <Settings size={18} />
-        </button>
-      </div>
-    </aside>
   )
 }
 
@@ -7383,46 +7218,47 @@ function ProjectSettingsPopover({
   onProjectAppearanceChange: (patch: Partial<ProjectAppearance>) => void
 }) {
   const [isProjectColorOpen, setIsProjectColorOpen] = useState(false)
+  const lang = useLangStore((state) => state.lang)
   return (
-    <div className="project-settings-popover" onPointerDown={(event) => event.stopPropagation()} onContextMenu={(event) => event.preventDefault()}>
+    <div className="project-settings-popover kira-uikit" onPointerDown={(event) => event.stopPropagation()} onContextMenu={(event) => event.preventDefault()}>
       <section className="inspector-card project-file-card">
-        <label className="field-label" htmlFor="project-title"><T k="inspector.name" /></label>
-        <input
-          id="project-title"
-          className="title-input"
+        <Input
+          label={t('inspector.name', lang)}
+          size="sm"
           value={project.title}
-          onChange={(event) => onProjectMetadataChange({ title: event.target.value })}
+          onChange={(value) => onProjectMetadataChange({ title: value })}
         />
-        <label className="field-label" htmlFor="project-description"><T k="inspector.description" /></label>
-        <textarea
-          id="project-description"
-          className="note-input"
+        <TextArea
+          label={t('inspector.description', lang)}
+          size="sm"
+          rows={3}
           value={project.description}
-          onChange={(event) => onProjectMetadataChange({ description: event.target.value })}
+          onChange={(value) => onProjectMetadataChange({ description: value })}
         />
-        <label className="field-label" htmlFor="project-author"><T k="inspector.author" /></label>
-        <input
-          id="project-author"
-          className="title-input"
+        <Input
+          label={t('inspector.author', lang)}
+          size="sm"
           value={project.author}
-          onChange={(event) => onProjectMetadataChange({ author: event.target.value })}
+          onChange={(value) => onProjectMetadataChange({ author: value })}
         />
-        <label className="field-label" htmlFor="project-kind"><T k="inspector.kind" /></label>
-        <select
-          id="project-kind"
-          className="title-input"
-          value={project.kind}
-          onChange={(event) => onProjectMetadataChange({ kind: event.target.value as ProjectKind })}
+        <Select
+          label={t('inspector.kind', lang)}
+          size="sm"
+          selectedKey={project.kind}
+          onSelectionChange={(key) => onProjectMetadataChange({ kind: String(key) as ProjectKind })}
+          items={[
+            { id: 'moodboard', label: 'Moodboard' },
+            { id: 'ideaboard', label: 'Ideaboard' },
+          ]}
         >
-          <option value="moodboard">Moodboard</option>
-          <option value="ideaboard">Ideaboard</option>
-        </select>
-        <label className="field-label" htmlFor="project-style-note"><T k="inspector.styleNote" /></label>
-        <textarea
-          id="project-style-note"
-          className="note-input"
+          {(item) => <Select.Item key={item.id} id={item.id}>{item.label}</Select.Item>}
+        </Select>
+        <TextArea
+          label={t('inspector.styleNote', lang)}
+          size="sm"
+          rows={3}
           value={project.styleNote}
-          onChange={(event) => onProjectMetadataChange({ styleNote: event.target.value })}
+          onChange={(value) => onProjectMetadataChange({ styleNote: value })}
         />
       </section>
 
@@ -7439,30 +7275,39 @@ function ProjectSettingsPopover({
         <div className={isProjectColorOpen ? 'project-color-editor is-open' : 'project-color-editor'}>
           <div className="project-color-editor-content">
             {SHOW_COLOR_MODE_TOGGLE && (
-              <Segmented
-                ariaLabel="Color mode"
-                variant="radio"
-                value={appearance.colorMode}
-                onChange={(colorMode) => onProjectAppearanceChange({ colorMode })}
-                options={[
-                  { value: 'dark', label: 'Dark' },
-                  { value: 'light', label: 'Light' },
-                ]}
-              />
+              <ButtonGroup
+                aria-label="Color mode"
+                size="sm"
+                selectedKeys={new Set([appearance.colorMode])}
+                onSelectionChange={(keys) => {
+                  const next = [...keys][0]
+                  if (next === 'dark' || next === 'light') onProjectAppearanceChange({ colorMode: next })
+                }}
+              >
+                <ButtonGroupItem id="dark">Dark</ButtonGroupItem>
+                <ButtonGroupItem id="light">Light</ButtonGroupItem>
+              </ButtonGroup>
             )}
-            <div className="accent-color-recommendations" aria-label="Accent colors">
+            <ButtonGroup
+              aria-label="Accent colors"
+              size="sm"
+              selectedKeys={new Set([appearance.accentPreset])}
+              onSelectionChange={(keys) => {
+                const next = String([...keys][0] ?? '')
+                if (projectAccentPresets.some((preset) => preset.id === next)) onProjectAppearanceChange({ accentPreset: next as ProjectAccentPreset })
+              }}
+              className="accent-color-recommendations w-full"
+            >
               {projectAccentPresets.filter((preset) => preset.id !== 'custom').map((preset) => (
-                <button
+                <ButtonGroupItem
                   key={preset.id}
-                  type="button"
-                  className={appearance.accentPreset === preset.id ? 'is-active' : ''}
-                  onClick={() => onProjectAppearanceChange({ accentPreset: preset.id })}
+                  id={preset.id}
                 >
                   <i style={{ background: preset.color }} />
                   <span>{preset.label}</span>
-                </button>
+                </ButtonGroupItem>
               ))}
-            </div>
+            </ButtonGroup>
             <HexColorPicker
               color={appearance.accentColor}
               onChange={(color) => onProjectAppearanceChange({ accentColor: color })}
@@ -7485,115 +7330,6 @@ function ProjectSettingsPopover({
         </div>
       </section>
     </div>
-  )
-}
-
-function TopBar({
-  activeView,
-  isProjectSettingsOpen,
-  setActiveView,
-  onToggleProjectSettings,
-}: {
-  activeView: ActiveView
-  isProjectSettingsOpen: boolean
-  setActiveView: (view: ActiveView) => void
-  onToggleProjectSettings: () => void
-}) {
-  const lang = useLangStore((state) => state.lang)
-  const views: { label: ActiveView; key: string; icon: typeof Network }[] = [
-    { label: 'Canvas', key: 'view.canvas', icon: Network },
-    { label: '3D', key: 'view.3d', icon: Box },
-    { label: 'Slides', key: 'view.slides', icon: FileText },
-    { label: 'Outline', key: 'view.outline', icon: ListTree },
-  ]
-
-  return (
-    <header
-      className="topbar"
-      data-tauri-drag-region
-      onDoubleClick={toggleWindowMaximizeFromChrome}
-      onPointerDown={startWindowDrag}
-    >
-      {/* variant="radio", not "tabs": the four views fully unmount when
-          inactive (they're swapped by a ternary in .view-region, not kept in
-          the DOM with `hidden`), so there's no persistent panel to pair via
-          role="tabpanel"/aria-controls the way real ARIA tabs assume. This
-          is an exclusive-choice picker, which radiogroup/radio describes
-          honestly without a panel relationship it can't back up. */}
-      <Segmented
-        className="content-view-switch"
-        ariaLabel="View"
-        variant="radio"
-        value={activeView}
-        onChange={setActiveView}
-        options={views.map(({ label, key, icon: Icon }) => ({
-          value: label,
-          ariaLabel: t(key, lang),
-          tooltip: t(key, lang),
-          label: <Icon size={16} aria-hidden="true" />,
-        }))}
-      />
-
-      <div className="content-toolbar-actions">
-        <button
-          className={isProjectSettingsOpen ? 'icon-button top-inspector-button is-active' : 'icon-button top-inspector-button'}
-          type="button"
-          aria-label={isProjectSettingsOpen ? 'Close project settings' : 'Open project settings'}
-          aria-pressed={isProjectSettingsOpen}
-          title="Project settings"
-          onClick={onToggleProjectSettings}
-        >
-          <SlidersHorizontal size={16} />
-        </button>
-      </div>
-    </header>
-  )
-}
-
-function SecondaryRail({
-  canUndo,
-  canRedo,
-  saveLabel,
-  onNewProject,
-  onOpenProject,
-  onSaveProject,
-  onSaveVersion,
-  onOpenVersionHistory,
-  onUndo,
-  onRedo,
-}: {
-  canUndo: boolean
-  canRedo: boolean
-  saveLabel: string
-  onNewProject: () => void
-  onOpenProject: () => void
-  onSaveProject: () => void
-  onSaveVersion: () => void
-  onOpenVersionHistory: () => void
-  onUndo: () => void
-  onRedo: () => void
-}) {
-  const primaryItems = [
-    { label: 'New', icon: FilePlus2, onClick: onNewProject, disabled: false },
-    { label: 'Open', icon: FolderOpen, onClick: onOpenProject, disabled: !isTauriRuntime() },
-    { label: saveLabel, icon: Save, onClick: onSaveProject, disabled: false },
-  ]
-  return (
-    <aside className="secondary-rail" aria-label="File tools">
-      {primaryItems.map(({ label, icon: Icon, onClick, disabled }) => (
-        <button
-          key={label}
-          className="secondary-rail-button"
-          type="button"
-          aria-label={label}
-          title={label}
-          disabled={disabled}
-          onClick={onClick}
-        >
-          <Icon size={16} />
-        </button>
-      ))}
-    </aside>
   )
 }
 
@@ -7739,11 +7475,11 @@ function GraphCanvas({
   onGeneratePromptStarter: (prompt: string) => void
   onActiveCanvasToolChange: React.Dispatch<React.SetStateAction<CanvasTool>>
   onPendingLinkSourceChange: React.Dispatch<React.SetStateAction<Pick<GraphNodeRef, 'kind' | 'id'> | null>>
-  onCreateIdea: () => void
-  onCreatePalette: () => void
-  onCreatePlaceholder: () => void
-  onCreateFrame: () => void
-  onCreateSticker: () => void
+  onCreateIdea: (position?: Pick<Idea, 'x' | 'y'>) => void
+  onCreatePalette: (position?: Pick<PaletteNode, 'x' | 'y'>) => void
+  onCreatePlaceholder: (position?: Pick<PlaceholderNode, 'x' | 'y'>) => void
+  onCreateFrame: (position?: Pick<FrameNode, 'x' | 'y'>) => void
+  onCreateSticker: (position?: Pick<Idea, 'x' | 'y'>) => void
   onFrameMove: (frameId: string, position: Pick<FrameNode, 'x' | 'y'>) => void
   onFrameResize: (frameId: string, size: Pick<FrameNode, 'width' | 'height'>) => void
   onFrameRename: (frameId: string, title: string) => void
@@ -7886,6 +7622,7 @@ function GraphCanvas({
   const [arcMenu, setArcMenu] = useState<Pick<GraphNodeRef, 'kind' | 'id' | 'x' | 'y'> | null>(null)
   const [multiSelectedNodes, setMultiSelectedNodes] = useState<CanvasNodeSelection[]>([])
   const [nodeContextMenu, setNodeContextMenu] = useState<{ x: number; y: number; nodes: CanvasNodeSelection[] } | null>(null)
+  const [canvasContextMenu, setCanvasContextMenu] = useState<CanvasContextMenu | null>(null)
   const [detailsPopoverNode, setDetailsPopoverNode] = useState<CanvasNodeSelection | null>(null)
   // Whichever element opened the overlay (the toolbar's Details button, or
   // the node card itself on double-click) — focus returns here when the
@@ -8200,12 +7937,13 @@ function GraphCanvas({
   )
 
   useDismissableLayer(
-    isGraphToolsOpen || Boolean(arcMenu) || Boolean(nodeContextMenu),
-    '.node-context-menu, .node-arc-menu, .graph-tools-drawer, [data-menu-trigger="graph-tools"], .node-add-control, .node-kira-control',
+    isGraphToolsOpen || Boolean(arcMenu) || Boolean(nodeContextMenu) || Boolean(canvasContextMenu),
+    '.node-context-menu, .canvas-context-menu, .node-arc-menu, .graph-tools-drawer, [data-menu-trigger="graph-tools"], .node-add-control, .node-kira-control',
     () => {
       setIsGraphToolsOpen(false)
       setArcMenu(null)
       setNodeContextMenu(null)
+      setCanvasContextMenu(null)
     },
   )
 
@@ -8405,7 +8143,7 @@ function GraphCanvas({
     }
   }
 
-  function eventPercent(event: React.MouseEvent<HTMLElement>) {
+  function eventPercent(event: React.MouseEvent<Element>) {
     const rect = canvasRef.current?.getBoundingClientRect()
     if (!rect) return null
 
@@ -8481,6 +8219,7 @@ function GraphCanvas({
     })
     onSelect({ type: kind, id } as Selection)
     setNodeContextMenu(null)
+    setCanvasContextMenu(null)
   }
 
   function openNodeContextMenu(kind: GraphNodeKind, id: string, event: React.MouseEvent<HTMLElement>) {
@@ -8497,6 +8236,77 @@ function GraphCanvas({
       y: event.clientY - (rect?.top ?? 0),
       nodes,
     })
+    setCanvasContextMenu(null)
+    setArcMenu(null)
+  }
+
+  function openCanvasContextMenu(event: React.MouseEvent<HTMLDivElement>) {
+    const target = event.target instanceof Element ? event.target : null
+    if (target?.closest('[data-node-kind][data-node-id], [data-frame-id], button, input, textarea, select, .canvas-bottom-bar, .node-context-menu, .node-arc-menu, .graph-tools-drawer, .kira-dock')) return
+
+    const rect = canvasRef.current?.getBoundingClientRect()
+    const position = eventPercent(event)
+    if (!rect || !position) return
+
+    event.preventDefault()
+    event.stopPropagation()
+    setCanvasContextMenu({
+      type: 'canvas',
+      x: clamp(event.clientX - rect.left, 8, Math.max(8, rect.width - 172)),
+      y: clamp(event.clientY - rect.top, 8, Math.max(8, rect.height - 238)),
+      position: {
+        x: clamp(position.x, 8, 92),
+        y: clamp(position.y, 8, 92),
+      },
+    })
+    onSelect({ type: 'project' })
+    setMultiSelectedNodes([])
+    setNodeContextMenu(null)
+    setArcMenu(null)
+  }
+
+  function createFromCanvasContext(create: (position: Pick<Idea, 'x' | 'y'>) => void) {
+    const menu = canvasContextMenu
+    if (!menu || menu.type !== 'canvas') return
+    create(menu.position)
+    setCanvasContextMenu(null)
+  }
+
+  function openFrameContextMenu(frameId: string, event: React.MouseEvent<HTMLElement>) {
+    const target = event.target instanceof Element ? event.target : null
+    if (target?.closest('button, input, textarea, select, [contenteditable]:not([contenteditable="false"])')) return
+    const rect = canvasRef.current?.getBoundingClientRect()
+    if (!rect) return
+
+    event.preventDefault()
+    event.stopPropagation()
+    setCanvasContextMenu({
+      type: 'frame',
+      frameId,
+      x: clamp(event.clientX - rect.left, 8, Math.max(8, rect.width - 172)),
+      y: clamp(event.clientY - rect.top, 8, Math.max(8, rect.height - 132)),
+    })
+    onSelect({ type: 'frame', id: frameId })
+    setMultiSelectedNodes([])
+    setNodeContextMenu(null)
+    setArcMenu(null)
+  }
+
+  function openLinkContextMenu(linkId: string, event: React.MouseEvent<Element>) {
+    const rect = canvasRef.current?.getBoundingClientRect()
+    if (!rect) return
+
+    event.preventDefault()
+    event.stopPropagation()
+    setCanvasContextMenu({
+      type: 'link',
+      linkId,
+      x: clamp(event.clientX - rect.left, 8, Math.max(8, rect.width - 172)),
+      y: clamp(event.clientY - rect.top, 8, Math.max(8, rect.height - 164)),
+    })
+    onSelect({ type: 'link', id: linkId })
+    setMultiSelectedNodes([])
+    setNodeContextMenu(null)
     setArcMenu(null)
   }
 
@@ -8557,6 +8367,7 @@ function GraphCanvas({
     onSelect({ type: kind, id: node.id } as Selection)
     setMultiSelectedNodes([])
     setNodeContextMenu(null)
+    setCanvasContextMenu(null)
   }
 
   function selectGraphNode(kind: GraphNodeKind, id: string, event?: React.MouseEvent<HTMLElement>) {
@@ -8581,6 +8392,7 @@ function GraphCanvas({
     onSelect({ type: kind, id } as Selection)
     setMultiSelectedNodes([])
     setNodeContextMenu(null)
+    setCanvasContextMenu(null)
   }
 
   // Double-clicking anywhere on a node — including its caption text, which
@@ -8602,6 +8414,7 @@ function GraphCanvas({
     onSelect({ type: kind, id: node.id } as Selection)
     setMultiSelectedNodes([])
     setNodeContextMenu(null)
+    setCanvasContextMenu(null)
   }
 
   function beginLinkFromArc(source: Pick<GraphNodeRef, 'kind' | 'id'>) {
@@ -8866,6 +8679,7 @@ function GraphCanvas({
     onSelect({ type: kind, id: node.id } as Selection)
     setArcMenu(null)
     setNodeContextMenu(null)
+    setCanvasContextMenu(null)
   }
 
   function moveNodeResize(event: React.PointerEvent<HTMLElement>) {
@@ -8967,8 +8781,10 @@ function GraphCanvas({
       },
     })
     const sourceUrlField = (
-      <input
-        className="title-input"
+      <InputBase
+        aria-label="Source URL"
+        size="sm"
+        wrapperClassName="source-url-input"
         placeholder="Source URL"
         value={('sourceUrl' in node ? node.sourceUrl : '') ?? ''}
         onChange={(event) => inlineChange({ sourceUrl: event.target.value })}
@@ -9156,8 +8972,11 @@ function GraphCanvas({
                 )}
               </section>
             )}
-            <textarea
-              className="note-input"
+            <TextAreaBase
+              aria-label="Notes"
+              className="node-notes-input"
+              rows={2}
+              size="sm"
               placeholder="Notes..."
               value={('notes' in node ? node.notes : '') ?? ''}
               onChange={(event) => inlineChange({ notes: event.target.value })}
@@ -9243,9 +9062,11 @@ function GraphCanvas({
                   onToggleCollapsed={() => toggleDetailSection('diagram-source')}
                 />
                 {!collapsedDetailSections.has('diagram-source') && (
-                  <textarea
+                  <TextAreaBase
                     aria-label="Diagram source"
                     className="diagram-source-input"
+                    rows={8}
+                    size="sm"
                     value={(node as DiagramNode).source}
                     onChange={(event) => onDiagramInlineChange(id, { source: event.target.value })}
                   />
@@ -9562,14 +9383,14 @@ function GraphCanvas({
           <p className="kira-dock-error" role="alert">
             <AlertTriangle size={13} />
             <span>{kiraSession.message}</span>
-            <button type="button" className="kira-dock-retry" onClick={() => void submitKiraSession()}>{t('kira.tryAgain', lang)}</button>
+            <Button color="link-color" size="xs" className="kira-dock-retry" onPress={() => void submitKiraSession()}>{t('kira.tryAgain', lang)}</Button>
           </p>
         )}
 
         {open && !routedProvider && (
           <p className="kira-dock-notice">
             <span>{t('kira.noProvider', lang)}</span>
-            <button type="button" className="link-button" onClick={onOpenAiSettings}>{t('kira.openAiSettings', lang)}</button>
+            <Button color="link-color" size="xs" className="link-button" onPress={onOpenAiSettings}>{t('kira.openAiSettings', lang)}</Button>
           </p>
         )}
 
@@ -9621,9 +9442,10 @@ function GraphCanvas({
     const isMiddleButton = event.button === 1
     const isSpaceDrag = event.button === 0 && spacePanArmedRef.current
     if (!isMiddleButton && !isSpaceDrag) {
-      if (event.button !== 0 || target?.closest('[data-node-kind][data-node-id], button, input, textarea, select, .canvas-tool-rail, .canvas-view-rail, .canvas-zoom-rail, .graph-tools-drawer, .node-context-menu, .node-arc-menu, .canvas-zero-state, .kira-dock')) return
+      if (event.button !== 0 || target?.closest('[data-node-kind][data-node-id], button, input, textarea, select, .canvas-tool-rail, .canvas-view-rail, .canvas-zoom-rail, .graph-tools-drawer, .node-context-menu, .canvas-context-menu, .node-arc-menu, .canvas-zero-state, .kira-dock')) return
       onSelect({ type: 'project' })
       setNodeContextMenu(null)
+      setCanvasContextMenu(null)
       setArcMenu(null)
       setMultiSelectedNodes([])
       onPendingLinkSourceChange(null)
@@ -9731,6 +9553,7 @@ function GraphCanvas({
           stopPan()
         }}
         onAuxClick={(event) => event.preventDefault()}
+        onContextMenu={openCanvasContextMenu}
         onDragOver={handleReferenceDragOver}
         onDrop={(event) => {
           // Attached here (the untransformed, full-bleed element) rather than
@@ -9776,19 +9599,19 @@ function GraphCanvas({
             </button>
           </div>
           <div className="canvas-tool-group" aria-label="Create nodes">
-            <button type="button" aria-label={t('tool.imagePlaceholder', lang)} data-tooltip={t('tool.imagePlaceholder', lang)} data-tool-kind="image" onClick={onCreatePlaceholder}>
+            <button type="button" aria-label={t('tool.imagePlaceholder', lang)} data-tooltip={t('tool.imagePlaceholder', lang)} data-tool-kind="image" onClick={() => onCreatePlaceholder()}>
               <RailIcon name="image" />
             </button>
-            <button type="button" aria-label={t('tool.palette', lang)} data-tooltip={t('tool.palette', lang)} data-tool-kind="palette" onClick={onCreatePalette}>
+            <button type="button" aria-label={t('tool.palette', lang)} data-tooltip={t('tool.palette', lang)} data-tool-kind="palette" onClick={() => onCreatePalette()}>
               <RailIcon name="palette" />
             </button>
-            <button type="button" aria-label={t('tool.idea', lang)} data-tooltip={t('tool.idea', lang)} data-tool-kind="idea" onClick={onCreateIdea}>
+            <button type="button" aria-label={t('tool.idea', lang)} data-tooltip={t('tool.idea', lang)} data-tool-kind="idea" onClick={() => onCreateIdea()}>
               <RailIcon name="idea" />
             </button>
-            <button type="button" aria-label={t('tool.sticker', lang)} data-tooltip={t('tool.sticker', lang)} data-tool-kind="sticker" onClick={onCreateSticker}>
+            <button type="button" aria-label={t('tool.sticker', lang)} data-tooltip={t('tool.sticker', lang)} data-tool-kind="sticker" onClick={() => onCreateSticker()}>
               <RailIcon name="note" />
             </button>
-            <button type="button" aria-label={t('tool.frame', lang)} data-tooltip={t('tool.frame', lang)} data-tool-kind="frame" onClick={onCreateFrame}>
+            <button type="button" aria-label={t('tool.frame', lang)} data-tooltip={t('tool.frame', lang)} data-tool-kind="frame" onClick={() => onCreateFrame()}>
               <RailIcon name="frame" />
             </button>
           </div>
@@ -9871,15 +9694,16 @@ function GraphCanvas({
               ))}
             </div>
             <div className="canvas-prompt-starter">
-              <input
+              <InputBase
+                size="sm"
+                wrapperClassName="canvas-prompt-input"
                 value={starterPrompt}
                 onChange={(event) => setStarterPrompt(event.target.value)}
                 placeholder="Describe a board"
               />
-              <button type="button" className="primary-button" disabled={!starterPrompt.trim()} onClick={submitPromptStarter}>
-                <Sparkles size={14} />
+              <Button color="primary" size="sm" iconLeading={Sparkles} isDisabled={!starterPrompt.trim()} onPress={submitPromptStarter}>
                 Generate nodes
-              </button>
+              </Button>
             </div>
           </section>
         )}
@@ -9898,9 +9722,11 @@ function GraphCanvas({
                 width: `${frame.width}%`,
                 height: `${frame.height}%`,
               }}
+              onContextMenu={(event) => openFrameContextMenu(frame.id, event)}
             >
-              <button
-                type="button"
+              <div
+                role="button"
+                tabIndex={0}
                 className="canvas-frame-label"
                 onPointerDown={(event) => startFrameDrag(frame, event)}
                 onPointerMove={moveFrameDrag}
@@ -9914,6 +9740,11 @@ function GraphCanvas({
                   event.stopPropagation()
                   beginFrameRename(frame.id)
                 }}
+                onKeyDown={(event) => {
+                  if (event.key !== 'Enter' && event.key !== ' ') return
+                  event.preventDefault()
+                  onSelect({ type: 'frame', id: frame.id })
+                }}
               >
                 {editingFrameId === frame.id ? (
                   <span
@@ -9925,9 +9756,10 @@ function GraphCanvas({
                       setEditingFrameId(null)
                     }}
                   >
-                    <input
+                    <InputBase
                       autoFocus
-                      className="canvas-frame-title-input"
+                      size="sm"
+                      wrapperClassName="canvas-frame-title-input"
                       aria-label="Frame title"
                       value={frame.title}
                       onKeyDown={(event) => {
@@ -9937,9 +9769,11 @@ function GraphCanvas({
                       }}
                       onChange={(event) => onFrameRename(frame.id, event.target.value)}
                     />
-                    <textarea
+                    <TextAreaBase
                       className="canvas-frame-description-input"
                       aria-label="Frame description"
+                      rows={2}
+                      size="sm"
                       placeholder="Describe this frame"
                       value={frame.description ?? ''}
                       onKeyDown={(event) => {
@@ -9955,7 +9789,7 @@ function GraphCanvas({
                     <span className="canvas-frame-description">{frame.description ?? 'Group related references'}</span>
                   </>
                 )}
-              </button>
+              </div>
               <span
                 className="canvas-frame-resize-handle"
                 role="slider"
@@ -10010,7 +9844,11 @@ function GraphCanvas({
               const relatedLink = related.linkIds.has(link.id)
               const curve = smoothGraphEdge(source, target)
               return (
-                <g key={link.id} onClick={() => onSelect({ type: 'link', id: link.id })}>
+                <g
+                  key={link.id}
+                  onClick={() => onSelect({ type: 'link', id: link.id })}
+                  onContextMenu={(event) => openLinkContextMenu(link.id, event)}
+                >
                   <path
                     d={curve.path}
                     className="edge-hit-path"
@@ -10082,11 +9920,15 @@ function GraphCanvas({
                     top: `${curve.midY}%`,
                   }}
                   onClick={() => onSelect(active ? { type: 'project' } : { type: 'link', id: link.id })}
+                  onContextMenu={(event) => openLinkContextMenu(link.id, event)}
                 />
                 {active && (
                   <div
                     className="link-popover"
-                    style={{ left: `${curve.midX}%`, top: `${curve.midY}%` }}
+                    style={{
+                      '--link-popover-x': `${curve.midX}%`,
+                      '--link-popover-y': `${curve.midY}%`,
+                    } as React.CSSProperties}
                     onPointerDown={(event) => event.stopPropagation()}
                     onContextMenu={(event) => event.preventDefault()}
                   >
@@ -10098,36 +9940,38 @@ function GraphCanvas({
                         <GitBranch size={12} />
                       </button>
                     </div>
-                    <select
+                    <Select
                       aria-label="Relation type"
-                      value={link.relation}
-                      onChange={(event) => {
-                        const relation = event.target.value as Relation
+                      className="link-relation-select"
+                      size="sm"
+                      selectedKey={link.relation}
+                      items={Object.keys(relationLabels).map((relation) => ({ id: relation, label: relationLabels[relation as Relation] }))}
+                      onSelectionChange={(key) => {
+                        const relation = String(key) as Relation
                         onRelationChange(link.id, relation)
                         onLinkChange(link.id, { relation })
                       }}
                     >
-                      {Object.keys(relationLabels).map((relation) => (
-                        <option key={relation} value={relation}>
-                          {relationLabels[relation as Relation]}
-                        </option>
-                      ))}
-                    </select>
-                    <textarea
+                      {(item) => <Select.Item id={item.id}>{item.label}</Select.Item>}
+                    </Select>
+                    <TextAreaBase
                       aria-label="Link note"
+                      className="link-note-input"
+                      rows={2}
+                      size="sm"
                       placeholder="Note..."
                       value={link.note}
                       onChange={(event) => onLinkChange(link.id, { note: event.target.value })}
                     />
                     <label className="range-field">
                       <span>Confidence {Math.round(link.confidence * 100)}%</span>
-                      <input
+                      <Slider
                         aria-label="Link confidence"
-                        type="range"
-                        min="0"
-                        max="100"
-                        value={Math.round(link.confidence * 100)}
-                        onChange={(event) => onLinkChange(link.id, { confidence: Number(event.currentTarget.value) / 100 })}
+                        className="link-confidence-slider"
+                        minValue={0}
+                        maxValue={100}
+                        value={[Math.round(link.confidence * 100)]}
+                        onChange={(value) => onLinkChange(link.id, { confidence: (Array.isArray(value) ? value[0] : value) / 100 })}
                       />
                     </label>
                     <button
@@ -10596,113 +10440,188 @@ function GraphCanvas({
           </div>
         )}
 
+        {canvasContextMenu?.type === 'canvas' && (
+          <div
+            className="canvas-context-menu"
+            style={{ left: canvasContextMenu.x, top: canvasContextMenu.y }}
+            role="menu"
+            aria-label="Canvas actions"
+            onPointerDown={(event) => event.stopPropagation()}
+            onContextMenu={(event) => event.preventDefault()}
+          >
+            <div className="node-context-heading">
+              <strong>Canvas</strong>
+            </div>
+            <button type="button" role="menuitem" onClick={() => createFromCanvasContext(onCreateIdea)}>
+              <Lightbulb size={13} />
+              New idea
+            </button>
+            <button type="button" role="menuitem" onClick={() => createFromCanvasContext(onCreatePlaceholder)}>
+              <ImagePlus size={13} />
+              Image placeholder
+            </button>
+            <button type="button" role="menuitem" onClick={() => createFromCanvasContext(onCreatePalette)}>
+              <Palette size={13} />
+              Palette
+            </button>
+            <button type="button" role="menuitem" onClick={() => createFromCanvasContext(onCreateSticker)}>
+              <StickyNote size={13} />
+              Sticky note
+            </button>
+            <button type="button" role="menuitem" onClick={() => createFromCanvasContext(onCreateFrame)}>
+              <Frame size={13} />
+              Frame
+            </button>
+          </div>
+        )}
+
+        {canvasContextMenu?.type === 'frame' && (
+          <div
+            className="canvas-context-menu"
+            style={{ left: canvasContextMenu.x, top: canvasContextMenu.y }}
+            role="menu"
+            aria-label="Frame actions"
+            onPointerDown={(event) => event.stopPropagation()}
+            onContextMenu={(event) => event.preventDefault()}
+          >
+            <div className="node-context-heading">
+              <strong>Frame</strong>
+            </div>
+            <button type="button" role="menuitem" onClick={() => { beginFrameRename(canvasContextMenu.frameId); setCanvasContextMenu(null) }}>
+              <Pencil size={13} />
+              Rename
+            </button>
+            <button type="button" role="menuitem" className="is-danger" onClick={() => { onFrameDelete(canvasContextMenu.frameId); setCanvasContextMenu(null) }}>
+              <Trash2 size={13} />
+              Delete frame
+            </button>
+          </div>
+        )}
+
+        {canvasContextMenu?.type === 'link' && (
+          <div
+            className="canvas-context-menu"
+            style={{ left: canvasContextMenu.x, top: canvasContextMenu.y }}
+            role="menu"
+            aria-label="Link actions"
+            onPointerDown={(event) => event.stopPropagation()}
+            onContextMenu={(event) => event.preventDefault()}
+          >
+            <div className="node-context-heading">
+              <strong>Link</strong>
+            </div>
+            <button type="button" role="menuitem" onClick={() => { onSelect({ type: 'link', id: canvasContextMenu.linkId }); setCanvasContextMenu(null) }}>
+              <Settings size={13} />
+              Edit link
+            </button>
+            <button type="button" role="menuitem" onClick={() => { onLinkSwap(canvasContextMenu.linkId); onSelect({ type: 'link', id: canvasContextMenu.linkId }); setCanvasContextMenu(null) }}>
+              <GitBranch size={13} />
+              Swap direction
+            </button>
+            <button type="button" role="menuitem" className="is-danger" onClick={() => { onLinkDelete(canvasContextMenu.linkId); onSelect({ type: 'project' }); setCanvasContextMenu(null) }}>
+              <Trash2 size={13} />
+              Remove link
+            </button>
+          </div>
+        )}
+
 
         {isGraphToolsOpen && (
           <div className="graph-tools-drawer">
-            <label className="graph-tools-wide graph-tools-toggle">
+            <div className="graph-tools-wide graph-tools-toggle">
               <span>{t('canvas.discoverToggle.label', lang)}</span>
-              <button
-                type="button"
-                role="switch"
-                aria-checked={graphMode === 'discover'}
-                className={graphMode === 'discover' ? 'kira-switch is-on' : 'kira-switch'}
-                onClick={() => setGraphMode((current) => current === 'discover' ? 'edit' : 'discover')}
-              >
-                <span className="kira-switch-thumb" aria-hidden="true" />
-              </button>
-            </label>
-            <label>
+              <Toggle
+                aria-label={t('canvas.discoverToggle.label', lang)}
+                isSelected={graphMode === 'discover'}
+                onChange={(isSelected) => setGraphMode(isSelected ? 'discover' : 'edit')}
+                size="sm"
+              />
+            </div>
+            <div className="graph-tools-field">
               <span>Cap</span>
-              <select
+              <Select
                 aria-label="Canvas node cap"
-                value={graphCap}
-                onChange={(event) => setGraphCap(Number(event.target.value) as GraphCap)}
+                className="graph-tools-select"
+                items={Object.keys(graphCapLabels).map((cap) => ({ id: cap, label: graphCapLabels[Number(cap) as GraphCap] }))}
+                selectedKey={String(graphCap)}
+                onSelectionChange={(key) => setGraphCap(Number(key) as GraphCap)}
+                size="sm"
               >
-                {Object.keys(graphCapLabels).map((cap) => (
-                  <option key={cap} value={cap}>
-                    {graphCapLabels[Number(cap) as GraphCap]}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
+                {(item) => <Select.Item id={item.id}>{item.label}</Select.Item>}
+              </Select>
+            </div>
+            <div className="graph-tools-field">
               <span>Scope</span>
-              <select
+              <Select
                 aria-label="Canvas scope"
-                value={graphScope}
-                onChange={(event) => setGraphScope(event.target.value as GraphScope)}
+                className="graph-tools-select"
+                items={Object.keys(graphScopeLabels).map((scope) => ({ id: scope, label: graphScopeLabels[scope as GraphScope] }))}
+                selectedKey={graphScope}
+                onSelectionChange={(key) => setGraphScope(key as GraphScope)}
+                size="sm"
               >
-                {Object.keys(graphScopeLabels).map((scope) => (
-                  <option key={scope} value={scope}>
-                    {graphScopeLabels[scope as GraphScope]}
-                  </option>
-                ))}
-              </select>
-            </label>
+                {(item) => <Select.Item id={item.id}>{item.label}</Select.Item>}
+              </Select>
+            </div>
             {graphMode === 'discover' && (
-              <label>
+              <div className="graph-tools-field">
                 <span>Support</span>
-                <select
+                <Select
                   aria-label="Support filter"
-                  value={discoveryFilter}
-                  onChange={(event) => setDiscoveryFilter(event.target.value as DiscoveryFilter)}
+                  className="graph-tools-select"
+                  items={Object.keys(discoveryFilterLabels).map((filter) => ({ id: filter, label: discoveryFilterLabels[filter as DiscoveryFilter] }))}
+                  selectedKey={discoveryFilter}
+                  onSelectionChange={(key) => setDiscoveryFilter(key as DiscoveryFilter)}
+                  size="sm"
                 >
-                  {Object.keys(discoveryFilterLabels).map((filter) => (
-                    <option key={filter} value={filter}>
-                      {discoveryFilterLabels[filter as DiscoveryFilter]}
-                    </option>
-                  ))}
-                </select>
-              </label>
+                  {(item) => <Select.Item id={item.id}>{item.label}</Select.Item>}
+                </Select>
+              </div>
             )}
-            <label>
+            <div className="graph-tools-field">
               <span>Relations</span>
-              <select
+              <Select
                 aria-label="Relation filter"
-                value={relationFilter}
-                onChange={(event) => setRelationFilter(event.target.value as RelationFilter)}
+                className="graph-tools-select"
+                items={[{ id: 'all', label: 'All' }, ...Object.keys(relationLabels).map((relation) => ({ id: relation, label: relationLabels[relation as Relation] }))]}
+                selectedKey={relationFilter}
+                onSelectionChange={(key) => setRelationFilter(key as RelationFilter)}
+                size="sm"
               >
-                <option value="all">All</option>
-                {Object.keys(relationLabels).map((relation) => (
-                  <option key={relation} value={relation}>
-                    {relationLabels[relation as Relation]}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
+                {(item) => <Select.Item id={item.id}>{item.label}</Select.Item>}
+              </Select>
+            </div>
+            <div className="graph-tools-field">
               <span>Link</span>
-              <select
+              <Select
                 aria-label="Link relation"
-                value={linkCreationRelation}
-                onChange={(event) => onLinkCreationRelationChange(event.target.value as Relation)}
+                className="graph-tools-select"
+                items={Object.keys(relationLabels).map((relation) => ({ id: relation, label: relationLabels[relation as Relation] }))}
+                selectedKey={linkCreationRelation}
+                onSelectionChange={(key) => onLinkCreationRelationChange(key as Relation)}
+                size="sm"
               >
-                {Object.keys(relationLabels).map((relation) => (
-                  <option key={relation} value={relation}>
-                    {relationLabels[relation as Relation]}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="graph-tools-wide">
+                {(item) => <Select.Item id={item.id}>{item.label}</Select.Item>}
+              </Select>
+            </div>
+            <div className="graph-tools-wide graph-tools-field">
               <span>Organize</span>
               <div className="graph-organize-row">
-                <select
+                <Select
                   aria-label="Canvas organize mode"
-                  value={organizeMode}
-                  onChange={(event) => setOrganizeMode(event.target.value as GraphOrganizeMode)}
+                  className="graph-tools-select"
+                  items={Object.keys(graphOrganizeLabels).map((mode) => ({ id: mode, label: graphOrganizeLabels[mode as GraphOrganizeMode] }))}
+                  selectedKey={organizeMode}
+                  onSelectionChange={(key) => setOrganizeMode(key as GraphOrganizeMode)}
+                  size="sm"
                 >
-                  {Object.keys(graphOrganizeLabels).map((mode) => (
-                    <option key={mode} value={mode}>
-                      {graphOrganizeLabels[mode as GraphOrganizeMode]}
-                    </option>
-                  ))}
-                </select>
-                <button type="button" onClick={() => onOrganize(organizeMode)}>
+                  {(item) => <Select.Item id={item.id}>{item.label}</Select.Item>}
+                </Select>
+                <Button color="secondary" size="sm" onPress={() => onOrganize(organizeMode)}>
                   Apply
-                </button>
+                </Button>
               </div>
-            </label>
+            </div>
             <details className="graph-shortcuts graph-tools-wide">
               <summary>Shortcuts</summary>
               <dl>
@@ -10882,24 +10801,39 @@ function Graph3DView({
         <strong>{filteredGraphData.nodes.length}/{graphData.nodes.length}</strong>
         <small>{filteredGraphData.links.length}/{graphData.links.length} links</small>
         {selectedLabel && <em>{selectedLabel}</em>}
-        <button type="button" aria-label="Focus selected in 3D" disabled={!isNodeSelection(selected)} onClick={focusSelectedIn3D}>
-          <LocateFixed size={13} />
-        </button>
-        <button type="button" aria-label="Reset 3D camera" onClick={reset3DView}>
-          <ZoomOut size={13} />
-        </button>
+        <Button
+          className="graph3d-hud-button p-0!"
+          color="tertiary"
+          size="xs"
+          iconLeading={LocateFixed}
+          aria-label="Focus selected in 3D"
+          isDisabled={!isNodeSelection(selected)}
+          onPress={focusSelectedIn3D}
+        />
+        <Button
+          className="graph3d-hud-button p-0!"
+          color="tertiary"
+          size="xs"
+          iconLeading={ZoomOut}
+          aria-label="Reset 3D camera"
+          onPress={reset3DView}
+        />
       </div>
-      <Segmented
+      <ButtonGroup
         className="graph3d-scope"
-        ariaLabel="3D graph scope"
-        variant="radio"
-        value={graphScope3D}
-        onChange={setGraphScope3D}
-        options={(Object.keys(graphScopeLabels) as GraphScope[]).map((scope) => ({
-          value: scope,
-          label: graphScopeLabels[scope],
-        }))}
-      />
+        aria-label="3D graph scope"
+        selectedKeys={new Set([graphScope3D])}
+        disallowEmptySelection
+        size="sm"
+        onSelectionChange={(keys) => {
+          const next = [...keys][0]
+          if (next === 'all' || next === 'linked' || next === 'selection') setGraphScope3D(next)
+        }}
+      >
+        {(Object.keys(graphScopeLabels) as GraphScope[]).map((scope) => (
+          <ButtonGroupItem key={scope} id={scope}>{graphScopeLabels[scope]}</ButtonGroupItem>
+        ))}
+      </ButtonGroup>
       <div className="graph3d-legend" aria-label="3D relation legend">
         <button
           className={relationFilter3D === 'all' ? 'is-active' : ''}
@@ -10953,6 +10887,15 @@ function SlideCustomizer({
     return ai - bi
   })
   const visibleCount = ordered.filter((slide) => customizations[slide.id]?.hidden !== true).length
+  const layoutOptions = [
+    { id: 'auto', label: 'Auto' },
+    { id: 'focus', label: 'Focus' },
+    { id: 'grid', label: 'Grid' },
+    { id: 'stack', label: 'Stack' },
+    { id: 'palette', label: 'Palette' },
+    { id: 'diagram', label: 'Diagram' },
+    { id: 'moodboard', label: 'Moodboard' },
+  ]
 
   return (
     <div className="slide-customizer" aria-label="Customize slides">
@@ -10960,9 +10903,9 @@ function SlideCustomizer({
         <strong>Customize deck</strong>
         <span>{visibleCount}/{ordered.length} shown</span>
         {hasManualOrder && (
-          <button type="button" className="slide-customizer-reset" onClick={onResetOrder}>
+          <Button color="tertiary" size="xs" className="slide-customizer-reset" onPress={onResetOrder}>
             Reset order
-          </button>
+          </Button>
         )}
       </div>
       <div className="slide-customizer-list">
@@ -10973,37 +10916,47 @@ function SlideCustomizer({
             <div key={slide.id} className={hidden ? 'slide-customizer-row is-hidden' : 'slide-customizer-row'}>
               <span className="slide-customizer-index" style={{ background: slide.accent }} aria-hidden="true" />
               <strong title={slide.title}>{slide.title}</strong>
-              <select
+              <Select
                 aria-label={`Layout for ${slide.title}`}
-                value={custom.layoutOverride ?? 'auto'}
-                disabled={hidden || slide.kind !== 'concept'}
-                onChange={(event) => {
-                  const value = event.target.value
+                className="slide-customizer-select"
+                size="sm"
+                selectedKey={custom.layoutOverride ?? 'auto'}
+                isDisabled={hidden || slide.kind !== 'concept'}
+                items={layoutOptions}
+                onSelectionChange={(key) => {
+                  const value = String(key)
                   onSetCustomization(slide.id, { layoutOverride: value === 'auto' ? undefined : (value as SlideLayoutChoice) })
                 }}
               >
-                <option value="auto">Auto</option>
-                <option value="focus">Focus</option>
-                <option value="grid">Grid</option>
-                <option value="stack">Stack</option>
-                <option value="palette">Palette</option>
-                <option value="diagram">Diagram</option>
-                <option value="moodboard">Moodboard</option>
-              </select>
-              <button type="button" aria-label="Move earlier" disabled={hidden || index === 0} onClick={() => onMove(slide.id, -1)}>
-                <ChevronLeft size={13} />
-              </button>
-              <button type="button" aria-label="Move later" disabled={hidden || index === ordered.length - 1} onClick={() => onMove(slide.id, 1)}>
-                <ChevronRight size={13} />
-              </button>
-              <button
-                type="button"
+                {(item) => <Select.Item id={item.id}>{item.label}</Select.Item>}
+              </Select>
+              <Button
+                className="p-0!"
+                color="tertiary"
+                size="xs"
+                iconLeading={ChevronLeft}
+                aria-label="Move earlier"
+                isDisabled={hidden || index === 0}
+                onPress={() => onMove(slide.id, -1)}
+              />
+              <Button
+                className="p-0!"
+                color="tertiary"
+                size="xs"
+                iconLeading={ChevronRight}
+                aria-label="Move later"
+                isDisabled={hidden || index === ordered.length - 1}
+                onPress={() => onMove(slide.id, 1)}
+              />
+              <Button
+                className="p-0!"
+                color="tertiary"
+                size="xs"
+                iconLeading={hidden ? EyeOff : Eye}
                 aria-label={hidden ? 'Show slide' : 'Hide slide'}
                 aria-pressed={hidden}
-                onClick={() => onSetCustomization(slide.id, { hidden: hidden ? undefined : true })}
-              >
-                {hidden ? <EyeOff size={14} /> : <Eye size={14} />}
-              </button>
+                onPress={() => onSetCustomization(slide.id, { hidden: hidden ? undefined : true })}
+              />
             </div>
           )
         })}
@@ -11048,7 +11001,6 @@ function SlideshowView({
   const [isPlaying, setIsPlaying] = useState(false)
   const [isPresenting, setIsPresenting] = useState(false)
   const [layoutMode, setLayoutMode] = useState<SlideLayoutMode>('auto')
-  const [exportMenuOpen, setExportMenuOpen] = useState(false)
   const [isCustomizing, setIsCustomizing] = useState(false)
 
   const baseSlides = useMemo(() => buildSlideLayouts(ideas, images, links, palettes, diagrams), [diagrams, ideas, images, links, palettes])
@@ -11066,6 +11018,21 @@ function SlideshowView({
   const selectedSlideIndex = slides.findIndex((slide) => selected.type === 'idea' && slide.idea?.id === selected.id)
   const activeIndex = Math.min(activeSlideIndex, Math.max(0, slides.length - 1))
   const activeSlide = slides[activeIndex]
+  const deckTemplateOptions = [
+    { id: 'auto', label: 'Auto template' },
+    { id: 'Minimal', label: 'Minimal' },
+    { id: 'Editorial', label: 'Editorial' },
+    { id: 'Moodboard Grid', label: 'Moodboard Grid' },
+    { id: 'Timeline', label: 'Timeline' },
+  ]
+  const layoutModeOptions = [
+    { id: 'auto', label: 'Auto layout' },
+    { id: 'focus', label: 'Focus' },
+    { id: 'grid', label: 'Grid' },
+    { id: 'stack', label: 'Stack' },
+    { id: 'palette', label: 'Palette' },
+    { id: 'diagram', label: 'Diagram' },
+  ]
 
   function setCustomization(slideId: string, patch: Partial<SlideCustomization>) {
     const current = slidesConfig.customizations[slideId] ?? {}
@@ -11181,97 +11148,81 @@ function SlideshowView({
             <strong>{slide.title}</strong>
           </button>
         ))}
-      </div>
+        </div>
       <article className={`slide-canvas slide-canvas--${activeSlide.layout}`}>
         <div className="slideshow-controls" aria-label="Slideshow controls">
-          <button type="button" aria-label="Previous slide" onClick={() => goToSlide(activeIndex - 1)}>
-            <ChevronLeft size={14} />
-          </button>
-          <button
-            type="button"
+          <Button className="p-0!" color="tertiary" size="xs" iconLeading={ChevronLeft} aria-label="Previous slide" onPress={() => goToSlide(activeIndex - 1)} />
+          <Button
+            className="p-0!"
+            color="tertiary"
+            size="xs"
+            iconLeading={isPlaying ? Pause : Play}
             aria-label={isPlaying ? 'Pause slideshow' : 'Play slideshow'}
             aria-pressed={isPlaying}
-            onClick={() => setIsPlaying((current) => !current)}
-          >
-            {isPlaying ? <Pause size={14} /> : <Play size={14} />}
-          </button>
-          <button type="button" aria-label="Next slide" onClick={() => goToSlide(activeIndex + 1)}>
-            <ChevronRight size={14} />
-          </button>
-          <button
-            type="button"
+            onPress={() => setIsPlaying((current) => !current)}
+          />
+          <Button className="p-0!" color="tertiary" size="xs" iconLeading={ChevronRight} aria-label="Next slide" onPress={() => goToSlide(activeIndex + 1)} />
+          <Button
+            className="p-0!"
+            color="tertiary"
+            size="xs"
+            iconLeading={isPresenting ? Minimize2 : Maximize2}
             aria-label={isPresenting ? 'Exit presenter mode' : 'Enter presenter mode'}
             aria-pressed={isPresenting}
-            onClick={() => setIsPresenting((current) => !current)}
-          >
-            {isPresenting ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
-          </button>
+            onPress={() => setIsPresenting((current) => !current)}
+          />
           <span>{activeIndex + 1}/{slides.length}</span>
-          <select
+          <Select
             aria-label="Deck template"
-            value={slidesConfig.template}
-            onChange={(event) => onSlidesConfigChange({ template: event.target.value as SlidesConfig['template'] })}
+            className="slideshow-control-select"
+            size="sm"
+            selectedKey={slidesConfig.template}
+            items={deckTemplateOptions}
+            onSelectionChange={(key) => onSlidesConfigChange({ template: String(key) as SlidesConfig['template'] })}
           >
-            <option value="auto">Auto template</option>
-            <option value="Minimal">Minimal</option>
-            <option value="Editorial">Editorial</option>
-            <option value="Moodboard Grid">Moodboard Grid</option>
-            <option value="Timeline">Timeline</option>
-          </select>
-          <select
+            {(item) => <Select.Item id={item.id}>{item.label}</Select.Item>}
+          </Select>
+          <Select
             aria-label="Slide layout mode"
-            value={layoutMode}
-            onChange={(event) => setLayoutMode(event.target.value as SlideLayoutMode)}
+            className="slideshow-control-select"
+            size="sm"
+            selectedKey={layoutMode}
+            items={layoutModeOptions}
+            onSelectionChange={(key) => setLayoutMode(String(key) as SlideLayoutMode)}
           >
-            <option value="auto">Auto layout</option>
-            <option value="focus">Focus</option>
-            <option value="grid">Grid</option>
-            <option value="stack">Stack</option>
-            <option value="palette">Palette</option>
-            <option value="diagram">Diagram</option>
-          </select>
-          <button
-            type="button"
+            {(item) => <Select.Item id={item.id}>{item.label}</Select.Item>}
+          </Select>
+          <Button
+            className={isCustomizing ? 'p-0! is-active' : 'p-0!'}
+            color="tertiary"
+            size="xs"
+            iconLeading={Settings}
             aria-label="Customize slides"
             aria-pressed={isCustomizing}
-            className={isCustomizing ? 'is-active' : ''}
-            onClick={() => setIsCustomizing((current) => !current)}
-          >
-            <Settings size={14} />
-          </button>
-          <div className={exportMenuOpen ? 'slide-export-menu is-open' : 'slide-export-menu'}>
-            <button type="button" aria-label="Export slides" aria-haspopup="menu" aria-expanded={exportMenuOpen} onClick={() => setExportMenuOpen((current) => !current)}>
-              <ArrowUpFromLine size={14} />
-            </button>
-            {exportMenuOpen && (
-              <>
-                <div className="slide-export-backdrop" onClick={() => setExportMenuOpen(false)} aria-hidden="true" />
-                <div className="slide-export-popover" role="menu">
-                  <button type="button" role="menuitem" onClick={() => { setExportMenuOpen(false); onExportPptx(layoutMode) }}>
-                    <FileText size={14} />
-                    <span><strong>PowerPoint</strong><small>.pptx, opens in PowerPoint, Keynote</small></span>
-                  </button>
-                  <button type="button" role="menuitem" onClick={() => { setExportMenuOpen(false); onExportPdf(layoutMode) }}>
-                    <FileText size={14} />
-                    <span><strong>PDF</strong><small>Print-ready, one page per slide</small></span>
-                  </button>
-                  <button type="button" role="menuitem" onClick={() => { setExportMenuOpen(false); onExportHtml(layoutMode) }}>
-                    <FileText size={14} />
-                    <span><strong>HTML</strong><small>Self-contained interactive deck</small></span>
-                  </button>
-                  <div className="slide-export-divider" role="separator" />
-                  <button type="button" role="menuitem" onClick={() => { setExportMenuOpen(false); onExportGoogleSlides(layoutMode) }}>
-                    <ExternalLink size={14} />
-                    <span><strong>Google Slides</strong><small>Export .pptx then import</small></span>
-                  </button>
-                  <button type="button" role="menuitem" onClick={() => { setExportMenuOpen(false); onExportCanva(layoutMode) }}>
-                    <ExternalLink size={14} />
-                    <span><strong>Canva</strong><small>Export .pptx then upload</small></span>
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
+            onPress={() => setIsCustomizing((current) => !current)}
+          />
+          <Dropdown.Root>
+            <Button className="p-0!" color="tertiary" size="xs" iconLeading={ArrowUpFromLine} aria-label="Export slides" />
+            <Dropdown.Popover className="w-62">
+              <Dropdown.Menu
+                aria-label="Export slides"
+                onAction={(key) => {
+                  if (key === 'pptx') onExportPptx(layoutMode)
+                  if (key === 'pdf') onExportPdf(layoutMode)
+                  if (key === 'html') onExportHtml(layoutMode)
+                  if (key === 'google-slides') onExportGoogleSlides(layoutMode)
+                  if (key === 'canva') onExportCanva(layoutMode)
+                }}
+              >
+                <Dropdown.Item id="pptx" label="PowerPoint (.pptx)" icon={FileText} />
+                <Dropdown.Item id="pdf" label="PDF" icon={FileText} />
+                <Dropdown.Item id="html" label="HTML" icon={FileText} />
+                <Dropdown.Separator />
+                <Dropdown.Item id="google-slides" label="Google Slides" icon={ExternalLink} />
+                <Dropdown.Item id="canva" label="Canva" icon={ExternalLink} />
+              </Dropdown.Menu>
+            </Dropdown.Popover>
+          </Dropdown.Root>
         </div>
         {isCustomizing && (
           <SlideCustomizer
@@ -11426,29 +11377,41 @@ function OutlineView({
           <small>{draft ? formatDraftTime(draft.createdAt) : 'Unsaved draft'} · {sections.length} sections · {strongCount} strong · {weakCount} needs work</small>
         </div>
         <div className="outline-tools">
-          <Segmented
+          <ButtonGroup
             className="outline-filter"
-            ariaLabel="Outline filter"
-            variant="radio"
-            value={outlineFilter}
-            onChange={setOutlineFilter}
-            options={(Object.keys(outlineFilterLabels) as OutlineFilter[]).map((filter) => ({
-              value: filter,
-              label: outlineFilterLabels[filter],
-            }))}
-          />
-          <button className="quiet-button" type="button" onClick={onRebuild}>
-            <Bot size={14} />
+            aria-label="Outline filter"
+            selectedKeys={new Set([outlineFilter])}
+            disallowEmptySelection
+            size="sm"
+            onSelectionChange={(keys) => {
+              const next = [...keys][0]
+              if (next === 'all' || next === 'strong' || next === 'weak') setOutlineFilter(next)
+            }}
+          >
+            {(Object.keys(outlineFilterLabels) as OutlineFilter[]).map((filter) => (
+              <ButtonGroupItem key={filter} id={filter}>{outlineFilterLabels[filter]}</ButtonGroupItem>
+            ))}
+          </ButtonGroup>
+          <Button color="tertiary" size="sm" iconLeading={Bot} onPress={onRebuild}>
             Rebuild
-          </button>
-          <button className="quiet-button" type="button" onClick={onExportMarkdown}>
-            <ArrowUpFromLine size={14} />
-            Markdown
-          </button>
-          <button className="quiet-button" type="button" onClick={onExportHtml}>
-            <ArrowUpFromLine size={14} />
-            HTML
-          </button>
+          </Button>
+          <Dropdown.Root>
+            <Button color="tertiary" size="sm" iconLeading={ArrowUpFromLine}>
+              Export
+            </Button>
+            <Dropdown.Popover className="w-44">
+              <Dropdown.Menu
+                aria-label="Export outline"
+                onAction={(key) => {
+                  if (key === 'markdown') onExportMarkdown()
+                  if (key === 'html') onExportHtml()
+                }}
+              >
+                <Dropdown.Item id="markdown" label="Markdown" icon={ArrowUpFromLine} />
+                <Dropdown.Item id="html" label="HTML" icon={ArrowUpFromLine} />
+              </Dropdown.Menu>
+            </Dropdown.Popover>
+          </Dropdown.Root>
         </div>
       </div>
       <div className="outline-status" role="status">{status}</div>
@@ -11457,9 +11420,9 @@ function OutlineView({
         {filteredSections.length === 0 ? (
           <div className="outline-empty">
             <strong>No matching sections</strong>
-            <button type="button" onClick={() => setOutlineFilter('all')}>
+            <Button color="tertiary" size="sm" onPress={() => setOutlineFilter('all')}>
               Show all
-            </button>
+            </Button>
           </div>
         ) : filteredSections.map((section, index) => (
           <article className="outline-section" key={section.id}>
@@ -11721,6 +11684,10 @@ function ReferenceCropDialog({
 }) {
   const [crop, setCrop] = useState({ x: 0, y: 0 })
   const [zoom, setZoom] = useState(1)
+  // React Aria resolves its portal synchronously; this dialog's portal host
+  // is mounted only when a crop target is chosen, so wait one committed frame
+  // for that host before opening the overlay.
+  const [isPortalReady, setIsPortalReady] = useState(false)
   const pendingAreaRef = useRef<CropArea | null>(null)
   // The crop box keeps the reference's own shape — this is a reframe/zoom
   // tool (recenter on a detail, tighten the edges), not an aspect-ratio
@@ -11735,6 +11702,8 @@ function ReferenceCropDialog({
     window.addEventListener('keydown', handleKeydown)
     return () => window.removeEventListener('keydown', handleKeydown)
   }, [onClose])
+
+  useEffect(() => setIsPortalReady(true), [])
 
   const initialCroppedAreaPercentages = image.cropRect
     ? {
@@ -11755,16 +11724,16 @@ function ReferenceCropDialog({
   }
 
   return (
-    <div className="dialog-overlay">
-      <section className="crop-dialog" role="dialog" aria-modal="true" aria-label={`Crop ${image.title}`}>
+    <UiKitPortalHost className="kira-uikit uikit-passthrough-host">
+      {isPortalReady && <ModalOverlay isOpen onOpenChange={(isOpen) => !isOpen && onClose()} isDismissable>
+        <Modal className="max-h-none bg-transparent shadow-none">
+          <Dialog className="crop-dialog" aria-label={`Crop ${image.title}`}>
         <header className="crop-dialog-header">
           <span>
             <CropIcon size={14} />
             Crop “{image.title}”
           </span>
-          <button type="button" className="icon-button" aria-label="Close crop dialog" onClick={onClose}>
-            <X size={14} />
-          </button>
+          <Button color="tertiary" size="xs" iconLeading={X} aria-label="Close crop dialog" onPress={onClose} />
         </header>
         <div className="crop-dialog-stage">
           <Cropper
@@ -11782,18 +11751,21 @@ function ReferenceCropDialog({
         </div>
         <p className="crop-dialog-hint">Drag to reframe, scroll or pinch to zoom. The original file never changes, reset anytime.</p>
         <div className="dialog-actions crop-dialog-actions">
-          <button type="button" className="secondary-button" onClick={onReset}>
+          <Button color="secondary" size="sm" onPress={onReset}>
             Reset crop
-          </button>
-          <button type="button" className="secondary-button" onClick={onClose}>
+          </Button>
+          <Button color="secondary" size="sm" onPress={onClose}>
             Cancel
-          </button>
-          <button type="button" className="primary-button" onClick={handleSave}>
+          </Button>
+          <Button color="primary" size="sm" onPress={handleSave}>
             Save crop
-          </button>
+          </Button>
         </div>
-      </section>
-    </div>
+          </Dialog>
+        </Modal>
+      </ModalOverlay>
+      }
+    </UiKitPortalHost>
   )
 }
 
@@ -11806,48 +11778,37 @@ function ConfirmDeleteDialog({
   onCancel: () => void
   onConfirm: () => void
 }) {
-  const dialogRef = useRef<HTMLElement>(null)
-  useFocusTrap(dialogRef, Boolean(pendingDelete))
-
-  useEffect(() => {
-    if (!pendingDelete) return
-
-    function handleKeydown(event: KeyboardEvent) {
-      if (event.key === 'Escape') onCancel()
-    }
-
-    window.addEventListener('keydown', handleKeydown)
-    return () => window.removeEventListener('keydown', handleKeydown)
-  }, [onCancel, pendingDelete])
-
-  if (!pendingDelete) return null
-
-  const deleteCopy = deleteDialogCopy(pendingDelete)
   return (
-    <div className="dialog-overlay">
-      <section
-        ref={dialogRef}
-        tabIndex={-1}
-        aria-describedby="delete-dialog-copy"
-        aria-labelledby="delete-dialog-title"
-        aria-modal="true"
-        className="confirm-dialog"
-        role="alertdialog"
-      >
-        <div>
-          <h2 id="delete-dialog-title">{deleteCopy.title}</h2>
-          <p id="delete-dialog-copy">{deleteCopy.body}</p>
-        </div>
-        <div className="dialog-actions">
-          <button className="secondary-button" type="button" onClick={onCancel}>
-            Cancel
-          </button>
-          <button className="danger-button" type="button" onClick={onConfirm}>
-            {deleteCopy.action}
-          </button>
-        </div>
-      </section>
-    </div>
+    <UiKitPortalHost className="kira-uikit uikit-passthrough-host">
+      <ModalOverlay isOpen={pendingDelete != null} onOpenChange={(isOpen) => !isOpen && onCancel()} isDismissable>
+        <Modal className="max-h-none bg-transparent shadow-none">
+          {pendingDelete && (() => {
+            const deleteCopy = deleteDialogCopy(pendingDelete)
+            return (
+              <Dialog
+                aria-describedby="delete-dialog-copy"
+                aria-labelledby="delete-dialog-title"
+                className="confirm-dialog"
+                role="alertdialog"
+              >
+                <div>
+                  <h2 id="delete-dialog-title">{deleteCopy.title}</h2>
+                  <p id="delete-dialog-copy">{deleteCopy.body}</p>
+                </div>
+                <div className="dialog-actions">
+                  <Button color="secondary" size="sm" onPress={onCancel}>
+                    Cancel
+                  </Button>
+                  <Button color="secondary-destructive" size="sm" onPress={onConfirm}>
+                    {deleteCopy.action}
+                  </Button>
+                </div>
+              </Dialog>
+            )
+          })()}
+        </Modal>
+      </ModalOverlay>
+    </UiKitPortalHost>
   )
 }
 
@@ -12684,7 +12645,7 @@ function VersionHistoryDialog({
   onSaveVersion: () => void
 }) {
   const [branchName, setBranchName] = useState('')
-  if (!isOpen) return null
+  const [isPortalReady, setIsPortalReady] = useState(false)
   const activeBranch = versionState.branches.find((branch) => branch.id === versionState.currentBranchId) ?? versionState.branches[0]
   const activeBranchVersions = versions.filter((version) => (version.branchId ?? 'main') === activeBranch?.id)
   const visibleVersions = activeBranchVersions.length > 0 ? activeBranchVersions : versions.filter((version) => !version.branchId && activeBranch?.id === 'main')
@@ -12697,29 +12658,27 @@ function VersionHistoryDialog({
     setBranchName('')
   }
 
+  useEffect(() => setIsPortalReady(true), [])
+
   return (
-    <div className="dialog-overlay">
-      <section
-        aria-labelledby="version-history-title"
-        aria-modal="true"
-        className="version-dialog"
-        role="dialog"
-      >
+    <UiKitPortalHost className="kira-uikit uikit-passthrough-host">
+      {isPortalReady && (
+        <ModalOverlay isOpen={isOpen} onOpenChange={(open) => !open && onClose()} isDismissable>
+          <Modal className="max-h-none bg-transparent shadow-none">
+            <Dialog aria-labelledby="version-history-title" className="version-dialog">
         <div className="version-dialog-header">
           <div>
             <h2 id="version-history-title">Version History</h2>
             <p>{versionState.branches.length} branch{versionState.branches.length === 1 ? '' : 'es'} · {versions.length} saved version{versions.length === 1 ? '' : 's'}</p>
           </div>
-          <button className="icon-button" type="button" aria-label="Close version history" onClick={onClose}>
-            <X size={15} />
-          </button>
+          <Button className="p-0!" color="tertiary" size="xs" iconLeading={X} aria-label="Close version history" onPress={onClose} />
         </div>
         <div className="version-branch-browser">
           <aside className="version-branches" aria-label="Branches">
             {versionState.branches.map((branch) => (
               <button
                 key={branch.id}
-                className={branch.id === activeBranch?.id ? 'is-active' : ''}
+                className={`version-branch-option${branch.id === activeBranch?.id ? ' is-active' : ''}`}
                 type="button"
                 onClick={() => onBranchSelect(branch.id)}
               >
@@ -12729,15 +12688,15 @@ function VersionHistoryDialog({
               </button>
             ))}
             <form className="version-branch-form" onSubmit={submitBranch}>
-              <input
+              <InputBase
                 aria-label="New branch name"
+                size="sm"
+                wrapperClassName="version-branch-input"
                 placeholder="New branch"
                 value={branchName}
                 onChange={(event) => setBranchName(event.target.value)}
               />
-              <button className="icon-button" type="submit" aria-label="Create branch">
-                <Plus size={14} />
-              </button>
+              <Button className="p-0!" color="tertiary" size="xs" iconLeading={Plus} type="submit" aria-label="Create branch" />
             </form>
           </aside>
           <section className="version-browser-panel">
@@ -12746,9 +12705,9 @@ function VersionHistoryDialog({
                 <strong>{activeBranch?.name ?? 'Branch'}</strong>
                 <span>{visibleVersions.length} version{visibleVersions.length === 1 ? '' : 's'}</span>
               </div>
-              <button className="quiet-button" type="button" onClick={onSaveVersion}>
+              <Button color="tertiary" size="sm" onPress={onSaveVersion}>
                 Save checkpoint
-              </button>
+              </Button>
             </div>
             <div className="version-list">
               {visibleVersions.length === 0 ? (
@@ -12761,17 +12720,20 @@ function VersionHistoryDialog({
                       <span>{formatVersionTime(version.createdAt)}</span>
                       <small>{formatVersionLineage(version)}</small>
                     </div>
-                    <button className="quiet-button" type="button" onClick={() => onRestore(version.id)}>
+                    <Button color="tertiary" size="sm" onPress={() => onRestore(version.id)}>
                       Restore
-                    </button>
+                    </Button>
                   </article>
                 ))
               )}
             </div>
           </section>
         </div>
-      </section>
-    </div>
+            </Dialog>
+          </Modal>
+        </ModalOverlay>
+      )}
+    </UiKitPortalHost>
   )
 }
 

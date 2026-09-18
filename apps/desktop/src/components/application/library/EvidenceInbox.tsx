@@ -16,8 +16,8 @@ import {
   X,
 } from 'lucide-react'
 import type { EvidenceImage, EvidenceLink, Idea, Lang, LibraryBrowseMode, LibraryDensity, LibraryPanelMode, Relation, Selection, SortMode } from '@/main'
-import { Segmented } from '@/components/Segmented'
 import { Button } from '@/components/base/buttons/button'
+import { ButtonGroup, ButtonGroupItem } from '@/components/base/button-group/button-group'
 import { Badge, BadgeWithButton } from '@/components/base/badges/badges'
 import { Dropdown } from '@/components/base/dropdown/dropdown'
 import { Input } from '@/components/base/input/input'
@@ -54,14 +54,10 @@ import {
  * squeezing a 360px-wide drawer three ways.
  *
  * Kit components used: Button/Badge/BadgeWithButton/Dropdown/Input/Slider/
- * Tooltip/StringSelect (Select wrapper) here, Checkbox in ReferenceCard.tsx.
- * `Segmented` (components/Segmented.tsx, PHA 1) stays the List/Grid and
- * density control — it already *is* this app's ToggleGroup equivalent
- * (Settings' language/rail-icon toggles use the same component), so a
- * second, kit-native ToggleGroup here would read as a second control
- * language instead of one. The virtualized list/grid, reference cards, tag
- * strip and node rows are unchanged Ink & Paper layout, not a kit surface —
- * only the controls named in the brief moved.
+ * Tooltip/StringSelect (Select wrapper)/ButtonGroup here, Checkbox in
+ * ReferenceCard.tsx. The virtualized list/grid, reference cards, tag strip
+ * and node rows are unchanged Ink & Paper layout, not a kit surface — only
+ * the controls named in the brief moved.
  */
 export function EvidenceInbox({
   allTags,
@@ -358,17 +354,18 @@ export function EvidenceInbox({
                       ]}
                       size="sm"
                     />
-                    <Segmented
-                      className="density-toggle"
-                      ariaLabel={t('library.aria.density')}
-                      variant="radio"
-                      value={density}
-                      onChange={onDensityChange}
-                      options={[
-                        { value: 'compact', label: t('library.density.compact') },
-                        { value: 'relaxed', label: t('library.density.relaxed') },
-                      ]}
-                    />
+                    <ButtonGroup
+                      aria-label={t('library.aria.density')}
+                      size="sm"
+                      selectedKeys={new Set([density])}
+                      onSelectionChange={(keys) => {
+                        const next = [...keys][0]
+                        if (next === 'compact' || next === 'relaxed') onDensityChange(next)
+                      }}
+                    >
+                      <ButtonGroupItem id="compact">{t('library.density.compact')}</ButtonGroupItem>
+                      <ButtonGroupItem id="relaxed">{t('library.density.relaxed')}</ButtonGroupItem>
+                    </ButtonGroup>
                   </div>
                 </div>
               )}
@@ -429,17 +426,18 @@ export function EvidenceInbox({
             </Tooltip>
             {panelMode === 'images' && (
               <>
-                <Segmented
-                  className="library-browse-mode"
-                  ariaLabel={t('library.aria.browseMode')}
-                  variant="radio"
-                  value={browseMode}
-                  onChange={onBrowseModeChange}
-                  options={[
-                    { value: 'list', label: t('library.browseMode.list') },
-                    { value: 'grid', label: t('library.browseMode.grid') },
-                  ]}
-                />
+                <ButtonGroup
+                  aria-label={t('library.aria.browseMode')}
+                  size="sm"
+                  selectedKeys={new Set([browseMode])}
+                  onSelectionChange={(keys) => {
+                    const next = [...keys][0]
+                    if (next === 'list' || next === 'grid') onBrowseModeChange(next)
+                  }}
+                >
+                  <ButtonGroupItem id="list">{t('library.browseMode.list')}</ButtonGroupItem>
+                  <ButtonGroupItem id="grid">{t('library.browseMode.grid')}</ButtonGroupItem>
+                </ButtonGroup>
                 <div className="library-thumb-slider">
                   <ImageIcon aria-hidden="true" size={13} />
                   <Slider
@@ -556,9 +554,9 @@ export function EvidenceInbox({
             <div className="empty-state">
               <strong><T k="library.empty.title" /></strong>
               <span><T k="library.empty.body" /></span>
-              <button className="primary-button" type="button" onClick={() => importInput.current?.click()}>
+              <Button color="primary" size="sm" onPress={() => importInput.current?.click()}>
                 <T k="library.empty.import" />
-              </button>
+              </Button>
             </div>
           )}
         </div>

@@ -358,7 +358,7 @@
 
 body {
   margin: 0;
-  min-width: 1180px;
+  min-width: 0;
   min-height: 720px;
   overflow: hidden;
 }
@@ -814,9 +814,59 @@ button {
   gap: var(--space-2);
 }
 
-.top-inspector-button {
+/* PHA 4 Untitled UI migration (2026-09-17): the workspace rail and its
+   project-settings trigger are now kit Button + Tooltip components. Keep
+   only KIRA-specific geometry and the selected-rail marker here; color,
+   focus and disabled states belong to the kit's tokenized Button classes.
+   `display: contents` is required for the same reason as the Library and
+   Kira-panel hosts: the chrome contains positioned siblings of the canvas,
+   so UiKitPortalHost must not introduce a static stacking context. */
+.workspace-chrome-uikit-host {
+  display: contents;
+}
+
+.workspace-project-settings-button {
   width: 34px;
-  border: 1px solid var(--border-soft);
+  height: 34px;
+}
+
+.workspace-chrome-button {
+  position: relative;
+  width: 40px;
+  height: 38px;
+}
+
+.workspace-chrome-button::before {
+  position: absolute;
+  top: 50%;
+  left: -10px;
+  width: 3px;
+  height: 20px;
+  border-radius: var(--radius-2);
+  background: var(--text-main);
+  content: "";
+  opacity: 0;
+  transform: translateY(-50%) scaleY(0.4);
+  transition: opacity var(--duration-base) var(--ease-soft), transform var(--duration-base) var(--ease-out-soft);
+}
+
+.workspace-chrome-button.is-selected::before {
+  opacity: 1;
+  transform: translateY(-50%) scaleY(1);
+}
+
+.workspace-file-actions {
+  display: grid;
+  gap: 7px;
+}
+
+.workspace-file-button {
+  width: 38px;
+  height: 36px;
+}
+
+.workspace-settings-button {
+  margin-top: 10px;
 }
 
 /* Specificity bumped to .segmented.content-view-switch: the element carries
@@ -1151,20 +1201,6 @@ button {
   display: none;
 }
 
-.secondary-rail {
-  position: relative;
-  z-index: 90;
-  display: inline-flex;
-  align-items: center;
-  justify-self: start;
-  gap: 1px;
-  padding: 0 0 0 var(--space-4);
-  border: 0;
-  border-left: 1px solid var(--border-soft);
-  border-radius: 0;
-  background: transparent;
-}
-
 .system-sidebar {
   position: absolute;
   top: 0;
@@ -1216,85 +1252,6 @@ button {
   border-top: 1px solid var(--separator-hairline);
 }
 
-.sidebar-view-button {
-  position: relative;
-  display: grid;
-  width: 40px;
-  height: 38px;
-  place-items: center;
-  border-radius: 10px;
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  font-weight: var(--weight-control);
-  transition: background var(--duration-base) var(--ease-soft), color var(--duration-base) var(--ease-soft);
-}
-
-.sidebar-view-button:hover {
-  background: var(--glass-hover);
-  color: var(--text-main);
-}
-
-.sidebar-view-button.is-active {
-  /* Selected is ink, not teal (DESIGN.md §3 One Accent Rule). */
-  background: var(--control-patch);
-  color: var(--text-main);
-  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text-main), transparent 94%);
-}
-
-.sidebar-view-button::before {
-  position: absolute;
-  top: 50%;
-  left: -10px;
-  width: 3px;
-  height: 20px;
-  border-radius: var(--radius-2);
-  background: var(--text-main);
-  content: "";
-  opacity: 0;
-  transform: translateY(-50%) scaleY(0.4);
-  transition: opacity var(--duration-base) var(--ease-soft), transform var(--duration-base) var(--ease-out-soft);
-}
-
-.sidebar-view-button.is-active::before {
-  opacity: 1;
-  transform: translateY(-50%) scaleY(1);
-}
-
-.system-sidebar .secondary-rail {
-  display: grid;
-  justify-self: center;
-  padding: 0;
-  border: 0;
-  gap: 7px;
-}
-
-.system-sidebar .secondary-rail-button,
-.system-sidebar .sidebar-settings {
-  width: 38px;
-  height: 36px;
-  border-radius: 10px;
-}
-
-.sidebar-settings {
-  margin-top: 10px;
-}
-
-.secondary-rail-button {
-  display: grid;
-  width: 27px;
-  height: 27px;
-  place-items: center;
-  border-radius: var(--radius-2);
-  background: transparent;
-  color: var(--text-muted);
-}
-
-.secondary-rail-button:hover {
-  background: var(--glass-hover);
-  color: var(--text-main);
-}
-
 @keyframes popoverIn {
   from {
     opacity: 0;
@@ -1304,11 +1261,6 @@ button {
     opacity: 1;
     transform: scale(1) translateY(0);
   }
-}
-
-.secondary-rail-button:disabled {
-  cursor: not-allowed;
-  opacity: 0.32;
 }
 
 /* Quiet/icon hover and pressed: a neutral patch of paper, not an accent
@@ -1376,7 +1328,7 @@ button {
   left: calc(var(--shell-rail-width) + var(--shell-card-inset));
   bottom: var(--shell-card-inset);
   z-index: 50;
-  width: var(--library-drawer-width, 360px);
+  width: var(--library-drawer-width, 320px);
   overflow: visible;
   opacity: 1;
   transform: translateX(0) scale(1);
@@ -1526,7 +1478,7 @@ button {
 .library-resize-handle {
   position: absolute;
   top: 0;
-  left: calc(var(--shell-rail-width) + var(--shell-card-inset) + var(--library-drawer-width, 360px));
+  left: calc(var(--shell-rail-width) + var(--shell-card-inset) + var(--library-drawer-width, 320px));
   bottom: 0;
   z-index: 40;
   width: 8px;
@@ -2974,11 +2926,6 @@ button.mini-tags-more:focus-visible {
 
 .canvas-frame-title-input {
   width: 140px;
-  border: 0;
-  background: transparent;
-  color: var(--text-main);
-  font: inherit;
-  outline: none;
 }
 
 .canvas-frame-fields .canvas-frame-title-input {
@@ -2988,14 +2935,9 @@ button.mini-tags-more:focus-visible {
 .canvas-frame-description-input {
   width: 100%;
   min-height: 40px;
-  padding: 0;
-  border: 0;
   resize: none;
-  background: transparent;
   color: var(--text-muted);
-  font: inherit;
   font-size: var(--text-small);
-  outline: none;
 }
 
 .canvas-frame-resize-handle {
@@ -3167,15 +3109,8 @@ button.mini-tags-more:focus-visible {
   gap: 10px;
 }
 
-.canvas-prompt-starter input {
+.canvas-prompt-input {
   min-width: 0;
-  height: 38px;
-  padding: 0 12px;
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius-2);
-  outline: none;
-  background: var(--surface-inset);
-  color: var(--text-main);
 }
 
 .edge-layer {
@@ -3291,6 +3226,14 @@ button.mini-tags-more:focus-visible {
 
 .link-popover {
   position: absolute;
+  /* A selected edge can be underneath the overlay Library or Kira panel.
+     Clamp the popover's centre into the unobscured canvas without moving the
+     edge itself, preserving its direct-manipulation geometry. */
+  left: max(
+    calc(var(--canvas-overlay-left-inset, 0px) + 120px),
+    min(var(--link-popover-x), calc(100% - var(--canvas-right-inset, 0px) - 120px))
+  );
+  top: var(--link-popover-y);
   z-index: 9;
   display: grid;
   gap: 6px;
@@ -3345,24 +3288,17 @@ button.mini-tags-more:focus-visible {
   color: var(--text-main);
 }
 
-.link-popover select,
-.link-popover textarea {
+.link-relation-select {
   width: 100%;
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius-2);
-  background: var(--bg-canvas);
-  color: var(--text-main);
-  font: inherit;
 }
 
-.link-popover textarea {
+.link-note-input {
   min-height: 46px;
-  padding: 6px 8px;
   resize: vertical;
 }
 
-.link-popover select {
-  padding: 5px 8px;
+.link-confidence-slider {
+  width: 100%;
 }
 
 .link-popover .range-field {
@@ -3384,12 +3320,16 @@ button.mini-tags-more:focus-visible {
 .palette-node,
 .diagram-node,
 .placeholder-node {
+  /* The node is the scaling boundary. Its content may grow, while every
+     direct manipulation affordance below counter-scales against this exact
+     rendered value (including the small selected/hover lift). */
+  --node-render-scale: var(--node-scale, 1);
   position: absolute;
   z-index: 2;
   border: 1px solid var(--node-border);
   cursor: grab;
   touch-action: none;
-  transform: translate(-50%, -50%) scale(var(--node-scale, 1)) rotate(var(--sticker-rotation, 0deg));
+  transform: translate(-50%, -50%) scale(var(--node-render-scale)) rotate(var(--sticker-rotation, 0deg));
   transition:
     border-color 160ms ease,
     box-shadow 160ms ease,
@@ -3461,9 +3401,10 @@ button.mini-tags-more:focus-visible {
 .palette-node:hover:not(.is-selected),
 .diagram-node:hover:not(.is-selected),
 .placeholder-node:hover:not(.is-selected) {
+  --node-render-scale: calc(var(--node-scale, 1) + 0.015);
   border-color: var(--border-strong);
   box-shadow: var(--node-shadow-hover);
-  transform: translate(-50%, -50%) scale(calc(var(--node-scale, 1) + 0.015)) rotate(var(--sticker-rotation, 0deg));
+  transform: translate(-50%, -50%) scale(var(--node-render-scale)) rotate(var(--sticker-rotation, 0deg));
 }
 
 .idea-node.is-selected {
@@ -3492,30 +3433,6 @@ button.mini-tags-more:focus-visible {
   background: var(--node-surface-selected);
   transform: translateX(-50%);
   cursor: default;
-}
-
-.node-rich-editor-toolbar button {
-  display: grid;
-  width: 26px;
-  height: 26px;
-  place-items: center;
-  padding: 0;
-  border: 0;
-  border-radius: var(--radius-2);
-  background: transparent;
-  color: var(--text-soft);
-  cursor: pointer;
-}
-
-.node-rich-editor-toolbar button:hover {
-  background: var(--control-patch);
-  color: var(--text-main);
-}
-
-.node-rich-editor-toolbar button.is-active {
-  /* Selected formatting is ink, not teal (DESIGN.md §3 One Accent Rule). */
-  background: var(--control-patch);
-  color: var(--text-main);
 }
 
 /* Overlay mode: an ordinary bar sitting at the top of the editor's own
@@ -3713,7 +3630,7 @@ button.mini-tags-more:focus-visible {
   color: var(--text-main);
   opacity: 0;
   /* Node chrome keeps a constant on-screen size; only the content scales. */
-  transform: scale(calc(0.82 / var(--node-scale, 1)));
+  transform: scale(calc(0.82 / var(--node-render-scale)));
   transform-origin: top right;
   transition: opacity 120ms ease, transform 120ms ease, background 120ms ease;
 }
@@ -3726,7 +3643,7 @@ button.mini-tags-more:focus-visible {
 .diagram-node.is-selected .node-add-control,
 .placeholder-node.is-selected .node-add-control {
   opacity: 1;
-  transform: scale(calc(1 / var(--node-scale, 1)));
+  transform: scale(calc(1 / var(--node-render-scale)));
 }
 
 .node-add-control:hover {
@@ -3749,7 +3666,7 @@ button.mini-tags-more:focus-visible {
   background: var(--node-surface-selected);
   color: var(--kira-mid);
   opacity: 0;
-  transform: scale(calc(0.82 / var(--node-scale, 1)));
+  transform: scale(calc(0.82 / var(--node-render-scale)));
   transform-origin: top left;
   transition: opacity 120ms ease, transform 120ms ease, background 120ms ease, box-shadow 120ms ease;
 }
@@ -3761,7 +3678,7 @@ button.mini-tags-more:focus-visible {
 .placeholder-node.is-selected .node-kira-control {
   opacity: 1;
   border-color: color-mix(in srgb, var(--accent-cyan), transparent 54%);
-  transform: scale(calc(1 / var(--node-scale, 1)));
+  transform: scale(calc(1 / var(--node-render-scale)));
 }
 
 /* Was unconditional (every selected node's Kira control glinted forever,
@@ -3782,7 +3699,7 @@ button.mini-tags-more:focus-visible {
   background-size: 220% 220%;
   animation: kira-sweep-travel 720ms var(--ease-out-soft) forwards;
   box-shadow: 0 0 0 4px transparent;
-  transform: scale(calc(1.14 / var(--node-scale, 1)));
+  transform: scale(calc(1.14 / var(--node-render-scale)));
 }
 
 :is(.idea-node, .image-node, .palette-node, .diagram-node, .placeholder-node).is-selected .node-kira-control:hover .kira-mark-satellite {
@@ -3806,7 +3723,7 @@ button.mini-tags-more:focus-visible {
   cursor: crosshair;
   opacity: 0;
   pointer-events: none;
-  transform: translateY(-50%) scale(calc(0.78 / var(--node-scale, 1)));
+  transform: translateY(-50%) scale(calc(0.78 / var(--node-render-scale)));
   transform-origin: center;
   transition: opacity 120ms ease, transform var(--duration-fast) var(--ease-out-soft), background 120ms ease;
 }
@@ -3823,14 +3740,14 @@ button.mini-tags-more:focus-visible {
 .placeholder-node.is-selected .node-link-handle {
   opacity: 1;
   pointer-events: auto;
-  transform: translateY(-50%) scale(calc(1 / var(--node-scale, 1)));
+  transform: translateY(-50%) scale(calc(1 / var(--node-render-scale)));
 }
 
 .node-link-handle:hover,
 .node-link-handle:focus-visible {
   background: var(--glass-active);
   color: var(--text-main);
-  transform: translateY(-50%) scale(calc(1.12 / var(--node-scale, 1)));
+  transform: translateY(-50%) scale(calc(1.12 / var(--node-render-scale)));
 }
 
 /* Free resize: drag from the corner. Only shown on the selected node so the
@@ -3847,7 +3764,7 @@ button.mini-tags-more:focus-visible {
   background: var(--node-surface-selected);
   cursor: nwse-resize;
   touch-action: none;
-  transform: scale(calc(1 / var(--node-scale, 1)));
+  transform: scale(calc(1 / var(--node-render-scale)));
   transform-origin: bottom right;
   transition: background 120ms ease, border-color 120ms ease;
 }
@@ -3987,7 +3904,10 @@ button.mini-tags-more:focus-visible {
   gap: 8px;
   margin-top: 10px;
   pointer-events: auto;
-  transform: translateX(-50%);
+  /* The toolbar is a child of the scaled node; inverse scale keeps its
+     buttons at their hit-target size while the anchor stays at node bottom. */
+  transform: translateX(-50%) scale(calc(1 / var(--node-render-scale)));
+  transform-origin: top center;
 }
 
 /* Expanded: this stops being a small card anchored under the node and
@@ -5100,17 +5020,19 @@ button.mini-tags-more:focus-visible {
 .palette-node.is-selected,
 .diagram-node.is-selected,
 .placeholder-node.is-selected {
+  --node-render-scale: calc(var(--node-scale, 1) + 0.04);
   border-color: color-mix(in srgb, var(--accent-strong), transparent 30%);
   box-shadow:
     0 0 0 1.5px var(--accent-strong),
     var(--node-shadow);
-  transform: translate(-50%, -50%) scale(calc(var(--node-scale, 1) + 0.04));
+  transform: translate(-50%, -50%) scale(var(--node-render-scale));
 }
 
 .image-node.is-selected {
+  --node-render-scale: var(--node-scale, 1);
   border-color: color-mix(in srgb, var(--accent-strong), transparent 62%);
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-strong), transparent 48%);
-  transform: translate(-50%, -50%) scale(var(--node-scale, 1));
+  transform: translate(-50%, -50%) scale(var(--node-render-scale));
 }
 
 .idea-node.is-multi-selected,
@@ -5130,7 +5052,8 @@ button.mini-tags-more:focus-visible {
   box-shadow: var(--node-shadow-soft);
 }
 
-.node-context-menu {
+.node-context-menu,
+.canvas-context-menu {
   position: absolute;
   z-index: 20;
   display: grid;
@@ -5165,7 +5088,8 @@ button.mini-tags-more:focus-visible {
   white-space: nowrap;
 }
 
-.node-context-menu button {
+.node-context-menu button,
+.canvas-context-menu button {
   display: grid;
   grid-template-columns: 18px minmax(0, 1fr);
   align-items: center;
@@ -5181,17 +5105,20 @@ button.mini-tags-more:focus-visible {
   text-align: left;
 }
 
-.node-context-menu button:hover:not(:disabled) {
+.node-context-menu button:hover:not(:disabled),
+.canvas-context-menu button:hover:not(:disabled) {
   background: var(--glass-hover);
   color: var(--text-main);
 }
 
-.node-context-menu button:disabled {
+.node-context-menu button:disabled,
+.canvas-context-menu button:disabled {
   cursor: not-allowed;
   opacity: 0.34;
 }
 
-.node-context-menu button.is-danger {
+.node-context-menu button.is-danger,
+.canvas-context-menu button.is-danger {
   color: var(--danger);
 }
 
@@ -5705,60 +5632,12 @@ button.mini-tags-more:focus-visible {
 }
 
 /* Discover toggle row inside graph-tools-drawer: label left, switch right,
-   instead of the drawer's usual stacked <label><span>+<select> layout. */
-.graph-tools-drawer label.graph-tools-toggle {
+   instead of the drawer's usual stacked field layout. */
+.graph-tools-drawer .graph-tools-toggle {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-2);
-}
-
-/* A real on/off switch (role="switch") rather than a checkbox — this picks
-   a canvas mode, not a settings flag. Off is a paper sheet at rest (same
-   material as secondary/danger buttons); on is filled with --accent-cyan,
-   the one allowed non-focus/selection use of teal (kira-controls §2,
-   "checkbox đã tick"). */
-.kira-switch {
-  position: relative;
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  width: 34px;
-  height: 20px;
-  padding: 2px;
-  border: 1px solid var(--control-sheet-edge);
-  border-radius: 999px;
-  background: var(--control-sheet);
-  color: inherit;
-  cursor: pointer;
-  font: inherit;
-  transition: background var(--duration-fast) ease, border-color var(--duration-fast) ease;
-}
-
-.kira-switch-thumb {
-  width: 14px;
-  height: 14px;
-  border-radius: 999px;
-  background: var(--text-soft);
-  transition: transform var(--duration-fast) var(--ease-out-soft), background var(--duration-fast) ease;
-  transform: translateX(0);
-}
-
-.kira-switch.is-on {
-  border-color: transparent;
-  background: var(--accent-cyan);
-}
-
-.kira-switch.is-on .kira-switch-thumb {
-  background: var(--bg-base);
-  transform: translateX(16px);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .kira-switch,
-  .kira-switch-thumb {
-    transition: none;
-  }
 }
 
 .canvas-zoom-status {
@@ -5771,7 +5650,9 @@ button.mini-tags-more:focus-visible {
 
 .graph-tools-drawer {
   position: absolute;
-  bottom: 60px;
+  /* Kit fields are intentionally taller than the previous native selects.
+     Keep the complete options drawer above the persistent bottom tool rail. */
+  bottom: 104px;
   left: calc(var(--canvas-overlay-left-inset, 0px) + var(--space-4));
   z-index: 6;
   display: grid;
@@ -5796,31 +5677,20 @@ button.mini-tags-more:focus-visible {
   }
 }
 
-.graph-tools-drawer label {
+.graph-tools-field {
   display: grid;
   gap: 5px;
+  min-width: 0;
 }
 
-.graph-tools-drawer span {
+.graph-tools-field > span,
+.graph-tools-toggle > span {
   color: var(--text-muted);
   font-size: var(--text-small);
 }
 
-.graph-tools-drawer select {
-  width: 86px;
-  height: 26px;
-  padding: 0 var(--space-2);
-  border: 0;
-  border-radius: var(--radius-2);
-  background: var(--control-patch);
-  color: var(--text-main);
-  font-size: var(--text-small);
-  outline: none;
-}
-
-.graph-tools-drawer select {
+.graph-tools-select {
   width: 100%;
-  border-radius: var(--radius-1);
 }
 
 .graph-tools-wide {
@@ -5832,29 +5702,6 @@ button.mini-tags-more:focus-visible {
   grid-template-columns: minmax(0, 1fr) auto;
   gap: var(--space-2);
 }
-
-.graph-organize-row button {
-  height: 28px;
-  padding: 0 var(--space-3);
-  border: 0;
-  border-radius: var(--radius-1);
-  /* Was --accent-faint — teal is reserved for selection/focus/status
-     (DESIGN.md §3 One Accent Rule), not a plain action button's resting
-     fill. Standard quiet-tier transparent rest + patch hover. */
-  background: transparent;
-  color: var(--text-main);
-  cursor: pointer;
-  font-size: var(--text-small);
-}
-
-.graph-organize-row button:hover {
-  background: var(--control-patch);
-}
-
-.graph-organize-row button:active {
-  background: var(--control-patch-pressed);
-}
-
 
 /* Same instrument as the tool rail (DESIGN.md §6: "Zoom: plate radius
    12px, tool 32px icon 20px"), just smaller — hover still picks the icon
@@ -5936,7 +5783,8 @@ button.mini-tags-more:focus-visible {
 }
 
 .settings-dialog-overlay {
-  padding: var(--space-4);
+  padding: 0;
+  background: transparent;
 }
 
 
@@ -6137,34 +5985,15 @@ button.palette-color-segment:focus-visible code {
 }
 
 .accent-color-recommendations {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 5px;
+  display: flex;
+  align-items: stretch;
 }
 
 .accent-color-recommendations button {
-  display: flex;
-  align-items: center;
   min-width: 0;
-  height: 30px;
-  padding: 0 8px;
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius-2);
-  background: var(--inset-field);
-  color: var(--text-soft);
-  cursor: pointer;
+  flex: 1 1 0;
+  justify-content: center;
   gap: 6px;
-}
-
-.accent-color-recommendations button:hover,
-.accent-color-recommendations button.is-active {
-  /* The swatch dot already shows the preset's own color; the active/hover
-     indicator itself stays ink, not the current project accent, or picking
-     a non-teal preset would still glow teal here (DESIGN.md §3 One Accent
-     Rule). */
-  border-color: var(--border-strong);
-  background: var(--control-patch);
-  color: var(--text-main);
 }
 
 .accent-color-recommendations i {
@@ -6267,7 +6096,7 @@ button.palette-color-segment:focus-visible code {
   white-space: nowrap;
 }
 
-.graph3d-hud button {
+.graph3d-hud-button {
   display: inline-grid;
   width: 26px;
   height: 26px;
@@ -6278,12 +6107,12 @@ button.palette-color-segment:focus-visible code {
   cursor: pointer;
 }
 
-.graph3d-hud button:hover:not(:disabled) {
+.graph3d-hud-button:hover:not(:disabled) {
   background: var(--control-patch);
   color: var(--text-main);
 }
 
-.graph3d-hud button:disabled {
+.graph3d-hud-button:disabled {
   cursor: default;
   opacity: 0.42;
 }
@@ -6306,7 +6135,10 @@ button.palette-color-segment:focus-visible code {
 .graph3d-scope {
   position: absolute;
   top: var(--space-4);
-  left: var(--space-4);
+  /* The 3D shell spans below the Library drawer. Anchor the scope control in
+     the unobscured canvas, matching Canvas options and relation popovers. */
+  left: calc(var(--canvas-overlay-left-inset, 0px) + var(--space-4));
+  z-index: 2;
   /* Floats directly on the WebGL canvas with no other chrome behind it, so
      it needs a more opaque tint than the base .segmented track. */
   background: color-mix(in srgb, var(--surface-1) 64%, transparent);
@@ -6451,7 +6283,7 @@ button.palette-color-segment:focus-visible code {
   font-size: var(--text-small);
 }
 
-.slideshow-controls button {
+.slideshow-controls > button {
   display: inline-grid;
   width: 26px;
   height: 26px;
@@ -6462,22 +6294,14 @@ button.palette-color-segment:focus-visible code {
   cursor: pointer;
 }
 
-.slideshow-controls select {
+.slideshow-control-select {
   width: auto;
   min-width: 74px;
   max-width: 160px;
-  height: 26px;
-  padding: 0 var(--space-2);
-  border: 0;
-  border-radius: var(--radius-2);
-  background: color-mix(in srgb, var(--text-main) 5.5%, transparent);
-  color: var(--text-soft);
-  font-size: var(--text-small);
-  outline: none;
 }
 
-.slideshow-controls button:hover,
-.slideshow-controls button[aria-pressed="true"] {
+.slideshow-controls > button:hover,
+.slideshow-controls > button[aria-pressed="true"] {
   background: color-mix(in srgb, var(--text-main) 7.5%, transparent);
   color: var(--text-main);
 }
@@ -6494,91 +6318,16 @@ button.palette-color-segment:focus-visible code {
   color: var(--accent-sage);
 }
 
-.slide-export-menu {
-  position: relative;
-  display: inline-flex;
-}
-
-.slide-export-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 40;
-}
-
-.slide-export-popover {
-  position: absolute;
-  top: calc(100% + 8px);
-  right: 0;
-  z-index: 41;
-  display: grid;
-  width: 252px;
-  padding: 6px;
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius-3);
-  background: var(--surface-2);
-  box-shadow: var(--panel-shadow);
-  gap: 2px;
-  transform-origin: top right;
-  animation: popoverIn var(--duration-base) var(--ease-out-soft) both;
-}
-
-.slide-export-popover button {
-  display: grid;
-  grid-template-columns: 18px minmax(0, 1fr);
-  align-items: center;
-  width: 100%;
-  height: auto;
-  min-height: 40px;
-  padding: 7px 9px;
-  border-radius: var(--radius-2);
-  background: transparent;
-  color: var(--text-soft);
-  cursor: pointer;
-  gap: 9px;
-  text-align: left;
-}
-
-.slide-export-popover button:hover {
-  background: var(--control-patch);
-  color: var(--text-main);
-}
-
-.slide-export-popover button:hover small {
-  color: var(--text-soft);
-}
-
-.slide-export-popover span {
-  display: grid;
-  min-width: 0;
-  gap: 1px;
-}
-
-.slide-export-popover strong {
-  font-size: var(--text-small);
-  font-weight: var(--weight-title);
-}
-
-.slide-export-popover small {
-  overflow: hidden;
-  color: var(--text-muted);
-  font-size: var(--text-small);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.slide-export-divider {
-  height: 1px;
-  margin: 4px 8px;
-  background: var(--separator-hairline);
-}
-
 .slide-customizer {
   position: absolute;
   top: 58px;
   right: var(--space-4);
   z-index: 30;
   display: grid;
-  width: min(440px, 82%);
+  /* The canvas can be narrow beside Library + the slide rail. This is a
+     temporary editing overlay, so it may span that rail instead of shrinking
+     every row into unreadable ellipses. */
+  width: min(440px, calc(100vw - 32px));
   max-height: calc(100% - 86px);
   padding: var(--space-3);
   border: 1px solid var(--border-soft);
@@ -6634,11 +6383,11 @@ button.palette-color-segment:focus-visible code {
 
 .slide-customizer-row {
   display: grid;
-  grid-template-columns: 12px minmax(0, 1fr) auto auto auto auto;
+  grid-template-columns: 12px minmax(0, 1fr) 88px auto auto auto;
   align-items: center;
-  padding: 4px 5px;
+  padding: 3px 4px;
   border-radius: var(--radius-2);
-  gap: 7px;
+  gap: 5px;
 }
 
 .slide-customizer-row:hover {
@@ -6664,19 +6413,23 @@ button.palette-color-segment:focus-visible code {
   white-space: nowrap;
 }
 
-.slide-customizer-row select {
-  height: 26px;
-  padding: 0 6px;
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius-1);
-  background: var(--inset-field);
-  color: var(--text-soft);
-  font-size: var(--text-small);
-  outline: none;
+.slide-customizer-select {
+  width: 88px;
+  min-width: 88px;
 }
 
-.slide-customizer-row select:disabled {
-  opacity: 0.4;
+/* The customizer is intentionally denser than a settings form. Retain
+   Untitled UI Select semantics and focus treatment, while matching the
+   26px control rhythm of slide reorder actions. */
+.slide-customizer-select > button {
+  min-height: 26px;
+  height: 26px;
+  padding: 0 6px;
+  border-radius: var(--radius-1);
+}
+
+.slide-customizer-select > button p {
+  font-size: var(--text-small);
 }
 
 .slide-customizer-row > button {
@@ -7087,16 +6840,6 @@ button.palette-color-segment:focus-visible code {
   font-size: var(--text-body);
 }
 
-.outline-empty button {
-  min-height: 30px;
-  padding: 0 var(--space-3);
-  border-radius: var(--radius-1);
-  background: var(--accent-faint);
-  color: var(--accent-strong);
-  cursor: pointer;
-  font-size: var(--text-small);
-}
-
 .outline-title {
   display: grid;
   grid-template-columns: 34px minmax(0, 1fr) auto 10px;
@@ -7266,7 +7009,7 @@ button.palette-color-segment:focus-visible code {
   color: var(--text-muted);
 }
 
-.source-url-row .title-input {
+.source-url-row .source-url-input {
   min-width: 0;
 }
 
@@ -7637,6 +7380,14 @@ textarea {
   resize: none;
 }
 
+.node-notes-input {
+  /* Keep the details popover compact while preserving the Untitled UI
+     TextAreaBase field edge, background, and focus treatment. */
+  min-height: 40px;
+  color: var(--text-soft);
+  resize: vertical;
+}
+
 .project-settings-popover .title-input,
 .project-settings-popover .note-input {
   /* NAME/DESCRIPTION/AUTHOR/KIND/STYLE NOTE: unlike the other uses of these
@@ -7852,7 +7603,7 @@ textarea {
   min-width: 0;
 }
 
-.version-branches button {
+.version-branch-option {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
@@ -7866,26 +7617,26 @@ textarea {
   text-align: left;
 }
 
-.version-branches button:hover {
+.version-branch-option:hover {
   background: var(--control-patch);
   color: var(--text-main);
 }
 
-.version-branches button.is-active {
+.version-branch-option.is-active {
   /* Selected is ink, not teal (DESIGN.md §3 One Accent Rule). */
   background: var(--control-patch);
   color: var(--text-main);
   box-shadow: inset 0 0 0 1.5px var(--text-main);
 }
 
-.version-branches button span,
-.version-branches button small {
+.version-branch-option span,
+.version-branch-option small {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.version-branches button small {
+.version-branch-option small {
   grid-column: 2;
   color: var(--text-muted);
   font-size: var(--text-small);
@@ -7897,15 +7648,8 @@ textarea {
   gap: var(--space-2);
 }
 
-.version-branch-form input {
+.version-branch-input {
   min-width: 0;
-  height: 32px;
-  padding: 0 var(--space-2);
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius-2);
-  background: var(--control-patch-weak);
-  color: var(--text-main);
-  outline: none;
 }
 
 .version-browser-panel {

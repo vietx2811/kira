@@ -141,15 +141,13 @@ export function SettingsAiProvidersTab({
   function renderProviderRow(provider: AiProviderProfile) {
     const isActive = provider.id === activeProvider.id
     return (
-      <button
-        type="button"
+      <Button
         key={provider.id}
         aria-pressed={isActive}
-        onClick={() => onActiveProviderChange(provider.id)}
-        className={[
-          'flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left transition duration-100 ease-linear',
-          isActive ? 'bg-active text-primary' : 'text-secondary hover:bg-primary_hover',
-        ].join(' ')}
+        color={isActive ? 'secondary' : 'tertiary'}
+        size="sm"
+        onPress={() => onActiveProviderChange(provider.id)}
+        className="w-full justify-between px-3 py-2 text-left"
       >
         <span className="flex min-w-0 flex-col">
           <strong className="truncate text-sm font-semibold" title={provider.name}>
@@ -160,7 +158,7 @@ export function SettingsAiProvidersTab({
           </em>
         </span>
         <small className="shrink-0 text-xs text-tertiary">{aiProviderStatusLabels[provider.status]}</small>
-      </button>
+      </Button>
     )
   }
 
@@ -170,7 +168,7 @@ export function SettingsAiProvidersTab({
         <aside className="flex flex-col gap-3" aria-label="Provider registry">
           <div className="flex flex-col gap-0.5">{primaryProviders.map(renderProviderRow)}</div>
 
-          <details className="rounded-lg border border-secondary p-2">
+          <details className="border-y border-secondary py-2">
             <summary className="flex cursor-pointer items-center justify-between gap-2 px-1 py-1">
               <h3 className="text-sm font-semibold text-primary">More providers</h3>
               <Badge color="gray" size="sm">
@@ -195,7 +193,7 @@ export function SettingsAiProvidersTab({
         </aside>
 
         {activeProvider && (
-          <article className="flex flex-col gap-4 rounded-lg border border-secondary p-4">
+          <article className="flex flex-col gap-4 border-y border-secondary px-4 py-4">
             <div className="flex items-start justify-between gap-3 border-b border-secondary pb-3">
               <div className="flex flex-col gap-0.5">
                 <strong className="text-md font-semibold text-primary">{activeProvider.name}</strong>
@@ -236,7 +234,7 @@ export function SettingsAiProvidersTab({
             </div>
 
             {activeProvider.type !== 'codex' && activeProvider.type !== 'claude_code' && (
-              <details className="rounded-lg border border-secondary p-3">
+              <details className="border-y border-secondary py-3">
                 <summary className="flex cursor-pointer items-center justify-between gap-2">
                   <h3 className="text-sm font-semibold text-primary">Advanced</h3>
                   <span className="text-xs text-tertiary">Auth mode · Base URL</span>
@@ -266,7 +264,7 @@ export function SettingsAiProvidersTab({
                 </div>
 
                 {activeProvider.authMode === 'oauth' && (
-                  <div className="mt-3 flex flex-col gap-1 rounded-lg bg-warning-secondary p-3">
+                  <div className="mt-3 flex flex-col gap-1 border-y border-warning-secondary bg-warning-secondary px-3 py-3">
                     <strong className="text-sm font-semibold text-warning-primary">OAuth is for enterprise gateways only</strong>
                     <span className="text-sm text-warning-primary">
                       Claude Pro/Max and ChatGPT Plus subscriptions cannot be connected by OAuth. Since February 2026 Anthropic and OpenAI restrict

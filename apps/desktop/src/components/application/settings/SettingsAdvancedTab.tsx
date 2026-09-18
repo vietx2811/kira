@@ -38,7 +38,7 @@ export function SettingsAdvancedTab({
           disclosure under AI Providers) + Secrets + Usage + Onboarding
           merged into one disclosure instead of four stacked cards
           (DESIGN.md §5 One Density Rule / No-Nested-Card Rule). */}
-      <details className="rounded-lg border border-secondary p-4" open>
+      <details className="border-y border-secondary py-4" open>
         <summary className="flex cursor-pointer items-center justify-between gap-2">
           <h3 className="text-md font-semibold text-primary">Advanced</h3>
           <span className="text-sm text-tertiary">Routing, secrets, usage, onboarding</span>

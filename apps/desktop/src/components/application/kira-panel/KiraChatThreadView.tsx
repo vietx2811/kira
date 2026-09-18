@@ -54,10 +54,10 @@ function RunDetailRow({ run, t, formatClockTime }: { run: AiRun | undefined; t: 
         {run.modelLabel}
         {elapsedMs != null ? ` · ${(elapsedMs / 1000).toFixed(1)}s` : ''}
       </span>
-      <button type="button" className="quiet-button sm run-disclosure" aria-expanded={open} onClick={() => setOpen((current) => !current)}>
+      <Button color="tertiary" size="xs" className="run-disclosure" aria-expanded={open} onPress={() => setOpen((current) => !current)}>
         {t('kira.run.detail')}
         <ChevronDown size={11} />
-      </button>
+      </Button>
       {open && (
         <dl className="run-detail">
           <div><dt>{t('kira.run.provider')}</dt><dd>{run.providerType}</dd></div>

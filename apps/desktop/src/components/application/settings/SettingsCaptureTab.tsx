@@ -37,7 +37,7 @@ export function SettingsCaptureTab({
           const installed = status.installed && !status.disabled
           if (target.id === 'chrome') {
             return (
-              <div className="flex flex-col gap-3 rounded-lg border border-secondary p-4" role="listitem" key={target.id}>
+              <div className="flex flex-col gap-3 border-y border-secondary py-4" role="listitem" key={target.id}>
                 <div className="flex items-center justify-between gap-3">
                   <strong className="text-sm font-semibold text-primary">{target.title}</strong>
                   <Badge color={installed ? 'success' : 'gray'} size="sm">
@@ -73,7 +73,7 @@ export function SettingsCaptureTab({
             )
           }
           return (
-            <div className="flex items-center justify-between gap-3 rounded-lg border border-secondary p-4" role="listitem" key={target.id}>
+            <div className="flex items-center justify-between gap-3 border-y border-secondary py-4" role="listitem" key={target.id}>
               <div className="flex flex-col gap-1">
                 <strong className="text-sm font-semibold text-primary">{target.title}</strong>
                 <Badge color={installed ? 'success' : 'gray'} size="sm" className="w-max">

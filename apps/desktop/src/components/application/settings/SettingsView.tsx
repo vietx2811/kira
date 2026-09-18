@@ -1,10 +1,10 @@
 import type { ComponentType } from 'react'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { X } from 'lucide-react'
+import { Dialog, Modal, ModalOverlay } from '@/components/application/modals/modal'
 import { Tab, TabList, TabPanel, Tabs } from '@/components/application/tabs/tabs'
 import { Button } from '@/components/base/buttons/button'
 import { Badge } from '@/components/base/badges/badges'
-import { useFocusTrap } from '@/hooks/useFocusTrap'
 import { UiKitPortalHost } from '@/kira/uikit/PortalHost'
 import type {
   AiProviderProfile,
@@ -51,12 +51,8 @@ function isLikelySettingsError(status: string): boolean {
  * only part of the app affected; Library/canvas/dock are untouched this
  * phase.
  *
- * The outer shell keeps `useFocusTrap` + its own Escape handler exactly as
- * before (still a plain overlay `<section>`, not a kit Modal — converting
- * the outer dialog chrome was out of scope this phase). Only the delete-
- * provider confirm dialog moved to kit `Modal`/`Dialog`
- * (DeleteProviderDialog.tsx): React Aria's Modal owns its own focus trap and
- * Escape-to-close, so `useFocusTrap` is NOT called for that dialog anymore.
+ * The outer dialog and provider confirmation both use kit `Modal`/`Dialog`.
+ * React Aria owns their focus trap, return focus, and Escape dismissal.
  */
 export function SettingsView({
   providers,
@@ -125,25 +121,17 @@ export function SettingsView({
   onCopyChromeDistPath: () => void | Promise<void>
   onClose: () => void
 }) {
-  const settingsShellRef = useRef<HTMLElement>(null)
-  // SettingsView only exists in the tree while the dialog is open (the parent conditionally
-  // mounts it), so the trap is simply "always on" from this component's own perspective —
-  // its cleanup runs on unmount, i.e. exactly when the dialog closes.
-  useFocusTrap(settingsShellRef, true)
-
   const [activeSettingsTab, setActiveSettingsTab] = useState<SettingsTabId>('general')
+  // React Aria resolves Modal portals synchronously. The host element's ref
+  // is only available after this first render, so defer the initial modal by
+  // one committed frame; otherwise the backdrop mounts but its dialog portals
+  // nowhere on first opening Settings.
+  const [isPortalReady, setIsPortalReady] = useState(false)
+  useEffect(() => setIsPortalReady(true), [])
   // When a provider is focused from elsewhere (onboarding, logged-out prompt), jump to the AI tab.
   useEffect(() => {
     if (focusNonce > 0) setActiveSettingsTab('ai')
   }, [focusNonce])
-
-  useEffect(() => {
-    function handleKeydown(event: KeyboardEvent) {
-      if (event.key === 'Escape') onClose()
-    }
-    window.addEventListener('keydown', handleKeydown)
-    return () => window.removeEventListener('keydown', handleKeydown)
-  }, [onClose])
 
   const remoteProviders = providers.filter((provider) => provider.authMode !== 'local')
   const connectedProviderCount = providers.filter((provider) => provider.status === 'connected').length
@@ -152,14 +140,9 @@ export function SettingsView({
 
   return (
     <UiKitPortalHost className="kira-uikit">
-      <section
-          ref={settingsShellRef}
-          tabIndex={-1}
-          aria-label="Settings"
-          aria-modal="true"
-          role="dialog"
-          className="flex h-[min(720px,calc(100vh-64px))] w-[min(980px,100%)] min-h-0 min-w-0 overflow-hidden rounded-2xl border border-secondary bg-primary shadow-xl"
-        >
+      {isPortalReady && <ModalOverlay isOpen onOpenChange={(isOpen) => !isOpen && onClose()} isDismissable>
+        <Modal className="h-[min(720px,calc(100vh-32px))] w-[min(980px,calc(100vw-32px))] max-w-none overflow-hidden border border-secondary">
+          <Dialog aria-label="Settings" className="flex h-full w-full overflow-hidden">
           <Tabs
             selectedKey={activeSettingsTab}
             onSelectionChange={(key) => setActiveSettingsTab(key as SettingsTabId)}
@@ -244,7 +227,10 @@ export function SettingsView({
               </TabPanel>
             </div>
           </Tabs>
-      </section>
+          </Dialog>
+        </Modal>
+      </ModalOverlay>
+      }
     </UiKitPortalHost>
   )
 }

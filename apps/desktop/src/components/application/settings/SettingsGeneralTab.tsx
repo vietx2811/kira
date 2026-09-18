@@ -1,6 +1,6 @@
 import type { ComponentType } from 'react'
-import { Segmented } from '@/components/Segmented'
 import { Badge } from '@/components/base/badges/badges'
+import { ButtonGroup, ButtonGroupItem } from '@/components/base/button-group/button-group'
 import { StringSelect } from './StringSelect'
 import type { AiProviderProfile, AiRoutingMode } from '@/kira/ai/aiProviderDomain'
 import { aiRoutingLabels } from '@/kira/ai/aiProviderDomain'
@@ -75,31 +75,35 @@ export function SettingsGeneralTab({
         <p className="text-sm text-tertiary">
           <T k="lang.hint" />
         </p>
-        <Segmented
-          ariaLabel="Language"
-          variant="radio"
-          value={lang}
-          onChange={setLang}
-          options={[
-            { value: 'en', label: 'English' },
-            { value: 'vi', label: 'Tiếng Việt' },
-          ]}
-        />
+        <ButtonGroup
+          aria-label="Language"
+          size="sm"
+          selectedKeys={new Set([lang])}
+          onSelectionChange={(keys) => {
+            const next = [...keys][0]
+            if (next === 'en' || next === 'vi') setLang(next)
+          }}
+        >
+          <ButtonGroupItem id="en">English</ButtonGroupItem>
+          <ButtonGroupItem id="vi">Tiếng Việt</ButtonGroupItem>
+        </ButtonGroup>
       </section>
 
       <section className="flex flex-col gap-2" aria-label="Rail icons">
         <h3 className="text-md font-semibold text-primary">Rail icons</h3>
         <p className="text-sm text-tertiary">Color identifies each tool by node kind. Monochrome keeps the same drawings in a single ink tone.</p>
-        <Segmented
-          ariaLabel="Rail icons"
-          variant="radio"
-          value={railIconMode}
-          onChange={setRailIconMode}
-          options={[
-            { value: 'color', label: 'Color' },
-            { value: 'mono', label: 'Monochrome' },
-          ]}
-        />
+        <ButtonGroup
+          aria-label="Rail icons"
+          size="sm"
+          selectedKeys={new Set([railIconMode])}
+          onSelectionChange={(keys) => {
+            const next = [...keys][0]
+            if (next === 'color' || next === 'mono') setRailIconMode(next)
+          }}
+        >
+          <ButtonGroupItem id="color">Color</ButtonGroupItem>
+          <ButtonGroupItem id="mono">Monochrome</ButtonGroupItem>
+        </ButtonGroup>
       </section>
 
       <section className="flex flex-col gap-2" aria-label="Local model">
