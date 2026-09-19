@@ -15,6 +15,8 @@ Tên session có thể đổi: tìm tên hiện tại bằng `ListAgents`, đừ
 
 Đổi vai trò, hoặc có bài học dùng chung: **báo Orchestrator để đưa vào file này, không tự ghi memory** (memory ghi sự thật về code sẽ lỗi thời khi code đổi).
 
+**Giao việc cho thread trên sidebar, không sinh agent nền** (user chốt 2026-09-20). Các thread của dự án nằm trong nhóm `KIRA (vixio) · Team`: lấy `session_id` bằng `list_sessions`, giao bằng `mcp__ccd_session_mgmt__send_message`. Agent tool (`isolation: worktree`) chỉ dùng khi user nói rõ, vì agent nền khởi động lạnh và không nằm trên sidebar để user theo dõi hay chen vào.
+
 ## Model theo loại việc
 
 Orchestrator chọn model và effort cho thread khác bằng `set_session_model` / `set_session_effort` (không tự đổi model của chính mình). **Chọn theo loại việc của task đang giao, không theo vai trò cố định của thread**: cùng một thread UI/UX có thể chạy Opus khi phán đoán thiết kế và Sonnet khi chỉ thay token theo spec. Kiểm model hiện tại bằng `get_session` trước khi giao, và ghi model đã chọn vào brief.
@@ -74,6 +76,7 @@ Mọi report kết thúc task chia 3 phần, theo thứ tự:
 
 ## Verify
 
+0. **Việc UI phải kiểm bằng browser, không chỉ đọc code** (user chốt 2026-09-20). Mở app, thao tác thật vào control đang sửa, đo `getComputedStyle` và chụp lại. Riêng focus: `element.focus()` bằng script **không** kích hoạt `:focus-visible`, nên phải click hoặc Tab bằng phím thật rồi mới đo, và assert `el.matches(':focus-visible')`.
 1. **Kiểm đúng mục tiêu.** Kiểm chứng phát hiện trên **commit SHA lúc phát hiện**, không phải working tree (`git log -S "<chuỗi>"`, `git show <sha>`), và ghi SHA vào report. Trước khi tin kết quả test, **chứng minh app đang chạy đúng code định test** (vd probe của chính bạn có mặt). Browser preview **không có Tauri runtime**: đường native (AI provider, `osascript`, sidecar) phải test trong app thật.
 2. **"Không có" hay "0" chưa chứng minh là không có.** Kèm đối chứng cho thấy phép kiểm đọc được dữ liệu thật. Đừng đưa giá trị đang audit vào danh sách cho phép. Trong zsh viết `${VAR}:abc`, vì `$VAR:abc` bị hiểu là modifier. `grep -c` đếm **dòng**: CSS từ vite nằm trên một dòng, dùng `grep -o … | wc -l`.
 3. **Biết mình đang đo cái gì.**
