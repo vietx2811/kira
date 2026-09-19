@@ -2704,6 +2704,15 @@ button.mini-tags-more:focus-visible {
   opacity: 0.55;
 }
 
+/* "Shown on node" pin: ink underline like .icon-button.is-active, not an
+   accent tint (DESIGN.md §3 One Accent Rule). */
+.section-tool.is-active {
+  background: transparent;
+  color: var(--text-main);
+  box-shadow: inset 0 -2px 0 var(--text-main);
+  border-radius: var(--radius-1) var(--radius-1) 2px 2px;
+}
+
 .tag-status {
   margin: var(--space-2) 0 0;
   color: var(--text-muted);
@@ -4123,6 +4132,14 @@ button.mini-tags-more:focus-visible {
   background: transparent;
   color: var(--text-main);
   box-shadow: inset 0 -2px 0 var(--text-main);
+}
+
+/* Delete: same red tint as .node-toolbar button.is-danger:hover, so the
+   destructive action announces itself on hover instead of matching the rest
+   of the bar. */
+.node-details-actionbar button.is-danger:hover {
+  background: color-mix(in srgb, var(--danger), transparent 82%);
+  color: var(--danger);
 }
 
 .reorderable-blocks {
