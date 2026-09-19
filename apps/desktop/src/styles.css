@@ -1,8 +1,17 @@
-/* Universal keyboard-focus fallback. Low specificity (a single pseudo-class)
-   so every more specific :focus-visible rule declared later in this file
-   still wins — this only fills the gap for the ~15 controls that reset
-   `outline: none` with nothing to replace it, which today have no visible
-   focus state at all.
+/* Universal keyboard-focus fallback for LEGACY (hand-written) controls only.
+   Low specificity (a single pseudo-class; the :not() argument is wrapped in
+   :where() so it adds none) so every more specific :focus-visible rule
+   declared later in this file still wins. It fills the gap for the ~15
+   controls that reset `outline: none` with nothing to replace it.
+
+   It must NOT touch Untitled UI / react-aria controls (every RAC element
+   carries `data-rac`): they draw their own focus signal (a `ring-2` on the
+   field wrapper, or `outline-2 outline-focus-ring` on buttons/checkboxes)
+   and set `outline-hidden` on the element itself. This rule is unlayered, so
+   it beat that layered Tailwind utility and painted a second 2px outline
+   around the kit's own ring: a ~6px double teal band on every text field,
+   select and textarea, and a ring around the whole Settings dialog when it
+   opened. One control, one focus signal (docs/design/input-audit.md).
 
    A real outline, not a box-shadow ring: the previous 3px accent-at-38%
    ring measured 2.37:1 against surrounding surfaces, under the 3:1 floor
@@ -11,7 +20,7 @@
    participates in forced-colors mode on its own (the browser substitutes
    the system high-contrast color for any declared outline color), so the
    old transparent-outline-plus-shadow fallback is no longer needed. */
-:focus-visible {
+:focus-visible:not(:where([data-rac])) {
   outline: 2px solid var(--accent-cyan);
   outline-offset: 2px;
 }
@@ -3244,6 +3253,13 @@ button.mini-tags-more:focus-visible {
   top: var(--link-popover-y);
   z-index: 9;
   display: grid;
+  /* Without an explicit track the single column sizes to the widest child's
+     max-content: the nowrap endpoints row ("brushed altar object <-> Objects
+     that invite attention...") made every field 555px wide inside this 220px
+     card, so the relation select, the note and the confidence slider were cut
+     off at the right edge and the note could not be clicked in its visible
+     part. minmax(0, 1fr) pins the column to the card. */
+  grid-template-columns: minmax(0, 1fr);
   gap: 6px;
   width: 220px;
   max-height: var(--link-popover-lift);
@@ -3271,6 +3287,7 @@ button.mini-tags-more:focus-visible {
 }
 
 .link-popover-endpoints span {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -3281,7 +3298,10 @@ button.mini-tags-more:focus-visible {
   text-align: right;
 }
 
-.link-popover-endpoints span:last-child {
+/* nth-of-type, not :last-child: the swap-direction button comes after the
+   target title, so :last-child never matched it and the source title
+   collapsed to nothing once the popover column stopped being 555px wide. */
+.link-popover-endpoints span:nth-of-type(2) {
   flex: 1;
 }
 
@@ -4197,16 +4217,20 @@ button.mini-tags-more:focus-visible {
 
 .tag-chip-input {
   min-width: 4ch;
-  border: none;
-  background: transparent;
+  min-height: 24px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--glass-hover);
   color: var(--text-main);
-  font-size: inherit;
+  font-size: var(--text-small);
   font-family: inherit;
 }
 
-.tag-chip-input:focus {
-  outline: none;
-}
+/* No `outline: none` here: this is a hand-written input, so it takes the
+   global :focus-visible fallback at the top of the file as its one focus
+   signal. It used to reset the outline AND have no fill, leaving nothing to
+   show where to type. */
 
 .node-pinned-tags {
   display: flex;
@@ -4417,8 +4441,13 @@ button.mini-tags-more:focus-visible {
    (both a border AND a ring, in teal) fought the ink-only Ink & Paper
    language on every open. One cue (the border), in ink, is enough
    (DESIGN.md §3 One Accent Rule). */
-.kira-dock.is-open:focus-within {
-  border-color: var(--border-strong);
+.kira-dock.is-open:has(.kira-dock-input:focus) {
+  /* --border-strong measured 1.35:1 against the dock surface, under the 3:1
+     floor for a focus indicator. --field-edge is the field-boundary token
+     (3.3-3.7:1 in both modes). */
+  border-color: var(--field-edge);
+  /* :has(input:focus), not :focus-within: the dock also holds buttons that
+     draw their own outline, and a border change on top made two signals. */
 }
 
 .kira-dock.is-open.has-tray {
@@ -7359,59 +7388,12 @@ button.palette-color-segment:focus-visible code {
   accent-color: var(--accent-cyan);
 }
 
-select,
-textarea,
-.title-input {
-  width: 100%;
-  /* Was --border-soft (a subtle card/panel divider token, ~1.1-1.5:1 on
-     this app's dark surfaces) — under WCAG 1.4.11's 3:1 floor for a form
-     field boundary. --field-edge is the dedicated field-boundary token.
-     .title-input and .note-input override straight back to border: 0
-     below for most uses (source-url-row, node notes/details) where the
-     field genuinely sits inside a bordered card. The Project Settings
-     popover's own NAME/DESCRIPTION/AUTHOR/KIND/STYLE NOTE fields do not —
-     audited three ancestor levels up and found no real border anywhere,
-     measured 1.00:1 in both themes — so a scoped rule further down
-     reinstates the boundary for those five only. */
-  border: 1px solid var(--field-edge);
-  border-radius: var(--radius-2);
-  background: rgb(0 0 0 / 0.18);
-  color: var(--text-main);
-}
-
-select {
-  height: 34px;
-  padding: 0 var(--space-3);
-}
-
-.title-input {
-  height: 34px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--text-main);
-  font-size: var(--text-body);
-  font-weight: var(--weight-title);
-}
-
-textarea {
-  min-height: 92px;
-  padding: var(--space-3);
-  resize: vertical;
-}
-
-.note-input {
-  /* Was 96px — an empty note (the common case right after opening Details)
-     left a large dead gap above Tags/Palette/Source, unbalancing the whole
-     popover. This is enough for ~1.5 lines and grows with real content since
-     only min-height is set; nothing about a populated note shrinks. */
-  min-height: 40px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--text-soft);
-  resize: none;
-}
+/* Bare select/textarea/.title-input rules used to live here (a 40%-white
+   1px border, a dark fill, a 92px min-height, 12px padding on EVERY <textarea>
+   and <select> in the app). They painted a second, bright border around the
+   kit's own ring on every Untitled UI TextArea and are gone: kit fields are
+   styled by the kit; the two hand-written textareas (.kira-dock-input,
+   .composer-input) declare their own box. */
 
 .node-notes-input {
   /* Keep the details popover compact while preserving the Untitled UI
@@ -7419,22 +7401,6 @@ textarea {
   min-height: 40px;
   color: var(--text-soft);
   resize: vertical;
-}
-
-.project-settings-popover .title-input,
-.project-settings-popover .note-input {
-  /* NAME/DESCRIPTION/AUTHOR/KIND/STYLE NOTE: unlike the other uses of these
-     shared classes, this popover's own fields don't actually sit inside a
-     bordered card (checked three ancestor levels up, none carry a real
-     border) — measured contrast was 1.00:1 in both themes, well under
-     WCAG 1.4.11's 3:1 floor. Reinstate the field boundary here only. */
-  border: 1px solid var(--field-edge);
-}
-
-.project-settings-popover .note-input {
-  /* Was unset, silently inheriting the 14px root size (off the type scale —
-     see styles.css "type scale" note at the top of the file). */
-  font-size: var(--text-body);
 }
 
 .diagram-source-input {
@@ -7503,16 +7469,6 @@ textarea {
 .palette-color-row button:disabled {
   cursor: default;
   opacity: 0.42;
-}
-
-.title-input:focus,
-.note-input:focus {
-  outline: none;
-}
-
-.title-input:focus-visible,
-.note-input:focus-visible {
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-cyan), transparent 68%);
 }
 
 .danger-action {
@@ -8295,6 +8251,7 @@ textarea {
 }
 
 .composer-input {
+  width: 100%;
   min-height: 28px;
   max-height: 160px;
   padding: 5px 0;
@@ -8313,6 +8270,13 @@ textarea {
 
 .composer-input:focus {
   outline: none;
+}
+
+/* The composer box is the visible field, so it carries the one focus signal
+   (it had none: the rest border is already --field-edge, and the textarea
+   resets its outline). One step stronger, in ink. */
+.composer:focus-within {
+  border-color: var(--text-main);
 }
 
 .composer .send {

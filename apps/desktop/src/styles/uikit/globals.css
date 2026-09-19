@@ -66,4 +66,14 @@
     margin: 0;
     padding: 0;
   }
+  /* Preflight is off, so a react-aria <input> keeps the browser's default
+     2px inset border. The kit draws the field edge on the wrapper (ring-1)
+     and never sets a border on the input itself, so without this every kit
+     Input shows a bevelled UA frame inside its own ring (measured:
+     border 2px rgb(133,133,133) on Settings > AI Providers > Name).
+     Checkbox/radio/range keep their own rendering. */
+  input[data-rac]:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  textarea[data-rac] {
+    border: 0;
+  }
 }
