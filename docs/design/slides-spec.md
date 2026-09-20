@@ -103,7 +103,30 @@ Hai lớp bảo vệ cho ngoại lệ ngoài bảng (phông người dùng rộn
 - **HTML/app:** `-webkit-line-clamp` bằng số dòng tối đa của bậc (kèm `overflow: hidden`). Chỉ là lưới an toàn; nếu chạm thì chữ kết bằng dấu `…` của trình duyệt thay vì tràn khung.
 - **PPTX:** hộp cao đúng `dòng tối đa × cỡ × line-height`; không tự co, vì bảng đã bảo đảm vừa.
 
-Không dùng `clamp()` theo `vw` cho tiêu đề slide nữa (đây là nguyên nhân cỡ chữ đổi theo cửa sổ và không lặp lại được giữa các đầu ra). Cỡ chữ của sân khấu **không phải token chữ của UI** nên không thêm vào `--text-*`; định nghĩa trong CSS của `.slide-stage` và trong bảng ở file util. Đây là ngoại lệ hợp lệ với luật "mọi `font-size` là token": sân khấu là bề mặt trình chiếu 1280 px, có scale riêng.
+Không dùng `clamp()` theo `vw` cho tiêu đề slide nữa (đây là nguyên nhân cỡ chữ đổi theo cửa sổ và không lặp lại được giữa các đầu ra).
+
+### Token của sân khấu (chốt với Orchestrator 2026-09-21)
+
+Bốn bậc là **token riêng của sân khấu slide**, khai trên `.slide-stage` (không ở `:root`, để không dùng nhầm ngoài sân khấu). **Chúng không thuộc type scale của app** (`--text-mini` đến `--text-large`) và không dùng ở đâu ngoài `.slide-stage`: sân khấu 1280×720 là hệ toạ độ riêng, được scale bằng `transform`, nên px ở đây là px của sân khấu, không phải px màn hình. Vì vậy đây không phải ngoại lệ "giá trị dùng một lần" mà luật type scale cấm: là một scale thứ hai, có tên và có chủ.
+
+```css
+.slide-stage {
+  --slide-title-1: 88px;  /* tiêu đề ≤ 16 ký tự,   tối đa 3 dòng, line-height 1.00 */
+  --slide-title-2: 64px;  /* 17 đến 36,            tối đa 4 dòng, line-height 1.04 */
+  --slide-title-3: 44px;  /* 37 đến 90,            tối đa 5 dòng, line-height 1.08 */
+  --slide-title-4: 34px;  /* 91 đến 140,           tối đa 6 dòng, line-height 1.12 */
+  --slide-body: 20px;     /* thân, line-height 1.5, tối đa 4 dòng */
+  --slide-kicker: 13px;   /* nhãn chữ hoa phía trên tiêu đề */
+  --slide-title-scale: 1; /* "Thư viện ảnh" đặt 0.78, mọi kiểu khác giữ 1 */
+}
+.slide-stage[data-title-step="1"] .slide-title { font-size: calc(var(--slide-title-1) * var(--slide-title-scale)); line-height: 1; }
+/* ...2, 3, 4 tương tự; -webkit-line-clamp lấy số dòng tối đa của bậc */
+```
+
+- Bậc do `data-title-step="1..4"` chọn, đặt bởi mã từ `titleStep()`; CSS không tự đoán theo độ dài.
+- **Một nguồn sự thật:** bảng `TITLE_STEPS` trong `slideText.ts` (dùng cho PPTX và cho `data-title-step`) và bốn token CSS phải bằng nhau. Kiểm bằng một test đọc `styles.css` và so với `TITLE_STEPS` (§10, mục 9); lệch là test đỏ.
+- Bậc thân của kiểu Biên tập (22px) và Thư viện ảnh (18px) ghi đè `--slide-body` trong khối kiểu của chúng, không thêm bậc mới.
+- Đây là "thêm bậc vào scale" theo đúng nghĩa của luật: một scale mới có tên, không phải số rời trong `font-size`.
 
 ## 5. Chiều cao: chốt cứng
 
@@ -186,6 +209,7 @@ Chạy trên fixture 6 node mẫu và thêm một node dài 561 ký tự tiếng
 4. PDF in ra có đúng N trang, không slide bị chia.
 5. PPTX: cỡ chữ tiêu đề đúng bảng §4; hộp tiêu đề và hộp thân không chồng nhau (kiểm bằng toạ độ hộp).
 6. `slide-text.test.mjs` xanh; thêm test chuỗi NFD tiếng Việt vào bộ test của app.
+9. Test đồng bộ: bốn token `--slide-title-1..4` trong `styles.css` bằng `TITLE_STEPS[].size`. Đối chứng: đổi tay một token thì test phải đỏ.
 7. Slide không chứa chữ tiếng Anh do máy sinh (grep "Add visual support", "Needs references", "Use the contrast" trong HTML export = 0).
 8. Đối chứng: chạy cùng phép kiểm trên `main` hiện tại phải **thất bại** (chiều cao > 720, có câu lặp), để chứng minh phép đo đọc được dữ liệu thật.
 
@@ -198,7 +222,7 @@ Thứ tự đề xuất (mỗi bước độc lập, đều nhỏ):
 4. PPTX: hộp tính theo bảng bậc.
 5. Popover: hai ô override, Đặt lại; outline sửa tại chỗ; ẩn select template.
 
-Không cần đổi bố cục chính của app; chỉ thay phần trong khung slide. Không thêm token chữ vào `--text-*` (§4).
+Không cần đổi bố cục chính của app; chỉ thay phần trong khung slide. Không thêm bậc vào `--text-*`; sân khấu có bộ token `--slide-*` riêng (§4).
 
 ## 12. Câu hỏi còn mở
 
