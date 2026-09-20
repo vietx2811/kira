@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Slides: quy tắc tiêu đề, thân và cỡ chữ</title>
+<style>
+/* Wireframe kiểm chứng cho docs/design/slides-spec.md. Mọi khung là sân khấu 1280x720
+   thật (tỉ lệ 16:9), thu 0.4 để xem. Nội dung đi qua slide-text.js, không nhập tay. */
+*,*::before,*::after{box-sizing:border-box}
+html,body{margin:0}
+body{background:#e9ecec;color:#23211d;font:14px/1.5 -apple-system,BlinkMacSystemFont,ui-sans-serif,system-ui,sans-serif;padding:32px 40px 64px}
+h1{font-size:24px;margin:0 0 4px;letter-spacing:-.01em} .lede{margin:0 0 24px;color:#3e3d39;max-width:80ch}
+.grid{display:grid;grid-template-columns:150px repeat(3,512px);gap:20px 20px;align-items:start}
+.hd{font-weight:680;font-size:13px;color:#575855;padding-bottom:4px}
+.rn{font-size:12px;color:#3e3d39} .rn b{display:block;color:#23211d;font-size:13px}
+.rn code{font:11px ui-monospace,Menlo,monospace}
+.wrap{width:512px;height:288px;position:relative;border-radius:6px;overflow:hidden;box-shadow:0 1px 2px rgb(35 33 29/.12),0 8px 24px rgb(35 33 29/.12)}
+.wrap .stage{transform:scale(.4);transform-origin:0 0}
+.badge{position:absolute;right:8px;top:8px;z-index:3;font:600 11px ui-monospace,Menlo,monospace;padding:2px 7px;border-radius:99px;background:#0c6052;color:#fff}
+.badge.bad{background:#8a4035}
+.hint{position:absolute;left:8px;bottom:8px;z-index:3;font:600 11px -apple-system,sans-serif;padding:2px 7px;border-radius:99px;background:rgb(35 33 29/.78);color:#f4f1ea}
+
+/* ---- sân khấu 1280x720 ---- */
+.stage{--bg:#0d0f0e;--ink:#f1eee7;--soft:#c9c8bd;--muted:#96988e;--accent:#84cdbc;--fam:-apple-system,BlinkMacSystemFont,ui-sans-serif,system-ui,sans-serif;--tfam:var(--fam);--tw:680;--track:-.02em;--bfam:var(--fam);--bsize:20px;--cols:560px 1fr;--padx:96px;--pady:64px;--gap:64px;--r:8px;--igap:12px;--cap:block;--tscale:1;
+  width:1280px;height:720px;overflow:hidden;background:var(--bg);color:var(--ink);font-family:var(--fam);padding:var(--pady) var(--padx);display:grid;grid-template-columns:var(--cols);gap:var(--gap)}
+.stage.no-visual{grid-template-columns:minmax(0,900px)}
+.copy{min-width:0;min-height:0;overflow:hidden;display:grid;align-content:center;gap:20px}
+.kicker{font-size:13px;letter-spacing:.08em;text-transform:uppercase;font-weight:680;color:var(--accent)}
+.title{margin:0;font-family:var(--tfam);font-weight:var(--tw);letter-spacing:var(--track);text-wrap:balance;overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical}
+.body{margin:0;font-family:var(--bfam);font-size:var(--bsize);line-height:1.5;color:var(--soft);max-width:52ch;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:4;overflow:hidden}
+.visuals{min-width:0;min-height:0;display:grid;gap:var(--igap);align-content:center}
+.shot{margin:0;border-radius:var(--r);overflow:hidden;background:rgb(255 255 255/.05)}
+.shot i{display:block;aspect-ratio:4/3;background:linear-gradient(135deg,var(--c1),var(--c2))}
+.shot figcaption{display:var(--cap);padding:10px 12px;font-size:13px;color:var(--soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.n1 .shot i{aspect-ratio:16/10} .n2{grid-template-columns:1fr} .n2 .shot i{aspect-ratio:16/8}
+.n3{grid-template-columns:repeat(3,1fr)}
+
+/* Kiểu 1: Tối giản (nhìn như hiện tại, đã chữa) */
+.p-minimal{}
+/* Kiểu 2: Biên tập, nền giấy */
+.p-editorial{--bg:#f4f1ea;--ink:#23211d;--soft:#3e3d39;--muted:#575855;--accent:#004f42;--tfam:ui-serif,"New York",Georgia,serif;--tw:600;--track:-.012em;--bfam:ui-serif,"New York",Georgia,serif;--bsize:22px;--cols:620px 1fr;--padx:96px;--gap:56px;--r:0;--igap:16px}
+.p-editorial .shot{background:transparent;box-shadow:inset 0 0 0 1px rgb(35 33 29/.18)}
+.p-editorial .kicker{padding-top:14px;border-top:1px solid rgb(35 33 29/.28);color:#3e3d39}
+.p-editorial .shot figcaption{font-style:italic;font-family:ui-serif,Georgia,serif}
+/* Kiểu 3: Thư viện ảnh, ảnh làm chủ */
+.p-gallery{--cols:420px 1fr;--gap:48px;--bsize:18px;--r:4px;--igap:6px;--cap:none;--tscale:.78;--tw:620}
+
+.c0{--c1:#43382e;--c2:#8a7560}.c1{--c1:#1c3f66;--c2:#dce9f3}.c2{--c1:#5a564e;--c2:#e9e4d8}
+</style>
+</head>
+<body>
+<h1>Slides: tiêu đề, thân, cỡ chữ, cắt chữ</h1>
+<p class="lede">Cùng một nội dung node, đi qua <code>slide-text.js</code> (tách tiêu đề khỏi thân, chọn bậc cỡ chữ theo độ dài), vẽ ở 3 kiểu. Mỗi khung là sân khấu 1280×720 thật; huy hiệu xanh là phép đo tự động: số dòng tiêu đề trong hạn, khối chữ không tràn khung.</p>
+<div class="grid" id="grid"></div>
+<script src="slide-text.js"></script>
+<script>
+const CASES = [
+  { id: 'A', label: 'Một cụm ngắn', src: 'Quiet tools.', refs: 0, kicker: 'Hướng cốt lõi' },
+  { id: 'B', label: 'Một câu tiếng Anh, 80 ký tự', src: 'Objects that invite attention through restraint, texture, and repeated handling.', refs: 2, kicker: 'Hướng cốt lõi' },
+  { id: 'C', label: 'Một câu tiếng Việt có dấu, 82 ký tự', src: 'Quầy bar ánh đồng: kim loại ấm, ánh sáng chỉ từ quầy, khách ngồi quay lưng ra phố.', refs: 2, kicker: 'Hướng cốt lõi' },
+  { id: 'D', label: 'Có tiêu đề markdown và thân', src: '# Phố cổ sau mưa\nMặt đường phản chiếu biển hiệu, giữ tương phản thấp. Ánh đèn neon đỏ và vàng kéo dài trên nền đá ướt, tạo cảm giác quán cà phê nằm sâu trong một con ngõ mà khách chỉ tìm thấy khi đã đi lạc. Mỗi chi tiết nhỏ như bậc thềm, chậu cây, tấm biển gỗ cũ đều phải kể cùng một câu chuyện về thời gian.', refs: 1, kicker: 'Đang phát triển' },
+  { id: 'E', label: 'Đoạn dài 561 ký tự, câu đầu 165', src: 'Objects that invite attention through restraint, texture, and repeated handling become the quiet grammar of a brand: a worn brass edge, a hand-rubbed finish, a weight that says it was made to be held again and again. We should build the whole identity system from these tactile cues rather than from a logo, so that every touchpoint, from menu to matchbook, carries the same slow confidence. Colour follows material, never the other way round, and photography stays close enough to see the grain.', refs: 3, kicker: 'Câu hỏi mở' },
+  { id: 'F', label: 'Một câu tiếng Việt 271 ký tự, không dấu chấm', src: 'Ánh vàng thấp, gỗ tối, kính mờ hơi nước, khách ngồi quay lưng ra phố, quầy bar là nguồn sáng duy nhất, tiếng máy xay cà phê vọng lại từ phía sau, mùi gỗ cũ và hơi ẩm của những ngày mưa kéo dài cả tuần liền khiến không gian trở nên đặc quánh như một ký ức chưa kịp phai mờ', refs: 0, kicker: 'Câu hỏi mở' },
+]
+const PRESETS = [['p-minimal', 'Tối giản'], ['p-editorial', 'Biên tập'], ['p-gallery', 'Thư viện ảnh']]
+const CAPS = ['brushed altar object', 'soft shadow shelves', 'paper field study']
+const grid = document.getElementById('grid')
+grid.insertAdjacentHTML('beforeend', '<div></div>' + PRESETS.map(([, n]) => `<div class="hd">${n}</div>`).join(''))
+for (const c of CASES) {
+  const r = SlideText.splitSlideText(c.src)
+  const step = SlideText.titleStep(r.title)
+  grid.insertAdjacentHTML('beforeend', `<div class="rn"><b>${c.id}. ${c.label}</b>tiêu đề ${SlideText.length(r.title)} ký tự, bậc <code>${step.size}px / ${step.lines} dòng</code>${r.hints.length ? '<br>' + r.hints.join(', ') : ''}</div>`)
+  for (const [cls] of PRESETS) {
+    const scale = cls === 'p-gallery' ? 0.78 : 1
+    const size = Math.round(step.size * scale)
+    const vis = Array.from({ length: c.refs }, (_, i) => `<figure class="shot"><i class="c${i % 3}"></i><figcaption>${CAPS[i]}</figcaption></figure>`).join('')
+    const html = `<div class="wrap"><div class="stage ${cls} ${c.refs ? '' : 'no-visual'}" data-case="${c.id}" data-preset="${cls}" data-size="${size}" data-lines="${step.lines}">
+      <div class="copy"><span class="kicker">${c.kicker}</span>
+        <h2 class="title" style="font-size:${size}px;line-height:${step.line};-webkit-line-clamp:${step.lines}">${r.title}</h2>
+        ${r.body ? `<p class="body">${r.body}</p>` : ''}</div>
+      ${c.refs ? `<div class="visuals n${c.refs}">${vis}</div>` : ''}
+      </div><span class="badge">…</span>${r.hints.length ? `<span class="hint">${r.hints.includes('title-clipped') ? 'Tiêu đề dài, đã rút gọn' : 'Thân đã rút gọn'}</span>` : ''}</div>`
+    grid.insertAdjacentHTML('beforeend', html)
+  }
+}
+// phép đo: bỏ giới hạn dòng, đo số dòng thật của tiêu đề (cao / line-height) và so với bậc cho phép
+function measure() {
+  const out = []
+  document.querySelectorAll('.stage').forEach((s) => {
+    const t = s.querySelector('.title'); const copy = s.querySelector('.copy'); const body = s.querySelector('.body')
+    const size = +s.dataset.size, lines = +s.dataset.lines
+    const lh = parseFloat(getComputedStyle(t).lineHeight)
+    t.style.webkitLineClamp = 'unset'; t.style.display = 'block'
+    const natural = Math.round(t.getBoundingClientRect().height / s.getBoundingClientRect().height * 720 / lh)
+    t.style.webkitLineClamp = ''; t.style.display = ''
+    const overflow = copy.scrollHeight > copy.clientHeight + 1
+    const ok = natural <= lines && !overflow
+    const b = s.parentElement.querySelector('.badge')
+    b.textContent = ok ? `${natural} dòng, vừa` : `${natural} dòng (tối đa ${lines}), TRÀN`; b.classList.toggle('bad', !ok)
+    out.push({ case: s.dataset.case, preset: s.dataset.preset, size, maxLines: lines, natural, overflow, ok })
+  })
+  window.__fit = out
+}
+document.fonts.ready.then(() => { measure(); document.body.dataset.done = '1' })
+</script>
+</body>
+</html>
