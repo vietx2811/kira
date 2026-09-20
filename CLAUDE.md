@@ -140,6 +140,7 @@ User chốt 2026-09-15 (báo cáo `docs/research/2026-09-15-design-skills-github
 
 ## Gotcha khi dev
 
+- **Node trên canvas nghe `pointerdown`, không phải `mousedown`** (`startNodeDrag`): script test dispatch `mousedown` thì kéo node và multi-select không kích hoạt, trông như tính năng hỏng. Dùng `PointerEvent`.
 - **`window.__kiraDev` được dựng lại mỗi lần render**: đọc `window.__kiraDev` **mới ở từng lời gọi**, đừng giữ tham chiếu vào biến. Giữ tham chiếu là gọi vào closure cũ và đọc state cũ, cho ra kết quả sai trông y như lỗi app (QA Project Files dính đúng bẫy này 2026-09-20 và suýt báo nhầm).
 - **`main.tsx` không Fast Refresh được**: mỗi lần sửa, HMR reload toàn bộ và **reset state app**, kèm lỗi console `createRoot() on a container that has already been passed`. Lỗi đó chỉ có trên đường HMR; xác nhận bằng reload sạch.
 - **Dev server** `kira-desktop` (`.claude/launch.json`): port 5173 thường bị thread khác chiếm, `autoPort` sẽ chọn port khác; đừng tắt tiến trình không phải của mình.
