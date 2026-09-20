@@ -5,7 +5,13 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 export async function launch(port = 9377, width = 1440, height = 900) {
-  const profile = mkdtempSync(join(tmpdir(), 'kira-cdp-'))
+  // The prefix carries the launching process's PID so it cannot match another
+  // session's browser. It used to be a bare `kira-cdp-`, shared by every
+  // session using this helper: on 2026-09-21 a cleanup `pkill -f "kira-cdp-"`
+  // plus `rm -rf` killed another session's Chrome mid-measurement and deleted
+  // its profile out from under it. Kill the PID you captured at spawn, and if
+  // you ever must match by name, match `kira-cdp-<your pid>-`.
+  const profile = mkdtempSync(join(tmpdir(), `kira-cdp-${process.pid}-`))
   const chrome = spawn('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', [
     '--headless=new', `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`,
     '--hide-scrollbars', '--no-first-run', '--no-default-browser-check', '--force-color-profile=srgb', 'about:blank',
