@@ -4,6 +4,8 @@
 **Người yêu cầu:** Orchestrator (giao cho QA Performance, 2026-09-21)
 **Commit đã kiểm chứng:** `b03b0d9` (main lúc đo). Dev build, `npx vite` port 5199, Chrome headless 153 qua CDP, viewport 1600x1000, `deviceScaleFactor: 1`.
 
+**Điều kiện máy:** có 6 session QA chạy song song trên cùng máy, nên mọi phép đo đều kèm một **phép chuẩn CPU cố định** chạy trong trang ngay trước mỗi mức (vòng lặp 8 triệu `Math.sqrt`), để phát hiện nhiễu do tải. Phép chuẩn ổn định 5,2–8,2ms ở mọi mức trong cả hai lần đo, nên chênh lệch giữa các mức là do số node chứ không do tải. Toàn bộ bảng ngưỡng đã được **đo lại lần hai ở tải khác hẳn** (load average 52 → 7,7–9,5) và cho cùng kết quả, xem §1.1.
+
 **Kết luận ngắn:**
 - Mượt thật (60fps) chỉ tới **~45 node**. 84 node còn 48fps, 104 node còn 38fps, 156 node còn 26fps.
 - Từ **250 node trở lên không dùng được**: pan 17fps, kéo node trễ p95 200ms trở lên.
@@ -27,6 +29,22 @@ Pan = kéo chuột giữa; kéo node = kéo chuột trái trên header node. M�
 | 100 | 104 | 37,7 | 33,3 | 49,9 | 43,7 | 50,0 |
 | 150 | 156 | 26,3 | 33,4 | 50,1 | 22,4 | 116,6 |
 | 200 | 206 | 20,6 | 50,0 | 83,3 | 14,9 | 133,3 |
+
+### 1.1 Đo lại để kiểm nhiễu tải
+
+Chạy lại đúng kịch bản ở thời điểm máy nhẹ hơn nhiều. Cột `load` là load average 1 phút lúc đo mức đó.
+
+| node | load lần 2 | chuẩn CPU | pan fps lần 1 | **pan fps lần 2** | kéo node fps lần 1 | **kéo node fps lần 2** |
+|---|---|---|---|---|---|---|
+| 44 | 9,3 | 5,4ms | 60,0 | 56,1 | 59,7 | 59,1 |
+| 64 | 9,5 | 5,4ms | 59,1 | 59,4 | 53,2 | 52,9 |
+| 84 | 9,5 | 5,2ms | 48,1 | 51,6 | 48,5 | 49,6 |
+| 104 | 8,6 | 5,3ms | 37,7 | 43,0 | 43,7 | 45,8 |
+| 156 | 8,6 | 8,2ms | 26,3 | 28,4 | 22,4 | 23,6 |
+| 206 | 8,1 | 6,4ms | 20,6 | 23,1 | 14,9 | 14,7 |
+| 258 | 7,7 | 8,2ms | 17,2 | 17,1 | 15,9 | 10,2 |
+
+Hai lần đo lệch nhau trong khoảng ~15% ở mọi mức, cùng hình dạng đường cong, cùng các mốc ngưỡng. Lần 2 nhanh hơn chút ở khoảng giữa, đúng chiều với việc máy nhẹ tải hơn. **Kết luận ngưỡng không phụ thuộc tải máy.**
 
 Mức lớn hơn, kèm thời gian nạp và bộ nhớ:
 
@@ -138,8 +156,8 @@ Về ELK: `organizeGraphLayout` (`main.tsx:15562`) chạy `elk.layout()` **tối
 - **Không đo được 1000 node.** `createBenchmarkProjectSnapshot` kẹp `referenceCount` vào `[12, 600]` (`main.tsx:16605`), nên `loadFixture(1000)` cho ra 600 ảnh + 8 idea = **608 node**. Mức 1000 trong đề bài không với tới bằng dev API hiện có.
 - **Bản dev.** React DEV chiếm ~12–15% thời gian pan. Bản production sẽ nhanh hơn chừng đó, tức ngưỡng an toàn có thể nhích từ ~45 lên ~50–55 node, **không đổi bậc độ lớn**. 53% thời gian nằm ở engine (style/layout/paint) và không đổi theo build mode.
 - **Ảnh giả.** `benchmarkThumb` sinh SVG data-URI nhẹ, không phải ảnh thật. Ảnh thật sẽ nặng hơn ở decode và bộ nhớ, nhẹ hơn ở số Document.
-- **Headless, không phải app native.** Đường Tauri chưa đo.
-- **Một lần đo bất thường chưa giải thích được.** Lần đầu đo `organizeAndVerify('flow')` trên 608 node ra **115 623ms**, trong điều kiện tab đang ẩn và load average máy ~52 (các session khác chiếm CPU). Theo luật 0d, tôi đã A/B lại thay vì gọi ngay là artifact: cùng commit `b03b0d9`, cùng board, chỉ khác trạng thái tab — **visible 429ms / 405ms, hidden 2 170ms / 1 990ms**, và dựng lại đúng chuỗi gốc (ẩn tab + Shift+A cluster đang settle) cho **1 421ms**. Tab ẩn làm chậm thật khoảng 5 lần, nhưng **không tái hiện được 115s**. Con số đó hiện chưa có lời giải; kết luận "organize không phải chỗ nghẽn" dựa trên các lần đo tái hiện được, không dựa trên việc bác bỏ lần đo kia.
+- **Headless, không phải app native.** Đường Tauri **chưa đo**, và tôi không đo. Toàn bộ task chạy được bằng Chrome headless + CDP nên không cần quyền điều khiển app; tôi không gọi `request_access` / `request_full_control`, không dùng `osascript` / System Events, không dùng `screencapture`. Hai ảnh trong báo cáo là `Page.captureScreenshot` qua CDP trong browser headless riêng, đã tự `Read` lại trước khi gửi. So sánh với app native là việc còn để ngỏ cho lượt sau.
+- **Một lần đo bất thường chưa giải thích được.** Lần đầu đo `organizeAndVerify('flow')` trên 608 node ra **115 623ms**, trong điều kiện tab đang ẩn **và load average máy ~52** (6 session QA chạy song song chiếm CPU). Theo luật 0d, tôi đã A/B lại thay vì gọi ngay là artifact: cùng commit `b03b0d9`, cùng board, chỉ khác trạng thái tab — **visible 429ms / 405ms, hidden 2 170ms / 1 990ms**, và dựng lại đúng chuỗi gốc (ẩn tab + Shift+A cluster đang settle) cho **1 421ms**. Tab ẩn làm chậm thật khoảng 5 lần, nhưng **không tái hiện được 115s**. Con số đó hiện chưa có lời giải; kết luận "organize không phải chỗ nghẽn" dựa trên các lần đo tái hiện được, không dựa trên việc bác bỏ lần đo kia.
 
 ## 5. Đề xuất (theo thứ tự lợi ích trên công sức)
 
