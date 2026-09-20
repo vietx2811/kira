@@ -37,6 +37,7 @@ const MIGRATION_NODE_FLAGS: &str = "010_node_flags";
 // save, whose manifest.json is the only place those values survive.
 const SNAPSHOT_FIELDS_KEY: &str = "snapshot_fields";
 const SNAPSHOT_FIELDS_LEVEL: &str = "2";
+const CURRENT_SNAPSHOT_VERSION: i64 = 2;
 const CAPTURE_SERVER_ADDR: &str = "127.0.0.1:47653";
 const CAPTURE_EVENT: &str = "kira:capture";
 const EAGLE_WEB_API_ADDR: &str = "127.0.0.1:41595";
@@ -481,7 +482,7 @@ fn write_project_package_to_dir(
 ) -> Result<ProjectPackageInfo, String> {
     let snapshot: ProjectSnapshot = serde_json::from_str(&snapshot_json)
         .map_err(|error| format!("Invalid project JSON: {error}"))?;
-    if snapshot.version != 2 {
+    if snapshot.version != CURRENT_SNAPSHOT_VERSION {
         return Err("Unsupported project snapshot version".to_string());
     }
 
@@ -706,10 +707,8 @@ fn read_project_package(project_dir: &Path) -> Result<Option<String>, String> {
     let manifest_path = project_dir.join(MANIFEST_NAME);
     if manifest_path.exists() {
         let manifest = fs::read_to_string(&manifest_path).map_err(|error| error.to_string())?;
-        if let Ok(snapshot) = serde_json::from_str::<ProjectSnapshot>(&manifest) {
-            if snapshot.version == 2 {
-                return Ok(Some(manifest));
-            }
+        if let Some(current) = manifest_as_current_version(&manifest) {
+            return Ok(Some(current));
         }
         if let Some(Err(error)) = sqlite_result {
             return Err(format!("Project package is invalid: {error}"));
@@ -722,6 +721,56 @@ fn read_project_package(project_dir: &Path) -> Result<Option<String>, String> {
     }
 
     Ok(None)
+}
+
+// A v1 manifest is a v2 one without the fields v2 added, all of which
+// ProjectSnapshot already defaults, so it loads as v2 once relabelled. Any other
+// version is refused: guessing would hand the frontend data it then rejects
+// without saying why.
+fn manifest_as_current_version(manifest: &str) -> Option<String> {
+    let snapshot = serde_json::from_str::<ProjectSnapshot>(manifest).ok()?;
+    match snapshot.version {
+        CURRENT_SNAPSHOT_VERSION => Some(manifest.to_string()),
+        1 => {
+            let mut value = serde_json::from_str::<serde_json::Value>(manifest).ok()?;
+            value["version"] = serde_json::json!(CURRENT_SNAPSHOT_VERSION);
+            serde_json::to_string(&value).ok()
+        }
+        _ => None,
+    }
+}
+
+// The snapshot version to report for what project_meta holds.
+//
+// v1 to v2 (June 2026) added collections and columns, all optional, and no
+// migration ever raised the stored number. So a v1 package holds the same data
+// as a v2 one and differs only in this label, which the frontend's
+// `version === 2` check then turned into a silent failed open. migrate() has
+// already added every column by the time this runs and read_snapshot defaults
+// every collection a v1 package lacks, so the honest reading of 1 is "v2 with
+// nothing extra". It is reported as such in memory and not written back: the
+// next save writes the current version, and merely opening a package should not
+// rewrite it.
+//
+//  - absent: write_snapshot inserts the row in the same transaction as all the
+//    data, so a package with content always has one; an empty package has
+//    nothing to mislabel. Read as current.
+//  - newer than this build: an error the caller can show, never a snapshot the
+//    frontend would drop without a word.
+//  - unparsable: corruption, also an error.
+fn snapshot_version_from_meta(stored: Option<String>) -> Result<i64, String> {
+    let Some(text) = stored else {
+        return Ok(CURRENT_SNAPSHOT_VERSION);
+    };
+    match text.trim().parse::<i64>() {
+        Ok(version) if (1..=CURRENT_SNAPSHOT_VERSION).contains(&version) => {
+            Ok(CURRENT_SNAPSHOT_VERSION)
+        }
+        Ok(version) if version > CURRENT_SNAPSHOT_VERSION => Err(format!(
+            "This project was saved by a newer version of KIRA (snapshot version {version}, this build reads up to {CURRENT_SNAPSHOT_VERSION}). Update KIRA to open it."
+        )),
+        _ => Err(format!("The project's version marker is unreadable: {text:?}")),
+    }
 }
 
 fn read_sqlite_project_package(project_dir: &Path) -> Result<Option<String>, String> {
@@ -1368,15 +1417,14 @@ fn write_json_collection<T: Serialize>(
 }
 
 fn read_snapshot(conn: &Connection) -> Result<ProjectSnapshot, String> {
-    let version = conn
-        .query_row(
+    let version = snapshot_version_from_meta(
+        conn.query_row(
             "SELECT value FROM project_meta WHERE key = 'version'",
             [],
             |row| row.get::<_, String>(0),
         )
-        .ok()
-        .and_then(|value| value.parse::<i64>().ok())
-        .unwrap_or(1);
+        .ok(),
+    )?;
 
     let ideas = read_ideas(conn)?;
     let images = read_references(conn)?;
@@ -6457,6 +6505,175 @@ mod tests {
         .expect("parse");
         assert_eq!(restored["ideas"][0]["aiExcluded"], false);
         assert_eq!(restored["project"]["title"], "Current title");
+
+        let _ = fs::remove_dir_all(project_dir);
+    }
+
+    // ---- Snapshot version ---------------------------------------------------
+    //
+    // The app wrote snapshot version 1 until 621a5ef (June 2026) moved it to 2
+    // without a migration. main.tsx only accepts 2, so a v1 package used to
+    // open as nothing at all.
+
+    /// The schema the app created while it still wrote version 1, copied from
+    /// migrate() at 621a5ef^: narrower tables, `links` with foreign keys, and
+    /// no canvas_collections table.
+    const V1_SCHEMA: &str = "
+        CREATE TABLE schema_migrations (id TEXT PRIMARY KEY, applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+        CREATE TABLE project_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+        CREATE TABLE ideas (id TEXT PRIMARY KEY, title TEXT NOT NULL, body TEXT NOT NULL,
+          status TEXT NOT NULL, x REAL NOT NULL, y REAL NOT NULL);
+        CREATE TABLE reference_assets (id TEXT PRIMARY KEY, title TEXT NOT NULL, source TEXT NOT NULL,
+          origin_app TEXT, origin_id TEXT, source_path TEXT, palette_json TEXT NOT NULL,
+          thumb TEXT NOT NULL, asset_path TEXT, thumb_path TEXT,
+          fingerprint TEXT NOT NULL DEFAULT '', perceptual_hash TEXT NOT NULL DEFAULT '',
+          x REAL NOT NULL, y REAL NOT NULL);
+        CREATE TABLE links (id TEXT PRIMARY KEY, image_id TEXT NOT NULL, idea_id TEXT NOT NULL,
+          relation TEXT NOT NULL, note TEXT NOT NULL, confidence REAL NOT NULL,
+          FOREIGN KEY(image_id) REFERENCES reference_assets(id) ON DELETE CASCADE,
+          FOREIGN KEY(idea_id) REFERENCES ideas(id) ON DELETE CASCADE);
+        CREATE TABLE reference_tags (reference_id TEXT NOT NULL, tag TEXT NOT NULL, position INTEGER NOT NULL,
+          PRIMARY KEY(reference_id, tag),
+          FOREIGN KEY(reference_id) REFERENCES reference_assets(id) ON DELETE CASCADE);
+        CREATE TABLE tag_suggestions (reference_id TEXT NOT NULL, suggestion TEXT NOT NULL,
+          source TEXT NOT NULL DEFAULT 'local', confidence REAL NOT NULL DEFAULT 0.5,
+          status TEXT NOT NULL DEFAULT 'pending', position INTEGER NOT NULL,
+          PRIMARY KEY(reference_id, suggestion),
+          FOREIGN KEY(reference_id) REFERENCES reference_assets(id) ON DELETE CASCADE);
+        CREATE TABLE outline_drafts (id TEXT PRIMARY KEY, title TEXT NOT NULL, created_at TEXT NOT NULL,
+          sections_json TEXT NOT NULL, position INTEGER NOT NULL);
+        INSERT INTO project_meta (key, value) VALUES ('version', '1');
+        INSERT INTO ideas VALUES ('idea-old', 'Ý tưởng cũ', 'Nội dung viết bằng body', 'strong', 11.5, 22.5);
+    ";
+
+    /// The rows of a v1 project, added after V1_SCHEMA. The image row is a
+    /// separate statement because it needs a real PNG for the re-save below.
+    const V1_ROWS: &str = "
+        INSERT INTO reference_tags VALUES ('img-old', 'archive', 0);
+        INSERT INTO links VALUES ('link-old', 'img-old', 'idea-old', 'supports', 'Ghi chú', 0.75);
+        INSERT INTO outline_drafts VALUES ('outline-old', 'Dàn ý cũ', '2026-06-01T00:00:00.000Z', '[]', 0);
+    ";
+
+    fn v1_package(label: &str, with_manifest: bool) -> PathBuf {
+        let project_dir = temp_project_dir(label);
+        ensure_project_dirs(&project_dir).expect("create project dirs");
+        let conn = Connection::open(project_dir.join(SQLITE_NAME)).expect("open sqlite");
+        conn.execute_batch(V1_SCHEMA).expect("build a v1 package");
+        conn.execute(
+            "INSERT INTO reference_assets (id, title, source, palette_json, thumb, x, y)
+             VALUES ('img-old', 'Ảnh cũ', 'old.png', '[\"#111111\"]', ?1, 33.5, 44.5)",
+            params![tiny_png_data_url()],
+        )
+        .expect("insert v1 image");
+        conn.execute_batch(V1_ROWS).expect("insert v1 rows");
+        if with_manifest {
+            fs::write(
+                project_dir.join(MANIFEST_NAME),
+                serde_json::json!({
+                    "version": 1,
+                    "ideas": [{"id": "idea-old", "title": "Ý tưởng cũ", "body": "Nội dung viết bằng body",
+                               "status": "strong", "x": 11.5, "y": 22.5}],
+                    "images": [],
+                    "links": [],
+                    "outlineDrafts": []
+                })
+                .to_string(),
+            )
+            .expect("write v1 manifest");
+        }
+        project_dir
+    }
+
+    fn read_json(project_dir: &Path) -> Result<serde_json::Value, String> {
+        read_project_package(project_dir).map(|text| {
+            serde_json::from_str(&text.expect("a package to read")).expect("parse snapshot")
+        })
+    }
+
+    #[test]
+    fn v1_package_opens_as_v2_with_all_of_its_data() {
+        let project_dir = v1_package("v1-open", true);
+        let opened = read_json(&project_dir).expect("a v1 package must open");
+
+        assert_eq!(opened["version"], 2, "the frontend only accepts 2");
+        assert_eq!(opened["ideas"][0]["id"], "idea-old");
+        assert_eq!(opened["ideas"][0]["body"], "Nội dung viết bằng body");
+        assert_eq!(opened["ideas"][0]["x"], 11.5);
+        assert_eq!(opened["images"][0]["id"], "img-old");
+        assert_eq!(opened["images"][0]["tags"][0], "archive");
+        assert_eq!(opened["links"][0]["id"], "link-old");
+        assert_eq!(opened["links"][0]["confidence"], 0.75);
+        assert_eq!(opened["outlineDrafts"][0]["title"], "Dàn ý cũ");
+        // Everything v2 added and v1 lacks comes back defaulted, not missing.
+        for key in ["palettes", "diagrams", "placeholders", "versionHistory", "nodeVersions"] {
+            assert_eq!(opened[key], serde_json::json!([]), "{key}");
+        }
+        assert!(opened["aiSettings"]["providers"].is_array());
+        assert_eq!(opened["versionState"]["currentBranchId"], "main");
+
+        // Reading did not rewrite the package: it still says 1 on disk.
+        let conn = Connection::open(project_dir.join(SQLITE_NAME)).expect("open sqlite");
+        let stored: String = conn
+            .query_row("SELECT value FROM project_meta WHERE key = 'version'", [], |row| row.get(0))
+            .expect("version row");
+        assert_eq!(stored, "1");
+
+        // The frontend saves what it loaded; the next open is a plain v2 one.
+        drop(conn);
+        write_project_package_to_dir(project_dir.clone(), opened.to_string())
+            .expect("re-save the upgraded snapshot");
+        let reopened = read_json(&project_dir).expect("reopen after save");
+        assert_eq!(reopened["version"], 2);
+        assert_eq!(reopened["ideas"][0]["body"], "Nội dung viết bằng body");
+        assert_eq!(reopened["links"][0]["id"], "link-old");
+
+        let _ = fs::remove_dir_all(project_dir);
+    }
+
+    #[test]
+    fn v1_manifest_without_sqlite_opens_as_v2() {
+        let project_dir = v1_package("v1-manifest-only", true);
+        fs::remove_file(project_dir.join(SQLITE_NAME)).expect("remove sqlite");
+        let opened = read_json(&project_dir).expect("a v1 manifest must open");
+        assert_eq!(opened["version"], 2);
+        assert_eq!(opened["ideas"][0]["id"], "idea-old");
+        let _ = fs::remove_dir_all(project_dir);
+    }
+
+    #[test]
+    fn version_marker_edge_cases_are_explicit() {
+        let project_dir = temp_project_dir("version-edges");
+        save_and_reload(&project_dir, &full_snapshot_fixture(&tiny_png_data_url()));
+        let set_version = |value: Option<&str>| {
+            let conn = Connection::open(project_dir.join(SQLITE_NAME)).expect("open sqlite");
+            match value {
+                Some(value) => conn.execute(
+                    "INSERT OR REPLACE INTO project_meta (key, value) VALUES ('version', ?1)",
+                    params![value],
+                ),
+                None => conn.execute("DELETE FROM project_meta WHERE key = 'version'", []),
+            }
+            .expect("edit version row");
+        };
+
+        // A missing row still opens: saves write it alongside the data.
+        set_version(None);
+        assert_eq!(read_json(&project_dir).expect("missing row")["version"], 2);
+
+        // Newer than this build: an error that says so, not a snapshot the
+        // frontend would discard. A real newer package has a matching manifest.
+        set_version(Some("3"));
+        let manifest = fs::read_to_string(project_dir.join(MANIFEST_NAME)).expect("manifest");
+        let mut newer: serde_json::Value = serde_json::from_str(&manifest).expect("parse manifest");
+        newer["version"] = serde_json::json!(3);
+        fs::write(project_dir.join(MANIFEST_NAME), newer.to_string()).expect("write manifest");
+        let error = read_json(&project_dir).expect_err("a newer package must not open silently");
+        assert!(error.contains("newer version of KIRA"), "unhelpful error: {error}");
+
+        // Garbage is corruption, also an error.
+        set_version(Some("abc"));
+        let error = read_json(&project_dir).expect_err("an unreadable marker must not open");
+        assert!(error.contains("unreadable"), "unhelpful error: {error}");
 
         let _ = fs::remove_dir_all(project_dir);
     }
