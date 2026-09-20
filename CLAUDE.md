@@ -12,6 +12,10 @@ Tên session có thể đổi: tìm tên hiện tại bằng `ListAgents`, đừ
 - **Worker**: triển khai việc được giao (frontend, script, tooling).
 - **Art Director**: khảo sát thẩm mỹ và định hướng phong cách (tổng thể, hệ control, nút bấm) theo chuẩn app canvas desktop. Viết báo cáo và specimen trong `docs/research/`, không sửa code app; UI/UX và Worker hiện thực hoá sau khi user chốt.
 - **Native/Backend**: `src-tauri/` (`lib.rs`, command Tauri, sidecar, đường native macOS). Tách khỏi `main.tsx` nên hầu như không tranh chấp file với UI/UX và Worker.
+- **QA Extension** (lập 2026-09-20): kiểm extension trình duyệt, đường đẩy ảnh về app qua `http://127.0.0.1:47653`. Không sửa code app.
+- **QA AI** (lập 2026-09-20): kiểm đường AI trong app native, trạng thái Codex, sinh khung ý tưởng và sinh nhánh. Không sửa code app.
+
+**Đăng nhập CLI của provider là việc của user, không phải của thread.** Thread được phép chạy lệnh đăng nhập để CLI tự mở trình duyệt, nhưng không nhập email, mật khẩu, OTP, không bấm nút cấp quyền hộ user, và không đọc hay chép nội dung file token (`~/.codex/auth.json` và tương đương): chỉ báo có hay không.
 
 Đổi vai trò, hoặc có bài học dùng chung: **báo Orchestrator để đưa vào file này, không tự ghi memory** (memory ghi sự thật về code sẽ lỗi thời khi code đổi).
 
