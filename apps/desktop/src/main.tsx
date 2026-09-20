@@ -2199,12 +2199,19 @@ function FileWorkspace({
 
   // Surfaces libraryStatus as a transient pill over the canvas so drop
   // feedback is visible even when the (collapsible) Library panel is closed.
-  useEffect(() => {
-    if (libraryStatus === 'Ready') return
+  // Long messages (the export hints) stay up long enough to read.
+  const [canvasNoticeText, setCanvasNoticeText] = useState('')
+  const showCanvasNotice = (message: string) => {
+    setCanvasNoticeText(message)
     setIsCanvasNoticeVisible(true)
     window.clearTimeout(canvasNoticeTimerRef.current)
-    canvasNoticeTimerRef.current = window.setTimeout(() => setIsCanvasNoticeVisible(false), 2500)
+    canvasNoticeTimerRef.current = window.setTimeout(() => setIsCanvasNoticeVisible(false), Math.min(8000, Math.max(2500, 1500 + message.length * 45)))
     return () => window.clearTimeout(canvasNoticeTimerRef.current)
+  }
+  useEffect(() => {
+    if (libraryStatus === 'Ready') return
+    return showCanvasNotice(libraryStatus)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [libraryStatus])
   useEffect(() => {
     if (!appNotice) return
@@ -2214,6 +2221,13 @@ function FileWorkspace({
   }, [appNotice])
   const [outlineStatus, setOutlineStatus] = useState('Ready')
   const [slideshowStatus, setSlideshowStatus] = useState('Ready')
+  // SlideshowView was handed this text and never drew it, so a PowerPoint
+  // export could succeed, fail or be cancelled without the user seeing a word.
+  useEffect(() => {
+    if (slideshowStatus === 'Ready') return
+    return showCanvasNotice(slideshowStatus)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slideshowStatus])
   const [linkCreationRelation, setLinkCreationRelation] = useState<Relation>('supports')
   const [activeCanvasTool, setActiveCanvasTool] = useState<CanvasTool>('select')
   const [pendingLinkSource, setPendingLinkSource] = useState<Pick<GraphNodeRef, 'kind' | 'id'> | null>(null)
@@ -5802,23 +5816,40 @@ function FileWorkspace({
     return { slides, deckMeta, title }
   }
 
-  async function exportSlideshowPptx(layoutMode: SlideLayoutMode = 'auto') {
+  // Builds the deck and writes it out; throws if anything fails, so callers
+  // that chain on the file (Google Slides, Canva) can tell "no file" from
+  // "file ready". Returns what happened to the file.
+  async function writeSlideshowPptx(layoutMode: SlideLayoutMode): Promise<{ result: 'exported' | 'downloaded' | 'canceled'; missingImages: number }> {
     setSlideshowStatus('Building PowerPoint…')
+    const { slides, deckMeta, title } = buildExportSlides(layoutMode)
+    const { prs, missingImages } = await slidesToPptx(slides, deckMeta, title)
+    const fileStem = safeDownloadName(title) || 'kira-slides'
+    if (isTauriRuntime()) {
+      const base64 = (await prs.write({ outputType: 'base64' })) as string
+      const exportedPath = await exportNativeSlideshowPptx(base64, fileStem, projectPackage?.path)
+      return { result: exportedPath ? 'exported' : 'canceled', missingImages }
+    }
+    await prs.writeFile({ fileName: `${fileStem}.pptx` })
+    return { result: 'downloaded', missingImages }
+  }
+
+  function pptxExportFailureStatus(error: unknown) {
+    console.error('PPTX export failed', error)
+    const reason = error instanceof Error && error.message ? `: ${error.message}` : ''
+    return `PowerPoint export failed${reason}`
+  }
+
+  function pptxMissingImagesNote(missingImages: number) {
+    return missingImages > 0 ? ` (${missingImages} ${missingImages === 1 ? 'image' : 'images'} could not be included)` : ''
+  }
+
+  async function exportSlideshowPptx(layoutMode: SlideLayoutMode = 'auto') {
     try {
-      const { slides, deckMeta, title } = buildExportSlides(layoutMode)
-      const prs = await slidesToPptx(slides, deckMeta, title)
-      const fileStem = safeDownloadName(title) || 'kira-slides'
-      if (isTauriRuntime()) {
-        const base64 = (await prs.write({ outputType: 'base64' })) as string
-        const exportedPath = await exportNativeSlideshowPptx(base64, fileStem, projectPackage?.path)
-        setSlideshowStatus(exportedPath ? 'PowerPoint exported' : 'Export canceled')
-      } else {
-        await prs.writeFile({ fileName: `${fileStem}.pptx` })
-        setSlideshowStatus('PowerPoint downloaded')
-      }
+      const { result, missingImages } = await writeSlideshowPptx(layoutMode)
+      if (result === 'canceled') setSlideshowStatus('Export canceled')
+      else setSlideshowStatus(`${result === 'exported' ? 'PowerPoint exported' : 'PowerPoint downloaded'}${pptxMissingImagesNote(missingImages)}`)
     } catch (error) {
-      console.error('PPTX export failed', error)
-      setSlideshowStatus('PowerPoint export failed')
+      setSlideshowStatus(pptxExportFailureStatus(error))
     }
   }
 
@@ -5845,16 +5876,29 @@ function FileWorkspace({
     setSlideshowStatus('Saved HTML. Open it and print to PDF.')
   }
 
+  // The tab is already open by the time the file exists, so the status has to
+  // say plainly when there is nothing to import.
+  async function exportPptxForImport(layoutMode: SlideLayoutMode, importHint: string) {
+    try {
+      const { result, missingImages } = await writeSlideshowPptx(layoutMode)
+      if (result === 'canceled') {
+        setSlideshowStatus('Export canceled, so there is no .pptx to import')
+        return
+      }
+      setSlideshowStatus(`PPTX ready${pptxMissingImagesNote(missingImages)}. ${importHint}`)
+    } catch (error) {
+      setSlideshowStatus(`${pptxExportFailureStatus(error)}. There is no .pptx to import`)
+    }
+  }
+
   async function exportSlidesToGoogleSlides(layoutMode: SlideLayoutMode = 'auto') {
     window.open('https://docs.google.com/presentation/u/0/create', '_blank', 'noopener,noreferrer')
-    await exportSlideshowPptx(layoutMode)
-    setSlideshowStatus('PPTX ready. In Google Slides use File ▸ Import slides.')
+    await exportPptxForImport(layoutMode, 'In Google Slides use File ▸ Import slides.')
   }
 
   async function exportSlidesToCanva(layoutMode: SlideLayoutMode = 'auto') {
     window.open('https://www.canva.com/design?create&type=Presentation', '_blank', 'noopener,noreferrer')
-    await exportSlideshowPptx(layoutMode)
-    setSlideshowStatus('PPTX ready. In Canva use Upload ▸ your .pptx file.')
+    await exportPptxForImport(layoutMode, 'In Canva use Upload ▸ your .pptx file.')
   }
 
   function toggleReferenceSelection(imageId: string) {
@@ -6496,9 +6540,9 @@ function FileWorkspace({
         />
         <section className="content-region" data-reflow={activeView === 'Outline' || activeView === 'Slides' ? 'true' : undefined}>
           <div className="view-region">
-            {activeView === 'Canvas' && (
+            {(activeView === 'Canvas' || activeView === 'Slides') && (
               <div className={isCanvasNoticeVisible ? 'canvas-notice is-visible' : 'canvas-notice'} role="status">
-                {libraryStatus}
+                {canvasNoticeText}
               </div>
             )}
             {activeView === 'Outline' ? (
@@ -17832,9 +17876,29 @@ function pptxImageSlots(layout: SlideLayout['layout'], count: number): Array<{ x
   }))
 }
 
+// pptxgenjs takes an image either as `data` (base64) or as a `path` it fetches
+// itself while writing, where one image that cannot be fetched fails the whole
+// file. A reference's `thumb` is usually a remote URL, and a URL in `data` is
+// silently dropped (an empty ppt/media). So fetch here, once per image, and
+// hand pptxgenjs base64: an image that cannot be fetched costs one placeholder
+// and is counted, instead of the file.
+async function pptxImageData(thumb: string): Promise<string | null> {
+  try {
+    const response = await fetch(thumb, { signal: AbortSignal.timeout(15000) })
+    if (!response.ok) return null
+    const blob = await response.blob()
+    if (!blob.type.startsWith('image/')) return null
+    return await readFileAsDataUrl(blob)
+  } catch {
+    return null
+  }
+}
+
 async function slidesToPptx(slides: SlideLayout[], deckMeta: SlideDeckMeta, title: string) {
   const { default: PptxGenJs } = await import('pptxgenjs')
   const prs = new PptxGenJs()
+  // ShapeType hangs off the instance in pptxgenjs 4, not off the class.
+  const shapes = prs.ShapeType
   prs.defineLayout({ name: 'KIRA_WIDE', width: PPTX_W, height: PPTX_H })
   prs.layout = 'KIRA_WIDE'
   prs.author = 'KIRA'
@@ -17852,8 +17916,15 @@ async function slidesToPptx(slides: SlideLayout[], deckMeta: SlideDeckMeta, titl
     slide.background = { color: bg }
     slide.addText('No slides yet', { x: 0.5, y: 3.1, w: PPTX_W - 1, h: 1, fontSize: 40, bold: true, color: textMain, align: 'center' })
     slide.addText('Create ideas and link references to generate a slideshow.', { x: 0.5, y: 4.1, w: PPTX_W - 1, h: 0.6, fontSize: 16, color: textSoft, align: 'center' })
-    return prs
+    return { prs, missingImages: 0 }
   }
+
+  const imageSlotsBySlide = slides.map((slide) => (slide.layout === 'palette' && slide.palettes.length > 0) || (slide.layout === 'diagram' && slide.diagrams.length > 0) || slide.references.length === 0
+    ? []
+    : slide.references.slice(0, pptxImageSlots(slide.layout, slide.references.length).length))
+  const thumbs = [...new Set(imageSlotsBySlide.flat().map((reference) => reference.thumb).filter(Boolean))]
+  const resolved = new Map(await Promise.all(thumbs.map(async (thumb) => [thumb, await pptxImageData(thumb)] as const)))
+  let missingImages = 0
 
   slides.forEach((slide, index) => {
     const s = prs.addSlide()
@@ -17891,7 +17962,7 @@ async function slidesToPptx(slides: SlideLayout[], deckMeta: SlideDeckMeta, titl
       const palette = slide.palettes[0]
       const swatchW = (PPTX_W - 7.2) / Math.max(palette.colors.length, 1)
       palette.colors.forEach((color, swatchIndex) => {
-        s.addShape(PptxGenJs.ShapeType.rect, {
+        s.addShape(shapes.rect, {
           x: 6.7 + swatchIndex * swatchW,
           y: 2.4,
           w: swatchW,
@@ -17904,7 +17975,7 @@ async function slidesToPptx(slides: SlideLayout[], deckMeta: SlideDeckMeta, titl
     } else if (slide.layout === 'diagram' && slide.diagrams.length > 0) {
       slide.diagrams.slice(0, 2).forEach((diagram, diagramIndex) => {
         const y = 0.6 + diagramIndex * 3.3
-        s.addShape(PptxGenJs.ShapeType.roundRect, {
+        s.addShape(shapes.roundRect, {
           x: 6.7,
           y,
           w: PPTX_W - 7.2,
@@ -17921,10 +17992,12 @@ async function slidesToPptx(slides: SlideLayout[], deckMeta: SlideDeckMeta, titl
       slide.references.slice(0, slots.length).forEach((reference, refIndex) => {
         const slot = slots[refIndex]
         if (!slot) return
-        if (reference.thumb) {
-          s.addImage({ data: reference.thumb, x: slot.x, y: slot.y, w: slot.w, h: slot.h, sizing: { type: 'cover', w: slot.w, h: slot.h } })
+        const imageData = reference.thumb ? resolved.get(reference.thumb) : null
+        if (imageData) {
+          s.addImage({ data: imageData, x: slot.x, y: slot.y, w: slot.w, h: slot.h, sizing: { type: 'cover', w: slot.w, h: slot.h } })
         } else {
-          s.addShape(PptxGenJs.ShapeType.roundRect, {
+          if (reference.thumb) missingImages += 1
+          s.addShape(shapes.roundRect, {
             x: slot.x,
             y: slot.y,
             w: slot.w,
@@ -17940,7 +18013,7 @@ async function slidesToPptx(slides: SlideLayout[], deckMeta: SlideDeckMeta, titl
     if (slide.speakerNote) s.addNotes(slide.speakerNote)
   })
 
-  return prs
+  return { prs, missingImages }
 }
 
 function contactSheetToHtml(

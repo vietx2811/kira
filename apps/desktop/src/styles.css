@@ -6703,6 +6703,10 @@ button.palette-color-segment:focus-visible code {
   grid-template-rows: auto auto auto minmax(0, 1fr);
   min-width: 0;
   min-height: 0;
+  /* Without a bound height the shell grows to its content, .outline-list's own
+     overflow-y never engages, and the shell's overflow: hidden clips every
+     section past the first screen. .slideshow-shell sets the same. */
+  height: 100%;
   border-radius: var(--radius-3);
   background: var(--bg-canvas);
   overflow: hidden;
