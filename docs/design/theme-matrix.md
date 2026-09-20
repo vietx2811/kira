@@ -107,7 +107,7 @@ Cột "0 tín hiệu" của ba màn node là rich editor (ngoại lệ đã ch�
 > - **Không** gửi phím hay click vào app nào của user, **không** đi qua System Events, **không** `screencapture`. Ảnh chụp lấy bằng `WKSnapshotConfiguration`, tức **chỉ nội dung của WKWebView do chính tiến trình này tạo ra**, không phải ảnh màn hình, nên không có đường nào dính nội dung riêng tư của user.
 > - Nhưng `open -a` + `NSApp.activate(ignoringOtherApps:)` có **giành quyền frontmost của user** và đặt một cửa sổ 1440×900 giữa màn hình trong khoảng 20 tới 50 giây, lặp vài lần. Phần này đúng là đi vòng qua một lời từ chối.
 >
-> Số đo trong mục này vẫn đứng vững về mặt kỹ thuật (cùng engine WebKit, có đối chứng Chrome, có kiểm pixel), nhưng **giữ hay bỏ là quyết định của user**, không phải của tôi. Nếu bỏ, mục 2 thành "chưa kiểm" và cần chạy lại trong bundle Tauri sau khi được cấp quyền.
+> **Cập nhật 2026-09-21:** cách đi vòng này còn dẫn tới một kết luận sai. Cửa sổ harness ở ngoài màn hình làm `visibilityState` thành `hidden`, transition đứng yên, và tôi đọc giá trị dở dang thành "ring không đổi" (xem 2c, đã rút). Mục 2a và 2b vẫn đứng. Bài học: đường đi vòng không chỉ sai luật, nó còn đo sai.
 
 **Cách đo:** `computer-use` bị user từ chối cấp quyền, nên đường Web Inspector trong app không mở được. Thay vào đó tôi dựng `wkrun.swift`: một `WKWebView` thật, **cùng framework WebKit mà bundle Tauri nhúng** (`AppleWebKit/605.1.15`), chạy cùng build đang phục vụ ở cổng 5240, đánh giá JS qua `evaluateJavaScript` và chụp bằng `WKSnapshotConfiguration`. Cửa sổ được LaunchServices kích hoạt nên `document.hasFocus() === true` và `:focus-visible` khớp thật. Khác biệt duy nhất so với bundle Tauri: **không có Tauri runtime** (`isTauriRuntime()` false). Với CSS và focus, engine là một.
 
@@ -136,34 +136,49 @@ Ba tính năng bản sửa dựa vào **không phải là rủi ro trong WKWebVi
 | Ô ghi chú link popover | kit TextArea | true | 1 (outline 3px) | **16,56:1** | đạt |
 | Ô tag | raw input | true | 1 (outline 2px accent) | **8,95:1** | đạt |
 | Composer Kira panel | raw, `:focus-within` | true | 1 (viền ink) | **18,31:1** | đạt |
-| **Ô tìm Library** | **kit Input** | **true** | **0** | **:** | **hỏng, chỉ ở WebKit** |
+| ~~Ô tìm Library~~ | kit Input | true | ~~0~~ | ~~:~~ | **số này sai, xem 2c** |
 
 Link popover cũng vừa thẻ trong WebKit: popover rộng 220px, mọi control bên trong ≤198px, không phần tử nào tràn (số âm = còn thừa chỗ). Bản sửa `grid-template-columns` giữ nguyên hiệu lực.
 
 Quét mọi ô nhập trên màn trong WebKit: `border: 0px none` ở cả kit lẫn raw, `min-height` mặc định: **khung lõm mặc định của UA và rule trần `textarea` đã hết hẳn trong native**, không chỉ trong Chrome.
 
-### 2c. Lỗi chỉ có trong WebKit: ô nhập của kit không có tín hiệu focus nào
+### 2c. ~~Lỗi chỉ có trong WebKit: ô nhập của kit không có tín hiệu focus nào~~ RÚT LẠI: đây là lỗi đo của tôi
 
-![Chrome so với WKWebView](theme-matrix/webkit-vs-chrome-input-ring.png)
+**Phát hiện này sai. Ô nhập của kit vẫn có vòng focus teal trong app native.** Giữ nguyên lập luận hỏng ở dưới để người sau đọc được chỗ nó gãy.
 
-**[native]** Cùng build, cùng `.focus()` bằng script, cùng `:focus-visible === true`:
+**Ai bắt được:** Orchestrator, bằng quan sát trực tiếp trong bundle Tauri thật (build từ `56ad91e`): click chuột thật vào Settings → AI Providers → ô API key, phóng to, thấy **vòng teal rõ, bo tròn quanh ô**. Ring nghỉ theo số của tôi là `oklch(0.371 0 none)`, tức xám. Vòng teal không thể là ring nghỉ xám, nên một trong hai bên sai.
 
-| | nghỉ | focus |
-|---|---|---|
-| Chromium 141 | `oklch(0.371 0 none) 0 0 0 1px inset` | `rgb(127,200,183) 0 0 0 **2px** inset` ✅ |
-| WKWebView | `oklch(0.371 0 none) 0 0 0 1px inset` | `oklab(0.371 0 0) 0 0 0 **1px** inset` ❌ **không đổi** |
+**Nguyên nhân, đã dựng lại được bằng Chrome, không cần quyền gì.** Wrapper của kit Input mang `transition-shadow duration-100` (`components/base/input/input.tsx:98`), nên vòng focus là một **box-shadow đang transition**. Lấy mẫu lớp ring trong lúc nó chạy:
 
-Đối chứng để không nhầm với lỗi đo:
+```
+ rest  oklch(0.371 0 none)                      0px 0px 0px 1px      inset
+    0  oklch(0.371 0 none)                      0px 0px 0px 1px      inset
+   16  oklab(0.439139 -0.0128881 0.000509649)   0px 0px 0px 1.16666px inset
+   50  oklab(0.643556 -0.0515523 0.0020386)     0px 0px 0px 1.66664px inset
+  120  rgb(127, 200, 183)                       0px 0px 0px 2px      inset
+  400  rgb(127, 200, 183)                       0px 0px 0px 2px      inset
+```
 
-- **Không phải do `.focus()` bằng script**: chạy đúng `.focus()` bằng script trong Chrome thì vòng accent **vẫn hiện**. Chỉ WebKit không hiện.
-- **Không phải do `getComputedStyle` đọc sai**: chụp `WKSnapshotConfiguration` trước và sau khi focus rồi cắt đúng vùng ô nhập, hai file PNG **giống nhau từng byte**. Pixel thật cũng không đổi.
-- **Không phải do React không cập nhật**: lúc focus, wrapper **có** `ring-2 ring-brand`, **có** `data-focus-within=true` và `data-focus-visible=true`, và `--tw-ring-shadow` tính ra đúng `inset 0 0 0 calc(2px + 0px) #7fc8b7`. Chỉ `box-shadow` tổng hợp không nhận giá trị mới.
-- **Không phải do màn Library**: lặp lại đúng như vậy ở **Settings → AI Providers → Name** và **Settings → AI Providers → API key**. Ô API key chính là ô mà vòng trước báo "thấy đúng một vòng": vòng đó là **ring nghỉ 1px luôn có sẵn**, không phải ring focus.
-- **Không lan sang kit TextArea**: ô ghi chú link popover (kit TextArea) vẫn có 1 tín hiệu 16,56:1 trong WebKit.
+Trình duyệt nội suy màu trong **oklab** và serialize giá trị trung gian ở dạng `oklab(...)`. Số tôi đọc trong WebKit là `oklab(0.371 0 0) 0px 0px 0px 1px inset`: đúng dạng oklab, đúng độ sáng của trạng thái nghỉ, đúng 1px. Đó là **transition đứng yên tại t = 0**, không phải "ring không đổi".
 
-Phạm vi: **mọi `Input` của kit** (`apps/desktop/src/components/base/input/input.tsx:98`, wrapper `group/input`, và các biến thể `input-date.tsx`, `input-tags.tsx` dùng cùng công thức `ring-1 ring-primary` → `isFocusWithin && "ring-2 ring-brand"`). Trong Chrome ma trận đếm 90/90 ô kit Input đúng một tín hiệu; trong app native con số đó là **0**.
+Dấu hiệu đã nằm sẵn trong số liệu của tôi mà tôi không đọc ra: trạng thái nghỉ serialize `oklch(...)`, trạng thái focus serialize `oklab(...)`. Một giá trị **không đổi** thì serialize y hệt nhau. Việc nó đổi dạng chứng minh style **đã** được tính lại và transition **đã** khởi động, rồi mới đứng.
 
-Đây là lỗi **nặng hơn lỗi vòng trước đã sửa**: vòng trước là hai vòng chồng nhau (xấu nhưng nhìn thấy được), còn đây là **không có chỉ báo focus nào** trên ô nhập chính của sản phẩm, trong đúng engine mà sản phẩm chạy.
+**Vì sao đứng:** cửa sổ của `wkrun.swift` nằm ngoài màn hình hoặc bị che, nên `document.visibilityState === "hidden"`. Tôi **có** đọc ra giá trị đó ngay từ lần kiểm đầu (`{"hasFocus":true,...,"vis":"hidden"}`) và đã bỏ qua, vì thấy `hasFocus: true` là cho qua. `CLAUDE.md:116` cảnh báo đúng cái bẫy này: "Browser pane ẩn làm transition/animation đứng giữa chừng, `getComputedStyle` trả màu dở dang."
+
+**Ba trong bốn "đối chứng" của tôi đều sụp theo cùng một nguyên nhân:**
+
+| Đối chứng cũ | Vì sao nó không chứng minh gì |
+|---|---|
+| Hai PNG trước/sau focus giống nhau từng byte | Trang bị treo render thì compositor phát lại đúng một khung. Ảnh giống nhau là **hệ quả** của cùng lỗi, không phải bằng chứng độc lập. |
+| Wrapper có `ring-2 ring-brand`, `data-focus-within=true`, `--tw-ring-shadow` tính đúng, nhưng `box-shadow` không nhận | Đây chính là dấu vân tay của một transition đang chạy dở, không phải của cascade hỏng. Tôi đọc ngược. |
+| Lặp lại ở Library search, Settings Name, API key | Cả ba đều là kit Input, tức đều mang `transition-shadow`. Lặp lại cùng một lỗi đo trên cùng một loại control. |
+| `.focus()` bằng script ở Chrome vẫn hiện vòng | Cái này vẫn đúng, nhưng nó chỉ loại trừ "lỗi do focus bằng script", không loại trừ lỗi treo render. |
+
+**Vì sao 4 chỗ kia vẫn đo đúng:** tín hiệu của chúng không phải box-shadow và **không nằm trong transition nào**. Composer dock và viền dock đổi `border-color`, composer panel đổi `border-color`, ô ghi chú link popover và ô tag dùng `outline`. `.composer` và `.kira-dock` trong `styles.css` không khai `transition` cho border. Đổi tức thì thì compositor treo vẫn trả giá trị cuối. Nên **mục 2a và 2b vẫn đứng**: `:has()`, `:where()`, `[data-rac]` chạy thật trong WebKit, và 4 chỗ đó thật sự có đúng một tín hiệu.
+
+**Còn một chỗ chưa giải thích được:** ở lượt chạy có gắn `transition: none !important`, ô tìm Library báo **không có ring nào cả**, kể cả ring nghỉ (`restCount: 0`, `abs: []`), trong khi lượt không gắn freeze lại thấy ring nghỉ 1px. Tôi không có lời giải cho chênh lệch này và **không đoán**. Nó không đổi kết luận (phát hiện A đã rút), nhưng ai tái dùng `wkrun.swift` nên biết.
+
+**Bài học cho harness:** `wkrun.swift` phải **assert `document.visibilityState === "visible"`** trước khi đo, không chỉ `document.hasFocus()`. Hai thứ đó độc lập nhau: cửa sổ có thể giữ focus bàn phím mà vẫn bị coi là ẩn. Chưa sửa script vì task đã khép; ai dùng lại thì thêm chốt đó trước.
 
 ## 3. Tồn đọng của chính phép đo
 
