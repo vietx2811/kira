@@ -72,7 +72,13 @@ Mọi report kết thúc task chia 3 phần, theo thứ tự:
 5. **Bắt buộc tự `Read` lại ảnh trước khi gửi** để xác nhận sạch, không dính cửa sổ khác (Finder, System Settings, sidebar các session Claude khác) — full-screen capture khi cửa sổ KIRA không full màn hình đã từng dính nội dung nhạy cảm không liên quan, phải xoá ngay khi phát hiện.
 6. Dọn file tạm trong `/tmp` sau khi gửi xong.
 
-**Máy đang khoá màn hình:** `screencapture` trả ảnh đen, `app_screenshot` báo "audio/video capture failure", và `computer_batch` báo `loginwindow` đang ở trước. Không chụp được app native. Đường thay thế đã kiểm chứng: chạy Chrome headless có CDP rồi chụp ra file thật.
+**Màn hình khoá: kiểm trước, đừng khám phá giữa chừng.** Chạy `scripts/screen-ready.sh` **trước khi lập kế hoạch bất kỳ việc nào cần app native hoặc ảnh chụp màn hình**. Exit 0 là dùng được, exit 2 là không, và nó in sẵn cách xử lý. Phép kiểm quyết định là chụp thật một mẩu 320×64 rồi soi pixel (màn hình khoá chụp ra đen tuyền), nên nó đúng với cả khoá lẫn màn hình đã ngủ.
+
+Nguyên nhân gốc, để không phải dò lại: `keep_awake_while_working` của app Claude giữ `PreventUserIdleSystemSleep` nên máy không ngủ, **nhưng không giữ `PreventUserIdleDisplaySleep`**. Màn hình vẫn tắt theo `pmset displaysleep` (máy này đặt **5 phút**) và khoá đi theo. `scripts/screen-ready.sh --arm` giữ hộ 12 giờ bằng một assertion `caffeinate -d -i -u`, đúng cơ chế trình phát video dùng: **không đổi setting nào, không cần mật khẩu, tắt máy hoặc `--release` là hết**. Orchestrator arm một lần mỗi phiên làm việc dài; thread khác chỉ cần chạy bản không tham số để biết mình có làm được không.
+
+Không tự sửa `pmset displaysleep`, không đụng cài đặt khoá màn hình: đó là cài đặt bảo mật của user.
+
+**Khi exit 2 (không chụp được app native):** làm phần chạy được bằng Bash trước, báo cáo, **không ngồi chờ**. Giao diện kiểm được bằng trình duyệt thì không cần màn hình chút nào: chạy Chrome headless có CDP rồi chụp ra file thật.
 - `"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new --disable-gpu --remote-debugging-port=9333 --user-data-dir=<scratch>/chrome-profile --no-first-run about:blank &`
 - Node 22 có `WebSocket` sẵn, không cần cài gì: nối tới `webSocketDebuggerUrl` từ `http://127.0.0.1:9333/json/list`, rồi `Emulation.setDeviceMetricsOverride` (đặt `deviceScaleFactor: 2` cho ảnh nét), `Page.navigate`, `Runtime.evaluate` (`awaitPromise: true`) để bấm nút và gọi `window.__kiraDev.loadFixture(...)`, cuối cùng `Page.captureScreenshot` và ghi base64 ra file.
 - So sánh trước/sau: `git worktree add … --detach <sha cũ>`, symlink `node_modules` + `apps/desktop/node_modules`, chạy `npx vite --port <port khác>`, chụp cùng một kịch bản trên hai port.
@@ -80,7 +86,8 @@ Mọi report kết thúc task chia 3 phần, theo thứ tự:
 
 ## Verify
 
-0. **Việc UI phải kiểm bằng browser, không chỉ đọc code** (user chốt 2026-09-20). Mở app, thao tác thật vào control đang sửa, đo `getComputedStyle` và chụp lại. Riêng focus: `element.focus()` bằng script **không** kích hoạt `:focus-visible`, nên phải click hoặc Tab bằng phím thật rồi mới đo, và assert `el.matches(':focus-visible')`.
+0. **Cần app native hay ảnh chụp màn hình: chạy `scripts/screen-ready.sh` trước khi lập kế hoạch.** Exit 2 thì làm phần Bash trước rồi báo, đừng chờ. Xem mục "Màn hình khoá" ở trên.
+0b. **Việc UI phải kiểm bằng browser, không chỉ đọc code** (user chốt 2026-09-20). Mở app, thao tác thật vào control đang sửa, đo `getComputedStyle` và chụp lại. Riêng focus: `element.focus()` bằng script **không** kích hoạt `:focus-visible`, nên phải click hoặc Tab bằng phím thật rồi mới đo, và assert `el.matches(':focus-visible')`.
 1. **Kiểm đúng mục tiêu.** Kiểm chứng phát hiện trên **commit SHA lúc phát hiện**, không phải working tree (`git log -S "<chuỗi>"`, `git show <sha>`), và ghi SHA vào report. Trước khi tin kết quả test, **chứng minh app đang chạy đúng code định test** (vd probe của chính bạn có mặt). Browser preview **không có Tauri runtime**: đường native (AI provider, `osascript`, sidecar) phải test trong app thật.
 2. **"Không có" hay "0" chưa chứng minh là không có.** Kèm đối chứng cho thấy phép kiểm đọc được dữ liệu thật. Đừng đưa giá trị đang audit vào danh sách cho phép. Trong zsh viết `${VAR}:abc`, vì `$VAR:abc` bị hiểu là modifier. `grep -c` đếm **dòng**: CSS từ vite nằm trên một dòng, dùng `grep -o … | wc -l`.
 3. **Biết mình đang đo cái gì.**
