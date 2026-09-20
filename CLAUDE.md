@@ -72,6 +72,13 @@ Mọi report kết thúc task chia 3 phần, theo thứ tự:
 5. **Bắt buộc tự `Read` lại ảnh trước khi gửi** để xác nhận sạch, không dính cửa sổ khác (Finder, System Settings, sidebar các session Claude khác) — full-screen capture khi cửa sổ KIRA không full màn hình đã từng dính nội dung nhạy cảm không liên quan, phải xoá ngay khi phát hiện.
 6. Dọn file tạm trong `/tmp` sau khi gửi xong.
 
+**Quyền điều khiển app bị từ chối thì dừng, không đi vòng** (sự cố 2026-09-20). Một session QA bị user từ chối `request_access` cho KIRA, rồi dùng `osascript` / System Events gửi phím thay thế. Đường đó **không có chốt kiểm app nào đang ở trước**: sau `activate`, một cửa sổ khác của user nhảy lên trên, phím rơi vào đó, và `screencapture` dính nội dung riêng tư không liên quan dự án.
+- `request_access` hoặc `request_full_control` bị từ chối: **dừng phần việc native, báo cáo, hết**. Từ chối là câu trả lời, không phải chướng ngại cần vòng qua.
+- **Không dùng `osascript` / System Events để gửi phím hay click vào app**, kể cả khi đã được cấp quyền: dùng `computer_batch` của computer-use, vì nó kiểm app frontmost trước mỗi hành động. `osascript` vẫn dùng được cho việc đọc trạng thái và đổi kích thước cửa sổ.
+- Không bật, tắt hay đổi cài đặt trợ năng của user (VoiceOver, Zoom, Reduce Motion ở cấp hệ thống): giả lập bằng CDP `Emulation.setEmulatedMedia` trong trình duyệt thay vì đụng máy.
+- `screencapture` toàn màn hình chỉ dùng **sau khi** được cấp quyền, và **bắt buộc tự `Read` lại ảnh trước khi gửi đi bất cứ đâu**. Dính cửa sổ khác thì xoá ngay và báo trong report.
+- Brief giao việc **không được gợi ý đường đi vòng**. Brief ngày 2026-09-20 của Orchestrator có gợi ý `osascript ... key code 53` làm phép đối chứng: đó là chỉ dẫn sai, đã rút lại.
+
 **Màn hình khoá: kiểm trước, đừng khám phá giữa chừng.** Chạy `scripts/screen-ready.sh` **trước khi lập kế hoạch bất kỳ việc nào cần app native hoặc ảnh chụp màn hình**. Exit 0 là dùng được, exit 2 là không, và nó in sẵn cách xử lý. Phép kiểm quyết định là chụp thật một mẩu 320×64 rồi soi pixel (màn hình khoá chụp ra đen tuyền), nên nó đúng với cả khoá lẫn màn hình đã ngủ.
 
 Nguyên nhân gốc, để không phải dò lại: `keep_awake_while_working` của app Claude giữ `PreventUserIdleSystemSleep` nên máy không ngủ, **nhưng không giữ `PreventUserIdleDisplaySleep`**. Màn hình vẫn tắt theo `pmset displaysleep` (máy này đặt **5 phút**) và khoá đi theo. `scripts/screen-ready.sh --arm` giữ hộ 12 giờ bằng một assertion `caffeinate -d -i -u`, đúng cơ chế trình phát video dùng: **không đổi setting nào, không cần mật khẩu, tắt máy hoặc `--release` là hết**. Orchestrator arm một lần mỗi phiên làm việc dài; thread khác chỉ cần chạy bản không tham số để biết mình có làm được không.
