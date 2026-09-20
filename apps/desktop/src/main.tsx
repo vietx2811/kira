@@ -2089,6 +2089,7 @@ function FileWorkspace({
   onFileMetaChange,
   onRequestNewFile,
   onRequestOpenFile,
+  appNotice,
   onTransferNodeToFile,
   incomingTransfers,
   onTransfersConsumed,
@@ -2107,6 +2108,10 @@ function FileWorkspace({
   onFileMetaChange: (fileId: string, meta: { title: string; isDirty: boolean; path: string | null }) => void
   onRequestNewFile: () => void | Promise<void>
   onRequestOpenFile: () => void | Promise<void>
+  // A message from App()-level work (opening a file fails before any tab
+  // exists to report it), shown through this tab's own status pill. The
+  // object identity is the trigger, so the same text twice still shows twice.
+  appNotice: { text: string } | null
   onTransferNodeToFile: (targetFileId: string, payload: NodeTransferPayload) => void
   incomingTransfers: NodeTransferPayload[]
   onTransfersConsumed: () => void
@@ -2193,6 +2198,12 @@ function FileWorkspace({
     canvasNoticeTimerRef.current = window.setTimeout(() => setIsCanvasNoticeVisible(false), 2500)
     return () => window.clearTimeout(canvasNoticeTimerRef.current)
   }, [libraryStatus])
+  useEffect(() => {
+    if (!appNotice) return
+    setLibraryStatus('Ready')
+    const timer = window.setTimeout(() => setLibraryStatus(appNotice.text), 0)
+    return () => window.clearTimeout(timer)
+  }, [appNotice])
   const [outlineStatus, setOutlineStatus] = useState('Ready')
   const [slideshowStatus, setSlideshowStatus] = useState('Ready')
   const [linkCreationRelation, setLinkCreationRelation] = useState<Relation>('supports')
@@ -2669,10 +2680,10 @@ function FileWorkspace({
       },
       switchBranch(branchId: string) {
         const branch = versionState.branches.find((candidate) => candidate.id === branchId)
-        switchVersionBranch(branchId)
+        const switched = switchVersionBranch(branchId)
         return {
-          currentBranchId: branch?.id ?? versionState.currentBranchId,
-          currentVersionId: branch?.headVersionId ?? versionState.currentVersionId,
+          currentBranchId: switched ? branch?.id ?? versionState.currentBranchId : versionState.currentBranchId,
+          currentVersionId: switched ? branch?.headVersionId ?? versionState.currentVersionId : versionState.currentVersionId,
         }
       },
       renameFirstIdea(title: string) {
@@ -4062,8 +4073,7 @@ function FileWorkspace({
         return !keys.has(nodeSelectionKey({ kind: sourceKind, id: sourceId })) && !keys.has(nodeSelectionKey({ kind: targetKind, id: targetId }))
       }),
     )
-    const fallback = ideas.find((idea) => !idsByKind.get('idea')?.has(idea.id))
-    if (fallback) setSelection({ type: 'idea', id: fallback.id })
+    setSelection(selectionAfterDelete(Object.fromEntries(idsByKind) as Partial<Record<GraphNodeKind, Set<string>>>))
   }
 
   // Dragging a node onto another open tab's label hands it to that file: this
@@ -5391,14 +5401,29 @@ function FileWorkspace({
     setLibraryStatus(`${importedIdeas.length} diagram idea${importedIdeas.length === 1 ? '' : 's'} and ${importedLinks.length} link${importedLinks.length === 1 ? '' : 's'} imported`)
   }
 
+  // What to select once nodes are gone: the first idea, else the first node of
+  // any other kind, else the project itself. An empty board is valid (the app
+  // starts from one), so there is not always an idea to fall back to.
+  function selectionAfterDelete(gone: Partial<Record<GraphNodeKind, Set<string>>>): Selection {
+    const kept = <T extends { id: string }>(list: T[], kind: GraphNodeKind) => list.find((node) => !gone[kind]?.has(node.id))
+    const idea = kept(ideas, 'idea')
+    if (idea) return { type: 'idea', id: idea.id }
+    const image = kept(images, 'image')
+    if (image) return { type: 'image', id: image.id }
+    const palette = kept(palettes, 'palette')
+    if (palette) return { type: 'palette', id: palette.id }
+    const diagram = kept(diagrams, 'diagram')
+    if (diagram) return { type: 'diagram', id: diagram.id }
+    const placeholder = kept(placeholders, 'placeholder')
+    if (placeholder) return { type: 'placeholder', id: placeholder.id }
+    return { type: 'project' }
+  }
+
   function deleteIdea(ideaId: string) {
-    if (ideas.length <= 1) return
     pushCanvasHistory()
-    const nextIdeas = ideas.filter((idea) => idea.id !== ideaId)
-    setIdeas(nextIdeas)
+    setIdeas(ideas.filter((idea) => idea.id !== ideaId))
     setLinks((current) => current.filter((link) => !linkTouchesNode(link, 'idea', ideaId)))
-    const fallback = nextIdeas[0]
-    if (fallback) setSelection({ type: 'idea', id: fallback.id })
+    setSelection(selectionAfterDelete({ idea: new Set([ideaId]) }))
   }
 
   function deleteImage(imageId: string) {
@@ -5407,9 +5432,9 @@ function FileWorkspace({
     setImages(nextImages)
     setLinks((current) => current.filter((link) => !linkTouchesNode(link, 'image', imageId)))
     setPalettes((current) => current.filter((palette) => palette.sourceImageId !== imageId))
-    const fallbackIdea = ideas[0]
     const fallbackImage = nextImages[0]
-    setSelection(fallbackImage ? { type: 'image', id: fallbackImage.id } : { type: 'idea', id: fallbackIdea?.id ?? 'idea-ritual-tools' })
+    const removedPaletteIds = new Set(palettes.filter((palette) => palette.sourceImageId === imageId).map((palette) => palette.id))
+    setSelection(fallbackImage ? { type: 'image', id: fallbackImage.id } : selectionAfterDelete({ image: new Set([imageId]), palette: removedPaletteIds }))
   }
 
   function deletePalette(paletteId: string) {
@@ -5417,7 +5442,7 @@ function FileWorkspace({
     const nextPalettes = palettes.filter((palette) => palette.id !== paletteId)
     setPalettes(nextPalettes)
     setLinks((current) => current.filter((link) => !linkTouchesNode(link, 'palette', paletteId)))
-    setSelection(nextPalettes[0] ? { type: 'palette', id: nextPalettes[0].id } : { type: 'idea', id: ideas[0]?.id ?? 'idea-ritual-tools' })
+    setSelection(nextPalettes[0] ? { type: 'palette', id: nextPalettes[0].id } : selectionAfterDelete({ palette: new Set([paletteId]) }))
   }
 
   function deleteDiagram(diagramId: string) {
@@ -5425,10 +5450,8 @@ function FileWorkspace({
     if (!diagram) return
     pushCanvasHistory()
     const diagramIdeaIds = new Set(diagram.nodeIds)
-    const nextIdeas = ideas.filter((idea) => !diagramIdeaIds.has(idea.id))
-    const fallbackIdeas = nextIdeas.length > 0 ? nextIdeas : [createFallbackIdea()]
     setDiagrams((current) => current.filter((candidate) => candidate.id !== diagramId))
-    setIdeas(fallbackIdeas)
+    setIdeas(ideas.filter((idea) => !diagramIdeaIds.has(idea.id)))
     setLinks((current) =>
       current.filter(
         (link) =>
@@ -5438,7 +5461,7 @@ function FileWorkspace({
           !linkTouchesNode(link, 'diagram', diagramId),
       ),
     )
-    setSelection({ type: 'idea', id: fallbackIdeas[0].id })
+    setSelection(selectionAfterDelete({ idea: diagramIdeaIds, diagram: new Set([diagramId]) }))
   }
 
   function deletePlaceholder(placeholderId: string) {
@@ -5446,7 +5469,7 @@ function FileWorkspace({
     const nextPlaceholders = placeholders.filter((placeholder) => placeholder.id !== placeholderId)
     setPlaceholders(nextPlaceholders)
     setLinks((current) => current.filter((link) => !linkTouchesNode(link, 'placeholder', placeholderId)))
-    setSelection(nextPlaceholders[0] ? { type: 'placeholder', id: nextPlaceholders[0].id } : { type: 'idea', id: ideas[0]?.id ?? 'idea-ritual-tools' })
+    setSelection(nextPlaceholders[0] ? { type: 'placeholder', id: nextPlaceholders[0].id } : selectionAfterDelete({ placeholder: new Set([placeholderId]) }))
   }
 
   function deleteLink(linkId: string) {
@@ -5463,7 +5486,7 @@ function FileWorkspace({
 
   function requestIdeaDelete(ideaId: string) {
     const idea = ideas.find((candidate) => candidate.id === ideaId)
-    if (!idea || ideas.length <= 1) return
+    if (!idea) return
     setPendingDelete({ type: 'idea', id: idea.id, title: idea.title })
   }
 
@@ -5909,7 +5932,10 @@ function FileWorkspace({
     if (!record) return
     try {
       const parsed = JSON.parse(record.snapshotJson)
-      if (!isProjectSnapshot(parsed)) return
+      if (!isProjectSnapshot(parsed)) {
+        setLibraryStatus(`Restore failed: "${record.label}" is not a valid project`)
+        return
+      }
       const restoredSnapshot: ProjectSnapshot = {
         ...parsed,
         versionHistory: [],
@@ -5938,38 +5964,51 @@ function FileWorkspace({
     }
   }
 
-  function switchVersionBranch(branchId: string) {
+  // Returns whether the switch happened. A branch that has a saved head must
+  // check that head out or leave everything untouched: moving currentBranchId
+  // while the canvas still shows the old branch makes the next saved version
+  // overwrite the target branch with the wrong content.
+  function switchVersionBranch(branchId: string): boolean {
     const branch = versionState.branches.find((candidate) => candidate.id === branchId)
-    if (!branch) return
+    if (!branch) return false
     const nextVersionState: ProjectVersionState = {
       ...versionState,
       currentBranchId: branchId,
       currentVersionId: branch.headVersionId ?? versionState.currentVersionId,
     }
-    const headVersion = branch.headVersionId
-      ? versionHistory.find((candidate) => candidate.id === branch.headVersionId)
-      : undefined
 
-    if (headVersion) {
-      try {
-        const parsed = JSON.parse(headVersion.snapshotJson)
-        if (isProjectSnapshot(parsed)) {
-          applyProjectSnapshot({
-            ...parsed,
-            versionState: nextVersionState,
-            versionHistory,
-          })
-          setLibraryStatus(`Branch: ${branch.name}`)
-          return
-        }
-      } catch {
-        setLibraryStatus(`Branch checkout failed: ${branch.name}`)
-        return
-      }
+    // Never saved: nothing to check out, so only the pointer moves and the
+    // canvas becomes this branch's starting point.
+    if (!branch.headVersionId) {
+      setVersionState(nextVersionState)
+      setLibraryStatus(`Branch: ${branch.name}`)
+      return true
     }
 
-    setVersionState(nextVersionState)
-    setLibraryStatus(`Branch: ${branch.name}`)
+    const headVersion = versionHistory.find((candidate) => candidate.id === branch.headVersionId)
+    if (!headVersion) {
+      // History keeps only the newest versions, so an old branch's head can be gone.
+      setLibraryStatus(`Branch checkout failed: ${branch.name} (its saved version is no longer in history)`)
+      return false
+    }
+
+    try {
+      const parsed = JSON.parse(headVersion.snapshotJson)
+      if (!isProjectSnapshot(parsed)) {
+        setLibraryStatus(`Branch checkout failed: ${branch.name} (its saved version is not a valid project)`)
+        return false
+      }
+      applyProjectSnapshot({
+        ...parsed,
+        versionState: nextVersionState,
+        versionHistory,
+      })
+      setLibraryStatus(`Branch: ${branch.name}`)
+      return true
+    } catch {
+      setLibraryStatus(`Branch checkout failed: ${branch.name}`)
+      return false
+    }
   }
 
   function createVersionBranch(name: string) {
@@ -6068,14 +6107,21 @@ function FileWorkspace({
   function importProject(file: File) {
     const reader = new FileReader()
     reader.onload = () => {
+      let parsed: unknown
       try {
-        const parsed = JSON.parse(String(reader.result))
-        if (!isProjectSnapshot(parsed)) return
-        applyProjectSnapshot(parsed)
+        parsed = JSON.parse(String(reader.result))
       } catch {
+        setLibraryStatus(`Import failed: "${file.name}" is not valid JSON`)
         return
       }
+      if (!isProjectSnapshot(parsed)) {
+        setLibraryStatus(`Import failed: "${file.name}" is not a KIRA project, or was saved by an unsupported version`)
+        return
+      }
+      applyProjectSnapshot(parsed)
+      setLibraryStatus(`Imported ${file.name}`)
     }
+    reader.onerror = () => setLibraryStatus(`Import failed: could not read "${file.name}"`)
     reader.readAsText(file)
   }
 
@@ -6767,6 +6813,7 @@ function App() {
   const [files, setFiles] = useState<OpenFile[]>(() => [createUntitledFile(DEFAULT_FILE_ID)])
   const [activeFileId, setActiveFileId] = useState<string>(DEFAULT_FILE_ID)
   const [pendingCloseFileId, setPendingCloseFileId] = useState<string | null>(null)
+  const [appNotice, setAppNotice] = useState<{ text: string } | null>(null)
   const [showSplash, setShowSplash] = useState(true)
   // Lifted here (like `files`/`activeFileId`) because the toggle button
   // lives in the file-tab-bar row this component builds, while the panel's
@@ -6809,6 +6856,14 @@ function App() {
     }
     return handler
   }
+
+  // The message is handed to the active tab once and dropped, so switching
+  // tabs later does not replay it.
+  useEffect(() => {
+    if (!appNotice) return
+    const timer = window.setTimeout(() => setAppNotice(null), 300)
+    return () => window.clearTimeout(timer)
+  }, [appNotice])
 
   useEffect(() => {
     const timer = window.setTimeout(() => setShowSplash(false), 1050)
@@ -6878,7 +6933,14 @@ function App() {
       return
     }
 
-    const snapshot = await openNativeProjectPackage(selectedPath)
+    let snapshot: ProjectSnapshot | null
+    try {
+      snapshot = await openNativeProjectPackage(selectedPath)
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error)
+      setAppNotice({ text: `Could not open ${projectFileDisplayName(selectedPath)}: ${reason}` })
+      return
+    }
     if (!snapshot) return
 
     const id = makeFileId()
@@ -7099,6 +7161,7 @@ function App() {
           onFileMetaChange={handleFileMetaChange}
           onRequestNewFile={requestNewFile}
           onRequestOpenFile={requestOpenFile}
+          appNotice={file.id === activeFileId ? appNotice : null}
           onTransferNodeToFile={handleTransferNodeToFile}
           incomingTransfers={pendingTransfersByFile[file.id] ?? EMPTY_NODE_TRANSFERS}
           onTransfersConsumed={() => handleTransfersConsumed(file.id)}
@@ -13245,33 +13308,36 @@ function resolveSelection(
   placeholders: PlaceholderNode[],
   frames: FrameNode[],
 ) {
-  if (selection.type === 'project') {
-    return { kind: 'project' as const, heading: 'File', project, appearance }
-  }
+  const projectSelection = { kind: 'project' as const, heading: 'File', project, appearance }
+  if (selection.type === 'project') return projectSelection
 
+  // A selection can outlive its node (deleting the last one of a kind leaves
+  // nothing to fall back to), and an empty board is valid, so a missing node
+  // resolves to the project instead of an undefined record the panels would
+  // dereference.
   if (selection.type === 'idea') {
     const idea = ideas.find((candidate) => candidate.id === selection.id) ?? ideas[0]
-    return { kind: 'idea' as const, heading: 'Idea', idea }
+    return idea ? { kind: 'idea' as const, heading: 'Idea', idea } : projectSelection
   }
 
   if (selection.type === 'image') {
     const image = images.find((candidate) => candidate.id === selection.id) ?? images[0]
-    return { kind: 'image' as const, heading: 'Reference', image }
+    return image ? { kind: 'image' as const, heading: 'Reference', image } : projectSelection
   }
 
   if (selection.type === 'palette') {
     const palette = palettes.find((candidate) => candidate.id === selection.id) ?? palettes[0]
-    return { kind: 'palette' as const, heading: 'Palette', palette }
+    return palette ? { kind: 'palette' as const, heading: 'Palette', palette } : projectSelection
   }
 
   if (selection.type === 'diagram') {
     const diagram = diagrams.find((candidate) => candidate.id === selection.id) ?? diagrams[0]
-    return { kind: 'diagram' as const, heading: 'Diagram', diagram }
+    return diagram ? { kind: 'diagram' as const, heading: 'Diagram', diagram } : projectSelection
   }
 
   if (selection.type === 'placeholder') {
     const placeholder = placeholders.find((candidate) => candidate.id === selection.id) ?? placeholders[0]
-    return { kind: 'placeholder' as const, heading: 'Placeholder', placeholder }
+    return placeholder ? { kind: 'placeholder' as const, heading: 'Placeholder', placeholder } : projectSelection
   }
 
   if (selection.type === 'frame') {
@@ -16585,22 +16651,6 @@ function createBlankProjectSnapshot(): ProjectSnapshot {
   }
 }
 
-function createFallbackIdea(): Idea {
-  const timestamp = nowIso()
-  return {
-    id: `idea-${Date.now()}`,
-    title: 'Untitled idea',
-    content: 'Add a working note for this idea.',
-    status: 'thin',
-    x: 50,
-    y: 46,
-    importance: 1,
-    createdAt: timestamp,
-    addedAt: timestamp,
-    updatedAt: timestamp,
-  }
-}
-
 function createBenchmarkProjectSnapshot(referenceCount: number): ProjectSnapshot {
   const safeReferenceCount = Math.round(clamp(referenceCount, 12, 600))
   const ideaCount = safeReferenceCount >= 240 ? 8 : safeReferenceCount >= 120 ? 6 : 4
@@ -16784,8 +16834,10 @@ function isProjectSnapshot(value: unknown): value is ProjectSnapshot {
   const snapshot = value as Partial<ProjectSnapshot>
   const valid = (
     snapshot.version === 2 &&
+    // An empty board is a valid board: the desktop app starts from zero-state
+    // and a user can delete every idea. Requiring one here made such a file
+    // save fine and then refuse to open, silently.
     Array.isArray(snapshot.ideas) &&
-    snapshot.ideas.length > 0 &&
     Array.isArray(snapshot.images) &&
     Array.isArray(snapshot.palettes) &&
     Array.isArray(snapshot.diagrams) &&
@@ -17061,14 +17113,19 @@ async function openNativeProjectPackage(projectPath?: string) {
     projectPath ? 'open_project_package_at' : 'open_project_package',
     projectPath ? { projectPath } : undefined,
   )
+  // null means the user picked nothing (cancelled the dialog): the one case
+  // that is not an error. A package that came back but cannot be read throws,
+  // so the caller can say so instead of doing nothing.
   if (!snapshotJson) return null
 
+  let parsed: unknown
   try {
-    const parsed = JSON.parse(snapshotJson)
-    return isProjectSnapshot(parsed) ? parsed : null
+    parsed = JSON.parse(snapshotJson)
   } catch {
-    return null
+    throw new Error('the project data is damaged (not valid JSON)')
   }
+  if (!isProjectSnapshot(parsed)) throw new Error('this is not a KIRA project, or it was saved by an unsupported version')
+  return parsed
 }
 
 async function importNativeReferenceFolder(folderPath: string) {
