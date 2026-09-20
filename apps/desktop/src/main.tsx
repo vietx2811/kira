@@ -2099,6 +2099,9 @@ function FileWorkspace({
   pendingCloseFile,
   onCancelCloseFile,
   onConfirmCloseFile,
+  pendingQuitTitles,
+  onCancelQuit,
+  onConfirmQuit,
 }: {
   fileId: string
   isActive: boolean
@@ -2130,6 +2133,11 @@ function FileWorkspace({
   pendingCloseFile: OpenFile | null
   onCancelCloseFile: () => void
   onConfirmCloseFile: (fileId: string) => void
+  // Same dialog, for closing the whole window while tabs hold unsaved work:
+  // the titles of those tabs, or null when no quit is pending.
+  pendingQuitTitles: string[] | null
+  onCancelQuit: () => void
+  onConfirmQuit: () => void
 }) {
   const initialProject = useMemo(() => initialSnapshot ?? readProjectSnapshot(), [initialSnapshot])
   const lang = useLangStore((state) => state.lang)
@@ -6740,29 +6748,61 @@ function FileWorkspace({
         />
       )}
       <UiKitPortalHost className="kira-uikit uikit-passthrough-host">
-        <ModalOverlay isOpen={pendingCloseFile != null} onOpenChange={(isOpen) => !isOpen && onCancelCloseFile()} isDismissable>
+        <ModalOverlay
+          isOpen={pendingCloseFile != null || pendingQuitTitles != null}
+          onOpenChange={(isOpen) => {
+            if (isOpen) return
+            onCancelCloseFile()
+            onCancelQuit()
+          }}
+          isDismissable
+        >
           <Modal className="max-h-none bg-transparent shadow-none">
-            {pendingCloseFile && (
+            {pendingQuitTitles ? (
               <Dialog aria-labelledby="close-file-dialog-title" className="confirm-dialog" role="alertdialog">
                 <div>
-                  <h2 id="close-file-dialog-title">Close {pendingCloseFile.title}?</h2>
-                  <p>This file has unsaved changes. Closing the tab discards them.</p>
+                  <h2 id="close-file-dialog-title">Quit KIRA?</h2>
+                  <p>{quitDialogBody(pendingQuitTitles)}</p>
                 </div>
                 <div className="dialog-actions">
-                  <Button color="secondary" size="sm" onPress={onCancelCloseFile}>
+                  <Button color="secondary" size="sm" onPress={onCancelQuit}>
                     Cancel
                   </Button>
-                  <Button color="secondary-destructive" size="sm" onPress={() => onConfirmCloseFile(pendingCloseFile.id)}>
-                    Close without saving
+                  <Button color="secondary-destructive" size="sm" onPress={onConfirmQuit}>
+                    Quit without saving
                   </Button>
                 </div>
               </Dialog>
+            ) : (
+              pendingCloseFile && (
+                <Dialog aria-labelledby="close-file-dialog-title" className="confirm-dialog" role="alertdialog">
+                  <div>
+                    <h2 id="close-file-dialog-title">Close {pendingCloseFile.title}?</h2>
+                    <p>This file has unsaved changes. Closing the tab discards them.</p>
+                  </div>
+                  <div className="dialog-actions">
+                    <Button color="secondary" size="sm" onPress={onCancelCloseFile}>
+                      Cancel
+                    </Button>
+                    <Button color="secondary-destructive" size="sm" onPress={() => onConfirmCloseFile(pendingCloseFile.id)}>
+                      Close without saving
+                    </Button>
+                  </div>
+                </Dialog>
+              )
             )}
           </Modal>
         </ModalOverlay>
       </UiKitPortalHost>
     </main>
   )
+}
+
+function quitDialogBody(titles: string[]) {
+  const shown = titles.slice(0, 3).map((title) => `"${title}"`).join(', ')
+  const more = titles.length > 3 ? ` and ${titles.length - 3} more` : ''
+  const noun = titles.length === 1 ? 'A file has' : 'These files have'
+  return `${noun} unsaved changes: ${shown}${more}. Quitting discards them.`
 }
 
 type OpenFile = {
@@ -6814,6 +6854,12 @@ function App() {
   const [activeFileId, setActiveFileId] = useState<string>(DEFAULT_FILE_ID)
   const [pendingCloseFileId, setPendingCloseFileId] = useState<string | null>(null)
   const [appNotice, setAppNotice] = useState<{ text: string } | null>(null)
+  // Titles of the tabs that would lose unsaved work if the window closed now.
+  const [pendingQuitTitles, setPendingQuitTitles] = useState<string[] | null>(null)
+  // Set once the user has agreed to discard (or nothing is unsaved), so the
+  // close we then trigger ourselves is not intercepted a second time.
+  const allowWindowCloseRef = useRef(false)
+  const filesRef = useRef<OpenFile[]>([])
   const [showSplash, setShowSplash] = useState(true)
   // Lifted here (like `files`/`activeFileId`) because the toggle button
   // lives in the file-tab-bar row this component builds, while the panel's
@@ -6864,6 +6910,55 @@ function App() {
     const timer = window.setTimeout(() => setAppNotice(null), 300)
     return () => window.clearTimeout(timer)
   }, [appNotice])
+
+  filesRef.current = files
+
+  function closeWindowNow() {
+    allowWindowCloseRef.current = true
+    void getCurrentWindow().close().catch(() => {
+      // Closing failed: let the next attempt be intercepted again.
+      allowWindowCloseRef.current = false
+    })
+  }
+
+  // Leaving the app with unsaved tabs used to lose them without a word: only
+  // closing a single tab asked. Two ways out reach this. The red button and
+  // Cmd+W arrive as the window's close request. Cmd+Q does not: on macOS it is
+  // an app-level exit request, which the Rust side has to turn into the
+  // "kira://quit-requested" event this also listens for (until it does, Cmd+Q
+  // still quits without asking). Registering a close-request handler makes the
+  // Tauri API destroy the window itself once the handler lets it through, so
+  // the capability must grant core:window:allow-destroy.
+  useEffect(() => {
+    if (!isTauriRuntime()) return
+    let cancelled = false
+    const unlisteners: Array<() => void> = []
+    const track = (pending: Promise<() => void>) => {
+      void pending.then((unlisten) => (cancelled ? unlisten() : unlisteners.push(unlisten))).catch(() => undefined)
+    }
+
+    track(
+      getCurrentWindow().onCloseRequested((event) => {
+        if (allowWindowCloseRef.current) return
+        const unsaved = filesRef.current.filter((file) => file.isDirty)
+        if (unsaved.length === 0) return
+        event.preventDefault()
+        setPendingQuitTitles(unsaved.map((file) => file.title))
+      }),
+    )
+    track(
+      listen('kira://quit-requested', () => {
+        const unsaved = filesRef.current.filter((file) => file.isDirty)
+        if (unsaved.length === 0) closeWindowNow()
+        else setPendingQuitTitles(unsaved.map((file) => file.title))
+      }),
+    )
+
+    return () => {
+      cancelled = true
+      unlisteners.forEach((unlisten) => unlisten())
+    }
+  }, [])
 
   useEffect(() => {
     const timer = window.setTimeout(() => setShowSplash(false), 1050)
@@ -6972,7 +7067,9 @@ function App() {
       // this function still returns here, and leaving the state set would strand the
       // "Close without saving" dialog open with no way to dismiss it.
       setPendingCloseFileId((current) => (current === id ? null : current))
-      if (isTauriRuntime()) void getCurrentWindow().close()
+      // The user already chose to close this last tab, so the window close it
+      // triggers must not ask about the same unsaved changes again.
+      if (isTauriRuntime()) closeWindowNow()
       return
     }
     setFiles((current) => {
@@ -7171,6 +7268,12 @@ function App() {
           pendingCloseFile={pendingCloseFile}
           onCancelCloseFile={() => setPendingCloseFileId(null)}
           onConfirmCloseFile={closeFile}
+          pendingQuitTitles={pendingQuitTitles}
+          onCancelQuit={() => setPendingQuitTitles(null)}
+          onConfirmQuit={() => {
+            setPendingQuitTitles(null)
+            closeWindowNow()
+          }}
         />
       ))}
     </>
