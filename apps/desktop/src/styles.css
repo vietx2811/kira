@@ -3502,13 +3502,23 @@ button.mini-tags-more:focus-visible {
   outline: none;
 }
 
-/* Overrides the global :focus-visible ring (top of this file) — Notion
-   shows zero chrome change when you click into a text block, just the
-   caret. A boxed highlight around the paragraph the moment you start
-   typing was the one thing explicitly asked to go. */
-.node-rich-editor-content:focus-visible {
-  outline: none;
-  box-shadow: none;
+/* Focus signal for the node description editor (DESIGN.md §7, one control one
+   focus signal). The contenteditable itself stays outline-free; the wrapper is
+   the visible field, so it draws the same 2px inset ring the kit's Input and
+   TextArea draw on theirs (--accent-cyan, the token the kit ring and the global fallback outline both resolve to).
+   Side padding matches the kit fields' 12px, so the ring lines up with the
+   Notes and Source boxes below and the text with theirs. The vertical padding
+   is paid back by the equal negative margin, so the block keeps its height.
+   Only the editable overlay instance; the canvas face is read-only and never
+   focuses. */
+.node-rich-editor.is-overlay {
+  margin: -6px 0;
+  padding: 6px 12px;
+  border-radius: var(--radius-2);
+}
+
+.node-rich-editor.is-overlay:focus-within {
+  box-shadow: inset 0 0 0 2px var(--accent-cyan);
 }
 
 /* Canvas face, resting state: no cursor, no caret, no edit affordance —

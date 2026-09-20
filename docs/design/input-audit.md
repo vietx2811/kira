@@ -79,7 +79,7 @@ Không có ô nhập nào còn rule hover thủ công: hover của ô nhập kit
 
 ## Ngoại lệ và tồn đọng
 
-1. **Rich editor mô tả node** (`.node-rich-editor-content`, 7 lần đo): 0 tín hiệu focus. Đây là quyết định sản phẩm có sẵn trong `styles.css` ("Notion shows zero chrome, just the caret", user từng yêu cầu bỏ hộp quanh đoạn văn). **Không đổi**; nếu muốn theo đúng luật 3:1 thì cần user chốt lại.
+1. **Rich editor mô tả node** (`.node-rich-editor-content`, 7 lần đo): 0 tín hiệu focus. Đây là quyết định sản phẩm có sẵn trong `styles.css` ("Notion shows zero chrome, just the caret", user từng yêu cầu bỏ hộp quanh đoạn văn). **Không đổi**; nếu muốn theo đúng luật 3:1 thì cần user chốt lại. **Đã đổi 2026-09-20**: user bác ngoại lệ Notion; wrapper `.node-rich-editor.is-overlay` nay vẽ ring 2px inset `--accent-cyan` (cùng token với Input/TextArea kit) khi `:focus-within`, contenteditable vẫn không outline.
 2. **Nút mở "Provider type" (Settings > AI Providers)** không focus được trong Chrome headless (nằm trong `<details>` đang đóng); chưa đo trên tổ hợp mở. Không có lý do nghi ngờ khác với các Select kit còn lại.
 3. **3 hover chưa kết luận** (bảng trên) cần mở đúng trạng thái để đo; chưa xoá gì.
 4. **Chưa đo trong app native**: Chrome headless, không phải WKWebView. `:has()` và `:where()` đều có trong WKWebView hiện hành, nhưng chưa xác nhận bằng bundle debug.

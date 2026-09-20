@@ -77,3 +77,34 @@
     border: 0;
   }
 }
+
+/* Giảm chuyển động cho phần tử của kit. 4 khối prefers-reduced-motion trong
+   styles.css chỉ phủ control tự viết; animate-in/animate-out (overlay, popover,
+   tooltip) và `transition duration-*` của kit không nằm trong đó.
+   - `!important` là bắt buộc: khai trong @layer base thì utility của Tailwind
+     (layer utilities) thắng mọi khai báo thường, nhưng `!important` đảo thứ tự
+     layer nên layer base thắng.
+   - 0.01ms thay vì `none`: react-aria đợi animationend / transitionend để gỡ
+     overlay đang thoát, `none` có thể để nó kẹt lại trong DOM.
+   - Chọn theo `data-rac` (mọi phần tử react-aria, kể cả popover portal ra body
+     ngoài .kira-uikit) và .kira-uikit.
+   - Animation chỉ chạm enter/exit. Vòng quay tải (`animate-spin`) là tín hiệu
+     "đang chạy", giữ nguyên, giống cách .kira-mark.is-thinking chỉ đổi sang
+     nhịp mờ chứ không tắt hẳn. */
+@layer base {
+  @media (prefers-reduced-motion: reduce) {
+    .kira-uikit,
+    .kira-uikit *,
+    [data-rac],
+    [data-rac] * {
+      transition-duration: 0.01ms !important;
+      transition-delay: 0s !important;
+    }
+
+    .animate-in,
+    .animate-out {
+      animation-duration: 0.01ms !important;
+      animation-delay: 0s !important;
+    }
+  }
+}
