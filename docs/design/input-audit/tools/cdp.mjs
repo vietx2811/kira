@@ -33,6 +33,19 @@ export async function launch(port = 9377, width = 1440, height = 900) {
     if (r.result?.exceptionDetails) return { __error: r.result.exceptionDetails.exception?.description || r.result.exceptionDetails.text }
     return r.result?.result?.value
   }
+  // Prefer this in new scripts. `evaluate` returns `{__error}` instead of
+  // throwing, so a page-side exception reads as an ordinary value: on
+  // 2026-09-21 a script injected a Node expression into a page string, every
+  // click silently failed, and five runs measured the same slide while looking
+  // like five clean results. Left alongside `evaluate` rather than replacing
+  // it, so existing scripts keep their behaviour.
+  const evaluateStrict = async (expression) => {
+    const value = await evaluate(expression)
+    if (value && typeof value === 'object' && '__error' in value) {
+      throw new Error(`page evaluate failed: ${value.__error}\n  expression: ${String(expression).slice(0, 200)}`)
+    }
+    return value
+  }
   await send('Runtime.enable'); await send('Page.enable'); await send('Emulation.setFocusEmulationEnabled', { enabled: true })
   await send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 2, mobile: false })
   const click = async (x, y) => {
@@ -42,5 +55,5 @@ export async function launch(port = 9377, width = 1440, height = 900) {
   }
   const shot = async (clip) => (await send('Page.captureScreenshot', { format: 'png', ...(clip ? { clip: { ...clip, scale: 1 } } : {}) })).result.data
   const close = () => { try { ws.close() } catch {} ; chrome.kill(); process.exit(0) }
-  return { send, evaluate, click, shot, sleep, close }
+  return { send, evaluate, evaluateStrict, click, shot, sleep, close }
 }
