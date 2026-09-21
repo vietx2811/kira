@@ -91,7 +91,11 @@ Nguyên nhân gốc, để không phải dò lại: `keep_awake_while_working` c
 
 Không tự sửa `pmset displaysleep`, không đụng cài đặt khoá màn hình: đó là cài đặt bảo mật của user.
 
-**Khi exit 2 (không chụp được app native):** làm phần chạy được bằng Bash trước, báo cáo, **không ngồi chờ**. Giao diện kiểm được bằng trình duyệt thì không cần màn hình chút nào: chạy Chrome headless có CDP rồi chụp ra file thật.
+**Khi exit 2 (không chụp được app native):** làm phần chạy được bằng Bash trước, báo cáo, **không ngồi chờ**. Giao diện kiểm được bằng trình duyệt thì không cần màn hình chút nào: chạy Chrome headless có CDP.
+
+**Đừng tự dựng lại harness CDP: repo đã có `docs/design/input-audit/tools/cdp.mjs`.** Nó lo sẵn spawn Chrome, `Runtime.evaluate`, click chuột thật, chụp màn hình, và đặt tên profile theo PID để `pkill` của bạn không trúng session khác. **Dùng `evaluateStrict`, không dùng `evaluate`**: bản cũ trả `{__error}` thay vì ném, nên một exception trong trang đọc ra như một giá trị bình thường. Hai session đã tự viết lại harness này trong cùng một ngày và **cả hai bản tự viết đều mắc đúng lỗi nuốt lỗi đó**, vì `CLAUDE.md` chưa từng trỏ tới file có sẵn. Thiếu gì thì thêm vào file dùng chung, đừng viết bản thứ ba.
+
+Công thức dựng tay, chỉ dùng khi cần thứ harness không có:
 - `"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new --disable-gpu --remote-debugging-port=9333 --user-data-dir=<scratch>/chrome-profile --no-first-run about:blank &`
 - Node 22 có `WebSocket` sẵn, không cần cài gì: nối tới `webSocketDebuggerUrl` từ `http://127.0.0.1:9333/json/list`, rồi `Emulation.setDeviceMetricsOverride` (đặt `deviceScaleFactor: 2` cho ảnh nét), `Page.navigate`, `Runtime.evaluate` (`awaitPromise: true`) để bấm nút và gọi `window.__kiraDev.loadFixture(...)`, cuối cùng `Page.captureScreenshot` và ghi base64 ra file.
 - So sánh trước/sau: `git worktree add … --detach <sha cũ>`, symlink `node_modules` + `apps/desktop/node_modules`, chạy `npx vite --port <port khác>`, chụp cùng một kịch bản trên hai port.
