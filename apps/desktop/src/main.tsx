@@ -7,6 +7,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { open, save } from '@tauri-apps/plugin-dialog'
+import { FocusScope } from 'react-aria'
 import { useEditor, EditorContent, type Editor } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import TiptapLink from '@tiptap/extension-link'
@@ -2615,13 +2616,18 @@ function FileWorkspace({
         return
       }
 
-      if (isCreateIdeaShortcut(event) && !isEditableEventTarget(event.target)) {
+      // History and save stay global (the node details overlay edits canvas
+      // history and its buttons take focus); shortcuts that create, delete,
+      // duplicate or switch tools on the canvas do not run behind a modal.
+      const modalOpen = isModalOpen()
+
+      if (!modalOpen && isCreateIdeaShortcut(event) && !isEditableEventTarget(event.target)) {
         event.preventDefault()
         createIdea({ focusTitle: true })
         return
       }
 
-      if (isDeleteShortcut(event) && !isEditableEventTarget(event.target)) {
+      if (!modalOpen && isDeleteShortcut(event) && !isEditableEventTarget(event.target)) {
         event.preventDefault()
         deleteCurrentSelection()
         return
@@ -2645,13 +2651,13 @@ function FileWorkspace({
         return
       }
 
-      if (isDuplicateShortcut(event) && !isEditableEventTarget(event.target)) {
+      if (!modalOpen && isDuplicateShortcut(event) && !isEditableEventTarget(event.target)) {
         event.preventDefault()
         duplicateCurrentSelection()
         return
       }
 
-      if (isCreateLinkShortcut(event) && !isEditableEventTarget(event.target)) {
+      if (!modalOpen && isCreateLinkShortcut(event) && !isEditableEventTarget(event.target)) {
         event.preventDefault()
         setActiveView('Canvas')
         setPendingLinkSource(null)
@@ -7170,6 +7176,7 @@ function App() {
   // Chrome all use for the same visual tab-strip metaphor this borrows.
   useEffect(() => {
     function handleTabBarKeydown(event: KeyboardEvent) {
+      if (isModalOpen()) return
       const key = event.key.toLowerCase()
       if ((event.metaKey || event.ctrlKey) && !event.altKey && key === 'w') {
         event.preventDefault()
@@ -7369,6 +7376,11 @@ function OnboardingOverlay({
 
   return (
     <div className="onboarding-backdrop" role="dialog" aria-modal="true" aria-label="KIRA onboarding">
+      {/* React Aria's FocusScope, the same mechanism the kit's Modal gives Settings:
+          Tab cycles inside the dialog instead of walking into the app behind the
+          opaque backdrop, and focus is restored to whatever had it on close. The
+          primary CTA takes initial focus. */}
+      <FocusScope contain restoreFocus>
       <section className="onboarding-shell">
         <Button className="onboarding-close p-0!" color="tertiary" size="xs" iconLeading={X} aria-label="Close onboarding" onPress={onClose} />
 
@@ -7387,7 +7399,7 @@ function OnboardingOverlay({
         </div>
 
         <div className="onboarding-steps">
-          <Button color="secondary" size="sm" className="onboarding-primary-cta" onPress={() => { onWelcomeOpen(); onClose() }}>
+          <Button color="secondary" size="sm" autoFocus className="onboarding-primary-cta" onPress={() => { onWelcomeOpen(); onClose() }}>
             <span className="onboarding-step-icon"><Layers size={17} aria-hidden="true" /></span>
             <span className="onboarding-cta-body">
               <strong>Open the guided board</strong>
@@ -7425,6 +7437,7 @@ function OnboardingOverlay({
           </Button>
         </footer>
       </section>
+      </FocusScope>
     </div>
   )
 }
@@ -8245,6 +8258,7 @@ function GraphCanvas({
 
   useEffect(() => {
     function handleCanvasKeydown(event: KeyboardEvent) {
+      if (isModalOpen()) return
       const key = event.key.toLowerCase()
       // Context menus close on Escape even while a node's rich text holds the
       // caret: right-clicking a node focuses its editor, so the editable guard
@@ -8320,7 +8334,7 @@ function GraphCanvas({
 
     function handleKeyDown(event: KeyboardEvent) {
       if (event.code !== 'Space' || event.repeat) return
-      if (blocksSpacePan(event.target)) return
+      if (isModalOpen() || blocksSpacePan(event.target)) return
       event.preventDefault()
       spacePanArmedRef.current = true
       setIsSpacePanArmed(true)
@@ -17253,6 +17267,16 @@ function isDuplicateShortcut(event: KeyboardEvent) {
 
 function isCreateLinkShortcut(event: KeyboardEvent) {
   return !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey && event.key.toLowerCase() === 'l'
+}
+
+// True while a modal surface covers the app: onboarding, Settings, a confirm
+// dialog, the node details overlay. The window-level shortcut handlers sit
+// behind it and would otherwise keep driving the canvas (zoom, tool switch,
+// delete) from keys pressed inside the dialog. Modal means aria-modal="true" or
+// a kit dialog (role dialog/alertdialog without aria-modal="false": the Kira dock
+// is a non-modal role="dialog" and must not count).
+function isModalOpen() {
+  return document.querySelector('[aria-modal="true"], [role="alertdialog"], [role="dialog"]:not([aria-modal="false"])') !== null
 }
 
 function isEditableEventTarget(target: EventTarget | null) {
