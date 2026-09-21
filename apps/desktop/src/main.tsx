@@ -2089,6 +2089,7 @@ function FileWorkspace({
   onFileMetaChange,
   onRequestNewFile,
   onRequestOpenFile,
+  appNotice,
   onTransferNodeToFile,
   incomingTransfers,
   onTransfersConsumed,
@@ -2098,6 +2099,9 @@ function FileWorkspace({
   pendingCloseFile,
   onCancelCloseFile,
   onConfirmCloseFile,
+  pendingQuitTitles,
+  onCancelQuit,
+  onConfirmQuit,
 }: {
   fileId: string
   isActive: boolean
@@ -2107,6 +2111,10 @@ function FileWorkspace({
   onFileMetaChange: (fileId: string, meta: { title: string; isDirty: boolean; path: string | null }) => void
   onRequestNewFile: () => void | Promise<void>
   onRequestOpenFile: () => void | Promise<void>
+  // A message from App()-level work (opening a file fails before any tab
+  // exists to report it), shown through this tab's own status pill. The
+  // object identity is the trigger, so the same text twice still shows twice.
+  appNotice: { text: string } | null
   onTransferNodeToFile: (targetFileId: string, payload: NodeTransferPayload) => void
   incomingTransfers: NodeTransferPayload[]
   onTransfersConsumed: () => void
@@ -2125,6 +2133,11 @@ function FileWorkspace({
   pendingCloseFile: OpenFile | null
   onCancelCloseFile: () => void
   onConfirmCloseFile: (fileId: string) => void
+  // Same dialog, for closing the whole window while tabs hold unsaved work:
+  // the titles of those tabs, or null when no quit is pending.
+  pendingQuitTitles: string[] | null
+  onCancelQuit: () => void
+  onConfirmQuit: () => void
 }) {
   const initialProject = useMemo(() => initialSnapshot ?? readProjectSnapshot(), [initialSnapshot])
   const lang = useLangStore((state) => state.lang)
@@ -2186,15 +2199,35 @@ function FileWorkspace({
 
   // Surfaces libraryStatus as a transient pill over the canvas so drop
   // feedback is visible even when the (collapsible) Library panel is closed.
-  useEffect(() => {
-    if (libraryStatus === 'Ready') return
+  // Long messages (the export hints) stay up long enough to read.
+  const [canvasNoticeText, setCanvasNoticeText] = useState('')
+  const showCanvasNotice = (message: string) => {
+    setCanvasNoticeText(message)
     setIsCanvasNoticeVisible(true)
     window.clearTimeout(canvasNoticeTimerRef.current)
-    canvasNoticeTimerRef.current = window.setTimeout(() => setIsCanvasNoticeVisible(false), 2500)
+    canvasNoticeTimerRef.current = window.setTimeout(() => setIsCanvasNoticeVisible(false), Math.min(8000, Math.max(2500, 1500 + message.length * 45)))
     return () => window.clearTimeout(canvasNoticeTimerRef.current)
+  }
+  useEffect(() => {
+    if (libraryStatus === 'Ready') return
+    return showCanvasNotice(libraryStatus)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [libraryStatus])
+  useEffect(() => {
+    if (!appNotice) return
+    setLibraryStatus('Ready')
+    const timer = window.setTimeout(() => setLibraryStatus(appNotice.text), 0)
+    return () => window.clearTimeout(timer)
+  }, [appNotice])
   const [outlineStatus, setOutlineStatus] = useState('Ready')
   const [slideshowStatus, setSlideshowStatus] = useState('Ready')
+  // SlideshowView was handed this text and never drew it, so a PowerPoint
+  // export could succeed, fail or be cancelled without the user seeing a word.
+  useEffect(() => {
+    if (slideshowStatus === 'Ready') return
+    return showCanvasNotice(slideshowStatus)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slideshowStatus])
   const [linkCreationRelation, setLinkCreationRelation] = useState<Relation>('supports')
   const [activeCanvasTool, setActiveCanvasTool] = useState<CanvasTool>('select')
   const [pendingLinkSource, setPendingLinkSource] = useState<Pick<GraphNodeRef, 'kind' | 'id'> | null>(null)
@@ -2669,10 +2702,10 @@ function FileWorkspace({
       },
       switchBranch(branchId: string) {
         const branch = versionState.branches.find((candidate) => candidate.id === branchId)
-        switchVersionBranch(branchId)
+        const switched = switchVersionBranch(branchId)
         return {
-          currentBranchId: branch?.id ?? versionState.currentBranchId,
-          currentVersionId: branch?.headVersionId ?? versionState.currentVersionId,
+          currentBranchId: switched ? branch?.id ?? versionState.currentBranchId : versionState.currentBranchId,
+          currentVersionId: switched ? branch?.headVersionId ?? versionState.currentVersionId : versionState.currentVersionId,
         }
       },
       renameFirstIdea(title: string) {
@@ -4062,8 +4095,7 @@ function FileWorkspace({
         return !keys.has(nodeSelectionKey({ kind: sourceKind, id: sourceId })) && !keys.has(nodeSelectionKey({ kind: targetKind, id: targetId }))
       }),
     )
-    const fallback = ideas.find((idea) => !idsByKind.get('idea')?.has(idea.id))
-    if (fallback) setSelection({ type: 'idea', id: fallback.id })
+    setSelection(selectionAfterDelete(Object.fromEntries(idsByKind) as Partial<Record<GraphNodeKind, Set<string>>>))
   }
 
   // Dragging a node onto another open tab's label hands it to that file: this
@@ -5391,14 +5423,29 @@ function FileWorkspace({
     setLibraryStatus(`${importedIdeas.length} diagram idea${importedIdeas.length === 1 ? '' : 's'} and ${importedLinks.length} link${importedLinks.length === 1 ? '' : 's'} imported`)
   }
 
+  // What to select once nodes are gone: the first idea, else the first node of
+  // any other kind, else the project itself. An empty board is valid (the app
+  // starts from one), so there is not always an idea to fall back to.
+  function selectionAfterDelete(gone: Partial<Record<GraphNodeKind, Set<string>>>): Selection {
+    const kept = <T extends { id: string }>(list: T[], kind: GraphNodeKind) => list.find((node) => !gone[kind]?.has(node.id))
+    const idea = kept(ideas, 'idea')
+    if (idea) return { type: 'idea', id: idea.id }
+    const image = kept(images, 'image')
+    if (image) return { type: 'image', id: image.id }
+    const palette = kept(palettes, 'palette')
+    if (palette) return { type: 'palette', id: palette.id }
+    const diagram = kept(diagrams, 'diagram')
+    if (diagram) return { type: 'diagram', id: diagram.id }
+    const placeholder = kept(placeholders, 'placeholder')
+    if (placeholder) return { type: 'placeholder', id: placeholder.id }
+    return { type: 'project' }
+  }
+
   function deleteIdea(ideaId: string) {
-    if (ideas.length <= 1) return
     pushCanvasHistory()
-    const nextIdeas = ideas.filter((idea) => idea.id !== ideaId)
-    setIdeas(nextIdeas)
+    setIdeas(ideas.filter((idea) => idea.id !== ideaId))
     setLinks((current) => current.filter((link) => !linkTouchesNode(link, 'idea', ideaId)))
-    const fallback = nextIdeas[0]
-    if (fallback) setSelection({ type: 'idea', id: fallback.id })
+    setSelection(selectionAfterDelete({ idea: new Set([ideaId]) }))
   }
 
   function deleteImage(imageId: string) {
@@ -5407,9 +5454,9 @@ function FileWorkspace({
     setImages(nextImages)
     setLinks((current) => current.filter((link) => !linkTouchesNode(link, 'image', imageId)))
     setPalettes((current) => current.filter((palette) => palette.sourceImageId !== imageId))
-    const fallbackIdea = ideas[0]
     const fallbackImage = nextImages[0]
-    setSelection(fallbackImage ? { type: 'image', id: fallbackImage.id } : { type: 'idea', id: fallbackIdea?.id ?? 'idea-ritual-tools' })
+    const removedPaletteIds = new Set(palettes.filter((palette) => palette.sourceImageId === imageId).map((palette) => palette.id))
+    setSelection(fallbackImage ? { type: 'image', id: fallbackImage.id } : selectionAfterDelete({ image: new Set([imageId]), palette: removedPaletteIds }))
   }
 
   function deletePalette(paletteId: string) {
@@ -5417,7 +5464,7 @@ function FileWorkspace({
     const nextPalettes = palettes.filter((palette) => palette.id !== paletteId)
     setPalettes(nextPalettes)
     setLinks((current) => current.filter((link) => !linkTouchesNode(link, 'palette', paletteId)))
-    setSelection(nextPalettes[0] ? { type: 'palette', id: nextPalettes[0].id } : { type: 'idea', id: ideas[0]?.id ?? 'idea-ritual-tools' })
+    setSelection(nextPalettes[0] ? { type: 'palette', id: nextPalettes[0].id } : selectionAfterDelete({ palette: new Set([paletteId]) }))
   }
 
   function deleteDiagram(diagramId: string) {
@@ -5425,10 +5472,8 @@ function FileWorkspace({
     if (!diagram) return
     pushCanvasHistory()
     const diagramIdeaIds = new Set(diagram.nodeIds)
-    const nextIdeas = ideas.filter((idea) => !diagramIdeaIds.has(idea.id))
-    const fallbackIdeas = nextIdeas.length > 0 ? nextIdeas : [createFallbackIdea()]
     setDiagrams((current) => current.filter((candidate) => candidate.id !== diagramId))
-    setIdeas(fallbackIdeas)
+    setIdeas(ideas.filter((idea) => !diagramIdeaIds.has(idea.id)))
     setLinks((current) =>
       current.filter(
         (link) =>
@@ -5438,7 +5483,7 @@ function FileWorkspace({
           !linkTouchesNode(link, 'diagram', diagramId),
       ),
     )
-    setSelection({ type: 'idea', id: fallbackIdeas[0].id })
+    setSelection(selectionAfterDelete({ idea: diagramIdeaIds, diagram: new Set([diagramId]) }))
   }
 
   function deletePlaceholder(placeholderId: string) {
@@ -5446,7 +5491,7 @@ function FileWorkspace({
     const nextPlaceholders = placeholders.filter((placeholder) => placeholder.id !== placeholderId)
     setPlaceholders(nextPlaceholders)
     setLinks((current) => current.filter((link) => !linkTouchesNode(link, 'placeholder', placeholderId)))
-    setSelection(nextPlaceholders[0] ? { type: 'placeholder', id: nextPlaceholders[0].id } : { type: 'idea', id: ideas[0]?.id ?? 'idea-ritual-tools' })
+    setSelection(nextPlaceholders[0] ? { type: 'placeholder', id: nextPlaceholders[0].id } : selectionAfterDelete({ placeholder: new Set([placeholderId]) }))
   }
 
   function deleteLink(linkId: string) {
@@ -5463,7 +5508,7 @@ function FileWorkspace({
 
   function requestIdeaDelete(ideaId: string) {
     const idea = ideas.find((candidate) => candidate.id === ideaId)
-    if (!idea || ideas.length <= 1) return
+    if (!idea) return
     setPendingDelete({ type: 'idea', id: idea.id, title: idea.title })
   }
 
@@ -5771,23 +5816,40 @@ function FileWorkspace({
     return { slides, deckMeta, title }
   }
 
-  async function exportSlideshowPptx(layoutMode: SlideLayoutMode = 'auto') {
+  // Builds the deck and writes it out; throws if anything fails, so callers
+  // that chain on the file (Google Slides, Canva) can tell "no file" from
+  // "file ready". Returns what happened to the file.
+  async function writeSlideshowPptx(layoutMode: SlideLayoutMode): Promise<{ result: 'exported' | 'downloaded' | 'canceled'; missingImages: number }> {
     setSlideshowStatus('Building PowerPoint…')
+    const { slides, deckMeta, title } = buildExportSlides(layoutMode)
+    const { prs, missingImages } = await slidesToPptx(slides, deckMeta, title)
+    const fileStem = safeDownloadName(title) || 'kira-slides'
+    if (isTauriRuntime()) {
+      const base64 = (await prs.write({ outputType: 'base64' })) as string
+      const exportedPath = await exportNativeSlideshowPptx(base64, fileStem, projectPackage?.path)
+      return { result: exportedPath ? 'exported' : 'canceled', missingImages }
+    }
+    await prs.writeFile({ fileName: `${fileStem}.pptx` })
+    return { result: 'downloaded', missingImages }
+  }
+
+  function pptxExportFailureStatus(error: unknown) {
+    console.error('PPTX export failed', error)
+    const reason = error instanceof Error && error.message ? `: ${error.message}` : ''
+    return `PowerPoint export failed${reason}`
+  }
+
+  function pptxMissingImagesNote(missingImages: number) {
+    return missingImages > 0 ? ` (${missingImages} ${missingImages === 1 ? 'image' : 'images'} could not be included)` : ''
+  }
+
+  async function exportSlideshowPptx(layoutMode: SlideLayoutMode = 'auto') {
     try {
-      const { slides, deckMeta, title } = buildExportSlides(layoutMode)
-      const prs = await slidesToPptx(slides, deckMeta, title)
-      const fileStem = safeDownloadName(title) || 'kira-slides'
-      if (isTauriRuntime()) {
-        const base64 = (await prs.write({ outputType: 'base64' })) as string
-        const exportedPath = await exportNativeSlideshowPptx(base64, fileStem, projectPackage?.path)
-        setSlideshowStatus(exportedPath ? 'PowerPoint exported' : 'Export canceled')
-      } else {
-        await prs.writeFile({ fileName: `${fileStem}.pptx` })
-        setSlideshowStatus('PowerPoint downloaded')
-      }
+      const { result, missingImages } = await writeSlideshowPptx(layoutMode)
+      if (result === 'canceled') setSlideshowStatus('Export canceled')
+      else setSlideshowStatus(`${result === 'exported' ? 'PowerPoint exported' : 'PowerPoint downloaded'}${pptxMissingImagesNote(missingImages)}`)
     } catch (error) {
-      console.error('PPTX export failed', error)
-      setSlideshowStatus('PowerPoint export failed')
+      setSlideshowStatus(pptxExportFailureStatus(error))
     }
   }
 
@@ -5814,16 +5876,29 @@ function FileWorkspace({
     setSlideshowStatus('Saved HTML. Open it and print to PDF.')
   }
 
+  // The tab is already open by the time the file exists, so the status has to
+  // say plainly when there is nothing to import.
+  async function exportPptxForImport(layoutMode: SlideLayoutMode, importHint: string) {
+    try {
+      const { result, missingImages } = await writeSlideshowPptx(layoutMode)
+      if (result === 'canceled') {
+        setSlideshowStatus('Export canceled, so there is no .pptx to import')
+        return
+      }
+      setSlideshowStatus(`PPTX ready${pptxMissingImagesNote(missingImages)}. ${importHint}`)
+    } catch (error) {
+      setSlideshowStatus(`${pptxExportFailureStatus(error)}. There is no .pptx to import`)
+    }
+  }
+
   async function exportSlidesToGoogleSlides(layoutMode: SlideLayoutMode = 'auto') {
     window.open('https://docs.google.com/presentation/u/0/create', '_blank', 'noopener,noreferrer')
-    await exportSlideshowPptx(layoutMode)
-    setSlideshowStatus('PPTX ready. In Google Slides use File ▸ Import slides.')
+    await exportPptxForImport(layoutMode, 'In Google Slides use File ▸ Import slides.')
   }
 
   async function exportSlidesToCanva(layoutMode: SlideLayoutMode = 'auto') {
     window.open('https://www.canva.com/design?create&type=Presentation', '_blank', 'noopener,noreferrer')
-    await exportSlideshowPptx(layoutMode)
-    setSlideshowStatus('PPTX ready. In Canva use Upload ▸ your .pptx file.')
+    await exportPptxForImport(layoutMode, 'In Canva use Upload ▸ your .pptx file.')
   }
 
   function toggleReferenceSelection(imageId: string) {
@@ -5909,7 +5984,10 @@ function FileWorkspace({
     if (!record) return
     try {
       const parsed = JSON.parse(record.snapshotJson)
-      if (!isProjectSnapshot(parsed)) return
+      if (!isProjectSnapshot(parsed)) {
+        setLibraryStatus(`Restore failed: "${record.label}" is not a valid project`)
+        return
+      }
       const restoredSnapshot: ProjectSnapshot = {
         ...parsed,
         versionHistory: [],
@@ -5938,38 +6016,51 @@ function FileWorkspace({
     }
   }
 
-  function switchVersionBranch(branchId: string) {
+  // Returns whether the switch happened. A branch that has a saved head must
+  // check that head out or leave everything untouched: moving currentBranchId
+  // while the canvas still shows the old branch makes the next saved version
+  // overwrite the target branch with the wrong content.
+  function switchVersionBranch(branchId: string): boolean {
     const branch = versionState.branches.find((candidate) => candidate.id === branchId)
-    if (!branch) return
+    if (!branch) return false
     const nextVersionState: ProjectVersionState = {
       ...versionState,
       currentBranchId: branchId,
       currentVersionId: branch.headVersionId ?? versionState.currentVersionId,
     }
-    const headVersion = branch.headVersionId
-      ? versionHistory.find((candidate) => candidate.id === branch.headVersionId)
-      : undefined
 
-    if (headVersion) {
-      try {
-        const parsed = JSON.parse(headVersion.snapshotJson)
-        if (isProjectSnapshot(parsed)) {
-          applyProjectSnapshot({
-            ...parsed,
-            versionState: nextVersionState,
-            versionHistory,
-          })
-          setLibraryStatus(`Branch: ${branch.name}`)
-          return
-        }
-      } catch {
-        setLibraryStatus(`Branch checkout failed: ${branch.name}`)
-        return
-      }
+    // Never saved: nothing to check out, so only the pointer moves and the
+    // canvas becomes this branch's starting point.
+    if (!branch.headVersionId) {
+      setVersionState(nextVersionState)
+      setLibraryStatus(`Branch: ${branch.name}`)
+      return true
     }
 
-    setVersionState(nextVersionState)
-    setLibraryStatus(`Branch: ${branch.name}`)
+    const headVersion = versionHistory.find((candidate) => candidate.id === branch.headVersionId)
+    if (!headVersion) {
+      // History keeps only the newest versions, so an old branch's head can be gone.
+      setLibraryStatus(`Branch checkout failed: ${branch.name} (its saved version is no longer in history)`)
+      return false
+    }
+
+    try {
+      const parsed = JSON.parse(headVersion.snapshotJson)
+      if (!isProjectSnapshot(parsed)) {
+        setLibraryStatus(`Branch checkout failed: ${branch.name} (its saved version is not a valid project)`)
+        return false
+      }
+      applyProjectSnapshot({
+        ...parsed,
+        versionState: nextVersionState,
+        versionHistory,
+      })
+      setLibraryStatus(`Branch: ${branch.name}`)
+      return true
+    } catch {
+      setLibraryStatus(`Branch checkout failed: ${branch.name}`)
+      return false
+    }
   }
 
   function createVersionBranch(name: string) {
@@ -6068,14 +6159,21 @@ function FileWorkspace({
   function importProject(file: File) {
     const reader = new FileReader()
     reader.onload = () => {
+      let parsed: unknown
       try {
-        const parsed = JSON.parse(String(reader.result))
-        if (!isProjectSnapshot(parsed)) return
-        applyProjectSnapshot(parsed)
+        parsed = JSON.parse(String(reader.result))
       } catch {
+        setLibraryStatus(`Import failed: "${file.name}" is not valid JSON`)
         return
       }
+      if (!isProjectSnapshot(parsed)) {
+        setLibraryStatus(`Import failed: "${file.name}" is not a KIRA project, or was saved by an unsupported version`)
+        return
+      }
+      applyProjectSnapshot(parsed)
+      setLibraryStatus(`Imported ${file.name}`)
     }
+    reader.onerror = () => setLibraryStatus(`Import failed: could not read "${file.name}"`)
     reader.readAsText(file)
   }
 
@@ -6442,9 +6540,9 @@ function FileWorkspace({
         />
         <section className="content-region" data-reflow={activeView === 'Outline' || activeView === 'Slides' ? 'true' : undefined}>
           <div className="view-region">
-            {activeView === 'Canvas' && (
+            {(activeView === 'Canvas' || activeView === 'Slides') && (
               <div className={isCanvasNoticeVisible ? 'canvas-notice is-visible' : 'canvas-notice'} role="status">
-                {libraryStatus}
+                {canvasNoticeText}
               </div>
             )}
             {activeView === 'Outline' ? (
@@ -6694,29 +6792,61 @@ function FileWorkspace({
         />
       )}
       <UiKitPortalHost className="kira-uikit uikit-passthrough-host">
-        <ModalOverlay isOpen={pendingCloseFile != null} onOpenChange={(isOpen) => !isOpen && onCancelCloseFile()} isDismissable>
+        <ModalOverlay
+          isOpen={pendingCloseFile != null || pendingQuitTitles != null}
+          onOpenChange={(isOpen) => {
+            if (isOpen) return
+            onCancelCloseFile()
+            onCancelQuit()
+          }}
+          isDismissable
+        >
           <Modal className="max-h-none bg-transparent shadow-none">
-            {pendingCloseFile && (
+            {pendingQuitTitles ? (
               <Dialog aria-labelledby="close-file-dialog-title" className="confirm-dialog" role="alertdialog">
                 <div>
-                  <h2 id="close-file-dialog-title">Close {pendingCloseFile.title}?</h2>
-                  <p>This file has unsaved changes. Closing the tab discards them.</p>
+                  <h2 id="close-file-dialog-title">Quit KIRA?</h2>
+                  <p>{quitDialogBody(pendingQuitTitles)}</p>
                 </div>
                 <div className="dialog-actions">
-                  <Button color="secondary" size="sm" onPress={onCancelCloseFile}>
+                  <Button color="secondary" size="sm" onPress={onCancelQuit}>
                     Cancel
                   </Button>
-                  <Button color="secondary-destructive" size="sm" onPress={() => onConfirmCloseFile(pendingCloseFile.id)}>
-                    Close without saving
+                  <Button color="secondary-destructive" size="sm" onPress={onConfirmQuit}>
+                    Quit without saving
                   </Button>
                 </div>
               </Dialog>
+            ) : (
+              pendingCloseFile && (
+                <Dialog aria-labelledby="close-file-dialog-title" className="confirm-dialog" role="alertdialog">
+                  <div>
+                    <h2 id="close-file-dialog-title">Close {pendingCloseFile.title}?</h2>
+                    <p>This file has unsaved changes. Closing the tab discards them.</p>
+                  </div>
+                  <div className="dialog-actions">
+                    <Button color="secondary" size="sm" onPress={onCancelCloseFile}>
+                      Cancel
+                    </Button>
+                    <Button color="secondary-destructive" size="sm" onPress={() => onConfirmCloseFile(pendingCloseFile.id)}>
+                      Close without saving
+                    </Button>
+                  </div>
+                </Dialog>
+              )
             )}
           </Modal>
         </ModalOverlay>
       </UiKitPortalHost>
     </main>
   )
+}
+
+function quitDialogBody(titles: string[]) {
+  const shown = titles.slice(0, 3).map((title) => `"${title}"`).join(', ')
+  const more = titles.length > 3 ? ` and ${titles.length - 3} more` : ''
+  const noun = titles.length === 1 ? 'A file has' : 'These files have'
+  return `${noun} unsaved changes: ${shown}${more}. Quitting discards them.`
 }
 
 type OpenFile = {
@@ -6767,6 +6897,13 @@ function App() {
   const [files, setFiles] = useState<OpenFile[]>(() => [createUntitledFile(DEFAULT_FILE_ID)])
   const [activeFileId, setActiveFileId] = useState<string>(DEFAULT_FILE_ID)
   const [pendingCloseFileId, setPendingCloseFileId] = useState<string | null>(null)
+  const [appNotice, setAppNotice] = useState<{ text: string } | null>(null)
+  // Titles of the tabs that would lose unsaved work if the window closed now.
+  const [pendingQuitTitles, setPendingQuitTitles] = useState<string[] | null>(null)
+  // Set once the user has agreed to discard (or nothing is unsaved), so the
+  // close we then trigger ourselves is not intercepted a second time.
+  const allowWindowCloseRef = useRef(false)
+  const filesRef = useRef<OpenFile[]>([])
   const [showSplash, setShowSplash] = useState(true)
   // Lifted here (like `files`/`activeFileId`) because the toggle button
   // lives in the file-tab-bar row this component builds, while the panel's
@@ -6809,6 +6946,63 @@ function App() {
     }
     return handler
   }
+
+  // The message is handed to the active tab once and dropped, so switching
+  // tabs later does not replay it.
+  useEffect(() => {
+    if (!appNotice) return
+    const timer = window.setTimeout(() => setAppNotice(null), 300)
+    return () => window.clearTimeout(timer)
+  }, [appNotice])
+
+  filesRef.current = files
+
+  function closeWindowNow() {
+    allowWindowCloseRef.current = true
+    void getCurrentWindow().close().catch(() => {
+      // Closing failed: let the next attempt be intercepted again.
+      allowWindowCloseRef.current = false
+    })
+  }
+
+  // Leaving the app with unsaved tabs used to lose them without a word: only
+  // closing a single tab asked. Two ways out reach this. The red button and
+  // Cmd+W arrive as the window's close request. Cmd+Q does not: on macOS it is
+  // an app-level exit request, which the Rust side has to turn into the
+  // "kira://quit-requested" event this also listens for (until it does, Cmd+Q
+  // still quits without asking). Registering a close-request handler makes the
+  // Tauri API destroy the window itself once the handler lets it through, so
+  // the capability must grant core:window:allow-destroy.
+  useEffect(() => {
+    if (!isTauriRuntime()) return
+    let cancelled = false
+    const unlisteners: Array<() => void> = []
+    const track = (pending: Promise<() => void>) => {
+      void pending.then((unlisten) => (cancelled ? unlisten() : unlisteners.push(unlisten))).catch(() => undefined)
+    }
+
+    track(
+      getCurrentWindow().onCloseRequested((event) => {
+        if (allowWindowCloseRef.current) return
+        const unsaved = filesRef.current.filter((file) => file.isDirty)
+        if (unsaved.length === 0) return
+        event.preventDefault()
+        setPendingQuitTitles(unsaved.map((file) => file.title))
+      }),
+    )
+    track(
+      listen('kira://quit-requested', () => {
+        const unsaved = filesRef.current.filter((file) => file.isDirty)
+        if (unsaved.length === 0) closeWindowNow()
+        else setPendingQuitTitles(unsaved.map((file) => file.title))
+      }),
+    )
+
+    return () => {
+      cancelled = true
+      unlisteners.forEach((unlisten) => unlisten())
+    }
+  }, [])
 
   useEffect(() => {
     const timer = window.setTimeout(() => setShowSplash(false), 1050)
@@ -6878,7 +7072,14 @@ function App() {
       return
     }
 
-    const snapshot = await openNativeProjectPackage(selectedPath)
+    let snapshot: ProjectSnapshot | null
+    try {
+      snapshot = await openNativeProjectPackage(selectedPath)
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error)
+      setAppNotice({ text: `Could not open ${projectFileDisplayName(selectedPath)}: ${reason}` })
+      return
+    }
     if (!snapshot) return
 
     const id = makeFileId()
@@ -6910,7 +7111,9 @@ function App() {
       // this function still returns here, and leaving the state set would strand the
       // "Close without saving" dialog open with no way to dismiss it.
       setPendingCloseFileId((current) => (current === id ? null : current))
-      if (isTauriRuntime()) void getCurrentWindow().close()
+      // The user already chose to close this last tab, so the window close it
+      // triggers must not ask about the same unsaved changes again.
+      if (isTauriRuntime()) closeWindowNow()
       return
     }
     setFiles((current) => {
@@ -7099,6 +7302,7 @@ function App() {
           onFileMetaChange={handleFileMetaChange}
           onRequestNewFile={requestNewFile}
           onRequestOpenFile={requestOpenFile}
+          appNotice={file.id === activeFileId ? appNotice : null}
           onTransferNodeToFile={handleTransferNodeToFile}
           incomingTransfers={pendingTransfersByFile[file.id] ?? EMPTY_NODE_TRANSFERS}
           onTransfersConsumed={() => handleTransfersConsumed(file.id)}
@@ -7108,6 +7312,12 @@ function App() {
           pendingCloseFile={pendingCloseFile}
           onCancelCloseFile={() => setPendingCloseFileId(null)}
           onConfirmCloseFile={closeFile}
+          pendingQuitTitles={pendingQuitTitles}
+          onCancelQuit={() => setPendingQuitTitles(null)}
+          onConfirmQuit={() => {
+            setPendingQuitTitles(null)
+            closeWindowNow()
+          }}
         />
       ))}
     </>
@@ -13245,33 +13455,36 @@ function resolveSelection(
   placeholders: PlaceholderNode[],
   frames: FrameNode[],
 ) {
-  if (selection.type === 'project') {
-    return { kind: 'project' as const, heading: 'File', project, appearance }
-  }
+  const projectSelection = { kind: 'project' as const, heading: 'File', project, appearance }
+  if (selection.type === 'project') return projectSelection
 
+  // A selection can outlive its node (deleting the last one of a kind leaves
+  // nothing to fall back to), and an empty board is valid, so a missing node
+  // resolves to the project instead of an undefined record the panels would
+  // dereference.
   if (selection.type === 'idea') {
     const idea = ideas.find((candidate) => candidate.id === selection.id) ?? ideas[0]
-    return { kind: 'idea' as const, heading: 'Idea', idea }
+    return idea ? { kind: 'idea' as const, heading: 'Idea', idea } : projectSelection
   }
 
   if (selection.type === 'image') {
     const image = images.find((candidate) => candidate.id === selection.id) ?? images[0]
-    return { kind: 'image' as const, heading: 'Reference', image }
+    return image ? { kind: 'image' as const, heading: 'Reference', image } : projectSelection
   }
 
   if (selection.type === 'palette') {
     const palette = palettes.find((candidate) => candidate.id === selection.id) ?? palettes[0]
-    return { kind: 'palette' as const, heading: 'Palette', palette }
+    return palette ? { kind: 'palette' as const, heading: 'Palette', palette } : projectSelection
   }
 
   if (selection.type === 'diagram') {
     const diagram = diagrams.find((candidate) => candidate.id === selection.id) ?? diagrams[0]
-    return { kind: 'diagram' as const, heading: 'Diagram', diagram }
+    return diagram ? { kind: 'diagram' as const, heading: 'Diagram', diagram } : projectSelection
   }
 
   if (selection.type === 'placeholder') {
     const placeholder = placeholders.find((candidate) => candidate.id === selection.id) ?? placeholders[0]
-    return { kind: 'placeholder' as const, heading: 'Placeholder', placeholder }
+    return placeholder ? { kind: 'placeholder' as const, heading: 'Placeholder', placeholder } : projectSelection
   }
 
   if (selection.type === 'frame') {
@@ -16585,22 +16798,6 @@ function createBlankProjectSnapshot(): ProjectSnapshot {
   }
 }
 
-function createFallbackIdea(): Idea {
-  const timestamp = nowIso()
-  return {
-    id: `idea-${Date.now()}`,
-    title: 'Untitled idea',
-    content: 'Add a working note for this idea.',
-    status: 'thin',
-    x: 50,
-    y: 46,
-    importance: 1,
-    createdAt: timestamp,
-    addedAt: timestamp,
-    updatedAt: timestamp,
-  }
-}
-
 function createBenchmarkProjectSnapshot(referenceCount: number): ProjectSnapshot {
   const safeReferenceCount = Math.round(clamp(referenceCount, 12, 600))
   const ideaCount = safeReferenceCount >= 240 ? 8 : safeReferenceCount >= 120 ? 6 : 4
@@ -16784,8 +16981,10 @@ function isProjectSnapshot(value: unknown): value is ProjectSnapshot {
   const snapshot = value as Partial<ProjectSnapshot>
   const valid = (
     snapshot.version === 2 &&
+    // An empty board is a valid board: the desktop app starts from zero-state
+    // and a user can delete every idea. Requiring one here made such a file
+    // save fine and then refuse to open, silently.
     Array.isArray(snapshot.ideas) &&
-    snapshot.ideas.length > 0 &&
     Array.isArray(snapshot.images) &&
     Array.isArray(snapshot.palettes) &&
     Array.isArray(snapshot.diagrams) &&
@@ -17061,14 +17260,19 @@ async function openNativeProjectPackage(projectPath?: string) {
     projectPath ? 'open_project_package_at' : 'open_project_package',
     projectPath ? { projectPath } : undefined,
   )
+  // null means the user picked nothing (cancelled the dialog): the one case
+  // that is not an error. A package that came back but cannot be read throws,
+  // so the caller can say so instead of doing nothing.
   if (!snapshotJson) return null
 
+  let parsed: unknown
   try {
-    const parsed = JSON.parse(snapshotJson)
-    return isProjectSnapshot(parsed) ? parsed : null
+    parsed = JSON.parse(snapshotJson)
   } catch {
-    return null
+    throw new Error('the project data is damaged (not valid JSON)')
   }
+  if (!isProjectSnapshot(parsed)) throw new Error('this is not a KIRA project, or it was saved by an unsupported version')
+  return parsed
 }
 
 async function importNativeReferenceFolder(folderPath: string) {
@@ -17672,9 +17876,29 @@ function pptxImageSlots(layout: SlideLayout['layout'], count: number): Array<{ x
   }))
 }
 
+// pptxgenjs takes an image either as `data` (base64) or as a `path` it fetches
+// itself while writing, where one image that cannot be fetched fails the whole
+// file. A reference's `thumb` is usually a remote URL, and a URL in `data` is
+// silently dropped (an empty ppt/media). So fetch here, once per image, and
+// hand pptxgenjs base64: an image that cannot be fetched costs one placeholder
+// and is counted, instead of the file.
+async function pptxImageData(thumb: string): Promise<string | null> {
+  try {
+    const response = await fetch(thumb, { signal: AbortSignal.timeout(15000) })
+    if (!response.ok) return null
+    const blob = await response.blob()
+    if (!blob.type.startsWith('image/')) return null
+    return await readFileAsDataUrl(blob)
+  } catch {
+    return null
+  }
+}
+
 async function slidesToPptx(slides: SlideLayout[], deckMeta: SlideDeckMeta, title: string) {
   const { default: PptxGenJs } = await import('pptxgenjs')
   const prs = new PptxGenJs()
+  // ShapeType hangs off the instance in pptxgenjs 4, not off the class.
+  const shapes = prs.ShapeType
   prs.defineLayout({ name: 'KIRA_WIDE', width: PPTX_W, height: PPTX_H })
   prs.layout = 'KIRA_WIDE'
   prs.author = 'KIRA'
@@ -17692,8 +17916,15 @@ async function slidesToPptx(slides: SlideLayout[], deckMeta: SlideDeckMeta, titl
     slide.background = { color: bg }
     slide.addText('No slides yet', { x: 0.5, y: 3.1, w: PPTX_W - 1, h: 1, fontSize: 40, bold: true, color: textMain, align: 'center' })
     slide.addText('Create ideas and link references to generate a slideshow.', { x: 0.5, y: 4.1, w: PPTX_W - 1, h: 0.6, fontSize: 16, color: textSoft, align: 'center' })
-    return prs
+    return { prs, missingImages: 0 }
   }
+
+  const imageSlotsBySlide = slides.map((slide) => (slide.layout === 'palette' && slide.palettes.length > 0) || (slide.layout === 'diagram' && slide.diagrams.length > 0) || slide.references.length === 0
+    ? []
+    : slide.references.slice(0, pptxImageSlots(slide.layout, slide.references.length).length))
+  const thumbs = [...new Set(imageSlotsBySlide.flat().map((reference) => reference.thumb).filter(Boolean))]
+  const resolved = new Map(await Promise.all(thumbs.map(async (thumb) => [thumb, await pptxImageData(thumb)] as const)))
+  let missingImages = 0
 
   slides.forEach((slide, index) => {
     const s = prs.addSlide()
@@ -17731,7 +17962,7 @@ async function slidesToPptx(slides: SlideLayout[], deckMeta: SlideDeckMeta, titl
       const palette = slide.palettes[0]
       const swatchW = (PPTX_W - 7.2) / Math.max(palette.colors.length, 1)
       palette.colors.forEach((color, swatchIndex) => {
-        s.addShape(PptxGenJs.ShapeType.rect, {
+        s.addShape(shapes.rect, {
           x: 6.7 + swatchIndex * swatchW,
           y: 2.4,
           w: swatchW,
@@ -17744,7 +17975,7 @@ async function slidesToPptx(slides: SlideLayout[], deckMeta: SlideDeckMeta, titl
     } else if (slide.layout === 'diagram' && slide.diagrams.length > 0) {
       slide.diagrams.slice(0, 2).forEach((diagram, diagramIndex) => {
         const y = 0.6 + diagramIndex * 3.3
-        s.addShape(PptxGenJs.ShapeType.roundRect, {
+        s.addShape(shapes.roundRect, {
           x: 6.7,
           y,
           w: PPTX_W - 7.2,
@@ -17761,10 +17992,12 @@ async function slidesToPptx(slides: SlideLayout[], deckMeta: SlideDeckMeta, titl
       slide.references.slice(0, slots.length).forEach((reference, refIndex) => {
         const slot = slots[refIndex]
         if (!slot) return
-        if (reference.thumb) {
-          s.addImage({ data: reference.thumb, x: slot.x, y: slot.y, w: slot.w, h: slot.h, sizing: { type: 'cover', w: slot.w, h: slot.h } })
+        const imageData = reference.thumb ? resolved.get(reference.thumb) : null
+        if (imageData) {
+          s.addImage({ data: imageData, x: slot.x, y: slot.y, w: slot.w, h: slot.h, sizing: { type: 'cover', w: slot.w, h: slot.h } })
         } else {
-          s.addShape(PptxGenJs.ShapeType.roundRect, {
+          if (reference.thumb) missingImages += 1
+          s.addShape(shapes.roundRect, {
             x: slot.x,
             y: slot.y,
             w: slot.w,
@@ -17780,7 +18013,7 @@ async function slidesToPptx(slides: SlideLayout[], deckMeta: SlideDeckMeta, titl
     if (slide.speakerNote) s.addNotes(slide.speakerNote)
   })
 
-  return prs
+  return { prs, missingImages }
 }
 
 function contactSheetToHtml(
