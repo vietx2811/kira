@@ -2704,6 +2704,15 @@ button.mini-tags-more:focus-visible {
   opacity: 0.55;
 }
 
+/* "Shown on node" pin: ink underline like .icon-button.is-active, not an
+   accent tint (DESIGN.md §3 One Accent Rule). */
+.section-tool.is-active {
+  background: transparent;
+  color: var(--text-main);
+  box-shadow: inset 0 -2px 0 var(--text-main);
+  border-radius: var(--radius-1) var(--radius-1) 2px 2px;
+}
+
 .tag-status {
   margin: var(--space-2) 0 0;
   color: var(--text-muted);
@@ -3493,13 +3502,23 @@ button.mini-tags-more:focus-visible {
   outline: none;
 }
 
-/* Overrides the global :focus-visible ring (top of this file) — Notion
-   shows zero chrome change when you click into a text block, just the
-   caret. A boxed highlight around the paragraph the moment you start
-   typing was the one thing explicitly asked to go. */
-.node-rich-editor-content:focus-visible {
-  outline: none;
-  box-shadow: none;
+/* Focus signal for the node description editor (DESIGN.md §7, one control one
+   focus signal). The contenteditable itself stays outline-free; the wrapper is
+   the visible field, so it draws the same 2px inset ring the kit's Input and
+   TextArea draw on theirs (--accent-cyan, the token the kit ring and the global fallback outline both resolve to).
+   Side padding matches the kit fields' 12px, so the ring lines up with the
+   Notes and Source boxes below and the text with theirs. The vertical padding
+   is paid back by the equal negative margin, so the block keeps its height.
+   Only the editable overlay instance; the canvas face is read-only and never
+   focuses. */
+.node-rich-editor.is-overlay {
+  margin: -6px 0;
+  padding: 6px 12px;
+  border-radius: var(--radius-2);
+}
+
+.node-rich-editor.is-overlay:focus-within {
+  box-shadow: inset 0 0 0 2px var(--accent-cyan);
 }
 
 /* Canvas face, resting state: no cursor, no caret, no edit affordance —
@@ -4123,6 +4142,14 @@ button.mini-tags-more:focus-visible {
   background: transparent;
   color: var(--text-main);
   box-shadow: inset 0 -2px 0 var(--text-main);
+}
+
+/* Delete: same red tint as .node-toolbar button.is-danger:hover, so the
+   destructive action announces itself on hover instead of matching the rest
+   of the bar. */
+.node-details-actionbar button.is-danger:hover {
+  background: color-mix(in srgb, var(--danger), transparent 82%);
+  color: var(--danger);
 }
 
 .reorderable-blocks {

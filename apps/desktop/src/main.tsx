@@ -1139,55 +1139,65 @@ function NodeRichEditor({
     command()
     setToolbarRevision((revision) => revision + 1)
   }
+  // Heading cycles H1, H2, H3, then back to a paragraph, so one button covers
+  // all three levels the editor allows.
+  const cycleHeading = () => {
+    const nextLevel = editor.isActive('heading', { level: 1 })
+      ? 2
+      : editor.isActive('heading', { level: 2 })
+        ? 3
+        : editor.isActive('heading', { level: 3 })
+          ? null
+          : 1
+    if (nextLevel) editor.chain().focus().setHeading({ level: nextLevel as 1 | 2 | 3 }).run()
+    else editor.chain().focus().setParagraph().run()
+  }
+  const toggleLink = () => {
+    if (editor.isActive('link')) {
+      editor.chain().focus().unsetLink().run()
+      return
+    }
+    const url = window.prompt('Link URL')
+    if (url) editor.chain().focus().setLink({ href: url }).run()
+  }
+  // Shortcuts are Tiptap StarterKit's own bindings (Mod = Cmd on macOS); the
+  // tooltip only names them. Heading and link have no single binding.
+  const formatItem = (id: string, label: string, icon: React.ReactElement, run: () => void, shortcut?: string) => (
+    <Tooltip key={id} title={label} description={shortcut} delay={200}>
+      <ButtonGroupItem
+        id={id}
+        aria-label={label}
+        iconLeading={icon}
+        onMouseDown={(event) => event.preventDefault()}
+        onPress={() => runToolbarCommand(run)}
+      />
+    </Tooltip>
+  )
 
   return (
     <>
       {/* Overlay mode: always visible, since the overlay's whole purpose is
           editing. Canvas mode: only while THIS node's editor is focused —
           not gated on a text selection like Tiptap's default BubbleMenu, so
-          formatting is discoverable the moment typing starts. */}
+          formatting is discoverable the moment typing starts.
+          Kit ButtonGroup, not a row of Buttons: these are toggles that mirror
+          the format at the caret, so each item needs a pressed state
+          (react-aria ToggleButton: aria-pressed, selected styling), which a
+          plain Button lacks. selectedKeys is driven by Tiptap's isActive, not
+          local state, so the highlight always tracks the text. */}
       {showToolbar && (
         <div className={overlayMode ? 'node-rich-editor-toolbar is-static' : 'node-rich-editor-toolbar'}>
           <ButtonGroup aria-label="Text formatting" size="sm" selectionMode="multiple" selectedKeys={new Set(activeToolbarItems)}>
-            <ButtonGroupItem id="bold" aria-label="Bold" iconLeading={<TextB size={13} weight="bold" />} onMouseDown={(event) => event.preventDefault()} onPress={() => runToolbarCommand(() => editor.chain().focus().toggleBold().run())} />
-            <ButtonGroupItem id="italic" aria-label="Italic" iconLeading={<TextItalic size={13} />} onMouseDown={(event) => event.preventDefault()} onPress={() => runToolbarCommand(() => editor.chain().focus().toggleItalic().run())} />
-            <ButtonGroupItem
-              id="heading"
-              aria-label="Heading"
-              iconLeading={<TextH size={13} />}
-              onMouseDown={(event) => event.preventDefault()}
-              onPress={() => runToolbarCommand(() => {
-              const nextLevel = editor.isActive('heading', { level: 1 })
-                ? 2
-                : editor.isActive('heading', { level: 2 })
-                  ? 3
-                  : editor.isActive('heading', { level: 3 })
-                    ? null
-                    : 1
-              if (nextLevel) editor.chain().focus().setHeading({ level: nextLevel as 1 | 2 | 3 }).run()
-              else editor.chain().focus().setParagraph().run()
-              })}
-            />
-            <ButtonGroupItem id="bullets" aria-label="Bullet list" iconLeading={<ListBullets size={13} />} onMouseDown={(event) => event.preventDefault()} onPress={() => runToolbarCommand(() => editor.chain().focus().toggleBulletList().run())} />
-            <ButtonGroupItem id="ordered" aria-label="Numbered list" iconLeading={<ListNumbers size={13} />} onMouseDown={(event) => event.preventDefault()} onPress={() => runToolbarCommand(() => editor.chain().focus().toggleOrderedList().run())} />
-            <ButtonGroupItem id="quote" aria-label="Quote" iconLeading={<Quotes size={13} />} onMouseDown={(event) => event.preventDefault()} onPress={() => runToolbarCommand(() => editor.chain().focus().toggleBlockquote().run())} />
+            {formatItem('bold', 'Bold', <TextB size={13} weight="bold" />, () => editor.chain().focus().toggleBold().run(), '⌘B')}
+            {formatItem('italic', 'Italic', <TextItalic size={13} />, () => editor.chain().focus().toggleItalic().run(), '⌘I')}
+            {formatItem('heading', 'Heading', <TextH size={13} />, cycleHeading)}
+            {formatItem('bullets', 'Bullet list', <ListBullets size={13} />, () => editor.chain().focus().toggleBulletList().run(), '⇧⌘8')}
+            {formatItem('ordered', 'Numbered list', <ListNumbers size={13} />, () => editor.chain().focus().toggleOrderedList().run(), '⇧⌘7')}
+            {formatItem('quote', 'Quote', <Quotes size={13} />, () => editor.chain().focus().toggleBlockquote().run(), '⇧⌘B')}
           </ButtonGroup>
           <span className="node-rich-editor-toolbar-divider" />
           <ButtonGroup aria-label="Link formatting" size="sm" selectionMode="multiple" selectedKeys={new Set(activeToolbarItems)}>
-            <ButtonGroupItem
-              id="link"
-              aria-label="Link"
-              iconLeading={<LinkSimple size={13} />}
-              onMouseDown={(event) => event.preventDefault()}
-              onPress={() => runToolbarCommand(() => {
-              if (editor.isActive('link')) {
-                editor.chain().focus().unsetLink().run()
-                return
-              }
-              const url = window.prompt('Link URL')
-              if (url) editor.chain().focus().setLink({ href: url }).run()
-              })}
-            />
+            {formatItem('link', 'Link', <LinkSimple size={13} />, toggleLink)}
           </ButtonGroup>
         </div>
       )}

@@ -1,5 +1,5 @@
 import type { ComponentType } from 'react'
-import { useEffect, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { X } from 'lucide-react'
 import { Dialog, Modal, ModalOverlay } from '@/components/application/modals/modal'
 import { Tab, TabList, TabPanel, Tabs } from '@/components/application/tabs/tabs'
@@ -34,6 +34,28 @@ const settingsSections: { id: SettingsTabId; label: string }[] = [
 // to also thread a separate ok/error flag through.
 function isLikelySettingsError(status: string): boolean {
   return /fail|error|not signed in/i.test(status)
+}
+
+/**
+ * Puts focus inside the dialog in the same commit that mounts it.
+ *
+ * React Aria's `useDialog` focuses the dialog from a mount effect, but when the
+ * dialog was opened by a virtual click (a screen reader, or any `.click()` with
+ * no pointer behind it) it defers that focus to `requestAnimationFrame`, and
+ * ~500ms later it blurs and refocuses the dialog on purpose (a VoiceOver
+ * re-announce hack) through the same deferral. Between those, `activeElement`
+ * is `body`, so Escape and Tab go nowhere. Mouse and keyboard opens skip the
+ * gap. Focusing here first satisfies `useDialog`'s "focus is already inside"
+ * check, so it neither defers nor blurs. Render it as the dialog's first child:
+ * child layout effects run before the dialog's own effects.
+ */
+function FocusDialogOnMount() {
+  const anchorRef = useRef<HTMLSpanElement>(null)
+  useLayoutEffect(() => {
+    const dialog = anchorRef.current?.closest<HTMLElement>('[role="dialog"]')
+    if (dialog && !dialog.contains(document.activeElement)) dialog.focus({ preventScroll: true })
+  }, [])
+  return <span ref={anchorRef} hidden />
 }
 
 /**
@@ -128,25 +150,6 @@ export function SettingsView({
   // nowhere on first opening Settings.
   const [isPortalReady, setIsPortalReady] = useState(false)
   useEffect(() => setIsPortalReady(true), [])
-  // React Aria hangs its Escape handler off the modal overlay element, so it
-  // only fires once focus is inside the dialog. Measured at 4093015: the kit
-  // focuses the dialog ~0.4s after it mounts, something blurs it again, and
-  // focus only settles back ~1-2.5s in. Escape did nothing during that window,
-  // which is exactly when a user reaches for it. This closes Settings from the
-  // document instead, and yields to any overlay stacked on top of it.
-  useEffect(() => {
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key !== 'Escape' || event.defaultPrevented) return
-      // An overlay stacked on top owns Escape first. [data-rac][data-trigger] is
-      // the kit popover wrapper (a select menu); it is only in the DOM while one
-      // is open. The delete confirmation is matched by role, because closing
-      // Settings out from under it would drop the choice being made.
-      if (document.querySelector('[role="alertdialog"], [data-rac][data-trigger]')) return
-      onClose()
-    }
-    document.addEventListener('keydown', handleKeyDown)
-    return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [onClose])
   // When a provider is focused from elsewhere (onboarding, logged-out prompt), jump to the AI tab.
   useEffect(() => {
     if (focusNonce > 0) setActiveSettingsTab('ai')
@@ -162,6 +165,7 @@ export function SettingsView({
       {isPortalReady && <ModalOverlay isOpen onOpenChange={(isOpen) => !isOpen && onClose()} isDismissable>
         <Modal className="h-[min(720px,calc(100vh-32px))] w-[min(980px,calc(100vw-32px))] max-w-none overflow-hidden border border-secondary">
           <Dialog aria-label="Settings" className="flex h-full w-full overflow-hidden">
+          <FocusDialogOnMount />
           <Tabs
             selectedKey={activeSettingsTab}
             onSelectionChange={(key) => setActiveSettingsTab(key as SettingsTabId)}
