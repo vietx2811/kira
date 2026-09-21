@@ -31,6 +31,13 @@ const MIGRATION_TAG_SUGGESTION_META: &str = "006_tag_suggestion_meta";
 const MIGRATION_OUTLINE_DRAFTS: &str = "007_outline_drafts";
 const MIGRATION_GRAPH_V2_FIELDS: &str = "008_graph_v2_fields";
 const MIGRATION_IDEA_CONTENT_FIELD: &str = "009_idea_content_field";
+const MIGRATION_NODE_FLAGS: &str = "010_node_flags";
+// project_meta key. Present means the package was last written by a build that
+// persists `project`, `appearance` and the node flags. Absent means a legacy
+// save, whose manifest.json is the only place those values survive.
+const SNAPSHOT_FIELDS_KEY: &str = "snapshot_fields";
+const SNAPSHOT_FIELDS_LEVEL: &str = "2";
+const CURRENT_SNAPSHOT_VERSION: i64 = 2;
 const CAPTURE_SERVER_ADDR: &str = "127.0.0.1:47653";
 const CAPTURE_EVENT: &str = "kira:capture";
 const EAGLE_WEB_API_ADDR: &str = "127.0.0.1:41595";
@@ -47,6 +54,17 @@ struct CodexLoginState {
 #[derive(Deserialize, Serialize)]
 struct ProjectSnapshot {
     version: i64,
+    // Opaque like slidesConfig below: Rust only carries them through. The TS
+    // ProjectSnapshot declares both as required, and `isProjectSnapshot()`
+    // silently swaps a missing one for the default (Untitled, dark mode,
+    // default accent), so a field that goes missing here is a silent loss on
+    // every save. `Null` means "not stored" (a project saved before these
+    // were persisted), which is why they are skipped on serialize: the TS
+    // side then sees `undefined`, the case it is written to handle.
+    #[serde(default, skip_serializing_if = "serde_json::Value::is_null")]
+    project: serde_json::Value,
+    #[serde(default, skip_serializing_if = "serde_json::Value::is_null")]
+    appearance: serde_json::Value,
     ideas: Vec<IdeaRecord>,
     images: Vec<ReferenceRecord>,
     #[serde(default)]
@@ -119,6 +137,13 @@ struct IdeaRecord {
     source_url: Option<String>,
     #[serde(default)]
     notes: Option<String>,
+    // `variant` is 'sticker' for a sticky note, which is an Idea underneath.
+    // `aiExcluded` keeps a node out of the AI context: losing it re-admits the
+    // node into what is sent to the model, so it is a correctness field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    variant: Option<String>,
+    #[serde(default, rename = "aiExcluded", skip_serializing_if = "Option::is_none")]
+    ai_excluded: Option<bool>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -168,6 +193,14 @@ struct ReferenceRecord {
     perceptual_hash: String,
     #[serde(default, rename = "cropRect")]
     crop_rect: Option<CropRectRecord>,
+    #[serde(default, rename = "aiExcluded", skip_serializing_if = "Option::is_none")]
+    ai_excluded: Option<bool>,
+    #[serde(default, rename = "tagsPinned", skip_serializing_if = "Option::is_none")]
+    tags_pinned: Option<bool>,
+    #[serde(default, rename = "palettePinned", skip_serializing_if = "Option::is_none")]
+    palette_pinned: Option<bool>,
+    #[serde(default, rename = "blockOrder", skip_serializing_if = "Option::is_none")]
+    block_order: Option<Vec<String>>,
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -449,7 +482,7 @@ fn write_project_package_to_dir(
 ) -> Result<ProjectPackageInfo, String> {
     let snapshot: ProjectSnapshot = serde_json::from_str(&snapshot_json)
         .map_err(|error| format!("Invalid project JSON: {error}"))?;
-    if snapshot.version != 2 {
+    if snapshot.version != CURRENT_SNAPSHOT_VERSION {
         return Err("Unsupported project snapshot version".to_string());
     }
 
@@ -674,10 +707,8 @@ fn read_project_package(project_dir: &Path) -> Result<Option<String>, String> {
     let manifest_path = project_dir.join(MANIFEST_NAME);
     if manifest_path.exists() {
         let manifest = fs::read_to_string(&manifest_path).map_err(|error| error.to_string())?;
-        if let Ok(snapshot) = serde_json::from_str::<ProjectSnapshot>(&manifest) {
-            if snapshot.version == 2 {
-                return Ok(Some(manifest));
-            }
+        if let Some(current) = manifest_as_current_version(&manifest) {
+            return Ok(Some(current));
         }
         if let Some(Err(error)) = sqlite_result {
             return Err(format!("Project package is invalid: {error}"));
@@ -692,18 +723,146 @@ fn read_project_package(project_dir: &Path) -> Result<Option<String>, String> {
     Ok(None)
 }
 
+// A v1 manifest is a v2 one without the fields v2 added, all of which
+// ProjectSnapshot already defaults, so it loads as v2 once relabelled. Any other
+// version is refused: guessing would hand the frontend data it then rejects
+// without saying why.
+fn manifest_as_current_version(manifest: &str) -> Option<String> {
+    let snapshot = serde_json::from_str::<ProjectSnapshot>(manifest).ok()?;
+    match snapshot.version {
+        CURRENT_SNAPSHOT_VERSION => Some(manifest.to_string()),
+        1 => {
+            let mut value = serde_json::from_str::<serde_json::Value>(manifest).ok()?;
+            value["version"] = serde_json::json!(CURRENT_SNAPSHOT_VERSION);
+            serde_json::to_string(&value).ok()
+        }
+        _ => None,
+    }
+}
+
+// The snapshot version to report for what project_meta holds.
+//
+// v1 to v2 (June 2026) added collections and columns, all optional, and no
+// migration ever raised the stored number. So a v1 package holds the same data
+// as a v2 one and differs only in this label, which the frontend's
+// `version === 2` check then turned into a silent failed open. migrate() has
+// already added every column by the time this runs and read_snapshot defaults
+// every collection a v1 package lacks, so the honest reading of 1 is "v2 with
+// nothing extra". It is reported as such in memory and not written back: the
+// next save writes the current version, and merely opening a package should not
+// rewrite it.
+//
+//  - absent: write_snapshot inserts the row in the same transaction as all the
+//    data, so a package with content always has one; an empty package has
+//    nothing to mislabel. Read as current.
+//  - newer than this build: an error the caller can show, never a snapshot the
+//    frontend would drop without a word.
+//  - unparsable: corruption, also an error.
+fn snapshot_version_from_meta(stored: Option<String>) -> Result<i64, String> {
+    let Some(text) = stored else {
+        return Ok(CURRENT_SNAPSHOT_VERSION);
+    };
+    match text.trim().parse::<i64>() {
+        Ok(version) if (1..=CURRENT_SNAPSHOT_VERSION).contains(&version) => {
+            Ok(CURRENT_SNAPSHOT_VERSION)
+        }
+        Ok(version) if version > CURRENT_SNAPSHOT_VERSION => Err(format!(
+            "This project was saved by a newer version of KIRA (snapshot version {version}, this build reads up to {CURRENT_SNAPSHOT_VERSION}). Update KIRA to open it."
+        )),
+        _ => Err(format!("The project's version marker is unreadable: {text:?}")),
+    }
+}
+
 fn read_sqlite_project_package(project_dir: &Path) -> Result<Option<String>, String> {
     let sqlite_path = project_dir.join(SQLITE_NAME);
     if sqlite_path.exists() {
         let conn = Connection::open(sqlite_path).map_err(|error| error.to_string())?;
         migrate(&conn)?;
-        let snapshot = read_snapshot(&conn)?;
+        let mut snapshot = read_snapshot(&conn)?;
+        if !has_snapshot_fields(&conn) {
+            rescue_legacy_fields_from_manifest(&mut snapshot, project_dir);
+        }
         return serde_json::to_string(&snapshot)
             .map(Some)
             .map_err(|error| error.to_string());
     }
 
     Ok(None)
+}
+
+fn has_snapshot_fields(conn: &Connection) -> bool {
+    conn.query_row(
+        "SELECT 1 FROM project_meta WHERE key = ?1",
+        params![SNAPSHOT_FIELDS_KEY],
+        |_| Ok(()),
+    )
+    .is_ok()
+}
+
+// A package saved before `project`, `appearance` and the node flags were
+// persisted holds them only in manifest.json, which every save wrote in the
+// same call as the SQLite rows. Fill in only what the SQLite read left empty,
+// matched by node id, so a stale manifest can never override a value SQLite
+// does have. Nothing is written back: the next real save persists them and
+// sets the marker that stops this path.
+fn rescue_legacy_fields_from_manifest(snapshot: &mut ProjectSnapshot, project_dir: &Path) {
+    let Ok(text) = fs::read_to_string(project_dir.join(MANIFEST_NAME)) else {
+        return;
+    };
+    let Ok(manifest) = serde_json::from_str::<serde_json::Value>(&text) else {
+        return;
+    };
+    if manifest.get("version").and_then(|value| value.as_i64()) != Some(2) {
+        return;
+    }
+    for (slot, key) in [(&mut snapshot.project, "project"), (&mut snapshot.appearance, "appearance")] {
+        if slot.is_null() {
+            if let Some(value) = manifest.get(key).filter(|value| value.is_object()) {
+                *slot = value.clone();
+            }
+        }
+    }
+    let manifest_nodes = |key: &str| -> std::collections::HashMap<String, serde_json::Value> {
+        manifest
+            .get(key)
+            .and_then(|value| value.as_array())
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(|item| Some((item.get("id")?.as_str()?.to_string(), item.clone())))
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    let flag = |node: &serde_json::Value, key: &str| node.get(key).and_then(|value| value.as_bool());
+    let manifest_ideas = manifest_nodes("ideas");
+    for idea in &mut snapshot.ideas {
+        let Some(saved) = manifest_ideas.get(&idea.id) else { continue };
+        if idea.variant.is_none() {
+            idea.variant = saved.get("variant").and_then(|value| value.as_str()).map(str::to_string);
+        }
+        if idea.ai_excluded.is_none() {
+            idea.ai_excluded = flag(saved, "aiExcluded");
+        }
+    }
+    let manifest_images = manifest_nodes("images");
+    for image in &mut snapshot.images {
+        let Some(saved) = manifest_images.get(&image.id) else { continue };
+        if image.ai_excluded.is_none() {
+            image.ai_excluded = flag(saved, "aiExcluded");
+        }
+        if image.tags_pinned.is_none() {
+            image.tags_pinned = flag(saved, "tagsPinned");
+        }
+        if image.palette_pinned.is_none() {
+            image.palette_pinned = flag(saved, "palettePinned");
+        }
+        if image.block_order.is_none() {
+            image.block_order = saved.get("blockOrder").and_then(|value| {
+                serde_json::from_value::<Vec<String>>(value.clone()).ok()
+            });
+        }
+    }
 }
 
 fn ensure_project_dirs(project_dir: &PathBuf) -> Result<(), String> {
@@ -960,6 +1119,16 @@ fn migrate(conn: &Connection) -> Result<(), String> {
     add_column_if_missing(conn, "ideas", "content", "TEXT")?;
     add_column_if_missing(conn, "reference_assets", "content", "TEXT")?;
     record_migration(conn, MIGRATION_IDEA_CONTENT_FIELD)?;
+    // Sticky-note identity and the exclude-from-AI-context flag on ideas, plus
+    // the flags and block order an image carries on its node face. Nullable:
+    // NULL means "not set", same as the field being absent in the TS record.
+    add_column_if_missing(conn, "ideas", "variant", "TEXT")?;
+    add_column_if_missing(conn, "ideas", "ai_excluded", "INTEGER")?;
+    add_column_if_missing(conn, "reference_assets", "ai_excluded", "INTEGER")?;
+    add_column_if_missing(conn, "reference_assets", "tags_pinned", "INTEGER")?;
+    add_column_if_missing(conn, "reference_assets", "palette_pinned", "INTEGER")?;
+    add_column_if_missing(conn, "reference_assets", "block_order", "TEXT")?;
+    record_migration(conn, MIGRATION_NODE_FLAGS)?;
     Ok(())
 }
 
@@ -1063,10 +1232,15 @@ fn write_snapshot(
         params![snapshot.version.to_string()],
     )
     .map_err(|error| error.to_string())?;
+    tx.execute(
+        "INSERT INTO project_meta (key, value) VALUES (?1, ?2)",
+        params![SNAPSHOT_FIELDS_KEY, SNAPSHOT_FIELDS_LEVEL],
+    )
+    .map_err(|error| error.to_string())?;
 
     for idea in &snapshot.ideas {
         tx.execute(
-            "INSERT INTO ideas (id, title, body, content, status, x, y, importance, scale, created_at, added_at, updated_at, source_url, notes) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+            "INSERT INTO ideas (id, title, body, content, status, x, y, importance, scale, created_at, added_at, updated_at, source_url, notes, variant, ai_excluded) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
             params![
                 idea.id,
                 idea.title,
@@ -1085,7 +1259,9 @@ fn write_snapshot(
                 idea.added_at,
                 idea.updated_at,
                 idea.source_url,
-                idea.notes
+                idea.notes,
+                idea.variant,
+                idea.ai_excluded
             ],
         )
         .map_err(|error| error.to_string())?;
@@ -1102,8 +1278,14 @@ fn write_snapshot(
         let crop_y = reference.crop_rect.as_ref().map(|rect| rect.y);
         let crop_width = reference.crop_rect.as_ref().map(|rect| rect.width);
         let crop_height = reference.crop_rect.as_ref().map(|rect| rect.height);
+        let block_order_json = reference
+            .block_order
+            .as_ref()
+            .map(serde_json::to_string)
+            .transpose()
+            .map_err(|error| error.to_string())?;
         tx.execute(
-            "INSERT INTO reference_assets (id, title, content, source, origin_app, origin_id, source_path, palette_json, thumb, asset_path, thumb_path, fingerprint, perceptual_hash, x, y, width, height, size_bytes, mime_type, importance, scale, created_at, added_at, updated_at, source_url, notes, crop_x, crop_y, crop_width, crop_height) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30)",
+            "INSERT INTO reference_assets (id, title, content, source, origin_app, origin_id, source_path, palette_json, thumb, asset_path, thumb_path, fingerprint, perceptual_hash, x, y, width, height, size_bytes, mime_type, importance, scale, created_at, added_at, updated_at, source_url, notes, crop_x, crop_y, crop_width, crop_height, ai_excluded, tags_pinned, palette_pinned, block_order) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32, ?33, ?34)",
             params![
                 reference.id,
                 reference.title,
@@ -1134,7 +1316,11 @@ fn write_snapshot(
                 crop_x,
                 crop_y,
                 crop_width,
-                crop_height
+                crop_height,
+                reference.ai_excluded,
+                reference.tags_pinned,
+                reference.palette_pinned,
+                block_order_json
             ],
         )
         .map_err(|error| error.to_string())?;
@@ -1210,6 +1396,8 @@ fn write_snapshot(
     write_json_collection(&tx, "nodeVersions", &snapshot.node_versions)?;
     write_json_collection(&tx, "aiPanel", &snapshot.ai_panel)?;
     write_json_collection(&tx, "slidesConfig", &snapshot.slides_config)?;
+    write_json_collection(&tx, "project", &snapshot.project)?;
+    write_json_collection(&tx, "appearance", &snapshot.appearance)?;
 
     tx.commit().map_err(|error| error.to_string())
 }
@@ -1229,15 +1417,14 @@ fn write_json_collection<T: Serialize>(
 }
 
 fn read_snapshot(conn: &Connection) -> Result<ProjectSnapshot, String> {
-    let version = conn
-        .query_row(
+    let version = snapshot_version_from_meta(
+        conn.query_row(
             "SELECT value FROM project_meta WHERE key = 'version'",
             [],
             |row| row.get::<_, String>(0),
         )
-        .ok()
-        .and_then(|value| value.parse::<i64>().ok())
-        .unwrap_or(1);
+        .ok(),
+    )?;
 
     let ideas = read_ideas(conn)?;
     let images = read_references(conn)?;
@@ -1269,9 +1456,13 @@ fn read_snapshot(conn: &Connection) -> Result<ProjectSnapshot, String> {
     let node_versions = read_json_collection(conn, "nodeVersions")?.unwrap_or_default();
     let ai_panel = read_json_collection(conn, "aiPanel")?.unwrap_or(serde_json::Value::Null);
     let slides_config = read_json_collection(conn, "slidesConfig")?.unwrap_or(serde_json::Value::Null);
+    let project = read_json_collection(conn, "project")?.unwrap_or(serde_json::Value::Null);
+    let appearance = read_json_collection(conn, "appearance")?.unwrap_or(serde_json::Value::Null);
 
     Ok(ProjectSnapshot {
         version,
+        project,
+        appearance,
         ideas,
         images,
         palettes,
@@ -1291,7 +1482,7 @@ fn read_snapshot(conn: &Connection) -> Result<ProjectSnapshot, String> {
 
 fn read_ideas(conn: &Connection) -> Result<Vec<IdeaRecord>, String> {
     let mut statement = conn
-        .prepare("SELECT id, title, body, status, x, y, importance, created_at, added_at, updated_at, source_url, notes, scale, content FROM ideas ORDER BY rowid")
+        .prepare("SELECT id, title, body, status, x, y, importance, created_at, added_at, updated_at, source_url, notes, scale, content, variant, ai_excluded FROM ideas ORDER BY rowid")
         .map_err(|error| error.to_string())?;
     let rows = statement
         .query_map([], |row| {
@@ -1310,6 +1501,8 @@ fn read_ideas(conn: &Connection) -> Result<Vec<IdeaRecord>, String> {
                 notes: row.get(11)?,
                 scale: row.get(12)?,
                 content: row.get(13)?,
+                variant: row.get(14)?,
+                ai_excluded: row.get(15)?,
             })
         })
         .map_err(|error| error.to_string())?;
@@ -1321,7 +1514,7 @@ fn read_ideas(conn: &Connection) -> Result<Vec<IdeaRecord>, String> {
 fn read_references(conn: &Connection) -> Result<Vec<ReferenceRecord>, String> {
     let mut statement = conn
         .prepare(
-            "SELECT id, title, source, origin_app, origin_id, source_path, palette_json, thumb, asset_path, thumb_path, fingerprint, perceptual_hash, x, y, width, height, size_bytes, mime_type, importance, created_at, added_at, updated_at, source_url, notes, scale, crop_x, crop_y, crop_width, crop_height, content FROM reference_assets ORDER BY rowid",
+            "SELECT id, title, source, origin_app, origin_id, source_path, palette_json, thumb, asset_path, thumb_path, fingerprint, perceptual_hash, x, y, width, height, size_bytes, mime_type, importance, created_at, added_at, updated_at, source_url, notes, scale, crop_x, crop_y, crop_width, crop_height, content, ai_excluded, tags_pinned, palette_pinned, block_order FROM reference_assets ORDER BY rowid",
         )
         .map_err(|error| error.to_string())?;
     let rows = statement
@@ -1367,6 +1560,12 @@ fn read_references(conn: &Connection) -> Result<Vec<ReferenceRecord>, String> {
                 scale: row.get(24)?,
                 crop_rect,
                 content: row.get(29)?,
+                ai_excluded: row.get(30)?,
+                tags_pinned: row.get(31)?,
+                palette_pinned: row.get(32)?,
+                block_order: row
+                    .get::<_, Option<String>>(33)?
+                    .and_then(|json| serde_json::from_str::<Vec<String>>(&json).ok()),
             })
         })
         .map_err(|error| error.to_string())?;
@@ -4576,6 +4775,8 @@ mod tests {
         let thumb = format!("data:image/png;base64,{}", BASE64.encode(png.into_inner()));
         let snapshot = ProjectSnapshot {
             version: 2,
+            project: serde_json::json!({"title": "Roundtrip", "kind": "ideaboard"}),
+            appearance: serde_json::json!({"colorMode": "light", "accentColor": "#cc5500"}),
             ideas: vec![IdeaRecord {
                 id: "idea-a".to_string(),
                 title: "Idea A".to_string(),
@@ -4591,6 +4792,8 @@ mod tests {
                 updated_at: Some("2026-06-01T00:02:00.000Z".to_string()),
                 source_url: Some("https://example.com/idea".to_string()),
                 notes: Some("Idea notes".to_string()),
+                variant: Some("sticker".to_string()),
+                ai_excluded: Some(true),
             }],
             images: vec![ReferenceRecord {
                 id: "img-a".to_string(),
@@ -4630,6 +4833,10 @@ mod tests {
                     width: 0.6,
                     height: 0.5,
                 }),
+                ai_excluded: Some(true),
+                tags_pinned: Some(true),
+                palette_pinned: Some(false),
+                block_order: Some(vec!["palette".to_string(), "tags".to_string()]),
             }],
             palettes: vec![serde_json::json!({
                 "id": "palette-a",
@@ -4740,6 +4947,17 @@ mod tests {
         assert_eq!(restored.version, 2);
         assert_eq!(restored.ai_panel["threads"][0]["id"], "thread-a");
         assert_eq!(restored.slides_config["aspectRatio"], "16:9");
+        assert_eq!(restored.project["title"], "Roundtrip");
+        assert_eq!(restored.appearance["colorMode"], "light");
+        assert_eq!(restored.ideas[0].variant.as_deref(), Some("sticker"));
+        assert_eq!(restored.ideas[0].ai_excluded, Some(true));
+        assert_eq!(restored.images[0].ai_excluded, Some(true));
+        assert_eq!(restored.images[0].tags_pinned, Some(true));
+        assert_eq!(restored.images[0].palette_pinned, Some(false));
+        assert_eq!(
+            restored.images[0].block_order,
+            Some(vec!["palette".to_string(), "tags".to_string()])
+        );
         assert_eq!(restored.ideas[0].title, "Idea A");
         assert_eq!(restored.ideas[0].importance, Some(3.0));
         assert_eq!(restored.ideas[0].scale, Some(1.6));
@@ -4836,7 +5054,7 @@ mod tests {
                 row.get(0)
             })
             .expect("count migrations");
-        assert_eq!(migration_count, 9);
+        assert_eq!(migration_count, 10);
 
         fs::remove_dir_all(project_dir).expect("remove temp project");
     }
@@ -5768,6 +5986,8 @@ mod tests {
         migrate(&conn).expect("migrate db");
         let snapshot = ProjectSnapshot {
             version: 2,
+            project: serde_json::Value::Null,
+            appearance: serde_json::Value::Null,
             ideas: vec![IdeaRecord {
                 id: "idea-sqlite".to_string(),
                 title: "SQLite fallback idea".to_string(),
@@ -5783,6 +6003,8 @@ mod tests {
                 updated_at: None,
                 source_url: None,
                 notes: None,
+                variant: None,
+                ai_excluded: None,
             }],
             images: vec![],
             palettes: vec![],
@@ -5834,6 +6056,8 @@ mod tests {
         migrate(&conn).expect("migrate db");
         let snapshot = ProjectSnapshot {
             version: 2,
+            project: serde_json::Value::Null,
+            appearance: serde_json::Value::Null,
             ideas: vec![IdeaRecord {
                 id: "idea-authoritative".to_string(),
                 title: "SQLite authoritative title".to_string(),
@@ -5849,6 +6073,8 @@ mod tests {
                 updated_at: None,
                 source_url: None,
                 notes: None,
+                variant: None,
+                ai_excluded: None,
             }],
             images: vec![],
             palettes: vec![],
@@ -5964,5 +6190,491 @@ mod tests {
             parse_gemini_models(&gemini),
             vec!["gemini-2.5-flash", "gemini-custom"]
         );
+    }
+
+    // ---- Snapshot field coverage -------------------------------------------
+    //
+    // Every field the frontend puts in a ProjectSnapshot must survive a real
+    // save and reload. The failure mode is silent: `isProjectSnapshot()` in
+    // main.tsx swaps a missing `project`/`appearance` for defaults, and a
+    // dropped `aiExcluded` re-admits a node into the AI context, so nothing
+    // throws. Earlier fixes added one test per field after the fact
+    // (slidesConfig, aiPanel). These tests cover the class instead: the key
+    // list is read from the TS type declarations, so a field added there and
+    // not carried here fails immediately.
+
+    /// Top-level keys of `type <name> = {` in main.tsx: lines indented exactly
+    /// two spaces, so nested object types and comments are skipped.
+    fn ts_type_keys(source: &str, type_name: &str) -> Vec<String> {
+        let headers = [format!("type {type_name} = {{"), format!("export type {type_name} = {{")];
+        let mut lines = source.lines().skip_while(|line| !headers.iter().any(|h| line == h));
+        assert!(
+            lines.next().is_some(),
+            "type {type_name} not found in main.tsx: it was renamed or moved, update this test"
+        );
+        let mut keys = Vec::new();
+        for line in lines {
+            if line == "}" {
+                break;
+            }
+            let Some(rest) = line.strip_prefix("  ") else { continue };
+            if rest.starts_with([' ', '/', '*']) {
+                continue;
+            }
+            let end = rest.find(['?', ':']).unwrap_or(0);
+            if end > 0 && rest[..end].chars().all(|c| c.is_alphanumeric() || c == '_') {
+                keys.push(rest[..end].to_string());
+            }
+        }
+        keys
+    }
+
+    fn main_tsx_source() -> String {
+        fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("../src/main.tsx"))
+            .expect("read apps/desktop/src/main.tsx")
+    }
+
+    /// One value for every key the TS type declares, for the record types Rust
+    /// models field by field. Palettes, diagrams, placeholders and frames are
+    /// opaque to Rust, so a bare object stands in for them. Numbers that Rust
+    /// stores as f64 are fractional so JSON equality is exact after the trip.
+    fn full_snapshot_fixture(thumb: &str) -> serde_json::Value {
+        // Built in pieces: one json! literal this size hits the macro
+        // recursion limit.
+        let project = serde_json::json!({
+            "title": "Bản lưu đầy đủ", "description": "Mô tả dự án", "author": "VietX",
+            "kind": "ideaboard", "styleNote": "Giấy và mực"
+        });
+        let appearance = serde_json::json!({
+            "colorMode": "light", "canvasColor": "#f4efe6",
+            "accentPreset": "custom", "accentColor": "#cc5500"
+        });
+        let ideas = serde_json::json!([
+            {
+                "id": "idea-plain", "title": "Idea", "content": "Nội dung",
+                "status": "strong", "x": 10.5, "y": 20.5, "importance": 3.5,
+                "scale": 1.5, "createdAt": "2026-09-01T00:00:00.000Z",
+                "addedAt": "2026-09-01T00:01:00.000Z",
+                "updatedAt": "2026-09-01T00:02:00.000Z",
+                "sourceUrl": "https://example.com/idea", "notes": "Ghi chú",
+                "aiExcluded": true
+            },
+            {
+                "id": "idea-sticky", "title": "Sticky", "content": "Dán",
+                "status": "forming", "x": 30.5, "y": 40.5, "variant": "sticker"
+            }
+        ]);
+        let images = serde_json::json!([{
+            "id": "img-a", "title": "Ảnh", "content": "Chú thích",
+            "source": "ref.png", "originApp": "eagle", "originId": "e-1",
+            "sourcePath": "/library/ref.png",
+            "palette": ["#111111", "#222222"], "tags": ["a", "b"],
+            "suggestions": [{
+                "label": "noir", "source": "local", "confidence": 0.75,
+                "status": "accepted"
+            }],
+            "x": 50.5, "y": 60.5, "thumb": thumb, "importance": 2.5,
+            "scale": 1.25, "createdAt": "2026-09-02T00:00:00.000Z",
+            "addedAt": "2026-09-02T00:01:00.000Z",
+            "updatedAt": "2026-09-02T00:02:00.000Z",
+            "sourceUrl": "https://example.com/ref", "notes": "Ghi chú ảnh",
+            "aiExcluded": true, "tagsPinned": true, "palettePinned": false,
+            "blockOrder": ["palette", "tags", "source"],
+            "width": 1, "height": 1, "sizeBytes": 68, "mimeType": "image/png",
+            "fingerprint": "sha256:fixture", "perceptualHash": "ahash:fixture",
+            "cropRect": {"x": 0.125, "y": 0.25, "width": 0.5, "height": 0.5}
+        }]);
+        let links = serde_json::json!([{
+            "id": "link-a", "imageId": "img-a", "ideaId": "idea-plain",
+            "sourceNodeId": "img-a", "targetNodeId": "idea-plain",
+            "sourceKind": "image", "targetKind": "idea", "relation": "supports",
+            "note": "Liên kết", "confidence": 0.75,
+            "createdAt": "2026-09-03T00:00:00.000Z",
+            "updatedAt": "2026-09-03T00:01:00.000Z"
+        }]);
+        let outline_drafts = serde_json::json!([{
+            "id": "outline-a", "title": "Dàn ý", "createdAt": "2026-09-04T00:00:00.000Z",
+            "sections": [{
+                "id": "sec-a", "ideaId": "idea-plain", "title": "Mục",
+                "summary": "Tóm tắt", "referenceIds": ["img-a"], "strength": "strong"
+            }]
+        }]);
+        let opaque = serde_json::json!({
+            "palettes": [{"id": "pal-a", "title": "P", "colors": ["#111111"], "x": 1, "y": 2}],
+            "diagrams": [{"id": "dia-a", "title": "D", "format": "mermaid", "source": "graph TD", "x": 1, "y": 2}],
+            "placeholders": [{"id": "ph-a", "title": "H", "targetKind": "image", "x": 1, "y": 2}],
+            "frames": [{"id": "frame-a", "title": "F", "x": 1, "y": 2, "width": 3, "height": 4}],
+            "aiSettings": {"providers": [], "routingMode": "prefer_local", "selectedProviderId": "openai"},
+            "versionState": {
+                "schemaVersion": 1, "currentBranchId": "main",
+                "branches": [{"id": "main", "name": "Main", "createdAt": "2026-09-01T00:00:00.000Z"}]
+            },
+            "versionHistory": [{"id": "v-1", "label": "Lần một"}],
+            "nodeVersions": [{"id": "nv-1", "nodeId": "idea-plain"}],
+            "slidesConfig": {"aspectRatio": "16:9", "template": "editorial", "transition": "fade"},
+            "aiPanel": {"schemaVersion": 1, "threads": [{"id": "thread-a", "title": "Thread A"}]}
+        });
+        let mut root = opaque.as_object().expect("opaque fixture").clone();
+        root.insert("version".into(), serde_json::json!(2));
+        root.insert("project".into(), project);
+        root.insert("appearance".into(), appearance);
+        root.insert("ideas".into(), ideas);
+        root.insert("images".into(), images);
+        root.insert("links".into(), links);
+        root.insert("outlineDrafts".into(), outline_drafts);
+        serde_json::Value::Object(root)
+    }
+
+    fn tiny_png_data_url() -> String {
+        let mut png = Cursor::new(Vec::new());
+        image::RgbaImage::from_pixel(1, 1, image::Rgba([255, 255, 255, 255]))
+            .write_to(&mut png, ImageFormat::Png)
+            .expect("write png fixture");
+        format!("data:image/png;base64,{}", BASE64.encode(png.into_inner()))
+    }
+
+    fn temp_project_dir(label: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "kira-{label}-{}-{}.kira",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system time")
+                .as_nanos()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        dir
+    }
+
+    fn save_and_reload(project_dir: &Path, snapshot: &serde_json::Value) -> serde_json::Value {
+        write_project_package_to_dir(project_dir.to_path_buf(), snapshot.to_string())
+            .expect("write project package");
+        let restored = read_project_package(project_dir)
+            .expect("read saved package")
+            .expect("restored saved snapshot");
+        serde_json::from_str(&restored).expect("parse restored snapshot")
+    }
+
+    /// `expected` must appear in `actual` key by key. `actual` may carry extra
+    /// keys (the legacy `body` column); `skip` lists keys whose value is
+    /// regenerated on load rather than stored.
+    fn assert_fields_survive(
+        what: &str,
+        expected: &serde_json::Value,
+        actual: &serde_json::Value,
+        skip: &[&str],
+    ) {
+        for (key, value) in expected.as_object().expect("expected is an object") {
+            if skip.contains(&key.as_str()) {
+                continue;
+            }
+            assert_eq!(
+                actual.get(key),
+                Some(value),
+                "{what}.{key} did not survive a save and reload"
+            );
+        }
+    }
+
+    #[test]
+    fn fixture_covers_every_key_the_frontend_declares() {
+        // The other half of the guard: the fixture is the list of what Rust is
+        // asked to carry. A key added to a TS type below but not to the
+        // fixture fails here, telling you to add it to both the fixture and
+        // the Rust side.
+        let source = main_tsx_source();
+        let fixture = full_snapshot_fixture("data:image/png;base64,AA==");
+        let cases: [(&str, &serde_json::Value); 6] = [
+            ("ProjectSnapshot", &fixture),
+            ("Idea", &fixture["ideas"][0]),
+            ("EvidenceImage", &fixture["images"][0]),
+            ("EvidenceLink", &fixture["links"][0]),
+            ("OutlineDraft", &fixture["outlineDrafts"][0]),
+            ("OutlineDraftSection", &fixture["outlineDrafts"][0]["sections"][0]),
+        ];
+        for (type_name, sample) in cases {
+            let keys = ts_type_keys(&source, type_name);
+            // Guard against a parser that quietly reads nothing.
+            assert!(
+                keys.len() >= 4 && keys.iter().any(|key| key == "id" || key == "version"),
+                "read {} keys for {type_name}, the parser is not seeing the type: {keys:?}",
+                keys.len()
+            );
+            let mut haystack = sample.as_object().expect("fixture sample").clone();
+            if type_name == "Idea" {
+                // `variant` and `aiExcluded` live on different Idea records.
+                haystack.extend(fixture["ideas"][1].as_object().expect("sticky idea").clone());
+            }
+            let missing: Vec<&String> = keys.iter().filter(|key| !haystack.contains_key(*key)).collect();
+            assert!(
+                missing.is_empty(),
+                "{type_name} declares {missing:?} in main.tsx but full_snapshot_fixture() has no value for it"
+            );
+        }
+    }
+
+    #[test]
+    fn every_fixture_field_survives_save_and_reload() {
+        let project_dir = temp_project_dir("all-fields");
+        let fixture = full_snapshot_fixture(&tiny_png_data_url());
+        let restored = save_and_reload(&project_dir, &fixture);
+
+        // Opaque and top-level collections: exact equality.
+        for key in [
+            "project", "appearance", "palettes", "diagrams", "placeholders", "frames",
+            "aiSettings", "versionState", "versionHistory", "nodeVersions", "slidesConfig",
+            "aiPanel", "outlineDrafts", "links",
+        ] {
+            assert_eq!(restored[key], fixture[key], "{key} did not survive a save and reload");
+        }
+        assert_eq!(restored["version"], 2);
+        for index in 0..fixture["ideas"].as_array().unwrap().len() {
+            assert_fields_survive(
+                &format!("ideas[{index}]"),
+                &fixture["ideas"][index],
+                &restored["ideas"][index],
+                &[],
+            );
+        }
+        // `thumb` is re-encoded from the stored PNG on load, not stored as sent.
+        assert_fields_survive("images[0]", &fixture["images"][0], &restored["images"][0], &["thumb"]);
+
+        let _ = fs::remove_dir_all(project_dir);
+    }
+
+    #[test]
+    fn legacy_package_recovers_lost_fields_from_its_manifest() {
+        // A project saved before the fix has the right values only in
+        // manifest.json: its SQLite lacks project, appearance and the node
+        // flags. Simulate that by stripping exactly what the old writer never
+        // stored, then check a load restores it.
+        let project_dir = temp_project_dir("legacy-rescue");
+        let fixture = full_snapshot_fixture(&tiny_png_data_url());
+        save_and_reload(&project_dir, &fixture);
+        {
+            let conn = Connection::open(project_dir.join(SQLITE_NAME)).expect("open sqlite");
+            conn.execute_batch(
+                "DELETE FROM canvas_collections WHERE key IN ('project', 'appearance');
+                 DELETE FROM project_meta WHERE key = 'snapshot_fields';
+                 UPDATE ideas SET variant = NULL, ai_excluded = NULL;
+                 UPDATE reference_assets SET ai_excluded = NULL, tags_pinned = NULL,
+                     palette_pinned = NULL, block_order = NULL;",
+            )
+            .expect("strip the fields a legacy save never wrote");
+        }
+        let restored: serde_json::Value = serde_json::from_str(
+            &read_project_package(&project_dir).expect("read").expect("snapshot"),
+        )
+        .expect("parse");
+        assert_eq!(restored["project"], fixture["project"]);
+        assert_eq!(restored["appearance"], fixture["appearance"]);
+        assert_eq!(restored["ideas"][0]["aiExcluded"], true);
+        assert_eq!(restored["ideas"][1]["variant"], "sticker");
+        assert_fields_survive("images[0]", &fixture["images"][0], &restored["images"][0], &["thumb"]);
+
+        // Without a manifest there is nothing to recover: the keys are absent
+        // (which main.tsx handles), never null.
+        fs::remove_file(project_dir.join(MANIFEST_NAME)).expect("remove manifest");
+        let bare: serde_json::Value = serde_json::from_str(
+            &read_project_package(&project_dir).expect("read").expect("snapshot"),
+        )
+        .expect("parse");
+        assert!(bare.get("project").is_none() && bare.get("appearance").is_none());
+
+        let _ = fs::remove_dir_all(project_dir);
+    }
+
+    #[test]
+    fn stale_manifest_never_overrides_a_current_save() {
+        // The rescue path is only for packages an older build wrote. A package
+        // saved by this build carries the marker, so SQLite alone decides.
+        let project_dir = temp_project_dir("no-override");
+        let mut fixture = full_snapshot_fixture(&tiny_png_data_url());
+        fixture["ideas"][0]["aiExcluded"] = serde_json::json!(false);
+        fixture["project"]["title"] = serde_json::json!("Current title");
+        save_and_reload(&project_dir, &fixture);
+
+        let mut stale = fixture.clone();
+        stale["ideas"][0]["aiExcluded"] = serde_json::json!(true);
+        stale["project"]["title"] = serde_json::json!("Stale title");
+        fs::write(project_dir.join(MANIFEST_NAME), stale.to_string()).expect("write stale manifest");
+
+        let restored: serde_json::Value = serde_json::from_str(
+            &read_project_package(&project_dir).expect("read").expect("snapshot"),
+        )
+        .expect("parse");
+        assert_eq!(restored["ideas"][0]["aiExcluded"], false);
+        assert_eq!(restored["project"]["title"], "Current title");
+
+        let _ = fs::remove_dir_all(project_dir);
+    }
+
+    // ---- Snapshot version ---------------------------------------------------
+    //
+    // The app wrote snapshot version 1 until 621a5ef (June 2026) moved it to 2
+    // without a migration. main.tsx only accepts 2, so a v1 package used to
+    // open as nothing at all.
+
+    /// The schema the app created while it still wrote version 1, copied from
+    /// migrate() at 621a5ef^: narrower tables, `links` with foreign keys, and
+    /// no canvas_collections table.
+    const V1_SCHEMA: &str = "
+        CREATE TABLE schema_migrations (id TEXT PRIMARY KEY, applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+        CREATE TABLE project_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+        CREATE TABLE ideas (id TEXT PRIMARY KEY, title TEXT NOT NULL, body TEXT NOT NULL,
+          status TEXT NOT NULL, x REAL NOT NULL, y REAL NOT NULL);
+        CREATE TABLE reference_assets (id TEXT PRIMARY KEY, title TEXT NOT NULL, source TEXT NOT NULL,
+          origin_app TEXT, origin_id TEXT, source_path TEXT, palette_json TEXT NOT NULL,
+          thumb TEXT NOT NULL, asset_path TEXT, thumb_path TEXT,
+          fingerprint TEXT NOT NULL DEFAULT '', perceptual_hash TEXT NOT NULL DEFAULT '',
+          x REAL NOT NULL, y REAL NOT NULL);
+        CREATE TABLE links (id TEXT PRIMARY KEY, image_id TEXT NOT NULL, idea_id TEXT NOT NULL,
+          relation TEXT NOT NULL, note TEXT NOT NULL, confidence REAL NOT NULL,
+          FOREIGN KEY(image_id) REFERENCES reference_assets(id) ON DELETE CASCADE,
+          FOREIGN KEY(idea_id) REFERENCES ideas(id) ON DELETE CASCADE);
+        CREATE TABLE reference_tags (reference_id TEXT NOT NULL, tag TEXT NOT NULL, position INTEGER NOT NULL,
+          PRIMARY KEY(reference_id, tag),
+          FOREIGN KEY(reference_id) REFERENCES reference_assets(id) ON DELETE CASCADE);
+        CREATE TABLE tag_suggestions (reference_id TEXT NOT NULL, suggestion TEXT NOT NULL,
+          source TEXT NOT NULL DEFAULT 'local', confidence REAL NOT NULL DEFAULT 0.5,
+          status TEXT NOT NULL DEFAULT 'pending', position INTEGER NOT NULL,
+          PRIMARY KEY(reference_id, suggestion),
+          FOREIGN KEY(reference_id) REFERENCES reference_assets(id) ON DELETE CASCADE);
+        CREATE TABLE outline_drafts (id TEXT PRIMARY KEY, title TEXT NOT NULL, created_at TEXT NOT NULL,
+          sections_json TEXT NOT NULL, position INTEGER NOT NULL);
+        INSERT INTO project_meta (key, value) VALUES ('version', '1');
+        INSERT INTO ideas VALUES ('idea-old', 'Ý tưởng cũ', 'Nội dung viết bằng body', 'strong', 11.5, 22.5);
+    ";
+
+    /// The rows of a v1 project, added after V1_SCHEMA. The image row is a
+    /// separate statement because it needs a real PNG for the re-save below.
+    const V1_ROWS: &str = "
+        INSERT INTO reference_tags VALUES ('img-old', 'archive', 0);
+        INSERT INTO links VALUES ('link-old', 'img-old', 'idea-old', 'supports', 'Ghi chú', 0.75);
+        INSERT INTO outline_drafts VALUES ('outline-old', 'Dàn ý cũ', '2026-06-01T00:00:00.000Z', '[]', 0);
+    ";
+
+    fn v1_package(label: &str, with_manifest: bool) -> PathBuf {
+        let project_dir = temp_project_dir(label);
+        ensure_project_dirs(&project_dir).expect("create project dirs");
+        let conn = Connection::open(project_dir.join(SQLITE_NAME)).expect("open sqlite");
+        conn.execute_batch(V1_SCHEMA).expect("build a v1 package");
+        conn.execute(
+            "INSERT INTO reference_assets (id, title, source, palette_json, thumb, x, y)
+             VALUES ('img-old', 'Ảnh cũ', 'old.png', '[\"#111111\"]', ?1, 33.5, 44.5)",
+            params![tiny_png_data_url()],
+        )
+        .expect("insert v1 image");
+        conn.execute_batch(V1_ROWS).expect("insert v1 rows");
+        if with_manifest {
+            fs::write(
+                project_dir.join(MANIFEST_NAME),
+                serde_json::json!({
+                    "version": 1,
+                    "ideas": [{"id": "idea-old", "title": "Ý tưởng cũ", "body": "Nội dung viết bằng body",
+                               "status": "strong", "x": 11.5, "y": 22.5}],
+                    "images": [],
+                    "links": [],
+                    "outlineDrafts": []
+                })
+                .to_string(),
+            )
+            .expect("write v1 manifest");
+        }
+        project_dir
+    }
+
+    fn read_json(project_dir: &Path) -> Result<serde_json::Value, String> {
+        read_project_package(project_dir).map(|text| {
+            serde_json::from_str(&text.expect("a package to read")).expect("parse snapshot")
+        })
+    }
+
+    #[test]
+    fn v1_package_opens_as_v2_with_all_of_its_data() {
+        let project_dir = v1_package("v1-open", true);
+        let opened = read_json(&project_dir).expect("a v1 package must open");
+
+        assert_eq!(opened["version"], 2, "the frontend only accepts 2");
+        assert_eq!(opened["ideas"][0]["id"], "idea-old");
+        assert_eq!(opened["ideas"][0]["body"], "Nội dung viết bằng body");
+        assert_eq!(opened["ideas"][0]["x"], 11.5);
+        assert_eq!(opened["images"][0]["id"], "img-old");
+        assert_eq!(opened["images"][0]["tags"][0], "archive");
+        assert_eq!(opened["links"][0]["id"], "link-old");
+        assert_eq!(opened["links"][0]["confidence"], 0.75);
+        assert_eq!(opened["outlineDrafts"][0]["title"], "Dàn ý cũ");
+        // Everything v2 added and v1 lacks comes back defaulted, not missing.
+        for key in ["palettes", "diagrams", "placeholders", "versionHistory", "nodeVersions"] {
+            assert_eq!(opened[key], serde_json::json!([]), "{key}");
+        }
+        assert!(opened["aiSettings"]["providers"].is_array());
+        assert_eq!(opened["versionState"]["currentBranchId"], "main");
+
+        // Reading did not rewrite the package: it still says 1 on disk.
+        let conn = Connection::open(project_dir.join(SQLITE_NAME)).expect("open sqlite");
+        let stored: String = conn
+            .query_row("SELECT value FROM project_meta WHERE key = 'version'", [], |row| row.get(0))
+            .expect("version row");
+        assert_eq!(stored, "1");
+
+        // The frontend saves what it loaded; the next open is a plain v2 one.
+        drop(conn);
+        write_project_package_to_dir(project_dir.clone(), opened.to_string())
+            .expect("re-save the upgraded snapshot");
+        let reopened = read_json(&project_dir).expect("reopen after save");
+        assert_eq!(reopened["version"], 2);
+        assert_eq!(reopened["ideas"][0]["body"], "Nội dung viết bằng body");
+        assert_eq!(reopened["links"][0]["id"], "link-old");
+
+        let _ = fs::remove_dir_all(project_dir);
+    }
+
+    #[test]
+    fn v1_manifest_without_sqlite_opens_as_v2() {
+        let project_dir = v1_package("v1-manifest-only", true);
+        fs::remove_file(project_dir.join(SQLITE_NAME)).expect("remove sqlite");
+        let opened = read_json(&project_dir).expect("a v1 manifest must open");
+        assert_eq!(opened["version"], 2);
+        assert_eq!(opened["ideas"][0]["id"], "idea-old");
+        let _ = fs::remove_dir_all(project_dir);
+    }
+
+    #[test]
+    fn version_marker_edge_cases_are_explicit() {
+        let project_dir = temp_project_dir("version-edges");
+        save_and_reload(&project_dir, &full_snapshot_fixture(&tiny_png_data_url()));
+        let set_version = |value: Option<&str>| {
+            let conn = Connection::open(project_dir.join(SQLITE_NAME)).expect("open sqlite");
+            match value {
+                Some(value) => conn.execute(
+                    "INSERT OR REPLACE INTO project_meta (key, value) VALUES ('version', ?1)",
+                    params![value],
+                ),
+                None => conn.execute("DELETE FROM project_meta WHERE key = 'version'", []),
+            }
+            .expect("edit version row");
+        };
+
+        // A missing row still opens: saves write it alongside the data.
+        set_version(None);
+        assert_eq!(read_json(&project_dir).expect("missing row")["version"], 2);
+
+        // Newer than this build: an error that says so, not a snapshot the
+        // frontend would discard. A real newer package has a matching manifest.
+        set_version(Some("3"));
+        let manifest = fs::read_to_string(project_dir.join(MANIFEST_NAME)).expect("manifest");
+        let mut newer: serde_json::Value = serde_json::from_str(&manifest).expect("parse manifest");
+        newer["version"] = serde_json::json!(3);
+        fs::write(project_dir.join(MANIFEST_NAME), newer.to_string()).expect("write manifest");
+        let error = read_json(&project_dir).expect_err("a newer package must not open silently");
+        assert!(error.contains("newer version of KIRA"), "unhelpful error: {error}");
+
+        // Garbage is corruption, also an error.
+        set_version(Some("abc"));
+        let error = read_json(&project_dir).expect_err("an unreadable marker must not open");
+        assert!(error.contains("unreadable"), "unhelpful error: {error}");
+
+        let _ = fs::remove_dir_all(project_dir);
     }
 }
