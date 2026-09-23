@@ -4658,6 +4658,104 @@ fn configure_native_macos_window(window: &tauri::WebviewWindow) -> Result<(), St
     Ok(())
 }
 
+// Holding Space arms a canvas pan, and the frontend shows an open hand for it
+// through CSS. In the macOS app that hand never appeared while the pointer was
+// still: WebKit treats a Space keydown as typing and hides the pointer until the
+// mouse moves (+[NSCursor setHiddenUntilMouseMoves:]), so pressing Space made the
+// pointer vanish instead. Captured with the pointer in frame at 442b979; the
+// browser build does not do this.
+//
+// Two causes, two parts:
+// - The arming keydown. WebKit hides the pointer for it asynchronously, after its
+//   own handling of the key comes back, so set_space_pan_cursor re-shows the open
+//   hand once immediately and twice more after that window.
+// - Auto-repeat. A real held key sends ~30 more keydowns a second, and each one
+//   would hide the pointer again. install_space_repeat_filter drops them before
+//   WKWebView sees them while a pan is armed; the pan needs only the first
+//   keydown and the keyup, which both still go through.
+// The next mouse move hands the cursor back to WebKit, whose CSS cursor for an
+// armed canvas is the same open hand, so the two never disagree.
+#[cfg(target_os = "macos")]
+static SPACE_PAN_ARMED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+
+#[cfg(target_os = "macos")]
+fn install_space_repeat_filter() {
+    use objc2_app_kit::{NSEvent, NSEventMask};
+    use std::ptr::NonNull;
+    use std::sync::atomic::Ordering;
+
+    const KVK_SPACE: u16 = 49;
+    let block = block2::RcBlock::new(|event: NonNull<NSEvent>| -> *mut NSEvent {
+        // The mask is key-down only, so keyCode is safe to read here.
+        let key = unsafe { event.as_ref() };
+        // Only while a pan is armed. Armed never happens with the caret in a text
+        // field (blocksSpacePan in main.tsx), so typed spaces are never touched,
+        // and the first keydown and the keyup still go through: the pan needs
+        // exactly those two and nothing listens to the repeats.
+        if SPACE_PAN_ARMED.load(Ordering::Relaxed) && key.keyCode() == KVK_SPACE && key.isARepeat() {
+            return std::ptr::null_mut();
+        }
+        event.as_ptr()
+    });
+    let monitor = unsafe { NSEvent::addLocalMonitorForEventsMatchingMask_handler(NSEventMask::KeyDown, &block) };
+    // One monitor for the life of the app. AppKit keeps its own reference; this
+    // just stops our handle from being released, which is harmless either way.
+    std::mem::forget(monitor);
+}
+
+#[cfg(target_os = "macos")]
+fn show_space_pan_cursor(active: bool) {
+    objc2_app_kit::NSCursor::setHiddenUntilMouseMoves(false);
+    if active {
+        objc2_app_kit::NSCursor::openHandCursor().set();
+    } else {
+        objc2_app_kit::NSCursor::arrowCursor().set();
+    }
+}
+
+#[tauri::command]
+fn set_space_pan_cursor(app: tauri::AppHandle, active: bool) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        use std::sync::atomic::Ordering;
+        SPACE_PAN_ARMED.store(active, Ordering::Relaxed);
+        app.run_on_main_thread(move || show_space_pan_cursor(active))
+            .map_err(|error| error.to_string())?;
+        if active {
+            // WebKit hides the pointer for the arming keydown asynchronously, once
+            // its own handling of that key comes back, so the call above can land
+            // before the hide and be undone by it. Measured in the debug bundle:
+            // the command ran 9ms after the keydown and the pointer still stayed
+            // hidden for the whole hold; re-asserting after that window kept the
+            // open hand on screen. Two late re-asserts cover it. Each is skipped
+            // once the pan is released, or once a mouse button is down: a drag has
+            // started, the mouse is moving, and WebKit's CSS closed hand is right.
+            let later = app.clone();
+            std::thread::spawn(move || {
+                for wait_ms in [60u64, 190] {
+                    std::thread::sleep(std::time::Duration::from_millis(wait_ms));
+                    if !SPACE_PAN_ARMED.load(Ordering::Relaxed) {
+                        return;
+                    }
+                    let _ = later.run_on_main_thread(|| {
+                        if SPACE_PAN_ARMED.load(Ordering::Relaxed)
+                            && objc2_app_kit::NSEvent::pressedMouseButtons() == 0
+                        {
+                            show_space_pan_cursor(true);
+                        }
+                    });
+                }
+            });
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (app, active);
+    }
+    Ok(())
+}
+
 pub fn run() {
     tauri::Builder::default()
         .manage(CaptureContextState::default())
@@ -4670,6 +4768,9 @@ pub fn run() {
                     eprintln!("KIRA native macOS window setup failed: {error}");
                 }
             }
+            // setup runs on the main thread, which AppKit's event monitor wants.
+            #[cfg(target_os = "macos")]
+            install_space_repeat_filter();
             start_capture_server(app.handle().clone());
             #[cfg(target_os = "macos")]
             if let Err(error) = register_safari_extension() {
@@ -4681,6 +4782,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            set_space_pan_cursor,
             save_project_package,
             open_project_package,
             open_project_package_at,

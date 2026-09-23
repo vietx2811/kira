@@ -8332,18 +8332,37 @@ function GraphCanvas({
       ))
     }
 
+    // In the macOS app WebKit hides the pointer on a keydown it treats as typing,
+    // so the CSS hand for an armed canvas would never show until the mouse moved.
+    // The native side undoes that hide and sets the cursor (see
+    // set_space_pan_cursor in lib.rs). No-op in the browser build.
+    function syncNativePanCursor(active: boolean) {
+      if (!isTauriRuntime()) return
+      void invoke('set_space_pan_cursor', { active }).catch(() => undefined)
+    }
+
     function handleKeyDown(event: KeyboardEvent) {
-      if (event.code !== 'Space' || event.repeat) return
+      if (event.code !== 'Space') return
+      if (event.repeat) {
+        // Holding Space auto-repeats. While armed those repeats are part of the
+        // pan gesture, not typing. In the macOS app they never get here (the
+        // native side drops them, see install_space_repeat_filter in lib.rs);
+        // in the browser, swallow them so they cannot scroll or type.
+        if (spacePanArmedRef.current) event.preventDefault()
+        return
+      }
       if (isModalOpen() || blocksSpacePan(event.target)) return
       event.preventDefault()
       spacePanArmedRef.current = true
       setIsSpacePanArmed(true)
+      syncNativePanCursor(true)
     }
 
     function handleKeyUp(event: KeyboardEvent) {
       if (event.code !== 'Space' || !spacePanArmedRef.current) return
       spacePanArmedRef.current = false
       setIsSpacePanArmed(false)
+      syncNativePanCursor(false)
     }
 
     function handleBlur() {
@@ -8352,6 +8371,7 @@ function GraphCanvas({
       if (!spacePanArmedRef.current) return
       spacePanArmedRef.current = false
       setIsSpacePanArmed(false)
+      syncNativePanCursor(false)
       stopPan()
     }
 
