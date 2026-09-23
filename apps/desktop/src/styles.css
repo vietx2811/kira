@@ -2857,12 +2857,21 @@ button.mini-tags-more:focus-visible {
   );
 }
 
-.graph-canvas.is-space-armed {
-  cursor: grab;
+/* While Space is held every drag pans the canvas, including a drag that starts
+   on a node (startNodeDrag returns early for a Space-armed pointer). So the hand
+   has to win over every descendant's own cursor, not only show on empty canvas:
+   node text, node chrome and controls set default / pointer / grab / text, and
+   measured at 4ec0194 the pointer over a node's text stayed an arrow while the
+   drag was going to pan. !important is deliberate: this is a transient mode that
+   must beat every descendant rule, and it only exists while the class is on. */
+.graph-canvas.is-space-armed,
+.graph-canvas.is-space-armed * {
+  cursor: grab !important;
 }
 
-.graph-canvas.is-panning {
-  cursor: grabbing;
+.graph-canvas.is-panning,
+.graph-canvas.is-panning * {
+  cursor: grabbing !important;
 }
 
 .graph-viewport {
