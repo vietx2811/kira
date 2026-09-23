@@ -1708,6 +1708,7 @@ name = "kira-desktop"
 version = "1.1.0"
 dependencies = [
  "base64 0.22.1",
+ "block2",
  "image",
  "objc2-app-kit",
  "objc2-quartz-core",
