@@ -4686,6 +4686,7 @@ fn install_space_repeat_filter() {
     use std::sync::atomic::Ordering;
 
     const KVK_SPACE: u16 = 49;
+    const KVK_ESCAPE: u16 = 53;
     let block = block2::RcBlock::new(|event: NonNull<NSEvent>| -> *mut NSEvent {
         // The mask is key-down only, so keyCode is safe to read here.
         let key = unsafe { event.as_ref() };
@@ -4696,12 +4697,67 @@ fn install_space_repeat_filter() {
         if SPACE_PAN_ARMED.load(Ordering::Relaxed) && key.keyCode() == KVK_SPACE && key.isARepeat() {
             return std::ptr::null_mut();
         }
+        if key.keyCode() == KVK_ESCAPE && route_escape_to_webview(key) {
+            return std::ptr::null_mut();
+        }
         event.as_ptr()
     });
     let monitor = unsafe { NSEvent::addLocalMonitorForEventsMatchingMask_handler(NSEventMask::KeyDown, &block) };
     // One monitor for the life of the app. AppKit keeps its own reference; this
     // just stops our handle from being released, which is harmless either way.
     std::mem::forget(monitor);
+}
+
+// Escape never reached the page as a keydown in the macOS app, so nothing that
+// closes on Escape (dialogs, menus, the onboarding overlay) did; the keyup still
+// arrived, and every other key worked. For the key window AppKit offers a plain
+// Escape to the key-equivalent path first (it is the Cancel-button key), and it
+// never came back out as a keydown to the page. Handing it straight to the web
+// view's keyDown: is what AppKit does for every other key, so WebKit, input
+// methods and the page all see it the normal way. Only for the web view: a
+// native control holding focus keeps AppKit's own Escape handling.
+//
+// WebKit re-sends a key the page did not handle back through the app, and that
+// copy comes through this monitor again. It is the same event, so it is let
+// through untouched; routing it again would feed it back into the page.
+#[cfg(target_os = "macos")]
+static LAST_ROUTED_ESCAPE: std::sync::Mutex<f64> = std::sync::Mutex::new(-1.0);
+
+#[cfg(target_os = "macos")]
+fn route_escape_to_webview(event: &objc2_app_kit::NSEvent) -> bool {
+    use objc2_app_kit::NSEventModifierFlags;
+
+    let Some(mtm) = objc2::MainThreadMarker::new() else { return false };
+    let chord = NSEventModifierFlags::Command | NSEventModifierFlags::Control | NSEventModifierFlags::Option;
+    if event.modifierFlags().intersects(chord) {
+        return false;
+    }
+    let Some(window) = event.window(mtm) else { return false };
+    let Some(responder) = window.firstResponder() else { return false };
+    // The web view's class is a KVO subclass of wry's WKWebView subclass, so
+    // match on the ancestry, not the name.
+    let mut class = Some(responder.class());
+    let mut is_web_view = false;
+    while let Some(current) = class {
+        if current.name().to_bytes() == b"WKWebView" {
+            is_web_view = true;
+            break;
+        }
+        class = current.superclass();
+    }
+    if !is_web_view {
+        return false;
+    }
+    let stamp = event.timestamp();
+    {
+        let Ok(mut last) = LAST_ROUTED_ESCAPE.lock() else { return false };
+        if *last == stamp {
+            return false;
+        }
+        *last = stamp;
+    }
+    responder.keyDown(event);
+    true
 }
 
 #[cfg(target_os = "macos")]
