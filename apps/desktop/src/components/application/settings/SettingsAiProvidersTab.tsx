@@ -177,7 +177,10 @@ export function SettingsAiProvidersTab({
                 placeholder="Paste your API key"
                 onChange={(value) => setSecretDrafts((current) => ({ ...current, [provider.id]: value }))}
               />
-              <Button type="submit" color="primary" size="sm" isLoading={busy} isDisabled={busy || !(secretDrafts[provider.id] ?? '').trim()}>
+              {/* onPress, not type="submit": the kit Button does not submit a
+                  form in the macOS app's WKWebView. Enter in the field still
+                  submits through the form. */}
+              <Button color="primary" size="sm" isLoading={busy} isDisabled={busy || !(secretDrafts[provider.id] ?? '').trim()} onPress={() => void connect(provider.id, secretDrafts[provider.id] ?? '')}>
                 Connect
               </Button>
             </div>
