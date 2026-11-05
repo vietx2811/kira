@@ -2881,7 +2881,9 @@ fn test_ai_provider_native(
     }
 
     match read_secret_from_keychain(provider_id) {
-        Ok(secret) if !secret.is_empty() => match list_remote_provider_models(provider, &secret) {
+        Ok(secret) if !secret.is_empty() => match verify_remote_provider_key(provider, &secret)
+            .and_then(|_| list_remote_provider_models(provider, &secret))
+        {
             Ok(models) => Ok(AiProviderTestResult {
                 connected: true,
                 status: "connected".to_string(),
@@ -3480,6 +3482,23 @@ fn list_remote_provider_models(
         }
         _ => Err("Provider model discovery is not supported yet".to_string()),
     }
+}
+
+// Listing models proves a key only where listing needs one. OpenRouter's
+// model list is public, so any string connected (a made-up key showed
+// "Connected · 454 models" in Settings, 2026-11-06) and every call then failed.
+// Its key endpoint does need auth, so check that first.
+fn verify_remote_provider_key(provider: &AiProviderTestRequest, secret: &str) -> Result<(), String> {
+    if provider.provider_type != "openrouter" {
+        return Ok(());
+    }
+    let url = format!("{}/key", normalized_openai_chat_base_url(provider)?);
+    let response = http_client()?
+        .get(url)
+        .bearer_auth(secret)
+        .send()
+        .map_err(|error| format!("Key check failed: {error}"))?;
+    response_json(response, "Key check").map(|_| ())
 }
 
 fn list_local_or_openai_compatible_models(

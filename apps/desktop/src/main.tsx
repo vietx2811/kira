@@ -4610,7 +4610,16 @@ function FileWorkspace({
             : candidate,
         ),
       )
-      if (connected) await listAiModels(providerId)
+      if (connected) {
+        await listAiModels(providerId)
+      } else if (secret !== undefined) {
+        // A key that does not work is not kept: it was saved only to be
+        // checked, and leaving it would show "key saved" for a dead key.
+        await deleteNativeProviderSecret(providerId).catch(() => undefined)
+        setAiProviders((current) =>
+          current.map((candidate) => (candidate.id === providerId ? { ...candidate, secretRef: undefined, status: 'key_missing' } : candidate)),
+        )
+      }
       return { connected, message: result.message }
     } catch (error) {
       return { connected: false, message: error instanceof Error ? error.message : 'The connection check failed.' }
