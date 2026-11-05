@@ -3120,6 +3120,14 @@ button.mini-tags-more:focus-visible {
   white-space: nowrap;
 }
 
+/* Monochrome provider mark (Simple Icons, CC0), the tag's text colour. */
+.model-tag-mark {
+  width: 11px;
+  height: 11px;
+  margin-right: 4px;
+  flex: none;
+}
+
 /* "Connect AI…" closes the list: navigation, so it reads quieter than a model. */
 .model-picker-connect [slot="label"] {
   color: var(--text-soft);

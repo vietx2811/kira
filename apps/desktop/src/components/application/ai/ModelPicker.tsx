@@ -13,12 +13,26 @@ import { Popover } from '@/components/base/select/popover'
 import { SelectItem } from '@/components/base/select/select-item'
 import { SelectContext } from '@/components/base/select/select-shared'
 import { UiKitPortalHost } from '@/kira/uikit/PortalHost'
-import { modelKey, type AiModelOption, type AiModelRef } from '@/kira/ai/modelCatalog'
+import { modelKey, providerMark, type AiModelOption, type AiModelRef } from '@/kira/ai/modelCatalog'
+import { providerMarkPaths } from '@/kira/ai/providerMarks'
+import type { AiProviderType } from '@/kira/ai/aiProviderDomain'
 
 const CONNECT_KEY = '__connect__'
 
-export function ModelTag({ tag }: { tag: string }) {
-  return <span className="model-tag">{tag}</span>
+// Provider tag: the provider's mark (when it has one) and its short name.
+// Both, because two services can share a mark (Anthropic API and Claude Code).
+export function ModelTag({ type, tag }: { type: AiProviderType; tag: string }) {
+  const mark = providerMark(type)
+  return (
+    <span className="model-tag">
+      {mark && (
+        <svg className="model-tag-mark" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <path d={providerMarkPaths[mark]} fill="currentColor" />
+        </svg>
+      )}
+      {tag}
+    </span>
+  )
 }
 
 export function ModelPicker({
@@ -67,7 +81,7 @@ export function ModelPicker({
       >
         <AriaButton className={['model-picker-trigger', className].filter(Boolean).join(' ')}>
           <span className="model-picker-dot is-ready" aria-hidden="true" />
-          {selected && <ModelTag tag={selected.providerTag} />}
+          {selected && <ModelTag type={selected.providerType} tag={selected.providerTag} />}
           <span className="model-picker-label">{selected ? selected.model : labels.pick}</span>
           <ChevronDown size={12} aria-hidden="true" className="model-picker-chevron" />
         </AriaButton>
@@ -75,7 +89,7 @@ export function ModelPicker({
           <Popover size="sm" placement={placement} className="w-72!">
             <AriaListBox className="outline-hidden">
               {options.map((option) => (
-                <SelectItem key={option.key} id={option.key} label={option.model} icon={<ModelTag tag={option.providerTag} />} />
+                <SelectItem key={option.key} id={option.key} label={option.model} icon={<ModelTag type={option.providerType} tag={option.providerTag} />} />
               ))}
               <SelectItem id={CONNECT_KEY} label={labels.connectMore} selectionIndicator="none" className="model-picker-connect" />
             </AriaListBox>
