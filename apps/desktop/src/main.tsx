@@ -36,6 +36,8 @@ import { KiraThreadList } from './components/application/kira-panel/KiraThreadLi
 import { KiraChatThreadView } from './components/application/kira-panel/KiraChatThreadView'
 import { RemoveNodeGuardDialog } from './components/application/kira-panel/RemoveNodeGuardDialog'
 import { MermaidImportDialog } from './components/application/mermaid/MermaidImportDialog'
+import { installScrambledClickRepair } from './kira/input/scrambledClickRepair'
+import { edgeLabelText, placeEdgeLabels } from './kira/canvas/edgeLabels'
 import { MermaidPreview } from './components/application/mermaid/MermaidPreview'
 import { layerFlowchart, parseMermaidFlowchart } from './kira/mermaid/parseMermaid'
 import { buildBoardDraftPrompt, layoutBoardDraft, parseBoardDraft, type BoardDraft } from './kira/ai/boardDraft'
@@ -8077,6 +8079,7 @@ function GraphCanvas({
   // which shifts the layer against the canvas). Measured here; only the popover
   // reads it.
   const [canvasHeight, setCanvasHeight] = useState(0)
+  const [canvasWidth, setCanvasWidth] = useState(0)
 
   function updateFileTabDropHover(clientX: number, clientY: number): string | null {
     if (clientY > FILE_TAB_DROP_ZONE_HEIGHT) {
@@ -10153,9 +10156,12 @@ function GraphCanvas({
     const canvas = canvasRef.current
     if (!canvas) return
     setCanvasHeight(canvas.getBoundingClientRect().height)
+    setCanvasWidth(canvas.getBoundingClientRect().width)
     const observer = new ResizeObserver((entries) => {
       const height = entries[0]?.contentRect.height
       if (typeof height === 'number') setCanvasHeight(height)
+      const width = entries[0]?.contentRect.width
+      if (typeof width === 'number') setCanvasWidth(width)
     })
     observer.observe(canvas)
     return () => observer.disconnect()
@@ -10364,21 +10370,20 @@ function GraphCanvas({
                   }}
                   placement="bottom start"
                 />
-                {/* A plain button, not the kit Button: in the macOS app a click on
-                    the kit Button here never reached onPress (nor submitted the
-                    form), measured in the installed release 2026-11-06, while the
-                    plain buttons on the canvas and the kit buttons in dialogs and
-                    the library work. Root cause not found yet; Enter in the field
-                    calls submitPromptStarter directly and always worked. */}
-                <button
-                  type="button"
-                  className="primary-button sm canvas-zero-submit"
-                  disabled={!starterPrompt.trim() || !draftAiStatus.ready || isDrafting}
-                  onClick={() => void submitPromptStarter()}
+                {/* The first click after typing used to be lost with a system-wide
+                    input method (VietTelex) in the macOS app, for this and every
+                    button after a text field; installScrambledClickRepair
+                    restores it (kira/input/scrambledClickRepair.ts). */}
+                <Button
+                  color="primary"
+                  size="sm"
+                  iconLeading={Sparkles}
+                  isDisabled={!starterPrompt.trim() || !draftAiStatus.ready || isDrafting}
+                  className="canvas-zero-submit"
+                  onPress={() => void submitPromptStarter()}
                 >
-                  <Sparkles size={14} aria-hidden="true" />
                   {isDrafting ? t('zero.drafting', lang) : t('zero.draft', lang)}
-                </button>
+                </Button>
               </div>
             </form>
             {draftError && <p className="canvas-zero-error" role="alert">{draftError}</p>}
@@ -10568,7 +10573,22 @@ function GraphCanvas({
             })}
           </svg>
 
-          {displayView.links.map((link) => {
+          {(() => {
+            // Labelled links get their label placed so neighbours do not stack
+            // on one line (kira/canvas/edgeLabels.ts).
+            const labelPlacements = placeEdgeLabels(
+              displayView.links.flatMap((link) => {
+                if (!link.label) return []
+                const from = resolveGraphNodePosition(link.sourceNodeId ?? link.imageId, displayView.ideas, displayView.images, palettes, diagrams, placeholders)
+                const to = resolveGraphNodePosition(link.targetNodeId ?? link.ideaId, displayView.ideas, displayView.images, palettes, diagrams, placeholders)
+                if (!from || !to) return []
+                const curve = smoothGraphEdge(from, to)
+                return [{ id: link.id, x: curve.midX, y: curve.midY, text: link.label }]
+              }),
+              canvasWidth,
+              canvasHeight,
+            )
+            return displayView.links.map((link) => {
             const source = resolveGraphNodePosition(
               link.sourceNodeId ?? link.imageId,
               displayView.ideas,
@@ -10589,25 +10609,27 @@ function GraphCanvas({
             const active = selected.type === 'link' && selected.id === link.id
             const relatedLink = related.linkIds.has(link.id)
             const curve = smoothGraphEdge(source, target)
+            const labelSpot = labelPlacements.get(link.id)
             return (
               <React.Fragment key={`${link.id}-joint`}>
                 <button
                   className={[
                     'edge-joint',
                     active ? 'is-active' : relatedLink ? 'is-related' : '',
-                    link.label ? 'has-label' : '',
+                    labelSpot?.shown ? 'has-label' : '',
                   ].filter(Boolean).join(' ')}
                   type="button"
                   aria-label={link.label ? `${link.label} (${link.relation})` : `Select ${link.relation} relation`}
+                  title={link.label || undefined}
                   data-relation={link.relation}
                   style={{
-                    left: `${curve.midX}%`,
-                    top: `${curve.midY}%`,
+                    left: `${labelSpot?.shown ? labelSpot.x : curve.midX}%`,
+                    top: `${labelSpot?.shown ? labelSpot.y : curve.midY}%`,
                   }}
                   onClick={() => onSelect(active ? { type: 'project' } : { type: 'link', id: link.id })}
                   onContextMenu={(event) => openLinkContextMenu(link.id, event)}
                 >
-                  {link.label}
+                  {labelSpot?.shown && link.label ? edgeLabelText(link.label) : null}
                 </button>
                 {active && (
                   <div
@@ -10677,7 +10699,8 @@ function GraphCanvas({
                 )}
               </React.Fragment>
             )
-          })}
+            })
+          })()}
 
           {displayView.ideas.map((idea) => {
             const isSelectedIdea = selected.type === 'idea' && selected.id === idea.id
@@ -18522,6 +18545,11 @@ function safeDownloadName(value: string) {
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '') || 'outline'
 }
+
+// macOS app only: system-wide input methods (VietTelex) can deliver the first
+// click after typing inside out, which WebKit then drops. See
+// kira/input/scrambledClickRepair.ts.
+if (isTauriRuntime()) installScrambledClickRepair()
 
 createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

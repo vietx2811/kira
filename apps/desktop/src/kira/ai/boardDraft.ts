@@ -34,7 +34,7 @@ export function buildBoardDraftPrompt(request: string) {
     `- 5 to 9 nodes, never more than ${BOARD_DRAFT_MAX_NODES}. The first node is the central idea; the others branch from it.`,
     '- title: at most 8 words. body: one or two short sentences specific to this request, not generic advice.',
     `- links connect node ids from the list. relation is one of: ${BOARD_DRAFT_RELATIONS.join(', ')}. Pick the one that is true: "contrasts" for a tension or an alternative, "example" for a concrete instance, "derived-from" when one idea comes out of another, "contains" for a part of a whole, "supports" only when one idea is evidence for another, "related" when none fits.`,
-    '- label says how the two ideas connect, in 2 to 4 words specific to this request (not the relation name repeated). Every link has one.',
+    '- label says how the two ideas connect: 2 or 3 words, at most 24 characters, specific to this request (not the relation name repeated). Every link has one.',
     '- Each node except the first has at least one link; link ideas across branches where they truly connect, not only to the center.',
     '- Write in the same language as the request.',
   ].join('\n')
