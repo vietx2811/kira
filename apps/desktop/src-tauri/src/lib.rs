@@ -549,18 +549,24 @@ fn capture_screen_reference() -> Result<Option<ImportedReferenceRecord>, String>
     capture_screen_reference_to_temp()
 }
 
+// The AI and provider commands below are async on purpose. A plain (sync)
+// Tauri command runs on the main thread, so a model call that takes tens of
+// seconds froze the whole app until it returned (user report 2026-11-06), and
+// a Codex sign-in froze it for the length of the browser flow. As async
+// commands they run on Tauri's runtime instead; the blocking work inside them
+// (HTTP, CLI processes) holds a runtime worker, not the UI.
 #[tauri::command]
-fn run_apple_vision_ocr(image_data_url: String) -> Result<Option<OcrResult>, String> {
+async fn run_apple_vision_ocr(image_data_url: String) -> Result<Option<OcrResult>, String> {
     run_apple_vision_ocr_for_data_url(&image_data_url)
 }
 
 #[tauri::command]
-fn check_foundation_model_availability() -> Result<LocalModelAvailability, String> {
+async fn check_foundation_model_availability() -> Result<LocalModelAvailability, String> {
     check_foundation_model_availability_native()
 }
 
 #[tauri::command]
-fn normalize_tags_with_foundation_model(
+async fn normalize_tags_with_foundation_model(
     text_context: String,
 ) -> Result<LocalModelTagResult, String> {
     normalize_tags_with_foundation_model_native(&text_context)
@@ -582,25 +588,25 @@ fn delete_provider_secret(provider_id: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn test_ai_provider(provider: AiProviderTestRequest) -> Result<AiProviderTestResult, String> {
+async fn test_ai_provider(provider: AiProviderTestRequest) -> Result<AiProviderTestResult, String> {
     let provider_id = validate_provider_id(&provider.provider_id)?;
     test_ai_provider_native(&provider_id, &provider)
 }
 
 #[tauri::command]
-fn list_ai_models(provider: AiProviderTestRequest) -> Result<AiModelListResult, String> {
+async fn list_ai_models(provider: AiProviderTestRequest) -> Result<AiModelListResult, String> {
     let provider_id = validate_provider_id(&provider.provider_id)?;
     list_ai_models_native(&provider_id, &provider)
 }
 
 #[tauri::command]
-fn generate_ai_text(request: AiGenerationRequest) -> Result<AiGenerationResult, String> {
+async fn generate_ai_text(request: AiGenerationRequest) -> Result<AiGenerationResult, String> {
     let provider_id = validate_provider_id(&request.provider.provider_id)?;
     generate_ai_text_native(&provider_id, &request.provider, &request.prompt)
 }
 
 #[tauri::command]
-fn generate_ai_vision(request: AiVisionGenerationRequest) -> Result<AiGenerationResult, String> {
+async fn generate_ai_vision(request: AiVisionGenerationRequest) -> Result<AiGenerationResult, String> {
     let provider_id = validate_provider_id(&request.provider.provider_id)?;
     generate_ai_vision_native(&provider_id, &request.provider, &request.prompt, &request.image_data_url)
 }
@@ -2357,7 +2363,7 @@ fn lock_ignoring_poison<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 }
 
 #[tauri::command]
-fn codex_login(
+async fn codex_login(
     app: AppHandle,
     state: tauri::State<'_, CodexLoginState>,
     method: String,
@@ -2499,7 +2505,7 @@ fn codex_cancel_login(state: tauri::State<'_, CodexLoginState>) -> Result<(), St
 }
 
 #[tauri::command]
-fn codex_logout() -> Result<(), String> {
+async fn codex_logout() -> Result<(), String> {
     let output = run_codex_helper(&[std::ffi::OsStr::new("logout")], None)?;
     if output.status.success() { Ok(()) }
     else { Err(String::from_utf8_lossy(&output.stderr).trim().to_string()) }

@@ -128,9 +128,17 @@ export function SettingsAiProvidersTab({
       action = connected ? (
         <Button color="secondary" size="sm" onPress={() => void codexLogout().then(() => connect(provider.id))}>Sign out</Button>
       ) : (
-        <Button color="primary" size="sm" isLoading={busy} isDisabled={busy} onPress={() => { onActiveProviderChange(provider.id); void startCodexLogin('chatgpt').then(() => connect(provider.id)) }}>
-          Sign in with ChatGPT
-        </Button>
+        // Check as well as Sign in: a session made outside KIRA (codex login in
+        // a terminal) is only noticed by checking, and Sign in alone would
+        // start a second browser flow for an account that is already in.
+        <span className="flex items-center gap-2">
+          <Button color="secondary" size="sm" isDisabled={busy} onPress={() => void connect(provider.id)}>
+            Check
+          </Button>
+          <Button color="primary" size="sm" isLoading={busy} isDisabled={busy} onPress={() => { onActiveProviderChange(provider.id); void startCodexLogin('chatgpt').then(() => connect(provider.id)) }}>
+            Sign in with ChatGPT
+          </Button>
+        </span>
       )
     } else if (usesApiKey(provider)) {
       action = connected ? (

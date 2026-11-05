@@ -7,10 +7,15 @@
 import { layerFlowchart } from '../mermaid/parseMermaid'
 
 export type BoardDraftNode = { id: string; title: string; body: string }
+// The relation kinds an idea map uses; the app's other kinds (mood, material,
+// reference) describe images, not links between ideas.
+export const BOARD_DRAFT_RELATIONS = ['supports', 'contrasts', 'example', 'derived-from', 'contains', 'related'] as const
+export type BoardDraftRelation = (typeof BOARD_DRAFT_RELATIONS)[number]
+export type BoardDraftLink = { from: string; to: string; relation: BoardDraftRelation; label?: string }
 export type BoardDraft = {
   title: string
   nodes: BoardDraftNode[]
-  links: { from: string; to: string; label?: string }[]
+  links: BoardDraftLink[]
 }
 
 export const BOARD_DRAFT_MAX_NODES = 12
@@ -23,12 +28,14 @@ export function buildBoardDraftPrompt(request: string) {
     `Request: ${request}`,
     '',
     'Answer with JSON only, no prose and no code fence, in exactly this shape:',
-    '{"title": string, "nodes": [{"id": string, "title": string, "body": string}], "links": [{"from": string, "to": string, "label": string}]}',
+    '{"title": string, "nodes": [{"id": string, "title": string, "body": string}], "links": [{"from": string, "to": string, "relation": string, "label": string}]}',
     '',
     'Rules:',
     `- 5 to 9 nodes, never more than ${BOARD_DRAFT_MAX_NODES}. The first node is the central idea; the others branch from it.`,
     '- title: at most 8 words. body: one or two short sentences specific to this request, not generic advice.',
-    '- links connect node ids from the list; label is a few words or an empty string.',
+    `- links connect node ids from the list. relation is one of: ${BOARD_DRAFT_RELATIONS.join(', ')}. Pick the one that is true: "contrasts" for a tension or an alternative, "example" for a concrete instance, "derived-from" when one idea comes out of another, "contains" for a part of a whole, "supports" only when one idea is evidence for another, "related" when none fits.`,
+    '- label says how the two ideas connect: 2 or 3 words, at most 24 characters, specific to this request (not the relation name repeated). Every link has one.',
+    '- Each node except the first has at least one link; link ideas across branches where they truly connect, not only to the center.',
     '- Write in the same language as the request.',
   ].join('\n')
 }
@@ -59,42 +66,56 @@ export function parseBoardDraft(raw: string): BoardDraft {
   if (nodes.length === 0) throw new Error('The model returned a board with no nodes.')
   const links: BoardDraft['links'] = []
   for (const item of Array.isArray(record.links) ? record.links : []) {
-    const link = (item ?? {}) as { from?: unknown; to?: unknown; label?: unknown }
+    const link = (item ?? {}) as { from?: unknown; to?: unknown; relation?: unknown; label?: unknown }
     const from = text(link.from)
     const to = text(link.to)
     if (!seen.has(from) || !seen.has(to) || from === to) continue
-    links.push({ from, to, label: text(link.label) || undefined })
+    const relation = (BOARD_DRAFT_RELATIONS as readonly string[]).includes(text(link.relation))
+      ? (text(link.relation) as BoardDraftRelation)
+      : 'related'
+    links.push({ from, to, relation, label: text(link.label).slice(0, 40) || undefined })
   }
   return { title: text(record.title).slice(0, 64) || nodes[0].title.slice(0, 64), nodes, links }
 }
 
 // Canvas positions (percent of the stage) in the draft's own order: rows by
 // link depth from the central node, centred, so the board reads top-down.
+// Within a row, nodes sit in the order of their parents' positions, so a
+// child stays under its parent and edges do not cross (they did when rows
+// kept the model's listing order).
 export function layoutBoardDraft(draft: BoardDraft) {
   const layers = layerFlowchart({
     nodes: draft.nodes.map((node) => ({ id: node.id, label: node.title })),
     edges: draft.links.map((link) => ({ source: link.from, target: link.to })),
   })
-  const rowSize = new Map<number, number>()
-  for (const spot of layers.values()) rowSize.set(spot.row, (rowSize.get(spot.row) ?? 0) + 1)
-  // At most four to a line; a wide row wraps onto the next line.
-  const perLine = 4
-  const lineOfRow = new Map<number, number>()
-  let line = 0
-  for (const row of [...rowSize.keys()].sort((a, b) => a - b)) {
-    lineOfRow.set(row, line)
-    line += Math.ceil(rowSize.get(row)! / perLine)
-  }
-  const positions = new Map<string, { x: number; y: number }>()
+  const rows = new Map<number, string[]>()
   for (const node of draft.nodes) {
-    const spot = layers.get(node.id) ?? { row: 0, column: 0 }
-    const inRow = rowSize.get(spot.row) ?? 1
-    const lineIndex = Math.floor(spot.column / perLine)
-    const onLine = Math.min(perLine, inRow - lineIndex * perLine)
-    const column = spot.column % perLine
-    const x = 50 + (column - (onLine - 1) / 2) * 20
-    const y = 22 + ((lineOfRow.get(spot.row) ?? 0) + lineIndex) * 16
-    positions.set(node.id, { x: clampPercent(x), y: clampPercent(y) })
+    const row = layers.get(node.id)?.row ?? 0
+    rows.set(row, [...(rows.get(row) ?? []), node.id])
+  }
+  const perLine = 4
+  const positions = new Map<string, { x: number; y: number }>()
+  let line = 0
+  for (const row of [...rows.keys()].sort((a, b) => a - b)) {
+    const ids = rows.get(row)!
+    const parentX = (id: string) => {
+      const xs = draft.links
+        .filter((link) => link.to === id && positions.has(link.from))
+        .map((link) => positions.get(link.from)!.x)
+      return xs.length > 0 ? xs.reduce((sum, x) => sum + x, 0) / xs.length : 50
+    }
+    const ordered = row === 0 ? ids : ids
+      .map((id, index) => ({ id, index, key: parentX(id) }))
+      .sort((a, b) => a.key - b.key || a.index - b.index)
+      .map((entry) => entry.id)
+    for (let start = 0; start < ordered.length; start += perLine) {
+      const chunk = ordered.slice(start, start + perLine)
+      chunk.forEach((id, column) => {
+        const x = 50 + (column - (chunk.length - 1) / 2) * 20
+        positions.set(id, { x: clampPercent(x), y: clampPercent(22 + line * 16) })
+      })
+      line += 1
+    }
   }
   return positions
 }
