@@ -35,6 +35,9 @@ import { KiraChangesTab } from './components/application/kira-panel/KiraChangesT
 import { KiraThreadList } from './components/application/kira-panel/KiraThreadList'
 import { KiraChatThreadView } from './components/application/kira-panel/KiraChatThreadView'
 import { RemoveNodeGuardDialog } from './components/application/kira-panel/RemoveNodeGuardDialog'
+import { MermaidImportDialog } from './components/application/mermaid/MermaidImportDialog'
+import { MermaidPreview } from './components/application/mermaid/MermaidPreview'
+import { layerFlowchart, parseMermaidFlowchart } from './kira/mermaid/parseMermaid'
 import {
   type AiTaskKind,
   type AiProviderType,
@@ -779,6 +782,18 @@ const UI_STRINGS: Record<string, { en: string; vi: string }> = {
   'tool.sticker': { en: 'Sticker', vi: 'Ghi chú' },
   'tool.frame': { en: 'Frame', vi: 'Khung' },
   'tool.mermaid': { en: 'Mermaid diagram', vi: 'Sơ đồ Mermaid' },
+  'mermaid.import.title': { en: 'Open Mermaid diagram', vi: 'Mở sơ đồ Mermaid' },
+  'mermaid.import.description': { en: 'Choose a .mmd, .mermaid or Markdown file, or paste the diagram. Flowcharts also become ideas and links you can edit.', vi: 'Chọn file .mmd, .mermaid hoặc Markdown, hoặc dán sơ đồ vào. Flowchart sẽ tách thành ý tưởng và liên kết để sửa tiếp.' },
+  'mermaid.import.chooseFile': { en: 'Choose file', vi: 'Chọn file' },
+  'mermaid.import.orPaste': { en: 'or paste the diagram below', vi: 'hoặc dán sơ đồ vào ô dưới' },
+  'mermaid.import.sourceLabel': { en: 'Mermaid source', vi: 'Mã Mermaid' },
+  'mermaid.import.cancel': { en: 'Cancel', vi: 'Huỷ' },
+  'mermaid.import.submit': { en: 'Add to board', vi: 'Thêm vào bảng' },
+  'mermaid.import.empty': { en: 'There is no diagram to add yet.', vi: 'Chưa có sơ đồ nào để thêm.' },
+  'mermaid.import.noDiagramInFile': { en: '{name} has no Mermaid diagram in it.', vi: '{name} không có sơ đồ Mermaid nào.' },
+  'mermaid.import.parseError': { en: 'Mermaid could not read this: {reason}', vi: 'Mermaid không đọc được sơ đồ này: {reason}' },
+  'mermaid.preview.loading': { en: 'Drawing diagram', vi: 'Đang vẽ sơ đồ' },
+  'mermaid.preview.error': { en: 'This source does not draw. Check it in the details panel.', vi: 'Mã này chưa vẽ được. Kiểm tra lại trong bảng chi tiết.' },
   'library.browseMode.list': { en: 'List', vi: 'Danh sách' },
   'library.browseMode.grid': { en: 'Grid', vi: 'Lưới' },
   'library.density.compact': { en: 'Compact', vi: 'Gọn' },
@@ -2188,6 +2203,7 @@ function FileWorkspace({
   // listener this used to need are dropped (same call DeleteProviderDialog
   // made in PHA 1).
   const [pendingRemoveNodeGuard, setPendingRemoveNodeGuard] = useState<{ nodeKind: GraphNodeKind; nodeId: string } | null>(null)
+  const [isMermaidImportOpen, setIsMermaidImportOpen] = useState(false)
   const kiraPanelWidth = useKiraPanelWidthStore((state) => state.width)
   const setKiraPanelWidth = useKiraPanelWidthStore((state) => state.setWidth)
   const [lastSavedHash, setLastSavedHash] = useState(() => JSON.stringify(initialProject))
@@ -5366,46 +5382,60 @@ function FileWorkspace({
     setLibraryStatus(`${similarIds.length} similar reference${similarIds.length === 1 ? '' : 's'} selected`)
   }
 
-  async function importMermaidDiagram(source: string) {
+  // Returns an error for the import dialog to show, or null once the diagram
+  // is on the board. Any diagram kind mermaid can read is kept and drawn; only
+  // a flowchart also unpacks into ideas and links.
+  async function importMermaidDiagram(source: string, title: string): Promise<string | null> {
     try {
       const { default: mermaid } = await import('mermaid')
-      mermaid.initialize({ startOnLoad: false, securityLevel: 'strict' })
       await mermaid.parse(source, { suppressErrors: false })
-    } catch {
-      setLibraryStatus('Mermaid syntax could not be parsed')
-      return
+    } catch (error) {
+      const reason = (error instanceof Error ? error.message : String(error)).split('\n')[0].trim().replace(/:$/, '')
+      return t('mermaid.import.parseError', lang, { reason })
     }
 
     const parsed = parseMermaidFlowchart(source)
-    if (parsed.nodes.length === 0 && parsed.edges.length === 0) {
-      setLibraryStatus('Mermaid import needs graph or flowchart syntax')
-      return
-    }
-
     pushCanvasHistory()
     const timestamp = nowIso()
     const diagramId = `diagram-${Date.now()}`
-    const importedIdeas: Idea[] = parsed.nodes.map((node, index) => ({
-      id: `idea-${diagramId}-${node.id}`,
-      title: node.label,
-      content: `Imported from Mermaid diagram "${parsed.title}".`,
-      status: 'forming',
-      x: clamp(28 + (index % 4) * 14, 10, 90),
-      y: clamp(28 + Math.floor(index / 4) * 14, 10, 90),
-      importance: 1,
-      createdAt: timestamp,
-      addedAt: timestamp,
-      updatedAt: timestamp,
-    }))
+    // Ideas keep the diagram's flow, top to bottom, two to a line, to the
+    // right of the drawing (x 42): an idea is ~224px wide, ~18% of the stage,
+    // and anything placed under the ~340px drawing would be hidden by it.
+    const layers = layerFlowchart(parsed)
+    const lineOfRow = new Map<number, number>()
+    let nextLine = 0
+    for (const row of [...new Set([...layers.values()].map((spot) => spot.row))].sort((a, b) => a - b)) {
+      lineOfRow.set(row, nextLine)
+      nextLine += Math.ceil([...layers.values()].filter((spot) => spot.row === row).length / 2)
+    }
+    // The label is the content: a node shows its content, and the title is
+    // derived from it, so a label kept only in `title` never showed (QA §2.3).
+    const importedIdeas: Idea[] = parsed.nodes.map((node) => {
+      const spot = layers.get(node.id) ?? { row: 0, column: 0 }
+      const line = (lineOfRow.get(spot.row) ?? 0) + Math.floor(spot.column / 2)
+      return {
+        id: `idea-${diagramId}-${node.id}`,
+        title: node.label,
+        content: node.label,
+        status: 'forming' as const,
+        x: 66 + (spot.column % 2) * 18,
+        y: clamp(16 + line * 11, 10, 92),
+        createdAt: timestamp,
+        addedAt: timestamp,
+        updatedAt: timestamp,
+      }
+    })
     const diagram: DiagramNode = {
       id: diagramId,
-      title: parsed.title,
-      content: parsed.title,
+      title,
+      content: title,
       format: 'mermaid',
       source,
       nodeIds: importedIdeas.map((idea) => idea.id),
-      x: 50,
-      y: 18,
+      // Clear of the library panel on the left, and low enough that the whole
+      // drawing, title row included, is on screen.
+      x: 42,
+      y: 44,
       importance: 1.2,
       createdAt: timestamp,
       addedAt: timestamp,
@@ -5426,7 +5456,7 @@ function FileWorkspace({
         sourceKind: 'idea',
         targetKind: 'idea',
         relation: 'supports',
-        note: edge.label ? `Mermaid edge: ${edge.label}` : `Imported edge from ${parsed.title}.`,
+        note: edge.label ? `Mermaid edge: ${edge.label}` : `Imported edge from ${title}.`,
         confidence: 0.74,
         createdAt: timestamp,
         updatedAt: timestamp,
@@ -5436,7 +5466,12 @@ function FileWorkspace({
     setDiagrams((current) => [...current, diagram])
     setLinks((current) => [...current, ...importedLinks])
     setSelection({ type: 'diagram', id: diagram.id })
-    setLibraryStatus(`${importedIdeas.length} diagram idea${importedIdeas.length === 1 ? '' : 's'} and ${importedLinks.length} link${importedLinks.length === 1 ? '' : 's'} imported`)
+    setLibraryStatus(
+      importedIdeas.length > 0
+        ? `${importedIdeas.length} diagram idea${importedIdeas.length === 1 ? '' : 's'} and ${importedLinks.length} link${importedLinks.length === 1 ? '' : 's'} imported`
+        : `${title} added`,
+    )
+    return null
   }
 
   // What to select once nodes are gone: the first idea, else the first node of
@@ -6648,7 +6683,7 @@ function FileWorkspace({
                 onFrameRename={(id, title) => updateFrame(id, { title })}
                 onFrameDescriptionChange={(id, description) => updateFrame(id, { description })}
                 onFrameDelete={requestFrameDelete}
-                onImportMermaid={importMermaidDiagram}
+                onOpenMermaidImport={() => setIsMermaidImportOpen(true)}
                 onLinkCreationRelationChange={setLinkCreationRelation}
                 nodeVersions={nodeVersions}
                 onNodeVersionRestore={restoreNodeVersion}
@@ -6718,6 +6753,12 @@ function FileWorkspace({
         pendingDelete={pendingDelete}
         onCancel={() => setPendingDelete(null)}
         onConfirm={confirmPendingDelete}
+      />
+      <MermaidImportDialog
+        isOpen={isMermaidImportOpen}
+        t={(key, vars) => t(key, lang, vars)}
+        onClose={() => setIsMermaidImportOpen(false)}
+        onImport={importMermaidDiagram}
       />
       <RemoveNodeGuardDialog
         guard={pendingRemoveNodeGuard}
@@ -7630,7 +7671,7 @@ function GraphCanvas({
   onFrameRename,
   onFrameDescriptionChange,
   onFrameDelete,
-  onImportMermaid,
+  onOpenMermaidImport,
   onLinkCreationRelationChange,
   nodeVersions,
   onNodeVersionRestore,
@@ -7723,7 +7764,7 @@ function GraphCanvas({
   onFrameRename: (frameId: string, title: string) => void
   onFrameDescriptionChange: (frameId: string, description: string) => void
   onFrameDelete: (frameId: string) => void
-  onImportMermaid: (source: string) => void | Promise<void>
+  onOpenMermaidImport: () => void
   onLinkCreationRelationChange: (relation: Relation) => void
   nodeVersions: NodeVersionRecord[]
   onNodeVersionRestore: (versionId: string) => void
@@ -9944,10 +9985,7 @@ function GraphCanvas({
               aria-label={t('tool.mermaid', lang)}
               data-tooltip={t('tool.mermaid', lang)}
               data-tool-kind="diagram"
-              onClick={() => {
-                const source = window.prompt('Paste Mermaid graph or flowchart')
-                if (source?.trim()) void onImportMermaid(source)
-              }}
+              onClick={onOpenMermaidImport}
             >
               <RailIcon name="diagram" />
             </button>
@@ -10555,6 +10593,7 @@ function GraphCanvas({
                 key={diagram.id}
                 className={[
                   'diagram-node',
+                  diagram.source.trim() ? 'has-preview' : '',
                   selected.type === 'diagram' && selected.id === diagram.id ? 'is-selected' : '',
                   isCanvasNodeSelected('diagram', diagram.id) && multiSelectedNodes.length > 0 ? 'is-multi-selected' : '',
                 ].filter(Boolean).join(' ')}
@@ -10606,6 +10645,14 @@ function GraphCanvas({
                     onChange={(markdown) => onDiagramInlineChange(diagram.id, { content: markdown })}
                   />
                 </span>
+                {diagram.source.trim() && (
+                  <MermaidPreview
+                    source={diagram.source}
+                    label={diagram.title}
+                    loadingText={t('mermaid.preview.loading', lang)}
+                    errorText={t('mermaid.preview.error', lang)}
+                  />
+                )}
                 {renderResizeHandle('diagram', diagram)}
                 {renderNodeBelowStack('diagram', diagram)}
               </div>
@@ -16460,55 +16507,6 @@ function hueFromHex(hex: string | undefined) {
   if (max === red) return ((green - blue) / delta + (green < blue ? 6 : 0)) * 60
   if (max === green) return ((blue - red) / delta + 2) * 60
   return ((red - green) / delta + 4) * 60
-}
-
-function parseMermaidFlowchart(source: string) {
-  const lines = source
-    .split(/\r?\n/)
-    .map((line) => line.replace(/%%.*$/, '').trim())
-    .filter(Boolean)
-  const title = lines.find((line) => /^(graph|flowchart)\s+/i.test(line))?.replace(/^(graph|flowchart)\s+/i, 'Mermaid ') || 'Mermaid diagram'
-  const nodeMap = new Map<string, string>()
-  const edges: { source: string; target: string; label?: string }[] = []
-  const edgePattern = /^(.+?)\s*[-.=]+(?:\|([^|]+)\|)?[->ox.]+\s*(.+)$/
-
-  function register(raw: string) {
-    const cleaned = raw.trim().replace(/[;,]$/, '')
-    const match = cleaned.match(/^([A-Za-z0-9_-]+)(?:\[(.+)\]|\((.+)\)|\{(.+)\}|"(.+)")?$/)
-    if (!match) return cleaned
-    const id = match[1]
-    const explicitLabel = match[2] || match[3] || match[4] || match[5]
-    if (explicitLabel || !nodeMap.has(id)) {
-      nodeMap.set(id, normalizeMermaidLabel(explicitLabel || id))
-    }
-    return id
-  }
-
-  lines.forEach((line) => {
-    if (/^(graph|flowchart)\s+/i.test(line)) return
-    const edgeMatch = line.match(edgePattern)
-    if (edgeMatch) {
-      const sourceId = register(edgeMatch[1])
-      const targetId = register(edgeMatch[3])
-      edges.push({ source: sourceId, target: targetId, label: edgeMatch[2]?.trim() })
-      return
-    }
-    register(line)
-  })
-
-  return {
-    title,
-    nodes: [...nodeMap.entries()].map(([id, label]) => ({ id, label })),
-    edges,
-  }
-}
-
-function normalizeMermaidLabel(value: string) {
-  return value
-    .replace(/^["']|["']$/g, '')
-    .replace(/<br\s*\/?>/gi, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
 }
 
 function generatePaletteHarmony(baseHex: string, harmony: PaletteHarmony) {
