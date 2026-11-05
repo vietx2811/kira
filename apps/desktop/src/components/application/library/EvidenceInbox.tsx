@@ -11,14 +11,13 @@ import {
   Lightbulb,
   MoreHorizontal,
   Search,
-  Sparkles,
   Workflow,
   X,
 } from 'lucide-react'
 import type { EvidenceImage, EvidenceLink, Idea, Lang, LibraryBrowseMode, LibraryDensity, LibraryPanelMode, Relation, Selection, SortMode } from '@/main'
 import { Button } from '@/components/base/buttons/button'
 import { ButtonGroup, ButtonGroupItem } from '@/components/base/button-group/button-group'
-import { Badge, BadgeWithButton } from '@/components/base/badges/badges'
+import { BadgeWithButton } from '@/components/base/badges/badges'
 import { Dropdown } from '@/components/base/dropdown/dropdown'
 import { Input } from '@/components/base/input/input'
 import { Slider } from '@/components/base/slider/slider'
@@ -53,7 +52,7 @@ import {
  * (still one click away — closing search restores them) rather than
  * squeezing a 360px-wide drawer three ways.
  *
- * Kit components used: Button/Badge/BadgeWithButton/Dropdown/Input/Slider/
+ * Kit components used: Button/BadgeWithButton/Dropdown/Input/Slider/
  * Tooltip/StringSelect (Select wrapper)/ButtonGroup here, Checkbox in
  * ReferenceCard.tsx. The virtualized list/grid, reference cards, tag strip
  * and node rows are unchanged Ink & Paper layout, not a kit surface — only
@@ -73,7 +72,6 @@ export function EvidenceInbox({
   totalCount,
   batchTag,
   searchQuery,
-  status,
   downloadProgress,
   selectedReferenceIds,
   selected,
@@ -116,7 +114,6 @@ export function EvidenceInbox({
   totalCount: number
   batchTag: string
   searchQuery: string
-  status: string
   downloadProgress: { imageId: string; title: string; progress: number | null } | null
   selectedReferenceIds: Set<string>
   selected: Selection
@@ -289,12 +286,6 @@ export function EvidenceInbox({
       <div className="panel-header">
         <div className="panel-title-row">
           <h2>{t(panelTitleKey[panelMode])}</h2>
-          <span className="panel-meta">
-            {t(panelCounts[panelMode] === 1 ? 'library.meta.item' : 'library.meta.items', { count: String(panelCounts[panelMode]) })}
-            {panelMode === 'images' && unassigned.length > 0 && (
-              <Badge color="warning" size="sm">{t('library.meta.suggested', { count: String(unassigned.length) })}</Badge>
-            )}
-          </span>
         </div>
         <div className="panel-actions">
           <Tooltip title={t('library.aria.importImage')} delay={200}>
@@ -442,6 +433,7 @@ export function EvidenceInbox({
                   <ImageIcon aria-hidden="true" size={13} />
                   <Slider
                     className="library-thumb-slider-root"
+                    size="sm"
                     aria-label={t('library.thumbSize.label')}
                     minValue={LIBRARY_THUMB_SIZE_MIN}
                     maxValue={LIBRARY_THUMB_SIZE_MAX}
@@ -451,7 +443,7 @@ export function EvidenceInbox({
                   />
                   <ImagesIcon aria-hidden="true" size={15} />
                 </div>
-                {selectedTag ? (
+                {selectedTag && (
                   <BadgeWithButton
                     color="gray"
                     size="sm"
@@ -460,12 +452,6 @@ export function EvidenceInbox({
                   >
                     {selectedTag}
                   </BadgeWithButton>
-                ) : (
-                  <Badge color="gray" size="sm" className="library-filtered-count">
-                    {(searchQuery.trim() || totalCount !== images.length)
-                      ? t('library.meta.filteredCount', { visible: String(images.length), total: String(totalCount) })
-                      : t('library.meta.visible', { count: String(images.length) })}
-                  </Badge>
                 )}
               </>
             )}
@@ -647,9 +633,18 @@ export function EvidenceInbox({
             </Button>
           </div>
         ) : (
-          <div className="inbox-footer-action" role="status">
-            <Sparkles size={14} />
-            {status}
+          // Counts live here, out of the header. The old line was the library
+          // status string ("Ready" under a sparkle, read as "AI ready"); every
+          // status other than "Ready" already shows as a toast on the canvas.
+          <div className="library-footer-status" role="status">
+            <span>
+              {panelMode === 'images' && (searchQuery.trim() || selectedTag || totalCount !== images.length)
+                ? t('library.meta.filteredCount', { visible: String(images.length), total: String(totalCount) })
+                : t(panelCounts[panelMode] === 1 ? 'library.meta.item' : 'library.meta.items', { count: String(panelCounts[panelMode]) })}
+            </span>
+            {panelMode === 'images' && unassigned.length > 0 && (
+              <span className="library-footer-suggested">{t('library.meta.suggested', { count: String(unassigned.length) })}</span>
+            )}
           </div>
         )}
       </div>

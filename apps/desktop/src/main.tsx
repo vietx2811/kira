@@ -6605,7 +6605,6 @@ function FileWorkspace({
           totalCount={images.length}
           batchTag={batchTag}
           searchQuery={searchQuery}
-          status={libraryStatus}
           downloadProgress={pinDownload}
           selectedReferenceIds={selectedReferenceIds}
           selected={selection}
