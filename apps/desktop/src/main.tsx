@@ -10261,13 +10261,17 @@ function GraphCanvas({
                   }}
                   placement="bottom start"
                 />
+                {/* onPress, not type="submit": in the macOS app (WKWebView) the
+                    kit Button never submitted the form, so clicking did nothing
+                    while the same click worked in Chrome. Enter in the field
+                    already calls submitPromptStarter directly. */}
                 <Button
-                  type="submit"
                   color="primary"
                   size="sm"
                   iconLeading={Sparkles}
                   isDisabled={!starterPrompt.trim() || !draftAiStatus.ready || isDrafting}
                   className="canvas-zero-submit"
+                  onPress={() => void submitPromptStarter()}
                 >
                   {isDrafting ? t('zero.drafting', lang) : t('zero.draft', lang)}
                 </Button>
@@ -13238,8 +13242,8 @@ function VersionHistoryDialog({
   const activeBranchVersions = versions.filter((version) => (version.branchId ?? 'main') === activeBranch?.id)
   const visibleVersions = activeBranchVersions.length > 0 ? activeBranchVersions : versions.filter((version) => !version.branchId && activeBranch?.id === 'main')
 
-  function submitBranch(event: React.FormEvent) {
-    event.preventDefault()
+  function submitBranch(event?: React.FormEvent) {
+    event?.preventDefault()
     const value = branchName.trim()
     if (!value) return
     onBranchCreate(value)
@@ -13284,7 +13288,9 @@ function VersionHistoryDialog({
                 value={branchName}
                 onChange={(event) => setBranchName(event.target.value)}
               />
-              <Button className="p-0!" color="tertiary" size="xs" iconLeading={Plus} type="submit" aria-label="Create branch" />
+              {/* onPress, not type="submit": the kit Button does not submit a
+                  form in WKWebView (see canvas-zero-submit). Enter still submits. */}
+              <Button className="p-0!" color="tertiary" size="xs" iconLeading={Plus} aria-label="Create branch" onPress={() => submitBranch()} />
             </form>
           </aside>
           <section className="version-browser-panel">
