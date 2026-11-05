@@ -575,10 +575,12 @@ async fn normalize_tags_with_foundation_model(
 #[tauri::command]
 fn save_provider_secret(provider_id: String, secret: String) -> Result<(), String> {
     let clean_provider_id = validate_provider_id(&provider_id)?;
-    if secret.trim().is_empty() {
+    // Pasted keys often carry a trailing newline or space, which providers reject as a wrong key.
+    let secret = secret.trim();
+    if secret.is_empty() {
         return Err("Secret is empty".to_string());
     }
-    save_secret_to_keychain(&clean_provider_id, &secret)
+    save_secret_to_keychain(&clean_provider_id, secret)
 }
 
 #[tauri::command]
@@ -3498,6 +3500,11 @@ fn verify_remote_provider_key(provider: &AiProviderTestRequest, secret: &str) ->
         .bearer_auth(secret)
         .send()
         .map_err(|error| format!("Key check failed: {error}"))?;
+    // OpenRouter answers an unknown key with "Missing Authentication header", which reads like
+    // our bug. Say what it means instead.
+    if matches!(response.status().as_u16(), 401 | 403) {
+        return Err("OpenRouter did not accept this key. Copy it again from openrouter.ai/keys, all of it.".to_string());
+    }
     response_json(response, "Key check").map(|_| ())
 }
 
