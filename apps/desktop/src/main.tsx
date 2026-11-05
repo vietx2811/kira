@@ -4533,6 +4533,44 @@ function FileWorkspace({
     }
   }
 
+  // One step for the user: save the key if one was typed, check the
+  // connection, and when it works fetch the provider's models so they show up
+  // in every model picker. Settings used to need three separate buttons for
+  // this (Save key, Test, Models).
+  async function connectAiProvider(providerId: string, secret?: string): Promise<{ connected: boolean; message: string }> {
+    const provider = aiProviders.find((candidate) => candidate.id === providerId)
+    if (!provider) return { connected: false, message: 'Unknown provider' }
+    if (secret !== undefined) {
+      if (!secret.trim()) return { connected: false, message: 'Paste an API key first.' }
+      try {
+        await saveNativeProviderSecret(providerId, secret.trim())
+      } catch (error) {
+        return { connected: false, message: error instanceof Error ? error.message : 'The key could not be saved.' }
+      }
+    }
+    try {
+      const result = await testNativeAiProvider(secret !== undefined ? { ...provider, secretRef: `keychain:${providerId}` } : provider)
+      const connected = result.connected
+      setAiProviders((current) =>
+        current.map((candidate) =>
+          candidate.id === providerId
+            ? {
+              ...candidate,
+              ...(secret !== undefined ? { secretRef: `keychain:${providerId}` } : {}),
+              status: providerStatusFromNative(result.status, connected),
+              lastTestedAt: nowIso(),
+              lastMessage: result.message,
+            }
+            : candidate,
+        ),
+      )
+      if (connected) await listAiModels(providerId)
+      return { connected, message: result.message }
+    } catch (error) {
+      return { connected: false, message: error instanceof Error ? error.message : 'The connection check failed.' }
+    }
+  }
+
   async function listAiModels(providerId: string) {
     const provider = aiProviders.find((candidate) => candidate.id === providerId)
     if (!provider) return
@@ -6961,6 +6999,12 @@ function FileWorkspace({
             selectedProviderId={selectedAiProviderId}
             activeProviderId={activeAiProviderId}
             focusNonce={settingsFocusNonce}
+            modelSettings={{
+              options: modelOptions,
+              value: defaultModel,
+              onChange: setDefaultModel,
+              onConnect: connectAiProvider,
+            }}
             focusTab={settingsFocusTab}
             localModelAvailable={localModelAvailable}
             localModelStatus={localModelStatus}
