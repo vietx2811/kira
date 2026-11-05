@@ -282,7 +282,6 @@
 }
 
 .project-settings-popover::-webkit-scrollbar,
-.onboarding-steps::-webkit-scrollbar,
 .image-list::-webkit-scrollbar,
 .library-node-list::-webkit-scrollbar,
 .canvas-zero-state::-webkit-scrollbar,
@@ -299,7 +298,6 @@
 }
 
 .project-settings-popover::-webkit-scrollbar-track,
-.onboarding-steps::-webkit-scrollbar-track,
 .image-list::-webkit-scrollbar-track,
 .library-node-list::-webkit-scrollbar-track,
 .canvas-zero-state::-webkit-scrollbar-track,
@@ -315,7 +313,6 @@
 }
 
 .project-settings-popover::-webkit-scrollbar-thumb,
-.onboarding-steps::-webkit-scrollbar-thumb,
 .image-list::-webkit-scrollbar-thumb,
 .library-node-list::-webkit-scrollbar-thumb,
 .canvas-zero-state::-webkit-scrollbar-thumb,
@@ -334,7 +331,6 @@
 }
 
 .project-settings-popover::-webkit-scrollbar-thumb:hover,
-.onboarding-steps::-webkit-scrollbar-thumb:hover,
 .image-list::-webkit-scrollbar-thumb:hover,
 .library-node-list::-webkit-scrollbar-thumb:hover,
 .canvas-zero-state::-webkit-scrollbar-thumb:hover,
@@ -350,7 +346,6 @@
 }
 
 .project-settings-popover::-webkit-scrollbar-corner,
-.onboarding-steps::-webkit-scrollbar-corner,
 .image-list::-webkit-scrollbar-corner,
 .library-node-list::-webkit-scrollbar-corner,
 .canvas-zero-state::-webkit-scrollbar-corner,
@@ -1545,6 +1540,34 @@ button {
   opacity: 0.9;
 }
 
+/* Aura: a soft bloom of colour behind the two first-run surfaces only (the
+   onboarding card and the empty-board zero state), asked for by the user on
+   2026-11-05 after references with pastel gradient headers. It is built from
+   the project accent plus the violet and amber tokens, so it follows the
+   project's colour, and it never sits behind text that has to be read on it:
+   the onboarding copy is below the bloom, and the zero state's composer is an
+   opaque sheet. Static on purpose, no drift animation. Not for anywhere else
+   (DESIGN.md: no decorative gradients in steady-state UI). */
+.kira-aura {
+  --aura-a: color-mix(in srgb, var(--accent-cyan) 34%, transparent);
+  --aura-b: color-mix(in srgb, var(--accent-violet) 30%, transparent);
+  --aura-c: color-mix(in srgb, var(--accent-amber) 18%, transparent);
+  position: absolute;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(42% 58% at 24% 36%, var(--aura-a), transparent 72%),
+    radial-gradient(46% 62% at 74% 26%, var(--aura-b), transparent 72%),
+    radial-gradient(40% 50% at 56% 82%, var(--aura-c), transparent 74%);
+  filter: blur(30px);
+}
+
+.app-shell[data-color-mode="light"] .kira-aura {
+  --aura-a: color-mix(in srgb, var(--accent-cyan) 46%, transparent);
+  --aura-b: color-mix(in srgb, var(--accent-violet) 44%, transparent);
+  --aura-c: color-mix(in srgb, var(--accent-amber) 30%, transparent);
+}
+
 .onboarding-backdrop {
   position: fixed;
   inset: 0;
@@ -1555,256 +1578,131 @@ button {
   background: var(--bg-canvas);
 }
 
-.onboarding-shell {
+/* One card (DESIGN.md "Cards (onboarding only)"): the bloom across the top,
+   the app icon on it, then copy, setup rows and one primary action. */
+.onboarding-card {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(250px, 0.76fr) minmax(360px, 1fr);
-  grid-template-rows: minmax(0, 1fr) auto;
-  width: min(860px, 100%);
-  max-height: min(760px, calc(100dvh - 56px));
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-3);
-  background: var(--glass-inspector);
+  width: min(440px, 100%);
+  max-height: calc(100dvh - 56px);
+  padding: 0 32px 28px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-5);
+  background: var(--surface-drawer);
   box-shadow: var(--panel-shadow);
-  overflow: hidden;
+  gap: 22px;
+  overflow: hidden auto;
+  isolation: isolate;
 }
 
-.onboarding-close {
-  position: absolute;
-  top: 14px;
-  right: 14px;
-  z-index: 2;
+.onboarding-aura {
+  inset: -40px -60px auto;
+  height: 250px;
+  /* Fades out before the copy starts, so the text sits on the plain card. */
+  mask-image: linear-gradient(to bottom, #000 40%, transparent 100%);
 }
 
-.onboarding-hero {
+.onboarding-app-icon {
   position: relative;
+  z-index: 1;
   display: grid;
-  align-content: center;
-  min-height: 0;
-  padding: 44px 34px;
-  border-right: 1px solid var(--separator-hairline);
-  gap: 28px;
-}
-
-.onboarding-brand-mark {
-  display: grid;
-  justify-self: start;
-  width: 92px;
-  height: 92px;
+  justify-self: center;
+  width: 76px;
+  height: 76px;
+  margin-top: 52px;
   place-items: center;
   border: 1px solid var(--border-soft);
-  border-radius: var(--radius-4);
-  background: var(--node-surface-selected);
-  /* No decorative shadow (DESIGN.md §6): shadow is reserved for filled
-     controls, floating chrome and canvas nodes, not a logo mark. */
+  border-radius: 20px;
+  background: var(--surface-drawer);
+  box-shadow: 0 10px 28px rgb(0 0 0 / 0.18);
 }
 
-.onboarding-brand-mark img {
-  width: 50px;
-  height: 50px;
+.onboarding-app-icon img {
+  width: 44px;
+  height: 44px;
 }
 
-.onboarding-kicker {
-  color: var(--text-muted);
-  font-size: var(--text-small);
-  font-weight: var(--weight-label);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.onboarding-hero h2 {
-  max-width: 18ch;
-  margin: 8px 0 0;
-  color: var(--text-main);
-  font-size: clamp(1.8rem, 4vw, 2.8rem);
-  line-height: 0.98;
-  letter-spacing: 0;
-}
-
-/* The two sentences are the two lines. Left to wrap on width alone the break
-   lands mid-sentence ("Start calm. Add / power later."). */
-.onboarding-hero h2 span {
-  display: block;
-}
-
-.onboarding-status-row {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  min-width: 0;
-  margin-top: 18px;
-  gap: 8px;
-}
-
-.onboarding-status-row span {
-  display: inline-flex;
-  align-items: center;
-  min-height: 28px;
-  padding: 0 10px;
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius-2);
-  background: var(--glass-hover);
-  color: var(--text-soft);
-  font-size: var(--text-small);
+.onboarding-copy {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  margin-top: 6px;
   gap: 6px;
 }
 
-.onboarding-steps {
-  display: grid;
-  align-content: center;
-  min-width: 0;
-  min-height: 0;
-  padding: 42px 42px 24px;
-  gap: 18px;
-  overflow: auto;
+.onboarding-copy h2 {
+  margin: 0;
+  color: var(--text-main);
+  font-size: var(--text-large);
+  font-weight: var(--weight-title);
+  letter-spacing: -0.01em;
 }
 
-/* Secondary tier material (DESIGN.md §7), not a bespoke teal-wash CTA: this
-   dialog's one primary is "Start workspace" below (.primary-button, the One
-   Primary Rule) — "Open the guided board" is a secondary way in, so it gets
-   the same paper sheet every other secondary action uses, just laid out as
-   a row (matching .onboarding-link-row below it) instead of an inline pill. */
-.onboarding-primary-cta {
+.onboarding-copy p {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: var(--text-body);
+  line-height: 1.5;
+}
+
+/* The bordered-list idiom DESIGN.md uses for setup surfaces: hairline rows,
+   status first, one action per row. */
+.onboarding-setup {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-4);
+  list-style: none;
+}
+
+.onboarding-setup li {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: 14px;
-  width: 100%;
-  padding: 16px 18px;
-  border: 1px solid var(--control-sheet-edge);
-  border-radius: var(--radius-3);
-  background: var(--control-sheet);
-  box-shadow: 0 1px 0 var(--control-lift-near), 0 3px 8px -2px var(--control-lift-far);
-  color: var(--text-main);
-  cursor: pointer;
-  text-align: left;
-  transition:
-    border-color 160ms ease,
-    background 160ms ease,
-    transform 160ms ease;
+  min-height: 56px;
+  padding: 8px 8px 8px 14px;
+  gap: 12px;
 }
-.onboarding-primary-cta:hover {
-  background: var(--control-sheet-hover);
-  transform: translateY(-1px);
-  box-shadow: 0 2px 0 var(--control-lift-near), 0 8px 14px -4px var(--control-lift-far-hover);
+
+.onboarding-setup li + li {
+  border-top: 1px solid var(--separator-hairline);
 }
-.onboarding-primary-cta:active {
-  background: var(--control-sheet-pressed);
-  transform: translateY(0.5px);
-  box-shadow: none;
+
+.onboarding-setup-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--text-muted);
+  opacity: 0.6;
 }
-.onboarding-primary-cta svg {
-  color: var(--text-soft);
+
+.onboarding-setup-dot.is-ready {
+  background: var(--accent-sage);
+  opacity: 1;
 }
-.onboarding-cta-body {
+
+.onboarding-setup-text {
   display: grid;
-  gap: 3px;
   min-width: 0;
+  gap: 2px;
 }
-.onboarding-cta-body strong {
+
+.onboarding-setup-text strong {
   color: var(--text-main);
   font-size: var(--text-body);
   font-weight: var(--weight-control);
 }
-.onboarding-cta-body small {
+
+.onboarding-setup-text small {
   color: var(--text-soft);
   font-size: var(--text-small);
+  line-height: 1.4;
 }
 
-.onboarding-secondary {
-  display: grid;
-  gap: 6px;
-}
-.onboarding-secondary-label {
-  padding-left: 2px;
-  color: var(--text-muted);
-  font-size: var(--text-small);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-.onboarding-link-row {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 12px;
-  width: 100%;
-  padding: 12px 14px;
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius-3);
-  background: color-mix(in srgb, var(--surface-inspector), transparent 22%);
-  color: var(--text-soft);
-  cursor: pointer;
-  text-align: left;
-  transition:
-    border-color 160ms ease,
-    background 160ms ease,
-    color 160ms ease;
-}
-.onboarding-link-row:hover {
-  border-color: var(--border-strong);
-  background: var(--glass-hover);
-  color: var(--text-main);
-}
-.onboarding-link-row svg {
-  color: var(--text-muted);
-}
-.onboarding-link-text {
-  display: grid;
-  gap: 2px;
-  min-width: 0;
-}
-.onboarding-link-text strong {
-  color: var(--text-main);
-  font-size: var(--text-body);
-}
-.onboarding-link-text small {
-  overflow: hidden;
-  color: var(--text-muted);
-  font-size: var(--text-small);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.onboarding-footer {
-  grid-column: 1 / -1;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  min-width: 0;
-  padding: 16px 20px;
-  border-top: 1px solid var(--separator-hairline);
-  gap: 10px;
-}
-
-.onboarding-step-icon {
-  display: grid;
-  width: 34px;
-  height: 34px;
-  place-items: center;
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius-3);
-  /* Decorative badge, not a status or selection: ink, not teal (DESIGN.md §3
-     One Accent Rule). */
-  background: var(--control-patch);
-  color: var(--text-main);
-}
-
-
-@media (max-width: 860px) {
-  .onboarding-shell {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .onboarding-hero {
-    min-height: 300px;
-    border-right: 0;
-    border-bottom: 1px solid var(--separator-hairline);
-    padding: 34px 28px 24px;
-  }
-
-  .onboarding-steps {
-    padding: 22px;
-  }
+.onboarding-start {
+  justify-self: start;
+  min-width: 132px;
 }
 
 .panel {
@@ -3003,28 +2901,37 @@ button.mini-tags-more:focus-visible {
   pointer-events: auto;
 }
 
+/* No card around the zero state any more: on an empty board the heading and
+   the composer float on the canvas with the aura behind them. The composer
+   is an opaque sheet (Material-On-Chrome Rule, DESIGN.md §6), so what is
+   typed never sits on the gradient. */
 .canvas-zero-state {
   position: absolute;
   top: 50%;
   left: calc(50% + var(--canvas-overlay-shift, 0px));
   z-index: 4;
   display: grid;
+  justify-items: center;
   width: min(
-    520px,
+    560px,
     calc(100% - var(--canvas-overlay-left-inset, 0px) - var(--canvas-right-inset, 0px) - 56px)
   );
   max-height: calc(100% - 132px);
-  padding: 26px;
-  border: 0;
-  border-radius: var(--radius-3);
-  /* Opaque (Material-On-Chrome Rule, DESIGN.md §6): --surface-drawer is
-     already a solid hex, so the color-mix transparency wrapper was the
-     only thing making this 0.93 alpha instead of fully opaque. */
-  background: var(--surface-drawer);
-  box-shadow: 0 12px 36px rgba(0,0,0,0.25), 0 0 0 1px var(--border-soft);
-  gap: 16px;
-  overflow: auto;
+  gap: 18px;
+  isolation: isolate;
   transform: translate(-50%, -50%);
+}
+
+.canvas-zero-aura {
+  inset: -90px -140px -60px;
+  z-index: -1;
+  /* Bottom layer: the canvas colour, so the dot grid fades out under the
+     heading and the subtitle instead of running through the letters. */
+  background:
+    radial-gradient(42% 58% at 24% 36%, var(--aura-a), transparent 72%),
+    radial-gradient(46% 62% at 74% 26%, var(--aura-b), transparent 72%),
+    radial-gradient(40% 50% at 56% 82%, var(--aura-c), transparent 74%),
+    radial-gradient(48% 52% at 50% 46%, var(--bg-canvas) 55%, transparent 100%);
 }
 
 .canvas-zero-restore {
@@ -3033,20 +2940,18 @@ button.mini-tags-more:focus-visible {
   align-items: center;
   gap: 12px;
   width: 100%;
-  padding: 13px 16px;
+  padding: 12px 16px;
   /* Secondary paper sheet, not a teal wash (DESIGN.md §3 One Accent Rule,
-     §7 Secondary tier): teal on a button fill reads as "primary" or
-     "selected," neither of which this restore-view prompt is. */
+     §7 Secondary tier). */
   border: 1px solid var(--control-sheet-edge);
-  border-radius: var(--radius-3);
+  border-radius: var(--radius-4);
   background: var(--control-sheet);
   color: var(--text-main);
   cursor: pointer;
   text-align: left;
   transition:
     border-color 160ms ease,
-    background 160ms ease,
-    transform 160ms ease;
+    background 160ms ease;
 }
 .canvas-zero-restore:hover {
   border-color: var(--border-strong);
@@ -3076,68 +2981,125 @@ button.mini-tags-more:focus-visible {
 .canvas-zero-heading {
   display: grid;
   justify-items: center;
-  gap: 10px;
+  gap: 8px;
+  text-align: center;
 }
 
 .canvas-zero-heading img {
-  width: 42px;
-  height: 42px;
-  border-radius: 11px;
+  width: 48px;
+  height: 48px;
+  margin-bottom: 6px;
+  border-radius: 12px;
 }
 
 .canvas-zero-heading h2 {
   margin: 0;
   color: var(--text-main);
-  font-size: var(--text-title);
+  font-size: var(--text-large);
   font-weight: var(--weight-title);
   letter-spacing: -0.01em;
 }
 
-.canvas-template-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.canvas-template-card {
-  display: grid;
-  min-height: 42px;
-  padding: 0 12px;
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius-2);
-  /* Opaque (Material-On-Chrome Rule, DESIGN.md §6): --surface-inset is
-     already a solid hex, so the color-mix transparency wrapper was the
-     only thing making this 0.8 alpha instead of fully opaque. */
-  background: var(--surface-inset);
-  color: var(--text-main);
-  cursor: pointer;
-  place-items: center;
-  text-align: center;
-}
-
-.canvas-template-card:hover,
-.canvas-template-card:focus-visible {
-  border-color: var(--border-strong);
-  background: var(--control-patch);
-}
-
-.canvas-template-card strong {
+.canvas-zero-heading p {
+  max-width: 42ch;
+  margin: 0;
+  color: var(--text-soft);
   font-size: var(--text-body);
+  line-height: 1.5;
 }
 
-.canvas-template-card.is-welcome {
-  border-color: color-mix(in srgb, var(--accent-amber), transparent 42%);
-}
-
-.canvas-prompt-starter {
+.canvas-zero-composer {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: end;
-  gap: 10px;
+  width: 100%;
+  padding: 6px 8px 8px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-6);
+  background: var(--surface-drawer);
+  box-shadow: 0 16px 40px rgb(0 0 0 / 0.22);
+  gap: 4px;
+  transition: border-color 160ms ease;
 }
 
-.canvas-prompt-input {
+.canvas-zero-composer:focus-within {
+  border-color: var(--border-strong);
+}
+
+.canvas-zero-composer.has-error {
+  border-color: color-mix(in srgb, var(--danger) 55%, transparent);
+}
+
+/* The composer is the field; the textarea inside it drops the kit's own
+   ring and fill so there is one boundary, not two. */
+.canvas-zero-composer .canvas-zero-prompt {
+  min-height: 72px;
+  padding: 8px 6px;
+  background: transparent;
+  box-shadow: none;
+  font-size: var(--text-body);
+  line-height: 1.5;
+  resize: none;
+}
+
+.canvas-zero-composer-bar {
+  display: flex;
+  align-items: center;
   min-width: 0;
+  gap: 8px;
+}
+
+.canvas-zero-ai {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  min-width: 0;
+  padding: 0 10px 0 8px;
+  border-radius: 999px;
+  background: var(--glass-hover);
+  color: var(--text-soft);
+  font-size: var(--text-small);
+  gap: 6px;
+}
+
+.canvas-zero-ai-dot {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 999px;
+  background: var(--text-muted);
+}
+
+.canvas-zero-ai.is-ready .canvas-zero-ai-dot {
+  background: var(--accent-sage);
+}
+
+.canvas-zero-submit {
+  margin-left: auto;
+}
+
+.canvas-zero-error {
+  width: 100%;
+  margin: -6px 0 0;
+  padding: 0 4px;
+  color: var(--danger);
+  font-size: var(--text-small);
+  line-height: 1.4;
+}
+
+.canvas-zero-blank {
+  padding: 4px 8px;
+  border: 0;
+  border-radius: var(--radius-2);
+  background: none;
+  color: var(--text-soft);
+  cursor: pointer;
+  font-size: var(--text-body);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, currentColor 40%, transparent);
+  text-underline-offset: 3px;
+}
+
+.canvas-zero-blank:hover {
+  color: var(--text-main);
 }
 
 .edge-layer {

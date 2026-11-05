@@ -83,6 +83,7 @@ export function SettingsView({
   selectedProviderId,
   activeProviderId,
   focusNonce,
+  focusTab,
   localModelAvailable,
   localModelStatus,
   extensionInstallStatus,
@@ -116,6 +117,8 @@ export function SettingsView({
   selectedProviderId: string
   activeProviderId: string
   focusNonce: number
+  // Tab a focusNonce bump opens; the AI tab when left out.
+  focusTab?: 'ai' | 'capture'
   localModelAvailable: boolean
   localModelStatus: string
   extensionInstallStatus: ExtensionInstallStatus
@@ -152,7 +155,9 @@ export function SettingsView({
   useEffect(() => setIsPortalReady(true), [])
   // When a provider is focused from elsewhere (onboarding, logged-out prompt), jump to the AI tab.
   useEffect(() => {
-    if (focusNonce > 0) setActiveSettingsTab('ai')
+    if (focusNonce > 0) setActiveSettingsTab(focusTab ?? 'ai')
+    // focusTab rides along with the nonce; only a new nonce should move the tab.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusNonce])
 
   const remoteProviders = providers.filter((provider) => provider.authMode !== 'local')

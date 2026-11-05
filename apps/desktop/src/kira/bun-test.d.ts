@@ -1,5 +1,5 @@
 /**
- * Minimal ambient types for `bun:test`, used only by aiPanelModel.test.ts.
+ * Minimal ambient types for `bun:test`, used by the tests under src/kira.
  *
  * This repo has no `bun-types` / `@types/bun` package installed (no
  * bun.lock at the repo root, no existing bun test in the app), and adding
@@ -23,6 +23,9 @@ declare module 'bun:test' {
     toBeFalsy(): void
     toContain(expected: unknown): void
     toHaveLength(expected: number): void
+    toThrow(expected?: string | RegExp): void
+    toBeGreaterThanOrEqual(expected: number): void
+    toBeLessThanOrEqual(expected: number): void
     not: Matchers<T>
   }
 
