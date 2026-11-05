@@ -5,11 +5,13 @@
 // and reads its answer; when that fails the caller shows the error instead of
 // inventing a board.
 import { layerFlowchart } from '../mermaid/parseMermaid'
+import { RELATIONS } from '../canvas/relations'
 
 export type BoardDraftNode = { id: string; title: string; body: string }
 // The relation kinds an idea map uses; the app's other kinds (mood, material,
 // reference) describe images, not links between ideas.
-export const BOARD_DRAFT_RELATIONS = ['supports', 'contrasts', 'example', 'derived-from', 'contains', 'related'] as const
+// The same six kinds the canvas uses (kira/canvas/relations.ts).
+export const BOARD_DRAFT_RELATIONS = RELATIONS
 export type BoardDraftRelation = (typeof BOARD_DRAFT_RELATIONS)[number]
 export type BoardDraftLink = { from: string; to: string; relation: BoardDraftRelation; label?: string }
 export type BoardDraft = {

@@ -3292,6 +3292,57 @@ button.mini-tags-more:focus-visible {
     transform 140ms ease;
 }
 
+/* Each relation reads differently on the line itself, quietly: a tension is
+   dashed, an example dotted, a loose "related" link fainter. Supports, leads
+   to and contains stay solid; their icon tells them apart. */
+.edge-line.relation-contrasts {
+  /* px: the edge layer uses non-scaling-stroke, so dashes are screen units. */
+  stroke-dasharray: 6 4;
+}
+
+.edge-line.relation-example {
+  stroke-dasharray: 1.5 4;
+  stroke-linecap: round;
+}
+
+.edge-line.relation-related {
+  opacity: 0.55;
+}
+
+/* The selected or highlighted joint of an unlabelled link shows its
+   relation's icon, so the dot grows to hold it. */
+.edge-joint:not(.has-label):has(.relation-icon) {
+  display: grid;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+  border-width: 1px;
+  border-radius: 999px;
+  background: var(--surface-drawer);
+  color: var(--text-main);
+}
+
+.edge-joint.is-active:not(.has-label):has(.relation-icon) {
+  border-color: var(--accent-amber);
+}
+
+.edge-joint.has-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.edge-joint.has-label .relation-icon {
+  flex: none;
+  color: var(--text-muted);
+}
+
+.edge-joint.has-label span {
+  overflow: hidden;
+  min-width: 0;
+  text-overflow: ellipsis;
+}
+
 /* A labelled link shows its label on the edge, always: how two ideas
    connect is the point of the map, not something to open a popover for. */
 .edge-joint.has-label {

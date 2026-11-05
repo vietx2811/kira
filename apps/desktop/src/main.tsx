@@ -38,6 +38,7 @@ import { RemoveNodeGuardDialog } from './components/application/kira-panel/Remov
 import { MermaidImportDialog } from './components/application/mermaid/MermaidImportDialog'
 import { installScrambledClickRepair } from './kira/input/scrambledClickRepair'
 import { edgeLabelText, placeEdgeLabels } from './kira/canvas/edgeLabels'
+import { RELATIONS, normalizeRelation, relationWeight, type Relation } from './kira/canvas/relations'
 import { MermaidPreview } from './components/application/mermaid/MermaidPreview'
 import { layerFlowchart, parseMermaidFlowchart } from './kira/mermaid/parseMermaid'
 import { buildBoardDraftPrompt, layoutBoardDraft, parseBoardDraft, type BoardDraft } from './kira/ai/boardDraft'
@@ -112,6 +113,11 @@ import {
   ImagePlus,
   Layers,
   Link2,
+  CircleCheck,
+  ArrowLeftRight,
+  Quote,
+  ArrowRight,
+  type LucideIcon,
   Lightbulb,
   ListTree,
   LocateFixed,
@@ -201,7 +207,7 @@ import './styles/fonts/inter.css'
 import './styles/uikit/globals.css'
 import './styles.css'
 
-export type Relation = 'supports' | 'contrasts' | 'example' | 'mood' | 'material' | 'reference' | 'related' | 'derived-from' | 'contains'
+export type { Relation } from './kira/canvas/relations'
 export type Selection =
   | { type: 'project' }
   | { type: 'idea'; id: string }
@@ -803,6 +809,13 @@ const UI_STRINGS: Record<string, { en: string; vi: string }> = {
   'ai.status.more': { en: '+{count} more', vi: '+{count} việc' },
   'ai.topbar.off': { en: 'No AI connected', vi: 'Chưa kết nối AI' },
   'ai.topbar.running': { en: 'Working: {label}', vi: 'Đang chạy: {label}' },
+  'relation.all': { en: 'All', vi: 'Tất cả' },
+  'relation.supports': { en: 'Supports', vi: 'Củng cố' },
+  'relation.contrasts': { en: 'Contrasts', vi: 'Đối lập' },
+  'relation.example': { en: 'Example', vi: 'Ví dụ' },
+  'relation.derived-from': { en: 'Leads to', vi: 'Dẫn tới' },
+  'relation.contains': { en: 'Contains', vi: 'Bao gồm' },
+  'relation.related': { en: 'Related', vi: 'Liên quan' },
   'ai.model.pick': { en: 'Choose a model', vi: 'Chọn model' },
   'ai.model.notConnected': { en: 'No AI connected', vi: 'Chưa kết nối AI' },
   'ai.model.connectMore': { en: 'Connect AI…', vi: 'Kết nối AI…' },
@@ -1582,7 +1595,8 @@ const linksSeed: EvidenceLink[] = [
     id: 'link-04',
     imageId: 'img-03',
     ideaId: 'idea-atmospheric-index',
-    relation: 'reference',
+    relation: 'example',
+    label: 'outline grammar',
     note: 'Field note structure can become the outline grammar.',
     confidence: 0.67,
   },
@@ -1590,7 +1604,8 @@ const linksSeed: EvidenceLink[] = [
     id: 'link-05',
     imageId: 'img-04',
     ideaId: 'idea-material-grammar',
-    relation: 'mood',
+    relation: 'supports',
+    label: 'material weight',
     note: 'Material weight helps keep the direction grounded.',
     confidence: 0.58,
   },
@@ -1600,12 +1615,29 @@ const relationLabels: Record<Relation, string> = {
   supports: 'supports',
   contrasts: 'contrasts',
   example: 'example',
-  mood: 'mood',
-  material: 'material',
-  reference: 'reference',
-  related: 'related',
-  'derived-from': 'derived-from',
+  'derived-from': 'leads to',
   contains: 'contains',
+  related: 'related',
+}
+
+// One icon per relation, used wherever a relation is shown: the label on the
+// edge, the edge's joint when it is selected, the link popover, the filters.
+const relationIcons: Record<Relation, LucideIcon> = {
+  supports: CircleCheck,
+  contrasts: ArrowLeftRight,
+  example: Quote,
+  'derived-from': ArrowRight,
+  contains: Layers,
+  related: Link2,
+}
+
+function RelationIcon({ relation, size = 12 }: { relation: Relation; size?: number }) {
+  const Icon = relationIcons[relation] ?? Link2
+  return <Icon size={size} aria-hidden="true" className="relation-icon" />
+}
+
+function relationLabel(relation: Relation, lang: Lang) {
+  return t(`relation.${relation}`, lang)
 }
 
 const graphScopeLabels: Record<GraphScope, string> = {
@@ -2273,7 +2305,10 @@ function FileWorkspace({
   const [diagrams, setDiagrams] = useState(initialProject.diagrams)
   const [placeholders, setPlaceholders] = useState(initialProject.placeholders)
   const [frames, setFrames] = useState<FrameNode[]>(initialProject.frames ?? [])
-  const [links, setLinks] = useState(initialProject.links)
+  // Retired relation kinds open as their current kind (see applyProjectSnapshot).
+  const [links, setLinks] = useState<EvidenceLink[]>(() =>
+    initialProject.links.map((link) => ({ ...link, ...normalizeRelation(link.relation, link.label) })),
+  )
   const [versionState, setVersionState] = useState(initialProject.versionState)
   const [versionHistory, setVersionHistory] = useState(initialProject.versionHistory)
   const [nodeVersions, setNodeVersions] = useState(initialProject.nodeVersions)
@@ -3002,7 +3037,9 @@ function FileWorkspace({
     setDiagrams(snapshot.diagrams)
     setPlaceholders(snapshot.placeholders)
     setFrames(snapshot.frames ?? [])
-    setLinks(snapshot.links)
+    // Retired relation kinds (mood, material, reference) open as their current
+    // kind, keeping the old word as the label (kira/canvas/relations.ts).
+    setLinks(snapshot.links.map((link) => ({ ...link, ...normalizeRelation(link.relation, link.label) })))
     setOutlineDrafts(snapshot.outlineDrafts)
     setSlidesConfig(normalizeSlidesConfig(snapshot.slidesConfig))
     // AI settings are app-wide (useAiSettingsStore): opening a project does not
@@ -5019,7 +5056,7 @@ function FileWorkspace({
       }
       recordNodeVersion('placeholder', undefined, placeholder, 'created')
       setPlaceholders((current) => [...current, placeholder])
-      createNodeLink(source, { kind: 'placeholder', id: placeholder.id }, 'reference', { skipHistory: true })
+      createNodeLink(source, { kind: 'placeholder', id: placeholder.id }, 'example', { skipHistory: true })
       return
     }
 
@@ -6550,9 +6587,24 @@ function FileWorkspace({
       return
     }
 
+    // The board itself goes in, or Kira cannot answer anything about it (it
+    // used to get only the conversation and asked the user to paste the
+    // board). Nodes hidden from AI stay out; links say how ideas connect.
+    const boardNodes = collectKiraContext(null, 'full_board', { ideas, images, palettes, diagrams, placeholders, links }, 30)
+    const boardKeys = new Map(boardNodes.map((node) => [`${node.kind}:${node.id}`, node]))
+    const boardLinks = links.flatMap((link) => {
+      const from = boardKeys.get(`${link.sourceKind ?? 'image'}:${link.sourceNodeId ?? link.imageId}`)
+      const to = boardKeys.get(`${link.targetKind ?? 'idea'}:${link.targetNodeId ?? link.ideaId}`)
+      if (!from || !to) return []
+      return [`- ${from.title} → ${to.title} (${relationLabels[link.relation]}${link.label ? `: ${link.label}` : ''})`]
+    })
     const promptLines = [
       'You are Kira, a creative workspace assistant chatting with the user inside a canvas app.',
-      'Reply conversationally and concisely, in plain prose (no markdown headings).',
+      'Reply conversationally and concisely, in plain prose (no markdown headings), in the language the user writes in.',
+      '',
+      boardNodes.length > 0 ? `The board "${projectMetadata.title}" (most important first):` : 'The board is empty.',
+      ...boardNodes.map((node) => formatKiraContextLine(node)),
+      ...(boardLinks.length > 0 ? ['', 'How they connect:', ...boardLinks.slice(0, 40)] : []),
       '',
       'Conversation so far:',
       ...threadHistory.map((message) => `${message.role === 'user' ? 'User' : 'Kira'}: ${message.text}`),
@@ -10570,7 +10622,7 @@ function GraphCanvas({
                   />
                   <path
                     d={curve.path}
-                    className={active ? 'edge-line is-active' : relatedLink ? 'edge-line is-related' : 'edge-line'}
+                    className={`${active ? 'edge-line is-active' : relatedLink ? 'edge-line is-related' : 'edge-line'} relation-${link.relation}`}
                   />
                 </g>
               )
@@ -10661,7 +10713,7 @@ function GraphCanvas({
                     labelSpot?.shown ? 'has-label' : '',
                   ].filter(Boolean).join(' ')}
                   type="button"
-                  aria-label={link.label ? `${link.label} (${link.relation})` : `Select ${link.relation} relation`}
+                  aria-label={link.label ? `${link.label} (${relationLabels[link.relation]})` : `Select ${relationLabels[link.relation]} relation`}
                   title={link.label || undefined}
                   data-relation={link.relation}
                   style={{
@@ -10671,9 +10723,20 @@ function GraphCanvas({
                   onClick={() => onSelect(active ? { type: 'project' } : { type: 'link', id: link.id })}
                   onContextMenu={(event) => openLinkContextMenu(link.id, event)}
                 >
-                  {labelSpot?.shown && link.label ? edgeLabelText(link.label) : null}
+                  {labelSpot?.shown && link.label ? (
+                    <>
+                      <RelationIcon relation={link.relation} size={11} />
+                      <span>{edgeLabelText(link.label)}</span>
+                    </>
+                  ) : active || relatedLink ? (
+                    <RelationIcon relation={link.relation} size={11} />
+                  ) : null}
                 </button>
                 {active && (
+                  // The relation list portals here, outside the popover, so the
+                  // popover's bounds do not clip it; and inside the shell, so it
+                  // keeps the theme.
+                  <UiKitPortalHost className="kira-uikit uikit-passthrough-host">
                   <div
                     className="link-popover"
                     data-flip={canvasHeight > 0 && graphTransform.y + (curve.midY / 100) * canvasHeight < LINK_POPOVER_LIFT + LINK_POPOVER_GAP + 8 ? 'down' : 'up'}
@@ -10697,14 +10760,14 @@ function GraphCanvas({
                       className="link-relation-select"
                       size="sm"
                       selectedKey={link.relation}
-                      items={Object.keys(relationLabels).map((relation) => ({ id: relation, label: relationLabels[relation as Relation] }))}
+                      items={RELATIONS.map((relation) => ({ id: relation, label: relationLabel(relation, lang), icon: <RelationIcon relation={relation} /> }))}
                       onSelectionChange={(key) => {
                         const relation = String(key) as Relation
                         onRelationChange(link.id, relation)
                         onLinkChange(link.id, { relation })
                       }}
                     >
-                      {(item) => <Select.Item id={item.id}>{item.label}</Select.Item>}
+                      {(item) => <Select.Item id={item.id} icon={item.icon}>{item.label}</Select.Item>}
                     </Select>
                     {/* The words shown on the edge itself (EvidenceLink.label);
                         the note below is for longer context. */}
@@ -10748,6 +10811,7 @@ function GraphCanvas({
                       Remove link
                     </button>
                   </div>
+                  </UiKitPortalHost>
                 )}
               </React.Fragment>
             )
@@ -11352,29 +11416,35 @@ function GraphCanvas({
             )}
             <div className="graph-tools-field">
               <span>Relations</span>
+              {/* Theme for the list: it portals out of the canvas (CLAUDE.md, portals lose the theme). */}
+              <UiKitPortalHost className="kira-uikit uikit-passthrough-host">
               <Select
                 aria-label="Relation filter"
                 className="graph-tools-select"
-                items={[{ id: 'all', label: 'All' }, ...Object.keys(relationLabels).map((relation) => ({ id: relation, label: relationLabels[relation as Relation] }))]}
+                items={[{ id: 'all', label: t('relation.all', lang) }, ...RELATIONS.map((relation) => ({ id: relation, label: relationLabel(relation, lang), icon: <RelationIcon relation={relation} /> }))]}
                 selectedKey={relationFilter}
                 onSelectionChange={(key) => setRelationFilter(key as RelationFilter)}
                 size="sm"
               >
-                {(item) => <Select.Item id={item.id}>{item.label}</Select.Item>}
+                {(item) => <Select.Item id={item.id} icon={item.icon}>{item.label}</Select.Item>}
               </Select>
+              </UiKitPortalHost>
             </div>
             <div className="graph-tools-field">
               <span>Link</span>
+              {/* Theme for the list: it portals out of the canvas (CLAUDE.md, portals lose the theme). */}
+              <UiKitPortalHost className="kira-uikit uikit-passthrough-host">
               <Select
                 aria-label="Link relation"
                 className="graph-tools-select"
-                items={Object.keys(relationLabels).map((relation) => ({ id: relation, label: relationLabels[relation as Relation] }))}
+                items={RELATIONS.map((relation) => ({ id: relation, label: relationLabel(relation, lang), icon: <RelationIcon relation={relation} /> }))}
                 selectedKey={linkCreationRelation}
                 onSelectionChange={(key) => onLinkCreationRelationChange(key as Relation)}
                 size="sm"
               >
-                {(item) => <Select.Item id={item.id}>{item.label}</Select.Item>}
+                {(item) => <Select.Item id={item.id} icon={item.icon}>{item.label}</Select.Item>}
               </Select>
+              </UiKitPortalHost>
             </div>
             <div className="graph-tools-wide graph-tools-field">
               <span>Organize</span>
@@ -11626,6 +11696,7 @@ function Graph3DView({
             onClick={() => setRelationFilter3D((current) => (current === relation.relation ? 'all' : relation.relation))}
           >
             <i style={{ background: relation.color }} />
+            <RelationIcon relation={relation.relation} />
             <span>{relationLabels[relation.relation]}</span>
             <small>{relation.count}</small>
           </button>
@@ -15872,14 +15943,6 @@ function strengthRank(status: Idea['status']) {
   return 2
 }
 
-function relationWeight(relation: Relation) {
-  if (relation === 'supports') return 0
-  if (relation === 'example') return 1
-  if (relation === 'material') return 2
-  if (relation === 'mood') return 3
-  if (relation === 'reference') return 4
-  return 5
-}
 
 // An idea can hold more than one link to the same image (e.g. two
 // different relations recorded against it), which used to produce
