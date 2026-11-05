@@ -10261,20 +10261,21 @@ function GraphCanvas({
                   }}
                   placement="bottom start"
                 />
-                {/* onPress, not type="submit": in the macOS app (WKWebView) the
-                    kit Button never submitted the form, so clicking did nothing
-                    while the same click worked in Chrome. Enter in the field
-                    already calls submitPromptStarter directly. */}
-                <Button
-                  color="primary"
-                  size="sm"
-                  iconLeading={Sparkles}
-                  isDisabled={!starterPrompt.trim() || !draftAiStatus.ready || isDrafting}
-                  className="canvas-zero-submit"
-                  onPress={() => void submitPromptStarter()}
+                {/* A plain button, not the kit Button: in the macOS app a click on
+                    the kit Button here never reached onPress (nor submitted the
+                    form), measured in the installed release 2026-11-06, while the
+                    plain buttons on the canvas and the kit buttons in dialogs and
+                    the library work. Root cause not found yet; Enter in the field
+                    calls submitPromptStarter directly and always worked. */}
+                <button
+                  type="button"
+                  className="primary-button sm canvas-zero-submit"
+                  disabled={!starterPrompt.trim() || !draftAiStatus.ready || isDrafting}
+                  onClick={() => void submitPromptStarter()}
                 >
+                  <Sparkles size={14} aria-hidden="true" />
                   {isDrafting ? t('zero.drafting', lang) : t('zero.draft', lang)}
-                </Button>
+                </button>
               </div>
             </form>
             {draftError && <p className="canvas-zero-error" role="alert">{draftError}</p>}
@@ -17610,17 +17611,20 @@ async function generateNativeAiText(provider: AiProviderProfile, prompt: string)
   if (!isTauriRuntime()) {
     throw new Error('AI generation runs in the desktop app because secrets and local endpoints are native-only.')
   }
-  return invoke<AiGenerationResult>('generate_ai_text', { provider: providerRequestPayload(provider), prompt })
+  // The Rust command takes one `request` argument (AiGenerationRequest). This
+  // used to send provider and prompt at the top level, so every call failed
+  // with "missing required key request" and no AI text feature ever ran in
+  // the macOS app.
+  return invoke<AiGenerationResult>('generate_ai_text', { request: { provider: providerRequestPayload(provider), prompt } })
 }
 
 async function generateNativeAiVision(provider: AiProviderProfile, imageDataUrl: string, prompt: string) {
   if (!isTauriRuntime()) {
     throw new Error('AI generation runs in the desktop app because secrets and local endpoints are native-only.')
   }
+  // Same `request` wrapper as generate_ai_text (AiVisionGenerationRequest).
   return invoke<AiGenerationResult>('generate_ai_vision', {
-    provider: providerRequestPayload(provider),
-    imageDataUrl,
-    prompt,
+    request: { provider: providerRequestPayload(provider), imageDataUrl, prompt },
   })
 }
 
