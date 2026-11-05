@@ -151,7 +151,7 @@ export function SettingsAiProvidersTab({
       <li key={provider.id} className="flex flex-col gap-2 px-3 py-2.5">
         <div className="flex items-center gap-3">
           <span className={connected ? 'size-2 shrink-0 rounded-full bg-fg-success-primary' : 'size-2 shrink-0 rounded-full bg-quaternary'} aria-hidden="true" />
-          <ModelTag tag={providerTag(provider.type)} />
+          <ModelTag type={provider.type} tag={providerTag(provider.type)} />
           <span className="flex min-w-0 flex-1 flex-col">
             <strong className="truncate text-sm font-semibold text-primary">{provider.name}</strong>
             <span className="truncate text-xs text-tertiary">{statusLine(provider)}</span>

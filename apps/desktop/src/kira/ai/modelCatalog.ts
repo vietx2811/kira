@@ -8,6 +8,7 @@
 // The default model is stored in the existing fields, so no migration: the
 // selected provider id plus that provider's `model`.
 import type { AiProviderProfile, AiProviderType } from './aiProviderDomain'
+import type { ProviderMark } from './providerMarks'
 
 export type AiModelRef = { providerId: string; model: string }
 
@@ -29,6 +30,21 @@ const providerTags: Record<AiProviderType, string> = {
   custom_openai_compatible: 'Custom',
   codex: 'Codex',
   claude_code: 'Claude Code',
+}
+
+// The small logo drawn before the tag, where one may be used (see
+// providerMarks.ts for why OpenAI and Codex have none).
+const providerMarks: Partial<Record<AiProviderType, ProviderMark>> = {
+  anthropic: 'claude',
+  claude_code: 'claude',
+  gemini: 'gemini',
+  openrouter: 'openrouter',
+  ollama: 'ollama',
+  lm_studio: 'lmstudio',
+}
+
+export function providerMark(type: AiProviderType): ProviderMark | null {
+  return providerMarks[type] ?? null
 }
 
 export function providerTag(type: AiProviderType) {
