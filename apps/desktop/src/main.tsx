@@ -4039,7 +4039,7 @@ function FileWorkspace({
     setImages((current) => current.map((image) => (image.id === imageId ? { ...image, cropRect, updatedAt: nowIso() } : image)))
   }
 
-  function updateLink(linkId: string, patch: Partial<Pick<EvidenceLink, 'relation' | 'note' | 'confidence'>>) {
+  function updateLink(linkId: string, patch: Partial<Pick<EvidenceLink, 'relation' | 'note' | 'confidence' | 'label'>>) {
     setLinks((current) => current.map((link) => (link.id === linkId ? { ...link, ...patch, updatedAt: nowIso() } : link)))
   }
 
@@ -8028,7 +8028,7 @@ function GraphCanvas({
   ocrRunningImageId: string | null
   ocrStatusByImageId: Record<string, string>
   onRelationChange: (linkId: string, relation: Relation) => void
-  onLinkChange: (linkId: string, patch: Partial<Pick<EvidenceLink, 'relation' | 'note' | 'confidence'>>) => void
+  onLinkChange: (linkId: string, patch: Partial<Pick<EvidenceLink, 'relation' | 'note' | 'confidence' | 'label'>>) => void
   onLinkSwap: (linkId: string) => void
   onLinkDelete: (linkId: string) => void
   onDroppedReference: (payload: DroppedReferencePayload, target: DroppedReferenceTarget) => void | Promise<void>
@@ -8080,6 +8080,10 @@ function GraphCanvas({
   // reads it.
   const [canvasHeight, setCanvasHeight] = useState(0)
   const [canvasWidth, setCanvasWidth] = useState(0)
+  // Rendered card sizes (px, with each card's own scale, not the zoom), so
+  // link labels can stay off the cards. Measured when the board's content or
+  // the stage size changes, not on every pointer move.
+  const [nodeSizes, setNodeSizes] = useState<Map<string, { w: number; h: number }>>(() => new Map())
 
   function updateFileTabDropHover(clientX: number, clientY: number): string | null {
     if (clientY > FILE_TAB_DROP_ZONE_HEIGHT) {
@@ -8201,6 +8205,23 @@ function GraphCanvas({
   const [draftError, setDraftError] = useState('')
   // "Blank board" just puts the zero state away: the board is already empty.
   const [isZeroStateDismissed, setIsZeroStateDismissed] = useState(false)
+  useLayoutEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const next = new Map<string, { w: number; h: number }>()
+    canvas.querySelectorAll<HTMLElement>('[data-node-kind][data-node-id]').forEach((element) => {
+      const scale = Number.parseFloat(element.style.getPropertyValue('--node-scale')) || 1
+      next.set(`${element.dataset.nodeKind}:${element.dataset.nodeId}`, { w: element.offsetWidth * scale, h: element.offsetHeight * scale })
+    })
+    setNodeSizes((current) => {
+      if (current.size === next.size && [...next].every(([key, size]) => {
+        const old = current.get(key)
+        return old && Math.abs(old.w - size.w) < 1 && Math.abs(old.h - size.h) < 1
+      })) return current
+      return next
+    })
+  }, [ideas, images, palettes, diagrams, placeholders, canvasWidth, canvasHeight])
+
   // Ticks once a second while an AI call runs, for the elapsed time on the
   // ✦ status; idle otherwise.
   const [statusNow, setStatusNow] = useState(() => Date.now())
@@ -10587,6 +10608,18 @@ function GraphCanvas({
               }),
               canvasWidth,
               canvasHeight,
+              canvasWidth > 0 && canvasHeight > 0
+                ? ([
+                  ...displayView.ideas.map((node) => ['idea', node] as const),
+                  ...displayView.images.map((node) => ['image', node] as const),
+                  ...palettes.map((node) => ['palette', node] as const),
+                  ...diagrams.map((node) => ['diagram', node] as const),
+                  ...placeholders.map((node) => ['placeholder', node] as const),
+                ] as const).flatMap(([kind, node]) => {
+                  const size = nodeSizes.get(`${kind}:${node.id}`)
+                  return size ? [{ x: node.x, y: node.y, w: (size.w / canvasWidth) * 100, h: (size.h / canvasHeight) * 100 }] : []
+                })
+                : [],
             )
             return displayView.links.map((link) => {
             const source = resolveGraphNodePosition(
@@ -10664,6 +10697,16 @@ function GraphCanvas({
                     >
                       {(item) => <Select.Item id={item.id}>{item.label}</Select.Item>}
                     </Select>
+                    {/* The words shown on the edge itself (EvidenceLink.label);
+                        the note below is for longer context. */}
+                    <InputBase
+                      aria-label="Link label"
+                      size="sm"
+                      wrapperClassName="link-label-input"
+                      placeholder="Label on the edge"
+                      value={link.label ?? ''}
+                      onChange={(event) => onLinkChange(link.id, { label: event.target.value.trim() ? event.target.value : undefined })}
+                    />
                     <TextAreaBase
                       aria-label="Link note"
                       className="link-note-input"

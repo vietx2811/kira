@@ -43,6 +43,26 @@ describe('placeEdgeLabels', () => {
   })
 })
 
+describe('placeEdgeLabels keeps labels off cards', () => {
+  test('a label whose midpoint is on a card moves to a free slot beside it', () => {
+    // A card centred at (50, 40), 20% wide and 10% tall; the edge midpoint is
+    // on its bottom edge.
+    const placements = placeEdgeLabels([{ id: 'a', x: 50, y: 44, text: 'chất liệu câu chuyện' }], 1200, 800, [
+      { x: 50, y: 40, w: 20, h: 10 },
+    ])
+    const spot = placements.get('a')!
+    expect(spot.shown).toBeTruthy()
+    // Clear of the card: below its bottom edge (45) or above its top (35).
+    const half = (22 / 800) * 100 / 2
+    expect(spot.y - half >= 45 || spot.y + half <= 35).toBeTruthy()
+  })
+
+  test('a label already clear of every card stays at its midpoint', () => {
+    const placements = placeEdgeLabels([{ id: 'a', x: 50, y: 60, text: 'gần' }], 1200, 800, [{ x: 50, y: 40, w: 20, h: 10 }])
+    expect(placements.get('a')).toEqual({ x: 50, y: 60, shown: true })
+  })
+})
+
 test('edgeLabelText cuts long labels to a few words', () => {
   expect(edgeLabelText('menu quyết định band giá cho khách trẻ')).toBe('menu quyết định band gi…')
   expect(edgeLabelText('  ngắn  ')).toBe('ngắn')

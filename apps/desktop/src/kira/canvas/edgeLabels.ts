@@ -2,11 +2,14 @@
 // midpoint, but edges from one row to the next share a midpoint height, so on
 // an AI-drafted board their labels landed on one line and covered each other
 // and the cards (measured on a 9-node draft, 2026-11-06). Here each label is
-// placed in turn, nudged up or down past the ones already placed, and left
-// as the plain joint dot when no nearby slot is free.
+// placed in turn, nudged up or down past the ones already placed and off the
+// cards (obstacles), and left as the plain joint dot when no nearby slot is
+// free.
 
 export type EdgeLabelInput = { id: string; x: number; y: number; text: string }
 export type EdgeLabelPlacement = { x: number; y: number; shown: boolean }
+// A card on the canvas, centre and size in percent of the stage.
+export type EdgeLabelObstacle = { x: number; y: number; w: number; h: number }
 
 // Shown text: the label, cut to a few words' width; the full text goes in the
 // joint's tooltip and accessible name.
@@ -27,8 +30,9 @@ export function placeEdgeLabels(
   labels: EdgeLabelInput[],
   stageWidthPx: number,
   stageHeightPx: number,
+  obstacles: EdgeLabelObstacle[] = [],
 ): Map<string, EdgeLabelPlacement> {
-  const placed: { x: number; y: number; w: number; h: number }[] = []
+  const placed: { x: number; y: number; w: number; h: number }[] = [...obstacles]
   const result = new Map<string, EdgeLabelPlacement>()
   if (stageWidthPx <= 0 || stageHeightPx <= 0) {
     for (const label of labels) result.set(label.id, { x: label.x, y: label.y, shown: true })
@@ -43,7 +47,7 @@ export function placeEdgeLabels(
     const w = (px.width / stageWidthPx) * 100
     const h = (px.height / stageHeightPx) * 100
     // Midpoint first, then alternately below and above it, a label height at a time.
-    const offsets = [0, 1, -1, 2, -2]
+    const offsets = [0, 1, -1, 2, -2, 3, -3]
     const slot = offsets.map((step) => label.y + step * h * 1.15).find((y) => !overlaps(label.x, y, w, h))
     if (slot === undefined) {
       result.set(label.id, { x: label.x, y: label.y, shown: false })
