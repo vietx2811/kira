@@ -38,6 +38,7 @@ import { RemoveNodeGuardDialog } from './components/application/kira-panel/Remov
 import { MermaidImportDialog } from './components/application/mermaid/MermaidImportDialog'
 import { MermaidPreview } from './components/application/mermaid/MermaidPreview'
 import { layerFlowchart, parseMermaidFlowchart } from './kira/mermaid/parseMermaid'
+import { buildBoardDraftPrompt, layoutBoardDraft, parseBoardDraft, type BoardDraft } from './kira/ai/boardDraft'
 import {
   type AiTaskKind,
   type AiProviderType,
@@ -782,6 +783,32 @@ const UI_STRINGS: Record<string, { en: string; vi: string }> = {
   'tool.sticker': { en: 'Sticker', vi: 'Ghi chú' },
   'tool.frame': { en: 'Frame', vi: 'Khung' },
   'tool.mermaid': { en: 'Mermaid diagram', vi: 'Sơ đồ Mermaid' },
+  'onboarding.title': { en: 'Welcome to KIRA', vi: 'Chào mừng đến với KIRA' },
+  'onboarding.body': { en: 'Collect references and connect them into ideas. Everything stays on this Mac.', vi: 'Gom ảnh tham khảo và nối chúng thành ý tưởng. Mọi thứ nằm trên máy của bạn.' },
+  'onboarding.ai.label': { en: 'AI', vi: 'AI' },
+  'onboarding.ai.ready': { en: '{name} connected', vi: 'Đã kết nối {name}' },
+  'onboarding.ai.missing': { en: 'Not connected. Needed to draft a board from a description.', vi: 'Chưa kết nối. Cần để dựng bảng nháp từ mô tả.' },
+  'onboarding.ai.connect': { en: 'Connect', vi: 'Kết nối' },
+  'onboarding.ai.change': { en: 'Change', vi: 'Đổi' },
+  'onboarding.capture.label': { en: 'Browser capture', vi: 'Lấy ảnh từ trình duyệt' },
+  'onboarding.capture.ready': { en: 'Installed in {names}', vi: 'Đã cài trên {names}' },
+  'onboarding.capture.missing': { en: 'Not installed. Drag images from any page onto a board.', vi: 'Chưa cài. Kéo ảnh từ trang web bất kỳ vào bảng.' },
+  'onboarding.capture.install': { en: 'Install', vi: 'Cài đặt' },
+  'onboarding.capture.manage': { en: 'Manage', vi: 'Quản lý' },
+  'onboarding.start': { en: 'Get started', vi: 'Bắt đầu' },
+  'zero.restore': { en: 'Continue where you left off', vi: 'Tiếp tục phiên trước' },
+  'zero.title': { en: 'New board', vi: 'Bảng mới' },
+  'zero.subtitle': { en: 'Describe it and Kira drafts the first version, or start blank.', vi: 'Mô tả để Kira dựng bản nháp đầu tiên, hoặc bắt đầu với bảng trống.' },
+  'zero.promptLabel': { en: 'Describe the board', vi: 'Mô tả bảng' },
+  'zero.placeholder': { en: 'For example: an identity for a small bakery in Hoi An', vi: 'Ví dụ: bộ nhận diện cho một tiệm bánh nhỏ ở Hội An' },
+  'zero.ai.missing': { en: 'AI not connected', vi: 'Chưa kết nối AI' },
+  'zero.ai.connect': { en: 'Connect', vi: 'Kết nối' },
+  'zero.draft': { en: 'Draft board', vi: 'Tạo nháp' },
+  'zero.drafting': { en: 'Drafting', vi: 'Đang tạo nháp' },
+  'zero.blank': { en: 'Start with a blank board', vi: 'Bắt đầu với bảng trống' },
+  'zero.error.noAi': { en: 'Connect an AI provider first, then try again.', vi: 'Hãy kết nối một nhà cung cấp AI rồi thử lại.' },
+  'zero.error.codexSignIn': { en: 'Codex is signed out. Sign in from Settings, then try again.', vi: 'Codex chưa đăng nhập. Đăng nhập trong Cài đặt rồi thử lại.' },
+  'zero.error.failed': { en: 'Kira could not draft this board: {reason}', vi: 'Kira chưa dựng được bảng này: {reason}' },
   'mermaid.import.title': { en: 'Open Mermaid diagram', vi: 'Mở sơ đồ Mermaid' },
   'mermaid.import.description': { en: 'Choose a .mmd, .mermaid or Markdown file, or paste the diagram. Flowcharts also become ideas and links you can edit.', vi: 'Chọn file .mmd, .mermaid hoặc Markdown, hoặc dán sơ đồ vào. Flowchart sẽ tách thành ý tưởng và liên kết để sửa tiếp.' },
   'mermaid.import.chooseFile': { en: 'Choose file', vi: 'Chọn file' },
@@ -2271,6 +2298,9 @@ function FileWorkspace({
   const [activeAiProviderId, setActiveAiProviderId] = useState(initialProject.aiSettings.selectedProviderId)
   const [aiSettingsStatus, setAiSettingsStatus] = useState('Local-first routing is active')
   const [settingsFocusNonce, setSettingsFocusNonce] = useState(0)
+  // Which tab a settingsFocusNonce bump lands on. Before 'capture' existed the
+  // nonce always meant the AI tab.
+  const [settingsFocusTab, setSettingsFocusTab] = useState<'ai' | 'capture'>('ai')
   const [isOnboardingOpen, setIsOnboardingOpen] = useState(() => !readOnboardingCompleted())
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [isProjectSettingsOpen, setIsProjectSettingsOpen] = useState(false)
@@ -2448,6 +2478,10 @@ function FileWorkspace({
       (Object.keys(aiTaskLabels) as AiTaskKind[]).map((task) =>
         selectAiProviderForTask(task, aiProviders, aiRoutingMode, selectedAiProviderId),
       ),
+    [aiProviders, aiRoutingMode, selectedAiProviderId],
+  )
+  const draftAiStatus = useMemo(
+    () => resolveDraftAiStatus(aiProviders, aiRoutingMode, selectedAiProviderId),
     [aiProviders, aiRoutingMode, selectedAiProviderId],
   )
 
@@ -2873,11 +2907,26 @@ function FileWorkspace({
     }
   }
 
-  function generatePromptStarter(prompt: string) {
-    const snapshot = createPromptStarterSnapshot(prompt, currentAiSettingsSnapshot())
-    applyProjectSnapshot(snapshot)
-    setProjectPackage(null)
-    setLibraryStatus('Prompt starter generated')
+  // Returns an error for the zero state to show, or null once the draft is on
+  // the board. No fallback board: a failed or missing model says so instead of
+  // dressing a template up as AI output, which is what the old starter did.
+  async function draftBoardFromPrompt(prompt: string): Promise<string | null> {
+    const provider = draftAiStatus.provider
+    if (!provider) return t('zero.error.noAi', lang)
+    try {
+      const result = await generateNativeAiText(provider, buildBoardDraftPrompt(prompt))
+      const draft = parseBoardDraft(result.content)
+      applyProjectSnapshot(createBoardDraftSnapshot(prompt, draft, currentAiSettingsSnapshot()))
+      setProjectPackage(null)
+      setLibraryStatus(`Kira: ${provider.name} drafted ${draft.nodes.length} nodes`)
+      return null
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      if (provider.type === 'codex' && isCodexLoggedOutError(message)) {
+        return t('zero.error.codexSignIn', lang)
+      }
+      return t('zero.error.failed', lang, { reason: message })
+    }
   }
 
   function currentCanvasHistoryEntry(): CanvasHistoryEntry {
@@ -4266,11 +4315,20 @@ function FileWorkspace({
   // without bumping the nonce lands on General, which is why the Kira dock's
   // "Open AI settings" used to go to the wrong tab.
   function openAiProviderSettings() {
+    setSettingsFocusTab('ai')
     setIsSettingsOpen(true)
     setSettingsFocusNonce((nonce) => nonce + 1)
   }
 
+  function openCaptureSettings() {
+    setSettingsFocusTab('capture')
+    setIsSettingsOpen(true)
+    setSettingsFocusNonce((nonce) => nonce + 1)
+    void refreshExtensionInstallStatus()
+  }
+
   function focusProviderSetup(providerId: string) {
+    setSettingsFocusTab('ai')
     setIsSettingsOpen(true)
     setActiveAiProviderId(providerId)
     if (providerId !== 'apple-foundation') setSelectedAiProviderId(providerId)
@@ -6669,8 +6727,9 @@ function FileWorkspace({
                 selectedAiProviderId={selectedAiProviderId}
                 onSelectedAiProviderIdChange={setSelectedAiProviderId}
                 onOpenAiSettings={openAiProviderSettings}
-                onApplyProjectTemplate={applyProjectTemplate}
-                onGeneratePromptStarter={generatePromptStarter}
+                onDraftBoard={draftBoardFromPrompt}
+                draftAiStatus={draftAiStatus}
+                onConnectAi={openAiProviderSettings}
                 onActiveCanvasToolChange={setActiveCanvasTool}
                 onPendingLinkSourceChange={setPendingLinkSource}
                 onCreateIdea={(position) => createIdea({ focusTitle: true, position })}
@@ -6803,6 +6862,7 @@ function FileWorkspace({
             selectedProviderId={selectedAiProviderId}
             activeProviderId={activeAiProviderId}
             focusNonce={settingsFocusNonce}
+            focusTab={settingsFocusTab}
             localModelAvailable={localModelAvailable}
             localModelStatus={localModelStatus}
             extensionInstallStatus={extensionInstallStatus}
@@ -6834,18 +6894,11 @@ function FileWorkspace({
       )}
       {isOnboardingOpen && (
         <OnboardingOverlay
-          providers={aiProviders}
-          localModelAvailable={localModelAvailable}
-          localModelStatus={localModelStatus}
+          aiStatus={draftAiStatus}
           extensionInstallStatus={extensionInstallStatus}
           onClose={finishOnboarding}
-          onProviderFocus={focusProviderSetup}
-          onProviderSecretSave={saveAiProviderSecret}
-          onProviderTest={testAiProvider}
-          onLocalCheck={refreshFoundationModelAvailability}
-          onWelcomeOpen={() => openWelcomeProject(true)}
-          onExtensionAction={handleExtensionInstallAction}
-          onExtensionRefresh={refreshExtensionInstallStatus}
+          onConnectAi={openAiProviderSettings}
+          onOpenCapture={openCaptureSettings}
         />
       )}
       <UiKitPortalHost className="kira-uikit uikit-passthrough-host">
@@ -7382,102 +7435,74 @@ function App() {
   )
 }
 
+// One card, one action (DESIGN.md: no multi-step wizard, no page dots). The
+// two rows say plainly whether AI and browser capture are set up, because
+// both are optional and the old overlay only said "AI optional" either way;
+// each row has its one action, and "Get started" is the only primary.
 function OnboardingOverlay({
-  providers,
-  localModelAvailable,
-  localModelStatus,
+  aiStatus,
   extensionInstallStatus,
   onClose,
-  onProviderFocus,
-  onProviderSecretSave,
-  onProviderTest,
-  onLocalCheck,
-  onWelcomeOpen,
-  onExtensionAction,
-  onExtensionRefresh,
+  onConnectAi,
+  onOpenCapture,
 }: {
-  providers: AiProviderProfile[]
-  localModelAvailable: boolean
-  localModelStatus: string
+  aiStatus: DraftAiStatus
   extensionInstallStatus: ExtensionInstallStatus
   onClose: () => void
-  onProviderFocus: (providerId: string) => void
-  onProviderSecretSave: (providerId: string, secret: string) => void
-  onProviderTest: (providerId: string) => void
-  onLocalCheck: () => void
-  onWelcomeOpen: () => void
-  onExtensionAction: (targetId: string) => void
-  onExtensionRefresh: () => void
+  onConnectAi: () => void
+  onOpenCapture: () => void
 }) {
-  const [secretDrafts, setSecretDrafts] = useState<Record<string, string>>({})
-  const primaryProviderNotes = providerConnectionNotes.filter((note) => note.providerId === 'openai' || note.providerId === 'anthropic')
-  const localProviderNote = providerConnectionNotes.find((note) => note.providerId === 'apple-foundation')
-  const connectedProviderCount = providers.filter((provider) => provider.status === 'connected' || provider.secretRef).length
-  const installedExtensionCount = extensionInstallTargets.filter((target) => extensionStatusForTarget(extensionInstallStatus, target.id).installed).length
+  const lang = useLangStore((state) => state.lang)
+  const installedBrowsers = extensionInstallTargets
+    .filter((target) => extensionStatusForTarget(extensionInstallStatus, target.id).installed)
+    .map((target) => target.title)
 
   return (
-    <div className="onboarding-backdrop" role="dialog" aria-modal="true" aria-label="KIRA onboarding">
+    <div className="onboarding-backdrop" role="dialog" aria-modal="true" aria-labelledby="onboarding-title">
       {/* React Aria's FocusScope, the same mechanism the kit's Modal gives Settings:
           Tab cycles inside the dialog instead of walking into the app behind the
           opaque backdrop, and focus is restored to whatever had it on close. The
           primary CTA takes initial focus. */}
       <FocusScope contain restoreFocus>
-      <section className="onboarding-shell">
-        <Button className="onboarding-close p-0!" color="tertiary" size="xs" iconLeading={X} aria-label="Close onboarding" onPress={onClose} />
-
-        <div className="onboarding-hero">
-          <span className="onboarding-brand-mark" aria-hidden="true">
+        <section className="onboarding-card">
+          <div className="kira-aura onboarding-aura" aria-hidden="true" />
+          <span className="onboarding-app-icon" aria-hidden="true">
             <img src="/kira-icon.png" alt="" />
           </span>
-          <div>
-            <span className="onboarding-kicker">KIRA setup</span>
-            <h2>Start calm. <span>Add power later.</span></h2>
-            <div className="onboarding-status-row" aria-label="Setup status">
-              <span><Bot size={13} /> {connectedProviderCount > 0 ? 'AI ready' : 'AI optional'}</span>
-              <span><Sparkles size={13} /> {installedExtensionCount > 0 ? 'Capture ready' : 'Capture optional'}</span>
-            </div>
+          <div className="onboarding-copy">
+            <h2 id="onboarding-title">{t('onboarding.title', lang)}</h2>
+            <p>{t('onboarding.body', lang)}</p>
           </div>
-        </div>
-
-        <div className="onboarding-steps">
-          <Button color="secondary" size="sm" autoFocus className="onboarding-primary-cta" onPress={() => { onWelcomeOpen(); onClose() }}>
-            <span className="onboarding-step-icon"><Layers size={17} aria-hidden="true" /></span>
-            <span className="onboarding-cta-body">
-              <strong>Open the guided board</strong>
-              <small>A small editable example</small>
-            </span>
-            <ChevronRight size={18} aria-hidden="true" />
-          </Button>
-
-          <div className="onboarding-secondary">
-            <span className="onboarding-secondary-label">Set up anytime</span>
-            <Button color="tertiary" size="sm" className="onboarding-link-row" onPress={() => { onProviderFocus('codex'); onClose() }}>
-              <Bot size={15} aria-hidden="true" />
-              <span className="onboarding-link-text">
-                <strong>Connect AI</strong>
-                <small>Claude Code, Codex, or an API key</small>
+          <ul className="onboarding-setup">
+            <li>
+              <span className={aiStatus.ready ? 'onboarding-setup-dot is-ready' : 'onboarding-setup-dot'} aria-hidden="true" />
+              <span className="onboarding-setup-text">
+                <strong>{t('onboarding.ai.label', lang)}</strong>
+                <small>{aiStatus.ready ? t('onboarding.ai.ready', lang, { name: aiStatus.label }) : t('onboarding.ai.missing', lang)}</small>
               </span>
-              <ChevronRight size={15} aria-hidden="true" />
-            </Button>
-            <Button color="tertiary" size="sm" className="onboarding-link-row" onPress={() => { onExtensionRefresh(); onClose() }}>
-              <Sparkles size={15} aria-hidden="true" />
-              <span className="onboarding-link-text">
-                <strong>Capture from browser</strong>
-                <small>Drag images from any page</small>
+              <Button color="secondary" size="sm" onPress={() => { onConnectAi(); onClose() }}>
+                {aiStatus.ready ? t('onboarding.ai.change', lang) : t('onboarding.ai.connect', lang)}
+              </Button>
+            </li>
+            <li>
+              <span className={installedBrowsers.length > 0 ? 'onboarding-setup-dot is-ready' : 'onboarding-setup-dot'} aria-hidden="true" />
+              <span className="onboarding-setup-text">
+                <strong>{t('onboarding.capture.label', lang)}</strong>
+                <small>
+                  {installedBrowsers.length > 0
+                    ? t('onboarding.capture.ready', lang, { names: installedBrowsers.join(', ') })
+                    : t('onboarding.capture.missing', lang)}
+                </small>
               </span>
-              <ChevronRight size={15} aria-hidden="true" />
-            </Button>
-          </div>
-        </div>
-
-        {/* "Open Welcome.kira" lived here too, running the same onWelcomeOpen as the
-            primary CTA above but without closing the dialog. One way in is enough. */}
-        <footer className="onboarding-footer">
-          <Button color="primary" size="sm" onPress={onClose}>
-            Start workspace
+              <Button color="secondary" size="sm" onPress={() => { onOpenCapture(); onClose() }}>
+                {installedBrowsers.length > 0 ? t('onboarding.capture.manage', lang) : t('onboarding.capture.install', lang)}
+              </Button>
+            </li>
+          </ul>
+          <Button color="primary" size="md" autoFocus className="onboarding-start" onPress={onClose}>
+            {t('onboarding.start', lang)}
           </Button>
-        </footer>
-      </section>
+        </section>
       </FocusScope>
     </div>
   )
@@ -7657,8 +7682,9 @@ function GraphCanvas({
   selectedAiProviderId,
   onSelectedAiProviderIdChange,
   onOpenAiSettings,
-  onApplyProjectTemplate,
-  onGeneratePromptStarter,
+  onDraftBoard,
+  draftAiStatus,
+  onConnectAi,
   onActiveCanvasToolChange,
   onPendingLinkSourceChange,
   onCreateIdea,
@@ -7750,8 +7776,9 @@ function GraphCanvas({
   selectedAiProviderId: string
   onSelectedAiProviderIdChange?: (id: string) => void
   onOpenAiSettings: () => void
-  onApplyProjectTemplate: (templateId: ProjectTemplateId) => void
-  onGeneratePromptStarter: (prompt: string) => void
+  onDraftBoard: (prompt: string) => Promise<string | null>
+  draftAiStatus: DraftAiStatus
+  onConnectAi: () => void
   onActiveCanvasToolChange: React.Dispatch<React.SetStateAction<CanvasTool>>
   onPendingLinkSourceChange: React.Dispatch<React.SetStateAction<Pick<GraphNodeRef, 'kind' | 'id'> | null>>
   onCreateIdea: (position?: Pick<Idea, 'x' | 'y'>) => void
@@ -7967,6 +7994,10 @@ function GraphCanvas({
   const draggingFrameRef = useRef<{ id: string; offsetX: number; offsetY: number } | null>(null)
   const resizingFrameRef = useRef<{ id: string; startWidth: number; startHeight: number; startX: number; startY: number } | null>(null)
   const [starterPrompt, setStarterPrompt] = useState('')
+  const [isDrafting, setIsDrafting] = useState(false)
+  const [draftError, setDraftError] = useState('')
+  // "Blank board" just puts the zero state away: the board is already empty.
+  const [isZeroStateDismissed, setIsZeroStateDismissed] = useState(false)
   const [kiraSession, setKiraSession] = useState<KiraSession | null>(null)
   // Kira's context/suggestion detail is collapsed by default — the dock
   // stays a single composer line until the user asks to see more.
@@ -8864,10 +8895,17 @@ function GraphCanvas({
     onCreateLinkedNode(source, targetKind)
   }
 
-  function submitPromptStarter() {
+  async function submitPromptStarter() {
     const prompt = starterPrompt.trim()
-    if (!prompt) return
-    onGeneratePromptStarter(prompt)
+    if (!prompt || isDrafting) return
+    setIsDrafting(true)
+    setDraftError('')
+    const failure = await onDraftBoard(prompt)
+    setIsDrafting(false)
+    if (failure) {
+      setDraftError(failure)
+      return
+    }
     setStarterPrompt('')
   }
 
@@ -10026,13 +10064,14 @@ function GraphCanvas({
             </button>
           </div>
         )}
-        {graphMetrics.totalNodes === 0 && (
-          <section className="canvas-zero-state" aria-label="Start a KIRA project">
+        {graphMetrics.totalNodes === 0 && !isZeroStateDismissed && (
+          <section className="canvas-zero-state" aria-labelledby="canvas-zero-title">
+            <div className="kira-aura canvas-zero-aura" aria-hidden="true" />
             {restorableSessionLabel && (
               <button type="button" className="canvas-zero-restore" onClick={onRestoreSession}>
                 <History size={15} aria-hidden="true" />
                 <span className="canvas-zero-restore-text">
-                  <strong>Continue where you left off</strong>
+                  <strong>{t('zero.restore', lang)}</strong>
                   <small>{restorableSessionLabel}</small>
                 </span>
                 <ChevronRight size={15} aria-hidden="true" />
@@ -10040,32 +10079,63 @@ function GraphCanvas({
             )}
             <div className="canvas-zero-heading">
               <img src="/kira-icon.png" alt="" />
-              <h2>New board</h2>
+              <h2 id="canvas-zero-title">{t('zero.title', lang)}</h2>
+              <p>{t('zero.subtitle', lang)}</p>
             </div>
-            <div className="canvas-template-grid">
-              {projectTemplateDefinitions.map((template) => (
-                <button
-                  type="button"
-                  key={template.id}
-                  className={template.id === 'welcome' ? 'canvas-template-card is-welcome' : 'canvas-template-card'}
-                  onClick={() => onApplyProjectTemplate(template.id)}
-                >
-                  <strong>{template.title}</strong>
-                </button>
-              ))}
-            </div>
-            <div className="canvas-prompt-starter">
-              <InputBase
+            <form
+              className={['canvas-zero-composer', draftError ? 'has-error' : ''].filter(Boolean).join(' ')}
+              onSubmit={(event) => {
+                event.preventDefault()
+                void submitPromptStarter()
+              }}
+            >
+              <TextAreaBase
+                aria-label={t('zero.promptLabel', lang)}
+                className="canvas-zero-prompt"
+                rows={3}
                 size="sm"
-                wrapperClassName="canvas-prompt-input"
                 value={starterPrompt}
-                onChange={(event) => setStarterPrompt(event.target.value)}
-                placeholder="Describe a board"
+                disabled={isDrafting}
+                placeholder={t('zero.placeholder', lang)}
+                onChange={(event) => {
+                  setStarterPrompt(event.target.value)
+                  if (draftError) setDraftError('')
+                }}
+                onKeyDown={(event) => {
+                  // Enter drafts, Shift+Enter is a new line; IME composition
+                  // (Vietnamese Telex) must not submit half a word.
+                  if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
+                    event.preventDefault()
+                    void submitPromptStarter()
+                  }
+                }}
               />
-              <Button color="primary" size="sm" iconLeading={Sparkles} isDisabled={!starterPrompt.trim()} onPress={submitPromptStarter}>
-                Generate nodes
-              </Button>
-            </div>
+              <div className="canvas-zero-composer-bar">
+                <span className={draftAiStatus.ready ? 'canvas-zero-ai is-ready' : 'canvas-zero-ai'}>
+                  <span className="canvas-zero-ai-dot" aria-hidden="true" />
+                  {draftAiStatus.ready ? draftAiStatus.label : t('zero.ai.missing', lang)}
+                </span>
+                {!draftAiStatus.ready && (
+                  <Button color="secondary" size="xs" onPress={onConnectAi}>
+                    {t('zero.ai.connect', lang)}
+                  </Button>
+                )}
+                <Button
+                  type="submit"
+                  color="primary"
+                  size="sm"
+                  iconLeading={Sparkles}
+                  isDisabled={!starterPrompt.trim() || !draftAiStatus.ready || isDrafting}
+                  className="canvas-zero-submit"
+                >
+                  {isDrafting ? t('zero.drafting', lang) : t('zero.draft', lang)}
+                </Button>
+              </div>
+            </form>
+            {draftError && <p className="canvas-zero-error" role="alert">{draftError}</p>}
+            <button type="button" className="canvas-zero-blank" onClick={() => setIsZeroStateDismissed(true)}>
+              {t('zero.blank', lang)}
+            </button>
           </section>
         )}
         <div
@@ -16780,27 +16850,26 @@ function createProjectTemplateSnapshot(template: ProjectTemplateId, aiSettings: 
   }
 }
 
-function createPromptStarterSnapshot(prompt: string, aiSettings: AiSettingsSnapshot = defaultAiSettingsSnapshot()): ProjectSnapshot {
-  const trimmed = prompt.trim() || 'Untitled creative project'
+function createBoardDraftSnapshot(prompt: string, draft: BoardDraft, aiSettings: AiSettingsSnapshot): ProjectSnapshot {
   const timestamp = Date.now()
-  const rootId = `prompt-${timestamp}-root`
-  const ideas = [
-    createTemplateIdea(rootId, trimmed.slice(0, 72), `Prompt starter: ${trimmed}`, 48, 28, 'strong', 1.2),
-    createTemplateIdea(`prompt-${timestamp}-audience`, 'Audience and context', 'Who is this for, where will they encounter it, and what state are they in?', 24, 50),
-    createTemplateIdea(`prompt-${timestamp}-direction`, 'Creative direction', 'What should the work feel like, avoid, and make memorable?', 48, 62),
-    createTemplateIdea(`prompt-${timestamp}-evidence`, 'Evidence to collect', 'Images, links, quotes, examples, constraints, and references needed before deciding.', 72, 50),
-    createTemplateIdea(`prompt-${timestamp}-ai-next`, 'AI next steps', 'Use arc-menu AI actions to summarize, split, synthesize, find gaps, or generate variations from this board.', 48, 78),
-  ]
-  const links = ideas.slice(1).map((idea, index) =>
-    createTemplateLink(`prompt-${timestamp}-link-${index}`, rootId, idea.id, index === 2 ? 'reference' : 'supports', `Prompt starter branch for ${idea.title}.`),
+  const positions = layoutBoardDraft(draft)
+  const idOf = (nodeId: string) => `draft-${timestamp}-${nodeId}`
+  const ideas = draft.nodes.map((node, index) => {
+    const spot = positions.get(node.id) ?? { x: 50, y: 50 }
+    // A node shows its content and derives its title from the first line.
+    const content = node.body ? `**${node.title}**\n\n${node.body}` : node.title
+    return createTemplateIdea(idOf(node.id), node.title, content, spot.x, spot.y, index === 0 ? 'strong' : 'forming', index === 0 ? 1.2 : 1)
+  })
+  const links = draft.links.map((link, index) =>
+    createTemplateLink(`draft-${timestamp}-link-${index}`, idOf(link.from), idOf(link.to), 'supports', link.label ?? ''),
   )
   const versionHistory: ProjectVersionRecord[] = []
   return {
     version: 2,
     project: {
-      ...templateProjectMetadata('brand_strategy_mindmap', trimmed),
-      title: trimmed.slice(0, 64),
-      description: trimmed,
+      ...defaultProjectMetadata(),
+      title: draft.title,
+      description: prompt,
     },
     appearance: defaultProjectAppearance(),
     ideas,
@@ -17467,6 +17536,23 @@ function providerStatusFromNative(status: string, connected: boolean): AiProvide
   if (status === 'key_missing') return 'key_missing'
   if (status === 'billing_separate') return 'billing_separate'
   return 'unavailable'
+}
+
+// Whether drafting a board from a prompt can actually run, for the onboarding
+// row and the zero-state chip. Ready means the routed provider reports
+// 'connected'; routing alone can return a provider it already knows is
+// unavailable ("<name> unavailable"), which must not read as ready.
+type DraftAiStatus = { ready: boolean; label: string; provider?: AiProviderProfile; reason: string }
+
+function resolveDraftAiStatus(
+  providers: AiProviderProfile[],
+  routingMode: AiRoutingMode,
+  selectedProviderId: string,
+): DraftAiStatus {
+  const route = selectAiProviderForTask('generate_node', providers, routingMode, selectedProviderId)
+  const provider = route.providerId ? providers.find((candidate) => candidate.id === route.providerId) : undefined
+  if (!provider || provider.status !== 'connected') return { ready: false, label: provider?.name ?? '', reason: route.reason }
+  return { ready: true, label: provider.name, provider, reason: route.reason }
 }
 
 function selectAiProviderForTask(
