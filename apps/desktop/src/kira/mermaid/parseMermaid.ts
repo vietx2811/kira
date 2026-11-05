@@ -27,7 +27,7 @@ export function extractMermaidSource(text: string, fileName?: string): MermaidDo
   const isMarkdown = /\.(md|markdown)$/i.test(fileName ?? '')
   const fenced = text.match(/```\s*mermaid[^\n]*\n([\s\S]*?)```/i)
   let source = fenced ? fenced[1] : isMarkdown ? '' : text
-  source = source.replace(/^﻿/, '').trim()
+  source = undoSmartPunctuation(source.replace(/^﻿/, '').trim())
   if (!source) return null
 
   const frontmatterTitle = source.match(/^---\s*\n([\s\S]*?)\n---\s*(?:\n|$)/)?.[1]?.match(/^\s*title:\s*(.+)$/m)?.[1]
@@ -35,6 +35,37 @@ export function extractMermaidSource(text: string, fileName?: string): MermaidDo
   const fileTitle = fileName?.replace(/^.*[\\/]/, '').replace(/\.[^.]+$/, '')
   const title = cleanTitle(frontmatterTitle) || cleanTitle(fileTitle) || cleanTitle(directiveTitle) || 'Mermaid diagram'
   return { source, title }
+}
+
+// macOS turns what is typed into a text field typographic: "--" becomes an
+// em dash, "->" can become an arrow, straight quotes curl. In the app that
+// broke Mermaid typed into the dialog ("A -- label --> B" arrived with an em
+// dash and failed to parse, 2026-11-06), and the same happens to diagrams
+// pasted from notes or chat. Outside brackets those characters are syntax,
+// so they go back to Mermaid's; inside a label they are kept.
+const SMART_PUNCTUATION: Record<string, string> = {
+  '\u2014': '--', // em dash
+  '\u2013': '--', // en dash
+  '\u2192': '-->', // rightwards arrow
+  '\u201C': '"',
+  '\u201D': '"',
+  '\u2018': "'",
+  '\u2019': "'",
+}
+
+export function undoSmartPunctuation(source: string) {
+  return source
+    .split('\n')
+    .map((line) => {
+      const masked = maskShapes(line)
+      let out = ''
+      for (let index = 0; index < line.length; index += 1) {
+        const char = line[index]
+        out += masked[index] === char && SMART_PUNCTUATION[char] ? SMART_PUNCTUATION[char] : char
+      }
+      return out
+    })
+    .join('\n')
 }
 
 function cleanTitle(value: string | undefined) {

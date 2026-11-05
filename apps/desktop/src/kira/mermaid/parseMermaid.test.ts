@@ -90,6 +90,13 @@ flowchart TB
 })
 
 describe('extractMermaidSource', () => {
+  test('macOS smart dashes, arrows and quotes outside labels go back to syntax', () => {
+    const typed = 'flowchart LR; a[Ý tưởng — gốc] \u2014 dẫn tới \u2192 b[\u201CPhác thảo\u201D]'
+    const source = extractMermaidSource(typed)!.source
+    expect(source).toBe('flowchart LR; a[Ý tưởng — gốc] -- dẫn tới --> b[\u201CPhác thảo\u201D]')
+    expect(parseMermaidFlowchart(source).edges).toEqual([{ source: 'a', target: 'b', label: 'dẫn tới' }])
+  })
+
   test('a .mmd file is the diagram, titled after the file', () => {
     expect(extractMermaidSource(QA_DIAGRAM, 'Quy trình nghiên cứu.mmd')).toEqual({ source: QA_DIAGRAM, title: 'Quy trình nghiên cứu' })
   })

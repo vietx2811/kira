@@ -3047,6 +3047,14 @@ button.mini-tags-more:focus-visible {
   gap: 8px;
 }
 
+/* Mermaid source is code: monospace, and no ligatures, so "-->" shows as the
+   three characters it is rather than an arrow (Inter draws one). */
+.mermaid-import-dialog .mermaid-source-input {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: var(--text-small);
+  font-variant-ligatures: none;
+}
+
 /* ModelPicker (components/application/ai/ModelPicker.tsx): a compact pill
    trigger for toolbars and composer bars. The dot says whether a model is
    connected; the tag in front of the model name says which provider runs it. */

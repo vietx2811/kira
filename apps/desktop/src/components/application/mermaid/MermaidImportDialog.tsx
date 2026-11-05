@@ -9,7 +9,7 @@
 //
 // Mounted as a top-level sibling like RemoveNodeGuardDialog, so it carries its
 // own UiKitPortalHost and the passthrough fix; see that file for why.
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/base/buttons/button'
 import { TextArea } from '@/components/base/textarea/textarea'
 import { Dialog, Modal, ModalOverlay } from '@/components/application/modals/modal'
@@ -31,6 +31,17 @@ export function MermaidImportDialog({
   onImport: (source: string, title: string) => Promise<string | null>
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const sourceRef = useRef<HTMLTextAreaElement>(null)
+  // Code, not prose: no spellcheck, autocorrect or autocapitalize, so macOS
+  // does not rewrite "--" or quotes while the diagram is typed. Pasted text
+  // still gets undoSmartPunctuation in extractMermaidSource.
+  useEffect(() => {
+    const field = sourceRef.current
+    if (!isOpen || !field) return
+    field.spellcheck = false
+    field.setAttribute('autocorrect', 'off')
+    field.setAttribute('autocapitalize', 'off')
+  }, [isOpen])
   const [text, setText] = useState('')
   const [fileName, setFileName] = useState('')
   const [error, setError] = useState('')
@@ -80,7 +91,7 @@ export function MermaidImportDialog({
     <UiKitPortalHost className="kira-uikit uikit-passthrough-host">
       <ModalOverlay isOpen={isOpen} onOpenChange={(open) => !open && close()} isDismissable>
         <Modal className="w-full max-w-xl">
-          <Dialog aria-label={t('mermaid.import.title')}>
+          <Dialog aria-label={t('mermaid.import.title')} className="mermaid-import-dialog">
             <div className="flex w-full flex-col gap-5 p-6">
               <div className="flex flex-col gap-1">
                 <h2 className="text-lg font-semibold text-primary">{t('mermaid.import.title')}</h2>
@@ -108,7 +119,8 @@ export function MermaidImportDialog({
                 aria-label={t('mermaid.import.sourceLabel')}
                 rows={10}
                 size="sm"
-                textAreaClassName="font-mono"
+                textAreaRef={sourceRef}
+                textAreaClassName="mermaid-source-input"
                 placeholder={'flowchart TD\n  A[Ý tưởng] --> B[Phác thảo]'}
                 value={text}
                 onChange={(value) => {
