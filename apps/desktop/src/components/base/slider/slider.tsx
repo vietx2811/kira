@@ -18,9 +18,12 @@ const styles = sortCx({
 interface SliderProps extends AriaSliderProps {
     labelPosition?: keyof typeof styles;
     labelFormatter?: (value: number) => string;
+    // KIRA addition: "sm" for compact toolbars (14px handle, 4px track).
+    size?: "sm" | "md";
 }
 
-export const Slider = ({ labelPosition = "default", minValue = 0, maxValue = 100, labelFormatter, formatOptions, ...rest }: SliderProps) => {
+export const Slider = ({ labelPosition = "default", minValue = 0, maxValue = 100, labelFormatter, formatOptions, size = "md", ...rest }: SliderProps) => {
+    const small = size === "sm";
     // Format thumb value as percentage by default.
     const defaultFormatOptions: Intl.NumberFormatOptions = {
         style: "percent",
@@ -30,16 +33,16 @@ export const Slider = ({ labelPosition = "default", minValue = 0, maxValue = 100
     return (
         <AriaSlider {...rest} {...{ minValue, maxValue }} formatOptions={formatOptions ?? defaultFormatOptions}>
             <AriaLabel />
-            <AriaSliderTrack className="relative h-6 w-full">
+            <AriaSliderTrack className={cx("relative w-full", small ? "h-4" : "h-6")}>
                 {({ state: { values, getThumbValue, getThumbPercent, getFormattedValue } }) => {
                     const left = values.length === 1 ? 0 : getThumbPercent(0);
                     const width = values.length === 1 ? getThumbPercent(0) : getThumbPercent(1) - left;
 
                     return (
                         <>
-                            <span className="absolute top-1/2 h-2 w-full -translate-y-1/2 rounded-full bg-quaternary" />
+                            <span className={cx("absolute top-1/2 w-full -translate-y-1/2 rounded-full bg-quaternary", small ? "h-1" : "h-2")} />
                             <span
-                                className="absolute top-1/2 h-2 w-full -translate-y-1/2 rounded-full bg-brand-solid"
+                                className={cx("absolute top-1/2 w-full -translate-y-1/2 rounded-full bg-brand-solid", small ? "h-1" : "h-2")}
                                 style={{
                                     left: `${left * 100}%`,
                                     width: `${width * 100}%`,
@@ -52,7 +55,8 @@ export const Slider = ({ labelPosition = "default", minValue = 0, maxValue = 100
                                         index={index}
                                         className={({ isFocusVisible, isDragging }) =>
                                             cx(
-                                                "top-1/2 box-border size-6 cursor-grab rounded-full bg-slider-handle-bg shadow-md ring-2 ring-slider-handle-border ring-inset",
+                                                "top-1/2 box-border cursor-grab rounded-full bg-slider-handle-bg ring-slider-handle-border ring-inset",
+                                                small ? "size-3.5 shadow-sm ring-[1.5px]" : "size-6 shadow-md ring-2",
                                                 isFocusVisible && "outline-2 outline-offset-2 outline-focus-ring",
                                                 isDragging && "cursor-grabbing",
                                             )
