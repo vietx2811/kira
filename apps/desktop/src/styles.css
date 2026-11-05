@@ -3648,6 +3648,50 @@ button.mini-tags-more:focus-visible {
   grid-column: 2;
 }
 
+/* A diagram that has source draws it under its title, so the node grows to
+   give the drawing room. Grid column 1 / -1 spans the icon and title row. */
+.diagram-node.has-preview {
+  width: 340px;
+}
+
+.mermaid-preview {
+  grid-column: 1 / -1;
+  display: grid;
+  place-items: center;
+  min-height: 72px;
+  max-height: 320px;
+  overflow: hidden;
+  border-radius: var(--radius-1);
+  background: var(--surface-inset);
+  padding: var(--space-2);
+}
+
+.mermaid-preview-svg {
+  display: grid;
+  place-items: center;
+  width: 100%;
+}
+
+/* The drawing is a picture of the node, not a target inside it: pointer
+   events go to the node so drag, select and the context menu still work. */
+.mermaid-preview-svg svg {
+  display: block;
+  max-width: 100%;
+  max-height: 300px;
+  height: auto;
+  pointer-events: none;
+}
+
+.mermaid-preview-status {
+  color: var(--text-muted);
+  font-size: var(--text-small);
+  text-align: center;
+}
+
+.mermaid-preview.has-error .mermaid-preview-svg {
+  opacity: 0.45;
+}
+
 .placeholder-node {
   grid-template-columns: auto 1fr;
   align-items: center;
