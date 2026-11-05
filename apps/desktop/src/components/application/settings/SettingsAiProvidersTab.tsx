@@ -7,6 +7,8 @@ import { StringSelect } from './StringSelect'
 import { CodexApiKeyField } from './CodexApiKeyField'
 import { ClaudeCodeStatus } from './ClaudeCodeStatus'
 import { DeleteProviderDialog } from './DeleteProviderDialog'
+import { ModelPicker, ModelTag } from '@/components/application/ai/ModelPicker'
+import { providerTag, type AiModelOption, type AiModelRef } from '@/kira/ai/modelCatalog'
 import type { AiAuthMode, AiProviderProfile, AiProviderType, AiTaskKind, CodexLoginEvent } from '@/kira/ai/aiProviderDomain'
 import {
   addableProviderTypes,
@@ -24,8 +26,25 @@ import {
   requestCodexLogin,
 } from '@/kira/ai/aiProviderDomain'
 
+// What the simple view needs: the model list, the default model, and one
+// "connect" step (save key if given, check, fetch models). See main.tsx
+// connectAiProvider.
+export type ModelSettings = {
+  options: AiModelOption[]
+  value: AiModelRef | null
+  onChange: (ref: AiModelRef) => void
+  onConnect: (providerId: string, secret?: string) => Promise<{ connected: boolean; message: string }>
+}
+
+// Providers that connect with a pasted API key (as opposed to a CLI sign-in or
+// a local runtime that only needs checking).
+function usesApiKey(provider: AiProviderProfile) {
+  return provider.authMode === 'api_key' || (provider.authMode === 'openai_compatible' && provider.type !== 'ollama' && provider.type !== 'lm_studio')
+}
+
 export function SettingsAiProvidersTab({
   providers,
+  modelSettings,
   activeProviderId,
   onActiveProviderChange,
   onProviderAdd,
@@ -38,6 +57,7 @@ export function SettingsAiProvidersTab({
   onProviderTaskToggle,
 }: {
   providers: AiProviderProfile[]
+  modelSettings: ModelSettings
   activeProviderId: string
   onActiveProviderChange: (providerId: string) => void
   onProviderAdd: (type: Exclude<AiProviderType, 'apple_foundation'>) => void
@@ -67,6 +87,118 @@ export function SettingsAiProvidersTab({
   const [providerBusy, setProviderBusy] = useState<{ id: string; action: 'test' | 'models' } | null>(null)
   const [pendingDeleteProviderId, setPendingDeleteProviderId] = useState<string | null>(null)
   const pendingDeleteProvider = pendingDeleteProviderId ? (providers.find((provider) => provider.id === pendingDeleteProviderId) ?? null) : null
+  // Simple view: which row has its key field open, which row is connecting,
+  // and the last result per row (shown under it in plain words).
+  const [keyFormProviderId, setKeyFormProviderId] = useState<string | null>(null)
+  const [connectingId, setConnectingId] = useState<string | null>(null)
+  const [connectResult, setConnectResult] = useState<Record<string, { connected: boolean; message: string }>>({})
+
+  async function connect(providerId: string, secret?: string) {
+    setConnectingId(providerId)
+    try {
+      const result = await modelSettings.onConnect(providerId, secret)
+      setConnectResult((current) => ({ ...current, [providerId]: result }))
+      if (result.connected) {
+        setKeyFormProviderId(null)
+        setSecretDrafts((current) => ({ ...current, [providerId]: '' }))
+      }
+    } finally {
+      setConnectingId(null)
+    }
+  }
+
+  function statusLine(provider: AiProviderProfile) {
+    if (provider.status === 'connected') {
+      const count = modelSettings.options.filter((option) => option.providerId === provider.id).length
+      return count === 1 ? 'Connected · 1 model' : `Connected · ${count} models`
+    }
+    if (provider.type === 'codex') return 'Not signed in'
+    if (provider.type === 'claude_code') return 'Uses the Claude Code CLI on this Mac'
+    if (provider.type === 'ollama' || provider.type === 'lm_studio') return 'Runs on this Mac'
+    return provider.secretRef ? 'Key saved, not checked yet' : 'No API key yet'
+  }
+
+  function renderConnectionRow(provider: AiProviderProfile) {
+    const connected = provider.status === 'connected'
+    const busy = connectingId === provider.id || (provider.type === 'codex' && codexLoginBusy)
+    const result = connectResult[provider.id]
+    const keyHelp = aiProviderKeyHelp(provider.type)
+    let action: React.ReactNode
+    if (provider.type === 'codex') {
+      action = connected ? (
+        <Button color="secondary" size="sm" onPress={() => void codexLogout().then(() => connect(provider.id))}>Sign out</Button>
+      ) : (
+        <Button color="primary" size="sm" isLoading={busy} isDisabled={busy} onPress={() => { onActiveProviderChange(provider.id); void startCodexLogin('chatgpt').then(() => connect(provider.id)) }}>
+          Sign in with ChatGPT
+        </Button>
+      )
+    } else if (usesApiKey(provider)) {
+      action = connected ? (
+        <Button color="secondary" size="sm" onPress={() => onProviderSecretDelete(provider.id)}>Remove key</Button>
+      ) : (
+        <Button color="secondary" size="sm" onPress={() => setKeyFormProviderId((current) => (current === provider.id ? null : provider.id))}>
+          {keyFormProviderId === provider.id ? 'Cancel' : 'Connect'}
+        </Button>
+      )
+    } else {
+      action = (
+        <Button color="secondary" size="sm" isLoading={busy} isDisabled={busy} onPress={() => void connect(provider.id)}>
+          {connected ? 'Check again' : 'Check'}
+        </Button>
+      )
+    }
+    return (
+      <li key={provider.id} className="flex flex-col gap-2 px-3 py-2.5">
+        <div className="flex items-center gap-3">
+          <span className={connected ? 'size-2 shrink-0 rounded-full bg-fg-success-primary' : 'size-2 shrink-0 rounded-full bg-quaternary'} aria-hidden="true" />
+          <ModelTag tag={providerTag(provider.type)} />
+          <span className="flex min-w-0 flex-1 flex-col">
+            <strong className="truncate text-sm font-semibold text-primary">{provider.name}</strong>
+            <span className="truncate text-xs text-tertiary">{statusLine(provider)}</span>
+          </span>
+          {action}
+        </div>
+        {keyFormProviderId === provider.id && !connected && (
+          <form
+            className="flex flex-col gap-1.5 pl-5"
+            onSubmit={(event) => {
+              event.preventDefault()
+              void connect(provider.id, secretDrafts[provider.id] ?? '')
+            }}
+          >
+            <div className="flex items-end gap-2">
+              <Input
+                aria-label={`${provider.name} API key`}
+                size="sm"
+                type="password"
+                autoFocus
+                className="flex-1"
+                value={secretDrafts[provider.id] ?? ''}
+                placeholder="Paste your API key"
+                onChange={(value) => setSecretDrafts((current) => ({ ...current, [provider.id]: value }))}
+              />
+              <Button type="submit" color="primary" size="sm" isLoading={busy} isDisabled={busy || !(secretDrafts[provider.id] ?? '').trim()}>
+                Connect
+              </Button>
+            </div>
+            <span className="text-xs text-tertiary">
+              Stored in the macOS Keychain. Connecting checks the key and loads its models.
+              {keyHelp && (
+                <>
+                  {' '}
+                  <a className="text-brand-secondary underline" href={keyHelp.href} target="_blank" rel="noreferrer">{keyHelp.label} ↗</a>
+                </>
+              )}
+            </span>
+          </form>
+        )}
+        {provider.type === 'claude_code' && !connected && <div className="pl-5"><ClaudeCodeStatus provider={provider} /></div>}
+        {provider.type === 'codex' && codexLoginEvent?.type === 'error' && <p className="pl-5 text-sm text-error-primary">{codexLoginEvent.message}</p>}
+        {result && !result.connected && !busy && <p className="pl-5 text-sm text-error-primary">{result.message}</p>}
+      </li>
+    )
+  }
+
   const [providerTypeDraft, setProviderTypeDraft] = useState<Exclude<AiProviderType, 'apple_foundation'>>(addableProviderTypes[0])
 
   async function handleProviderTest(providerId: string) {
@@ -163,8 +295,32 @@ export function SettingsAiProvidersTab({
   }
 
   return (
-    <section className="flex flex-col gap-4" id="settings-providers">
-      <div className="grid grid-cols-[220px_minmax(0,1fr)] gap-5">
+    <section className="flex flex-col gap-6" id="settings-providers">
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex flex-col gap-0.5">
+          <h3 className="text-sm font-semibold text-primary">Default model</h3>
+          <p className="text-sm text-tertiary">Kira and every AI feature use this model unless you pick another one where you are.</p>
+        </div>
+        <ModelPicker
+          options={modelSettings.options}
+          value={modelSettings.value}
+          onChange={modelSettings.onChange}
+          onConnect={() => setKeyFormProviderId(providers.find((provider) => usesApiKey(provider) && provider.status !== 'connected')?.id ?? null)}
+          labels={{ pick: 'Choose a model', notConnected: 'Connect a service below', connectMore: 'Connect another service…' }}
+        />
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <h3 className="text-sm font-semibold text-primary">AI services</h3>
+        <ul className="flex flex-col divide-y divide-secondary rounded-lg border border-secondary" aria-label="AI services">
+          {providers.filter((provider) => provider.type !== 'apple_foundation').map(renderConnectionRow)}
+        </ul>
+      </div>
+
+      <details className="border-t border-secondary pt-3">
+        <summary className="cursor-pointer text-sm font-semibold text-primary">Advanced</summary>
+        <p className="mt-1 text-sm text-tertiary">Base URL, auth mode, custom services and which service handles image tagging.</p>
+      <div className="mt-4 grid grid-cols-[220px_minmax(0,1fr)] gap-5">
         <aside className="flex flex-col gap-3" aria-label="Provider registry">
           <div className="flex flex-col gap-0.5">{primaryProviders.map(renderProviderRow)}</div>
 
@@ -474,6 +630,7 @@ export function SettingsAiProvidersTab({
           </article>
         )}
       </div>
+      </details>
 
       <DeleteProviderDialog provider={pendingDeleteProvider} onCancel={() => setPendingDeleteProviderId(null)} onConfirm={(id) => {
         onProviderDelete(id)

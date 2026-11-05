@@ -39,6 +39,8 @@ import { MermaidImportDialog } from './components/application/mermaid/MermaidImp
 import { MermaidPreview } from './components/application/mermaid/MermaidPreview'
 import { layerFlowchart, parseMermaidFlowchart } from './kira/mermaid/parseMermaid'
 import { buildBoardDraftPrompt, layoutBoardDraft, parseBoardDraft, type BoardDraft } from './kira/ai/boardDraft'
+import { listModelOptions, resolveTextModel, type AiModelRef } from './kira/ai/modelCatalog'
+import { ModelPicker } from './components/application/ai/ModelPicker'
 import {
   type AiTaskKind,
   type AiProviderType,
@@ -783,6 +785,9 @@ const UI_STRINGS: Record<string, { en: string; vi: string }> = {
   'tool.sticker': { en: 'Sticker', vi: 'Ghi chú' },
   'tool.frame': { en: 'Frame', vi: 'Khung' },
   'tool.mermaid': { en: 'Mermaid diagram', vi: 'Sơ đồ Mermaid' },
+  'ai.model.pick': { en: 'Choose a model', vi: 'Chọn model' },
+  'ai.model.notConnected': { en: 'No AI connected', vi: 'Chưa kết nối AI' },
+  'ai.model.connectMore': { en: 'Connect AI…', vi: 'Kết nối AI…' },
   'onboarding.title': { en: 'Welcome to KIRA', vi: 'Chào mừng đến với KIRA' },
   'onboarding.body': { en: 'Collect references and connect them into ideas. Everything stays on this Mac.', vi: 'Gom ảnh tham khảo và nối chúng thành ý tưởng. Mọi thứ nằm trên máy của bạn.' },
   'onboarding.ai.label': { en: 'AI', vi: 'AI' },
@@ -980,6 +985,44 @@ const useLangStore = create<{ lang: Lang; setLang: (lang: Lang) => void }>()((se
       // ignore persistence failures (private mode, etc.)
     }
     set({ lang })
+  },
+}))
+
+// The AI connection is app-wide, not per project (user, 2026-11-05: connecting
+// to AI must be simple). It used to live in each project's snapshot, so a new
+// board started "not connected" even after the user had connected one, and
+// nothing re-checked it. Keys were already app-wide (Keychain); this holds the
+// rest: provider profiles and their status, the chosen model, routing. Never
+// any secret, only the Keychain reference. Every open board reads and writes
+// it, so connecting in one tab connects them all.
+const AI_SETTINGS_STORAGE_KEY = 'kira:aiSettings'
+
+function readStoredAiSettings(): AiSettingsSnapshot | null {
+  try {
+    const raw = localStorage.getItem(AI_SETTINGS_STORAGE_KEY)
+    if (!raw) return null
+    const parsed: unknown = JSON.parse(raw)
+    return isAiSettingsSnapshot(parsed) ? parsed : null
+  } catch {
+    return null
+  }
+}
+
+const useAiSettingsStore = create<{
+  settings: AiSettingsSnapshot | null
+  // `fallback` is the base when nothing is stored yet: the project the first
+  // edit happens in, so a connection that only lived in a project carries over.
+  update: (fallback: AiSettingsSnapshot, updater: (current: AiSettingsSnapshot) => AiSettingsSnapshot) => void
+}>()((set, get) => ({
+  settings: readStoredAiSettings(),
+  update: (fallback, updater) => {
+    const next = updater(get().settings ?? fallback)
+    try {
+      localStorage.setItem(AI_SETTINGS_STORAGE_KEY, JSON.stringify(next))
+    } catch {
+      // ignore persistence failures (private mode, etc.)
+    }
+    set({ settings: next })
   },
 }))
 
@@ -2160,7 +2203,9 @@ function FileWorkspace({
   isActive: boolean
   initialSnapshot: ProjectSnapshot | null
   initialPackage: ProjectPackageInfo | null
-  tabBar: React.ReactNode
+  // The active tab's AI control (model and status) goes in the topbar's right
+  // corner, beside the Kira button; each workspace renders its own copy.
+  tabBar: (aiControl: React.ReactNode) => React.ReactNode
   onFileMetaChange: (fileId: string, meta: { title: string; isDirty: boolean; path: string | null }) => void
   onRequestNewFile: () => void | Promise<void>
   onRequestOpenFile: () => void | Promise<void>
@@ -2292,10 +2337,35 @@ function FileWorkspace({
   const [findSimilarRunningId, setFindSimilarRunningId] = useState<string | null>(null)
   const [localModelAvailable, setLocalModelAvailable] = useState(false)
   const [localModelStatus, setLocalModelStatus] = useState('Not checked')
-  const [aiProviders, setAiProviders] = useState<AiProviderProfile[]>(withDefaultAiProviders(initialProject.aiSettings.providers))
-  const [aiRoutingMode, setAiRoutingMode] = useState<AiRoutingMode>(initialProject.aiSettings.routingMode)
-  const [selectedAiProviderId, setSelectedAiProviderId] = useState(initialProject.aiSettings.selectedProviderId)
+  // App-wide (useAiSettingsStore); this project's copy is only the starting
+  // point while nothing has been stored yet.
+  const storedAiSettings = useAiSettingsStore((state) => state.settings)
+  const updateAiSettings = useAiSettingsStore((state) => state.update)
+  const aiSettings = storedAiSettings ?? initialProject.aiSettings
+  const aiProviders = useMemo(() => withDefaultAiProviders(aiSettings.providers), [aiSettings.providers])
+  const aiRoutingMode = aiSettings.routingMode
+  const selectedAiProviderId = aiSettings.selectedProviderId
+  function setAiProviders(next: React.SetStateAction<AiProviderProfile[]>) {
+    updateAiSettings(initialProject.aiSettings, (current) => {
+      const providers = withDefaultAiProviders(current.providers)
+      return { ...current, providers: typeof next === 'function' ? next(providers) : next }
+    })
+  }
+  function setAiRoutingMode(next: AiRoutingMode) {
+    updateAiSettings(initialProject.aiSettings, (current) => ({ ...current, routingMode: next }))
+  }
+  function setSelectedAiProviderId(next: string) {
+    updateAiSettings(initialProject.aiSettings, (current) => ({ ...current, selectedProviderId: next }))
+  }
   const [activeAiProviderId, setActiveAiProviderId] = useState(initialProject.aiSettings.selectedProviderId)
+  // First run of the app-wide store: the board on screen hands its project's
+  // AI settings over, so a later new tab starts from them and not from the
+  // unconnected defaults a blank project carries.
+  useEffect(() => {
+    if (!isActive || useAiSettingsStore.getState().settings) return
+    updateAiSettings(initialProject.aiSettings, (current) => current)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isActive])
   const [aiSettingsStatus, setAiSettingsStatus] = useState('Local-first routing is active')
   const [settingsFocusNonce, setSettingsFocusNonce] = useState(0)
   // Which tab a settingsFocusNonce bump lands on. Before 'capture' existed the
@@ -2483,6 +2553,38 @@ function FileWorkspace({
   const draftAiStatus = useMemo(
     () => resolveDraftAiStatus(aiProviders, aiRoutingMode, selectedAiProviderId),
     [aiProviders, aiRoutingMode, selectedAiProviderId],
+  )
+  const modelOptions = useMemo(() => listModelOptions(aiProviders), [aiProviders])
+  const defaultModel = useMemo<AiModelRef | null>(() => {
+    const resolved = resolveTextModel(aiProviders, selectedAiProviderId)
+    return resolved ? { providerId: resolved.provider.id, model: resolved.model } : null
+  }, [aiProviders, selectedAiProviderId])
+  // Kira chat's own model choice; null follows the default model.
+  const [kiraChatModel, setKiraChatModel] = useState<AiModelRef | null>(null)
+  // The model every text feature runs on unless it carries its own choice.
+  function textModelProvider(choice?: AiModelRef | null) {
+    return resolveTextModel(aiProviders, selectedAiProviderId, choice)?.provider
+  }
+  // Choosing a default model stores it in the fields that already exist: the
+  // selected provider and that provider's model.
+  function setDefaultModel(ref: AiModelRef) {
+    setSelectedAiProviderId(ref.providerId)
+    updateAiProvider(ref.providerId, { model: ref.model })
+  }
+  const modelPickerLabels = {
+    pick: t('ai.model.pick', lang),
+    notConnected: t('ai.model.notConnected', lang),
+    connectMore: t('ai.model.connectMore', lang),
+  }
+  const topbarAiControl = (
+    <ModelPicker
+      className="topbar-model-picker"
+      options={modelOptions}
+      value={defaultModel}
+      onChange={setDefaultModel}
+      onConnect={openAiProviderSettings}
+      labels={modelPickerLabels}
+    />
   )
 
   async function refreshFoundationModelAvailability() {
@@ -2860,10 +2962,8 @@ function FileWorkspace({
     setLinks(snapshot.links)
     setOutlineDrafts(snapshot.outlineDrafts)
     setSlidesConfig(normalizeSlidesConfig(snapshot.slidesConfig))
-    setAiProviders(withDefaultAiProviders(snapshot.aiSettings.providers))
-    setAiRoutingMode(snapshot.aiSettings.routingMode)
-    setSelectedAiProviderId(snapshot.aiSettings.selectedProviderId)
-    setActiveAiProviderId(snapshot.aiSettings.selectedProviderId)
+    // AI settings are app-wide (useAiSettingsStore): opening a project does not
+    // swap the app's AI connection for whatever that file carried.
     setVersionState(snapshot.versionState)
     setVersionHistory(snapshot.versionHistory)
     setNodeVersions(snapshot.nodeVersions)
@@ -2911,7 +3011,7 @@ function FileWorkspace({
   // the board. No fallback board: a failed or missing model says so instead of
   // dressing a template up as AI output, which is what the old starter did.
   async function draftBoardFromPrompt(prompt: string): Promise<string | null> {
-    const provider = draftAiStatus.provider
+    const provider = textModelProvider()
     if (!provider) return t('zero.error.noAi', lang)
     try {
       const result = await generateNativeAiText(provider, buildBoardDraftPrompt(prompt))
@@ -4433,6 +4533,44 @@ function FileWorkspace({
     }
   }
 
+  // One step for the user: save the key if one was typed, check the
+  // connection, and when it works fetch the provider's models so they show up
+  // in every model picker. Settings used to need three separate buttons for
+  // this (Save key, Test, Models).
+  async function connectAiProvider(providerId: string, secret?: string): Promise<{ connected: boolean; message: string }> {
+    const provider = aiProviders.find((candidate) => candidate.id === providerId)
+    if (!provider) return { connected: false, message: 'Unknown provider' }
+    if (secret !== undefined) {
+      if (!secret.trim()) return { connected: false, message: 'Paste an API key first.' }
+      try {
+        await saveNativeProviderSecret(providerId, secret.trim())
+      } catch (error) {
+        return { connected: false, message: error instanceof Error ? error.message : 'The key could not be saved.' }
+      }
+    }
+    try {
+      const result = await testNativeAiProvider(secret !== undefined ? { ...provider, secretRef: `keychain:${providerId}` } : provider)
+      const connected = result.connected
+      setAiProviders((current) =>
+        current.map((candidate) =>
+          candidate.id === providerId
+            ? {
+              ...candidate,
+              ...(secret !== undefined ? { secretRef: `keychain:${providerId}` } : {}),
+              status: providerStatusFromNative(result.status, connected),
+              lastTestedAt: nowIso(),
+              lastMessage: result.message,
+            }
+            : candidate,
+        ),
+      )
+      if (connected) await listAiModels(providerId)
+      return { connected, message: result.message }
+    } catch (error) {
+      return { connected: false, message: error instanceof Error ? error.message : 'The connection check failed.' }
+    }
+  }
+
   async function listAiModels(providerId: string) {
     const provider = aiProviders.find((candidate) => candidate.id === providerId)
     if (!provider) return
@@ -5046,17 +5184,13 @@ function FileWorkspace({
     const taskKind: AiTaskKind = sourceNode?.kind === 'diagram' && request.action === 'summarize'
       ? 'summarize_diagram'
       : 'generate_node'
-    const route = selectAiProviderForTask(
-      taskKind,
-      aiProviders,
-      aiRoutingMode,
-      selectedAiProviderId,
-      request.providerOverrideId ?? undefined,
-    )
-    const routedProvider = route.providerId ? aiProviders.find((candidate) => candidate.id === route.providerId) : undefined
-    const provider = routedProvider && request.modelOverride
-      ? { ...routedProvider, model: request.modelOverride }
-      : routedProvider
+    // The request's own model if it carries one (the Kira dock's picker),
+    // otherwise the default model. taskKind still labels the run.
+    const requestModel = request.providerOverrideId && request.modelOverride
+      ? { providerId: request.providerOverrideId, model: request.modelOverride }
+      : null
+    const provider = textModelProvider(requestModel)
+    const route = { reason: provider ? `${taskKind} on ${provider.model}` : 'No model connected' }
     const baseNodeLines = baseNodes.map((node) => formatKiraContextLine(node))
     const generationPrompt = [
       'You are Kira, a creative workspace assistant. Generate concise, useful content for a new canvas node.',
@@ -5290,9 +5424,8 @@ function FileWorkspace({
     setPaletteRegeneratingId(paletteId)
     try {
       route = selectAiProviderForTask('rebalance_palette', aiProviders, aiRoutingMode, selectedAiProviderId)
-      const routedProviderId = route.providerId
-      provider = routedProviderId ? aiProviders.find((candidate) => candidate.id === routedProviderId) : undefined
-      if (provider && provider.type !== 'apple_foundation') {
+      provider = textModelProvider()
+      if (provider) {
         const prompt = [
           `Suggest a cohesive "${algorithm}" color palette of exactly ${before.colors.length} hex colors, evolving this current palette: ${before.colors.join(', ')}.`,
           'Return only a JSON array of 6-digit hex color strings like "#84cdbc" — no explanation, no markdown fence.',
@@ -5805,9 +5938,8 @@ function FileWorkspace({
 
     setIsRebuildingOutline(true)
     try {
-      const route = selectAiProviderForTask('generate_outline', aiProviders, aiRoutingMode, selectedAiProviderId)
-      const provider = route.providerId ? aiProviders.find((candidate) => candidate.id === route.providerId) : undefined
-      if (!provider || provider.type === 'apple_foundation') return
+      const provider = textModelProvider()
+      if (!provider) return
 
       const prompt = [
         'Rewrite the summary for each outline section below into one clear paragraph, keeping its meaning intact.',
@@ -6318,11 +6450,8 @@ function FileWorkspace({
     const hasThread = Boolean(kiraActiveThread)
     const threadId = kiraActiveThread?.id ?? crypto.randomUUID()
     const runId = crypto.randomUUID()
-    const route = selectAiProviderForTask('generate_node', aiProviders, aiRoutingMode, selectedAiProviderId, undefined)
-    const routedProvider = route.providerId ? aiProviders.find((provider) => provider.id === route.providerId) : undefined
-    const modelLabel = routedProvider
-      ? (routedProvider.model && routedProvider.model !== 'auto' ? routedProvider.model : routedProvider.name)
-      : route.reason
+    const routedProvider = textModelProvider(kiraChatModel)
+    const modelLabel = routedProvider ? routedProvider.model : t('ai.model.notConnected', lang)
 
     const newThread: AiThread | null = hasThread ? null : {
       id: threadId,
@@ -6438,9 +6567,17 @@ function FileWorkspace({
   }
 
   function renderKiraPanel() {
-    const routeForLabel = selectAiProviderForTask('generate_node', aiProviders, aiRoutingMode, selectedAiProviderId, undefined)
-    const routedProviderForLabel = routeForLabel.providerId ? aiProviders.find((provider) => provider.id === routeForLabel.providerId) : undefined
-    const providerLabel = routedProviderForLabel?.name ?? ''
+    const chatProvider = textModelProvider(kiraChatModel)
+    const chatModelControl = (
+      <ModelPicker
+        options={modelOptions}
+        value={chatProvider ? { providerId: chatProvider.id, model: chatProvider.model } : null}
+        onChange={setKiraChatModel}
+        onConnect={openAiProviderSettings}
+        labels={modelPickerLabels}
+        placement="top start"
+      />
+    )
     const tt = (key: string, vars?: Record<string, string>) => t(key, lang, vars)
     const formatClockTime = (iso: string) => formatKiraClockTime(iso, lang)
     return (
@@ -6488,8 +6625,8 @@ function FileWorkspace({
               key={kiraActiveThread?.id ?? 'draft'}
               aiPanelState={aiPanelState}
               threadId={kiraActiveThread?.id ?? 'draft'}
-              providerLabel={providerLabel}
-              hasProvider={Boolean(routedProviderForLabel)}
+              modelControl={chatModelControl}
+              hasProvider={Boolean(chatProvider)}
               t={tt}
               formatClockTime={formatClockTime}
               emptyExamples={kiraSuggestions.board.slice(0, 2)}
@@ -6546,7 +6683,7 @@ function FileWorkspace({
 
   return (
     <main className="app-shell" data-glass-state={glassStatus} data-color-mode={shellColorMode} data-rail-icons={railIconMode} style={shellThemeStyle} onPaste={capturePastedReference}>
-      {tabBar}
+      {tabBar(topbarAiControl)}
       <section
         className="workspace"
         style={{
@@ -6729,6 +6866,7 @@ function FileWorkspace({
                 onDraftBoard={draftBoardFromPrompt}
                 draftAiStatus={draftAiStatus}
                 onConnectAi={openAiProviderSettings}
+                onDefaultModelChange={setDefaultModel}
                 onActiveCanvasToolChange={setActiveCanvasTool}
                 onPendingLinkSourceChange={setPendingLinkSource}
                 onCreateIdea={(position) => createIdea({ focusTitle: true, position })}
@@ -6861,6 +6999,12 @@ function FileWorkspace({
             selectedProviderId={selectedAiProviderId}
             activeProviderId={activeAiProviderId}
             focusNonce={settingsFocusNonce}
+            modelSettings={{
+              options: modelOptions,
+              value: defaultModel,
+              onChange: setDefaultModel,
+              onConnect: connectAiProvider,
+            }}
             focusTab={settingsFocusTab}
             localModelAvailable={localModelAvailable}
             localModelStatus={localModelStatus}
@@ -7296,7 +7440,7 @@ function App() {
     return () => window.removeEventListener('keydown', handleTabBarKeydown)
   }, [activeFileId, files, kiraPanelOpenByFile, handleKiraPanelOpenChange])
 
-  const tabBar = (
+  const tabBar = (aiControl: React.ReactNode) => (
     <nav
       className="file-tab-bar"
       aria-label="Open files"
@@ -7372,6 +7516,7 @@ function App() {
       <button type="button" className="file-tab-add" aria-label="New file" title="New file" onClick={() => void requestNewFile()}>
         <Plus size={13} />
       </button>
+      <div className="topbar-ai">{aiControl}</div>
       <button
         type="button"
         className={kiraPanelOpenByFile[activeFileId] ? 'panel-toggle is-active' : 'panel-toggle'}
@@ -7684,6 +7829,7 @@ function GraphCanvas({
   onDraftBoard,
   draftAiStatus,
   onConnectAi,
+  onDefaultModelChange,
   onActiveCanvasToolChange,
   onPendingLinkSourceChange,
   onCreateIdea,
@@ -7778,6 +7924,7 @@ function GraphCanvas({
   onDraftBoard: (prompt: string) => Promise<string | null>
   draftAiStatus: DraftAiStatus
   onConnectAi: () => void
+  onDefaultModelChange: (ref: AiModelRef) => void
   onActiveCanvasToolChange: React.Dispatch<React.SetStateAction<CanvasTool>>
   onPendingLinkSourceChange: React.Dispatch<React.SetStateAction<Pick<GraphNodeRef, 'kind' | 'id'> | null>>
   onCreateIdea: (position?: Pick<Idea, 'x' | 'y'>) => void
@@ -9495,8 +9642,14 @@ function GraphCanvas({
       ? collectKiraContextForSources(dockSources, kiraSession.scope, { ideas, images, palettes, diagrams, placeholders, links })
         .filter((node) => !kiraSession.removedContextKeys.includes(`${node.kind}:${node.id}`))
       : []
-    const route = selectAiProviderForTask('generate_node', aiProviders, aiRoutingMode, selectedAiProviderId, kiraSession?.providerOverrideId ?? undefined)
-    const routedProvider = route.providerId ? aiProviders.find((candidate) => candidate.id === route.providerId) : undefined
+    const dockModel = resolveTextModel(
+      aiProviders,
+      selectedAiProviderId,
+      kiraSession?.providerOverrideId && kiraSession.modelOverride
+        ? { providerId: kiraSession.providerOverrideId, model: kiraSession.modelOverride }
+        : null,
+    )
+    const routedProvider = dockModel?.provider
     const suggestions = kiraSuggestions[anchorNode?.kind ?? 'board']
     const isThinking = kiraSession?.status === 'thinking'
     const isError = kiraSession?.status === 'error'
@@ -9644,43 +9797,26 @@ function GraphCanvas({
             {/* 3. Bottom controls bar inside the composer box */}
             <div className="kira-dock-footer">
               <div className="kira-dock-footer-left">
-                {/* AI Model Selector Button */}
-                <DockSelect
-                  className="kira-dock-model-selector"
-                  title="Select AI Model"
-                  ariaLabel="Select AI Model"
-                  open={openDockSelect === 'model'}
-                  onOpenChange={(next) => setOpenDockSelect(next ? 'model' : null)}
-                  value={kiraSession?.providerOverrideId ?? routedProvider?.id ?? ''}
-                  options={aiProviders.length === 0
-                    ? [{ value: '__settings__', label: 'Configure AI Provider…' }]
-                    : aiProviders.map((p) => ({
-                      value: p.id,
-                      label: `${p.name} (${p.model})`,
-                      meta: aiProviderStatusLabels[p.status],
-                    }))}
-                  onChange={(next) => {
-                    if (next === '__settings__') {
-                      onOpenAiSettings()
-                      return
-                    }
-                    const prov = aiProviders.find((p) => p.id === next)
-                    if (prov) {
-                      setKiraSession((current) => current ? {
-                        ...current,
-                        providerOverrideId: prov.id,
-                        modelOverride: prov.model,
-                      } : current)
-                      onSelectedAiProviderIdChange?.(prov.id)
-                    }
+                {/* Model picker: models of every connected provider, not providers. */}
+                <ModelPicker
+                  className="kira-dock-model-picker"
+                  options={listModelOptions(aiProviders)}
+                  value={dockModel ? { providerId: dockModel.provider.id, model: dockModel.model } : null}
+                  onChange={(ref) => {
+                    setKiraSession((current) => current ? {
+                      ...current,
+                      providerOverrideId: ref.providerId,
+                      modelOverride: ref.model,
+                    } : current)
                   }}
-                >
-                  <Sparkles size={12} className="kira-dock-model-icon" />
-                  <span className="kira-dock-model-label">
-                    {routedProvider ? (routedProvider.model && routedProvider.model !== 'auto' ? routedProvider.model : routedProvider.name) : 'Select Model'}
-                  </span>
-                  <ChevronDown size={11} className="kira-dock-model-chevron" />
-                </DockSelect>
+                  onConnect={onOpenAiSettings}
+                  labels={{
+                    pick: t('ai.model.pick', lang),
+                    notConnected: t('ai.model.notConnected', lang),
+                    connectMore: t('ai.model.connectMore', lang),
+                  }}
+                  placement="top start"
+                />
 
                 {/* AI settings — navigation, deliberately not an option inside the model selector */}
                 <button
@@ -10110,15 +10246,21 @@ function GraphCanvas({
                 }}
               />
               <div className="canvas-zero-composer-bar">
-                <span className={draftAiStatus.ready ? 'canvas-zero-ai is-ready' : 'canvas-zero-ai'}>
-                  <span className="canvas-zero-ai-dot" aria-hidden="true" />
-                  {draftAiStatus.ready ? draftAiStatus.label : t('zero.ai.missing', lang)}
-                </span>
-                {!draftAiStatus.ready && (
-                  <Button color="secondary" size="xs" onPress={onConnectAi}>
-                    {t('zero.ai.connect', lang)}
-                  </Button>
-                )}
+                <ModelPicker
+                  options={listModelOptions(aiProviders)}
+                  value={(() => {
+                    const resolved = resolveTextModel(aiProviders, selectedAiProviderId)
+                    return resolved ? { providerId: resolved.provider.id, model: resolved.model } : null
+                  })()}
+                  onChange={onDefaultModelChange}
+                  onConnect={onConnectAi}
+                  labels={{
+                    pick: t('ai.model.pick', lang),
+                    notConnected: t('ai.model.notConnected', lang),
+                    connectMore: t('ai.model.connectMore', lang),
+                  }}
+                  placement="bottom start"
+                />
                 <Button
                   type="submit"
                   color="primary"
@@ -17545,13 +17687,12 @@ type DraftAiStatus = { ready: boolean; label: string; provider?: AiProviderProfi
 
 function resolveDraftAiStatus(
   providers: AiProviderProfile[],
-  routingMode: AiRoutingMode,
+  _routingMode: AiRoutingMode,
   selectedProviderId: string,
 ): DraftAiStatus {
-  const route = selectAiProviderForTask('generate_node', providers, routingMode, selectedProviderId)
-  const provider = route.providerId ? providers.find((candidate) => candidate.id === route.providerId) : undefined
-  if (!provider || provider.status !== 'connected') return { ready: false, label: provider?.name ?? '', reason: route.reason }
-  return { ready: true, label: provider.name, provider, reason: route.reason }
+  const resolved = resolveTextModel(providers, selectedProviderId)
+  if (!resolved) return { ready: false, label: '', reason: 'No model connected' }
+  return { ready: true, label: resolved.model, provider: resolved.provider, reason: 'default model' }
 }
 
 function selectAiProviderForTask(

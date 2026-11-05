@@ -15,7 +15,7 @@
 // empty-state actions ("thử ví dụ", "Kết nối model") and the "connect
 // model" fallback in the status row are real standalone buttons — those
 // moved to kit `Button`.
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
   AssistantRuntimeProvider,
   ComposerPrimitive,
@@ -73,7 +73,7 @@ function RunDetailRow({ run, t, formatClockTime }: { run: AiRun | undefined; t: 
 export function KiraChatThreadView({
   aiPanelState,
   threadId,
-  providerLabel,
+  modelControl,
   hasProvider,
   t,
   formatClockTime,
@@ -83,7 +83,8 @@ export function KiraChatThreadView({
 }: {
   aiPanelState: AiPanelState
   threadId: string
-  providerLabel: string
+  // The model picker for this chat (ModelPicker), shown under the composer.
+  modelControl: ReactNode
   // No routed provider means nothing this panel sends can ever get an
   // answer. The whole empty state, the placeholder and the status row below
   // the composer change together so the panel never invites a message it
@@ -221,7 +222,7 @@ export function KiraChatThreadView({
         </ComposerPrimitive.Root>
         <div className={hasProvider ? 'composer-meta' : 'composer-meta is-blocked'}>
           {hasProvider ? (
-            <span>{providerLabel}</span>
+            modelControl
           ) : (
             <>
               <span>{t('kira.panel.noModelStatus')}</span>

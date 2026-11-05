@@ -16,7 +16,7 @@ import type {
 } from '@/kira/ai/aiProviderDomain'
 import { SettingsGeneralTab } from './SettingsGeneralTab'
 import { SettingsCaptureTab } from './SettingsCaptureTab'
-import { SettingsAiProvidersTab } from './SettingsAiProvidersTab'
+import { SettingsAiProvidersTab, type ModelSettings } from './SettingsAiProvidersTab'
 import { SettingsAdvancedTab } from './SettingsAdvancedTab'
 
 type SettingsTabId = 'general' | 'capture' | 'ai' | 'advanced'
@@ -24,7 +24,7 @@ type SettingsTabId = 'general' | 'capture' | 'ai' | 'advanced'
 const settingsSections: { id: SettingsTabId; label: string }[] = [
   { id: 'general', label: 'General' },
   { id: 'capture', label: 'Capture' },
-  { id: 'ai', label: 'AI Providers' },
+  { id: 'ai', label: 'AI' },
   { id: 'advanced', label: 'Advanced' },
 ]
 
@@ -84,6 +84,7 @@ export function SettingsView({
   activeProviderId,
   focusNonce,
   focusTab,
+  modelSettings,
   localModelAvailable,
   localModelStatus,
   extensionInstallStatus,
@@ -119,6 +120,7 @@ export function SettingsView({
   focusNonce: number
   // Tab a focusNonce bump opens; the AI tab when left out.
   focusTab?: 'ai' | 'capture'
+  modelSettings: ModelSettings
   localModelAvailable: boolean
   localModelStatus: string
   extensionInstallStatus: ExtensionInstallStatus
@@ -230,6 +232,7 @@ export function SettingsView({
               <TabPanel id="ai">
                 <SettingsAiProvidersTab
                   providers={providers}
+                  modelSettings={modelSettings}
                   activeProviderId={activeProviderId}
                   onActiveProviderChange={onActiveProviderChange}
                   onProviderAdd={onProviderAdd}
