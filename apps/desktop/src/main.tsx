@@ -418,6 +418,9 @@ export type EvidenceLink = {
   targetKind?: GraphNodeKind
   relation: Relation
   note: string
+  // A few words naming how the two nodes connect, shown on the edge itself
+  // (set by AI drafts and Mermaid imports). Optional: older links have none.
+  label?: string
   confidence: number
   createdAt?: string
   updatedAt?: string
@@ -785,6 +788,19 @@ const UI_STRINGS: Record<string, { en: string; vi: string }> = {
   'tool.sticker': { en: 'Sticker', vi: 'Ghi chú' },
   'tool.frame': { en: 'Frame', vi: 'Khung' },
   'tool.mermaid': { en: 'Mermaid diagram', vi: 'Sơ đồ Mermaid' },
+  'ai.status.drafting': { en: 'Drafting the board', vi: 'Đang dựng nháp' },
+  'ai.status.writing': { en: 'Kira is writing', vi: 'Kira đang viết' },
+  'ai.status.replying': { en: 'Kira is replying', vi: 'Kira đang trả lời' },
+  'ai.status.palette': { en: 'Making a palette', vi: 'Đang tạo bảng màu' },
+  'ai.status.outline': { en: 'Rewriting the outline', vi: 'Đang viết lại dàn ý' },
+  'ai.status.newIdeas': { en: '{count} new ideas', vi: '{count} ý mới' },
+  'ai.status.newIdea': { en: '1 new idea', vi: '1 ý mới' },
+  'ai.status.replied': { en: 'Replied', vi: 'Đã trả lời' },
+  'ai.status.done': { en: 'Done', vi: 'Xong' },
+  'ai.status.failed': { en: 'Failed: {reason}', vi: 'Lỗi: {reason}' },
+  'ai.status.more': { en: '+{count} more', vi: '+{count} việc' },
+  'ai.topbar.off': { en: 'No AI connected', vi: 'Chưa kết nối AI' },
+  'ai.topbar.running': { en: 'Working: {label}', vi: 'Đang chạy: {label}' },
   'ai.model.pick': { en: 'Choose a model', vi: 'Chọn model' },
   'ai.model.notConnected': { en: 'No AI connected', vi: 'Chưa kết nối AI' },
   'ai.model.connectMore': { en: 'Connect AI…', vi: 'Kết nối AI…' },
@@ -2203,9 +2219,9 @@ function FileWorkspace({
   isActive: boolean
   initialSnapshot: ProjectSnapshot | null
   initialPackage: ProjectPackageInfo | null
-  // The active tab's AI control (model and status) goes in the topbar's right
-  // corner, beside the Kira button; each workspace renders its own copy.
-  tabBar: (aiControl: React.ReactNode) => React.ReactNode
+  // The active tab's AI status, shown as a dot in the topbar's Kira button;
+  // each workspace renders its own copy of the bar.
+  tabBar: (aiStatus: TopbarAiStatus) => React.ReactNode
   onFileMetaChange: (fileId: string, meta: { title: string; isDirty: boolean; path: string | null }) => void
   onRequestNewFile: () => void | Promise<void>
   onRequestOpenFile: () => void | Promise<void>
@@ -2559,6 +2575,32 @@ function FileWorkspace({
     const resolved = resolveTextModel(aiProviders, selectedAiProviderId)
     return resolved ? { providerId: resolved.provider.id, model: resolved.model } : null
   }, [aiProviders, selectedAiProviderId])
+  // What AI is doing right now, for the ✦ button (which turns into this
+  // status while a call runs) and the topbar dot. A model call takes tens of
+  // seconds; before this the only sign of it was the app freezing.
+  const [aiActivities, setAiActivities] = useState<AiActivity[]>([])
+  const [aiOutcome, setAiOutcome] = useState<AiOutcome | null>(null)
+  useEffect(() => {
+    if (!aiOutcome) return
+    const timer = window.setTimeout(() => setAiOutcome(null), aiOutcome.kind === 'error' ? 6000 : 3200)
+    return () => window.clearTimeout(timer)
+  }, [aiOutcome])
+  async function trackAi<T>(label: string, run: () => Promise<T>, doneLabel: string | ((result: T) => string)): Promise<T> {
+    const id = crypto.randomUUID()
+    setAiActivities((current) => [...current, { id, label, startedAt: Date.now() }])
+    try {
+      const result = await run()
+      setAiOutcome({ id, kind: 'done', label: typeof doneLabel === 'function' ? doneLabel(result) : doneLabel })
+      return result
+    } catch (error) {
+      const reason = (error instanceof Error ? error.message : String(error)).split('\n')[0]
+      setAiOutcome({ id, kind: 'error', label: t('ai.status.failed', lang, { reason }) })
+      throw error
+    } finally {
+      setAiActivities((current) => current.filter((activity) => activity.id !== id))
+    }
+  }
+
   // Kira chat's own model choice; null follows the default model.
   const [kiraChatModel, setKiraChatModel] = useState<AiModelRef | null>(null)
   // The model every text feature runs on unless it carries its own choice.
@@ -2576,16 +2618,15 @@ function FileWorkspace({
     notConnected: t('ai.model.notConnected', lang),
     connectMore: t('ai.model.connectMore', lang),
   }
-  const topbarAiControl = (
-    <ModelPicker
-      className="topbar-model-picker"
-      options={modelOptions}
-      value={defaultModel}
-      onChange={setDefaultModel}
-      onConnect={openAiProviderSettings}
-      labels={modelPickerLabels}
-    />
-  )
+  // One AI control in the topbar: the Kira button, with a dot for the AI
+  // state (off, ready, working) and the model or the running task as its
+  // tooltip. The model is picked where a request is written (dock, chat, new
+  // board) and the default in Settings, not here as well.
+  const topbarAiStatus: TopbarAiStatus = aiActivities.length > 0
+    ? { state: 'running', title: t('ai.topbar.running', lang, { label: aiActivities[0].label }) }
+    : defaultModel
+      ? { state: 'ready', title: `${modelOptions.find((option) => option.providerId === defaultModel.providerId)?.providerTag ?? ''} · ${defaultModel.model}` }
+      : { state: 'off', title: t('ai.topbar.off', lang) }
 
   async function refreshFoundationModelAvailability() {
     if (!isTauriRuntime()) {
@@ -3014,8 +3055,11 @@ function FileWorkspace({
     const provider = textModelProvider()
     if (!provider) return t('zero.error.noAi', lang)
     try {
-      const result = await generateNativeAiText(provider, buildBoardDraftPrompt(prompt))
-      const draft = parseBoardDraft(result.content)
+      const draft = await trackAi(
+        t('ai.status.drafting', lang),
+        async () => parseBoardDraft((await generateNativeAiText(provider, buildBoardDraftPrompt(prompt))).content),
+        (result) => t('ai.status.newIdeas', lang, { count: String(result.nodes.length) }),
+      )
       applyProjectSnapshot(createBoardDraftSnapshot(prompt, draft, currentAiSettingsSnapshot()))
       setProjectPackage(null)
       setLibraryStatus(`Kira: ${provider.name} drafted ${draft.nodes.length} nodes`)
@@ -5208,7 +5252,7 @@ function FileWorkspace({
     let generationStatus = provider ? `${provider.name}: ${route.reason}` : route.reason
     if (provider) {
       try {
-        const result = await generateNativeAiText(provider, generationPrompt)
+        const result = await trackAi(t('ai.status.writing', lang), () => generateNativeAiText(provider, generationPrompt), t('ai.status.newIdea', lang))
         generatedBody = result.content.trim()
         generationStatus = `${provider.name}: ${result.status}`
       } catch (error) {
@@ -5229,15 +5273,12 @@ function FileWorkspace({
     // panel and the link note below, not stamped into every generated node —
     // but the outcome still needs to reach the user somewhere, so it goes to
     // the library status line instead of vanishing silently on failure.
-    setLibraryStatus(generatedBody ? `Kira: ${generationStatus}` : `Kira used a fallback draft: ${generationStatus}`)
-    const body = generatedBody || [
-      'Generated draft fallback.',
-      '',
-      'Base nodes:',
-      ...baseNodeLines,
-      '',
-      'Connect and test a provider in Settings to replace this fallback with live model output.',
-    ].join('\n')
+    // No fallback node: a failed or missing model used to drop a templated
+    // "Generated draft fallback" note on the board, which read as AI output.
+    // The caller (the dock) shows this error instead.
+    if (!generatedBody) throw new Error(provider ? generationStatus : t('zero.error.noAi', lang))
+    setLibraryStatus(`Kira: ${generationStatus}`)
+    const body = generatedBody
     const timestamp = nowIso()
     const anchor = sourceNode ?? baseNodes[0] ?? { x: 50, y: 50 }
     const idea: Idea = {
@@ -5431,7 +5472,7 @@ function FileWorkspace({
           'Return only a JSON array of 6-digit hex color strings like "#84cdbc" — no explanation, no markdown fence.',
         ].join('\n')
         try {
-          const result = await generateNativeAiText(provider, prompt)
+          const result = await trackAi(t('ai.status.palette', lang), () => generateNativeAiText(provider!, prompt), t('ai.status.done', lang))
           const parsed = parseAiJson<string[]>(result.content)
           const validColors = parsed?.filter((value) => typeof value === 'string' && /^#[0-9a-fA-F]{6}$/.test(value))
           if (validColors && validColors.length === before.colors.length) {
@@ -5648,6 +5689,7 @@ function FileWorkspace({
         targetKind: 'idea',
         relation: 'supports',
         note: edge.label ? `Mermaid edge: ${edge.label}` : `Imported edge from ${title}.`,
+        label: edge.label,
         confidence: 0.74,
         createdAt: timestamp,
         updatedAt: timestamp,
@@ -5949,7 +5991,7 @@ function FileWorkspace({
       ].join('\n')
 
       try {
-        const result = await generateNativeAiText(provider, prompt)
+        const result = await trackAi(t('ai.status.outline', lang), () => generateNativeAiText(provider!, prompt), t('ai.status.done', lang))
         const parsed = parseAiJson<Record<string, string>>(result.content)
         if (!parsed || typeof parsed !== 'object') return
         setOutlineDrafts((current) =>
@@ -6506,7 +6548,7 @@ function FileWorkspace({
     ]
 
     try {
-      const result = await generateNativeAiText(routedProvider, promptLines.join('\n'))
+      const result = await trackAi(t('ai.status.replying', lang), () => generateNativeAiText(routedProvider, promptLines.join('\n')), t('ai.status.replied', lang))
       setAiPanelState((current) => ({
         ...current,
         messages: [...current.messages, {
@@ -6683,7 +6725,7 @@ function FileWorkspace({
 
   return (
     <main className="app-shell" data-glass-state={glassStatus} data-color-mode={shellColorMode} data-rail-icons={railIconMode} style={shellThemeStyle} onPaste={capturePastedReference}>
-      {tabBar(topbarAiControl)}
+      {tabBar(topbarAiStatus)}
       <section
         className="workspace"
         style={{
@@ -6935,6 +6977,12 @@ function FileWorkspace({
                 isKiraPanelOpen={isKiraPanelOpen}
                 kiraDockStatus={renderKiraPanelDockStatus()}
                 onKiraPanelOpenChat={() => setKiraPanelTab('chat')}
+                aiActivities={aiActivities}
+                aiOutcome={aiOutcome}
+                onOpenKiraPanel={() => {
+                  onKiraPanelOpenChange(true)
+                  setKiraPanelTab('chat')
+                }}
                 nodeProvenance={aiPanelState.provenance}
                 onOpenKiraPanelChanges={() => {
                   onKiraPanelOpenChange(true)
@@ -7440,7 +7488,7 @@ function App() {
     return () => window.removeEventListener('keydown', handleTabBarKeydown)
   }, [activeFileId, files, kiraPanelOpenByFile, handleKiraPanelOpenChange])
 
-  const tabBar = (aiControl: React.ReactNode) => (
+  const tabBar = (aiStatus: TopbarAiStatus) => (
     <nav
       className="file-tab-bar"
       aria-label="Open files"
@@ -7516,7 +7564,6 @@ function App() {
       <button type="button" className="file-tab-add" aria-label="New file" title="New file" onClick={() => void requestNewFile()}>
         <Plus size={13} />
       </button>
-      <div className="topbar-ai">{aiControl}</div>
       <button
         type="button"
         className={kiraPanelOpenByFile[activeFileId] ? 'panel-toggle is-active' : 'panel-toggle'}
@@ -7526,9 +7573,10 @@ function App() {
             ? t('kira.panel.close', lang)
             : t('kira.panel.open', lang)
         }
-        title="Kira panel (⌥⌘K)"
+        title={`Kira (⌥⌘K) · ${aiStatus.title}`}
         onClick={() => handleKiraPanelOpenChange(activeFileId, !(kiraPanelOpenByFile[activeFileId] ?? false))}
       >
+        <span className={`kira-ai-dot is-${aiStatus.state}`} role="img" aria-label={aiStatus.title} />
         <PanelRight size={13} />
         <span>Kira</span>
         {(kiraNeedsYouByFile[activeFileId] ?? 0) > 0 && <span className="count">{kiraNeedsYouByFile[activeFileId]}</span>}
@@ -7898,6 +7946,9 @@ function GraphCanvas({
   isKiraPanelOpen,
   kiraDockStatus,
   onKiraPanelOpenChat,
+  aiActivities,
+  aiOutcome,
+  onOpenKiraPanel,
   nodeProvenance,
   onOpenKiraPanelChanges,
 }: {
@@ -8000,6 +8051,9 @@ function GraphCanvas({
   isKiraPanelOpen: boolean
   kiraDockStatus: React.ReactNode
   onKiraPanelOpenChat: () => void
+  aiActivities: AiActivity[]
+  aiOutcome: AiOutcome | null
+  onOpenKiraPanel: () => void
   // Phase B provenance badges (mockup.js provBadge) — keyed by
   // provenanceKey(kind, id). Clicking a badge opens the panel's "Cần bạn"
   // tab rather than the mockup's per-node popover (scope cut, see report).
@@ -8144,6 +8198,15 @@ function GraphCanvas({
   const [draftError, setDraftError] = useState('')
   // "Blank board" just puts the zero state away: the board is already empty.
   const [isZeroStateDismissed, setIsZeroStateDismissed] = useState(false)
+  // Ticks once a second while an AI call runs, for the elapsed time on the
+  // ✦ status; idle otherwise.
+  const [statusNow, setStatusNow] = useState(() => Date.now())
+  useEffect(() => {
+    if (aiActivities.length === 0) return
+    setStatusNow(Date.now())
+    const timer = window.setInterval(() => setStatusNow(Date.now()), 1000)
+    return () => window.clearInterval(timer)
+  }, [aiActivities.length])
   const [kiraSession, setKiraSession] = useState<KiraSession | null>(null)
   // Kira's context/suggestion detail is collapsed by default — the dock
   // stays a single composer line until the user asks to see more.
@@ -8316,8 +8379,16 @@ function GraphCanvas({
   // trigger a submit the button itself reported as unavailable.
   function canSubmitKira(): boolean {
     if (!kiraSession || kiraSession.status === 'thinking' || !kiraSession.prompt.trim()) return false
-    const route = selectAiProviderForTask('generate_node', aiProviders, aiRoutingMode, selectedAiProviderId, kiraSession.providerOverrideId ?? undefined)
-    return Boolean(route.providerId && aiProviders.some((candidate) => candidate.id === route.providerId))
+    // The model the dock's picker shows; the old task routing refused models
+    // it did not list for this task (Claude Code lists none), so the dock
+    // would not send while showing a connected model.
+    return Boolean(resolveTextModel(
+      aiProviders,
+      selectedAiProviderId,
+      kiraSession.providerOverrideId && kiraSession.modelOverride
+        ? { providerId: kiraSession.providerOverrideId, model: kiraSession.modelOverride }
+        : null,
+    ))
   }
 
   function handleKiraInputKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -9674,6 +9745,7 @@ function GraphCanvas({
         className={[
           'kira-dock',
           open ? 'is-open' : '',
+          !open && (aiActivities.length > 0 || aiOutcome) ? 'has-ai-status' : '',
           isThinking ? 'is-thinking' : '',
           isError ? 'is-error' : '',
           hasTray ? 'has-tray' : '',
@@ -9692,7 +9764,38 @@ function GraphCanvas({
           closeKiraSession()
         }}
       >
-        {!open ? (
+        {!open && (aiActivities.length > 0 || aiOutcome) ? (
+          // The ✦ button turns into the status of whatever AI is doing (a
+          // draft, a dock request, a chat reply, a palette), anywhere in the
+          // app, and back once it is done. Clicking opens the Kira panel,
+          // where the run and its result are listed.
+          <button
+            type="button"
+            ref={kiraOrbRef}
+            className={[
+              'kira-dock-orb kira-ai-status',
+              aiActivities.length > 0 ? 'is-running' : `is-${aiOutcome!.kind}`,
+            ].join(' ')}
+            onClick={onOpenKiraPanel}
+          >
+            {aiActivities.length > 0 ? (
+              <span className="kira-ai-status-spinner" aria-hidden="true" />
+            ) : aiOutcome!.kind === 'done' ? (
+              <Check size={13} aria-hidden="true" />
+            ) : (
+              <AlertTriangle size={13} aria-hidden="true" />
+            )}
+            <span className="kira-ai-status-label" role="status" aria-live="polite">
+              {aiActivities.length > 0 ? aiActivities[0].label : aiOutcome!.label}
+            </span>
+            {aiActivities.length > 0 && (
+              <span className="kira-ai-status-time">
+                {Math.max(0, Math.round((statusNow - aiActivities[0].startedAt) / 1000))}s
+                {aiActivities.length > 1 && ` · ${t('ai.status.more', lang, { count: String(aiActivities.length - 1) })}`}
+              </span>
+            )}
+          </button>
+        ) : !open ? (
           <button
             type="button"
             ref={kiraOrbRef}
@@ -10489,16 +10592,23 @@ function GraphCanvas({
             return (
               <React.Fragment key={`${link.id}-joint`}>
                 <button
-                  className={active ? 'edge-joint is-active' : relatedLink ? 'edge-joint is-related' : 'edge-joint'}
+                  className={[
+                    'edge-joint',
+                    active ? 'is-active' : relatedLink ? 'is-related' : '',
+                    link.label ? 'has-label' : '',
+                  ].filter(Boolean).join(' ')}
                   type="button"
-                  aria-label={`Select ${link.relation} relation`}
+                  aria-label={link.label ? `${link.label} (${link.relation})` : `Select ${link.relation} relation`}
+                  data-relation={link.relation}
                   style={{
                     left: `${curve.midX}%`,
                     top: `${curve.midY}%`,
                   }}
                   onClick={() => onSelect(active ? { type: 'project' } : { type: 'link', id: link.id })}
                   onContextMenu={(event) => openLinkContextMenu(link.id, event)}
-                />
+                >
+                  {link.label}
+                </button>
                 {active && (
                   <div
                     className="link-popover"
@@ -17008,9 +17118,10 @@ function createBoardDraftSnapshot(prompt: string, draft: BoardDraft, aiSettings:
     const content = node.body ? `**${node.title}**\n\n${node.body}` : node.title
     return createTemplateIdea(idOf(node.id), node.title, content, spot.x, spot.y, index === 0 ? 'strong' : 'forming', index === 0 ? 1.2 : 1)
   })
-  const links = draft.links.map((link, index) =>
-    createTemplateLink(`draft-${timestamp}-link-${index}`, idOf(link.from), idOf(link.to), 'supports', link.label ?? ''),
-  )
+  const links = draft.links.map((link, index) => ({
+    ...createTemplateLink(`draft-${timestamp}-link-${index}`, idOf(link.from), idOf(link.to), link.relation, link.label ?? ''),
+    label: link.label,
+  }))
   const versionHistory: ProjectVersionRecord[] = []
   return {
     version: 2,
@@ -17693,6 +17804,10 @@ function providerStatusFromNative(status: string, connected: boolean): AiProvide
 // row and the zero-state chip. Ready means the routed provider reports
 // 'connected'; routing alone can return a provider it already knows is
 // unavailable ("<name> unavailable"), which must not read as ready.
+type TopbarAiStatus = { state: 'off' | 'ready' | 'running'; title: string }
+type AiActivity = { id: string; label: string; startedAt: number }
+type AiOutcome = { id: string; kind: 'done' | 'error'; label: string }
+
 type DraftAiStatus = { ready: boolean; label: string; provider?: AiProviderProfile; reason: string }
 
 function resolveDraftAiStatus(

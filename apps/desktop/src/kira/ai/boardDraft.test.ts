@@ -14,8 +14,8 @@ const ANSWER = `Đây là bảng nháp:
   {"id": "c", "title": "", "body": "no title, dropped"}
  ],
  "links": [
-  {"from": "root", "to": "a", "label": "cho ai"},
-  {"from": "root", "to": "b", "label": ""},
+  {"from": "root", "to": "a", "relation": "contains", "label": "cho ai"},
+  {"from": "root", "to": "b", "relation": "made-up", "label": ""},
   {"from": "root", "to": "missing"},
   {"from": "a", "to": "a"}
  ]}
@@ -27,8 +27,9 @@ describe('parseBoardDraft', () => {
     expect(draft.title).toBe('Quán phở Hà Nội cho Gen Z')
     expect(draft.nodes.map((node) => node.id)).toEqual(['root', 'a', 'b'])
     expect(draft.links).toEqual([
-      { from: 'root', to: 'a', label: 'cho ai' },
-      { from: 'root', to: 'b', label: undefined },
+      { from: 'root', to: 'a', relation: 'contains', label: 'cho ai' },
+      // an unknown relation falls back to "related" instead of being dropped
+      { from: 'root', to: 'b', relation: 'related', label: undefined },
     ])
   })
 
@@ -55,7 +56,7 @@ describe('layoutBoardDraft', () => {
 
   test('a wide row wraps instead of running off the stage', () => {
     const nodes = Array.from({ length: 7 }, (_, index) => ({ id: `n${index}`, title: `N${index}`, body: '' }))
-    const links = nodes.slice(1).map((node) => ({ from: 'n0', to: node.id }))
+    const links = nodes.slice(1).map((node) => ({ from: 'n0', to: node.id, relation: 'related' as const }))
     const positions = layoutBoardDraft({ title: 't', nodes, links })
     const xs = [...positions.values()].map((spot) => spot.x)
     expect(Math.min(...xs)).toBeGreaterThanOrEqual(8)
@@ -64,9 +65,28 @@ describe('layoutBoardDraft', () => {
   })
 })
 
+describe('layoutBoardDraft keeps children under their parents', () => {
+  test('a grandchild sits under its own parent, not where the list put it', () => {
+    const draft = {
+      title: 't',
+      nodes: ['root', 'left', 'right', 'right-child', 'left-child'].map((id) => ({ id, title: id, body: '' })),
+      links: [
+        { from: 'root', to: 'left', relation: 'contains' as const },
+        { from: 'root', to: 'right', relation: 'contains' as const },
+        { from: 'right', to: 'right-child', relation: 'example' as const },
+        { from: 'left', to: 'left-child', relation: 'example' as const },
+      ],
+    }
+    const positions = layoutBoardDraft(draft)
+    expect(positions.get('left-child')!.x).toBeLessThanOrEqual(positions.get('right-child')!.x)
+    expect(positions.get('left-child')!.x).toBeLessThanOrEqual(positions.get('left')!.x + 10)
+  })
+})
+
 test('the prompt carries the request and asks for JSON in its language', () => {
   const prompt = buildBoardDraftPrompt('Bộ nhận diện cho tiệm bánh mì')
   expect(prompt).toContain('Request: Bộ nhận diện cho tiệm bánh mì')
   expect(prompt).toContain('JSON only')
   expect(prompt).toContain('same language as the request')
+  expect(prompt).toContain('relation is one of')
 })

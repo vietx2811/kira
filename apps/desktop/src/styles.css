@@ -3137,16 +3137,33 @@ button.mini-tags-more:focus-visible {
 /* Topbar: the default model sits in the right corner, just left of the Kira
    button. The wrapper takes the push to the right, so the button that used
    to own it follows straight after. */
-.topbar-ai {
-  display: flex;
-  align-items: center;
-  margin-left: auto;
-  padding-right: 6px;
+/* AI state dot inside the topbar's Kira button: grey when no model is
+   connected, sage when one is, pulsing while a call runs. The tooltip says
+   which model or which task. */
+.kira-ai-dot {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 999px;
+  background: var(--text-muted);
+  opacity: 0.7;
 }
 
-.topbar-ai + .panel-toggle {
-  margin-left: 0;
+.kira-ai-dot.is-ready {
+  background: var(--accent-sage);
+  opacity: 1;
 }
+
+.kira-ai-dot.is-running {
+  background: var(--accent-cyan);
+  opacity: 1;
+  animation: kira-ai-dot-pulse 1.2s var(--ease-soft) infinite;
+}
+
+@keyframes kira-ai-dot-pulse {
+  50% { opacity: 0.35; }
+}
+
 
 .canvas-zero-submit {
   margin-left: auto;
@@ -3265,6 +3282,39 @@ button.mini-tags-more:focus-visible {
   transition:
     opacity 140ms ease,
     transform 140ms ease;
+}
+
+/* A labelled link shows its label on the edge, always: how two ideas
+   connect is the point of the map, not something to open a popover for. */
+.edge-joint.has-label {
+  width: auto;
+  height: auto;
+  max-width: 160px;
+  padding: 2px 7px;
+  overflow: hidden;
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+  background: var(--surface-drawer);
+  color: var(--text-soft);
+  font-size: var(--text-small);
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 1;
+  pointer-events: auto;
+  transform: translate(-50%, -50%);
+}
+
+.edge-joint.has-label[data-relation="contrasts"] {
+  border-style: dashed;
+}
+
+.edge-joint.has-label.is-active {
+  width: auto;
+  height: auto;
+  border-color: var(--accent-amber);
+  background: var(--surface-drawer);
+  color: var(--text-main);
 }
 
 .edge-joint.is-active,
@@ -4598,6 +4648,70 @@ button.mini-tags-more:focus-visible {
   color: var(--text-soft);
   cursor: pointer;
   transition: color var(--duration-base) var(--ease-soft);
+}
+
+/* The ✦ launcher morphs into the status of the AI call in progress (or the
+   one that just finished): the 44px circle widens into a pill, through the
+   dock's own width/border-radius transition, so it reads as the same button
+   telling you what it is doing. */
+.kira-dock.has-ai-status {
+  width: 236px;
+  border-radius: 22px;
+}
+
+.kira-ai-status {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  min-width: 0;
+  padding: 0 14px;
+  color: var(--text-main);
+  font-size: var(--text-small);
+  gap: 8px;
+}
+
+.kira-ai-status.is-error {
+  color: var(--danger);
+}
+
+.kira-ai-status.is-done svg {
+  color: var(--accent-sage);
+}
+
+.kira-ai-status-label {
+  overflow: hidden;
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kira-ai-status-time {
+  flex: none;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.kira-ai-status-spinner {
+  width: 12px;
+  height: 12px;
+  flex: none;
+  border: 1.5px solid color-mix(in srgb, var(--accent-cyan) 30%, transparent);
+  border-top-color: var(--accent-cyan);
+  border-radius: 999px;
+  animation: kira-ai-spin 0.8s linear infinite;
+}
+
+@keyframes kira-ai-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kira-ai-status-spinner,
+  .kira-ai-dot.is-running {
+    animation: none;
+  }
 }
 
 .kira-dock-orb:hover {
