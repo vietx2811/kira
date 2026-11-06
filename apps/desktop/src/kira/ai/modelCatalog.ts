@@ -14,6 +14,8 @@ export type AiModelRef = { providerId: string; model: string }
 
 export type AiModelOption = AiModelRef & {
   key: string
+  // What the picker shows: the provider's name for the model ("Opus 5.5"), or its id.
+  label: string
   providerName: string
   providerType: AiProviderType
   providerTag: string
@@ -47,6 +49,10 @@ export function providerMark(type: AiProviderType): ProviderMark | null {
   return providerMarks[type] ?? null
 }
 
+export function modelLabel(provider: Pick<AiProviderProfile, 'discoveredModelLabels'>, model: string) {
+  return provider.discoveredModelLabels?.[model] ?? model
+}
+
 export function providerTag(type: AiProviderType) {
   return providerTags[type] ?? type
 }
@@ -73,6 +79,7 @@ export function listModelOptions(providers: AiProviderProfile[]): AiModelOption[
         key: modelKey({ providerId: provider.id, model }),
         providerId: provider.id,
         model,
+        label: modelLabel(provider, model),
         providerName: provider.name,
         providerType: provider.type,
         providerTag: providerTag(provider.type),

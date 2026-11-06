@@ -82,14 +82,14 @@ export function ModelPicker({
         <AriaButton className={['model-picker-trigger', className].filter(Boolean).join(' ')}>
           <span className="model-picker-dot is-ready" aria-hidden="true" />
           {selected && <ModelTag type={selected.providerType} tag={selected.providerTag} />}
-          <span className="model-picker-label">{selected ? selected.model : labels.pick}</span>
+          <span className="model-picker-label">{selected ? selected.label : labels.pick}</span>
           <ChevronDown size={12} aria-hidden="true" className="model-picker-chevron" />
         </AriaButton>
         <SelectContext.Provider value={{ size: 'sm' }}>
           <Popover size="sm" placement={placement} className="w-72!">
             <AriaListBox className="outline-hidden">
               {options.map((option) => (
-                <SelectItem key={option.key} id={option.key} label={option.model} icon={<ModelTag type={option.providerType} tag={option.providerTag} />} />
+                <SelectItem key={option.key} id={option.key} label={option.label} icon={<ModelTag type={option.providerType} tag={option.providerTag} />} />
               ))}
               <SelectItem id={CONNECT_KEY} label={labels.connectMore} selectionIndicator="none" className="model-picker-connect" />
             </AriaListBox>

@@ -386,7 +386,7 @@ export function SettingsAiProvidersTab({
                   label="Model"
                   value={activeProvider.model}
                   onChange={(value) => onProviderChange(activeProvider.id, { model: value })}
-                  options={activeProvider.discoveredModels.map((model) => ({ value: model, label: model }))}
+                  options={activeProvider.discoveredModels.map((model) => ({ value: model, label: activeProvider.discoveredModelLabels?.[model] ?? model }))}
                   size="sm"
                 />
               ) : (

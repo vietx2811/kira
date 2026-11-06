@@ -396,6 +396,9 @@ struct AiProviderTestResult {
 struct AiModelListResult {
     status: String,
     models: Vec<String>,
+    // Display names by model id, when the provider reports them (Claude Code does).
+    #[serde(skip_serializing_if = "std::collections::HashMap::is_empty")]
+    model_labels: std::collections::HashMap<String, String>,
 }
 
 #[derive(Deserialize)]
@@ -2563,6 +2566,92 @@ fn claude_code_status_native() -> Result<ClaudeCodeStatus, String> {
     Ok(ClaudeCodeStatus { installed: true, logged_in, account })
 }
 
+// Asks the CLI for its models through the stream-json `initialize` control request, the one the
+// Agent SDK sends before any prompt. Nothing reaches the model, so it costs no tokens. Hooks, MCP
+// servers, tools and session saving are off: this process only answers the handshake. Aliases
+// ("default", "opus") are folded into the concrete id they resolve to, so the list holds each
+// model once, by the id `--model` accepts.
+fn claude_code_supported_models(
+    bin: &std::path::Path,
+) -> Result<(Vec<String>, std::collections::HashMap<String, String>), String> {
+    use std::io::{BufRead, BufReader, Write};
+    let mut child = Command::new(bin)
+        .args([
+            "-p",
+            "--input-format",
+            "stream-json",
+            "--output-format",
+            "stream-json",
+            "--verbose",
+            "--strict-mcp-config",
+            "--tools",
+            "",
+            "--no-session-persistence",
+            "--settings",
+            r#"{"disableAllHooks":true}"#,
+        ])
+        .current_dir(std::env::temp_dir())
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .map_err(|e| format!("Unable to run Claude Code CLI: {e}"))?;
+    let pid = child.id();
+    // Stdin stays open until the answer arrives: closing it ends the session before it replies.
+    let mut stdin = child.stdin.take().ok_or("Claude Code CLI has no stdin")?;
+    stdin
+        .write_all(b"{\"type\":\"control_request\",\"request_id\":\"kira-models\",\"request\":{\"subtype\":\"initialize\"}}\n")
+        .map_err(|e| format!("Unable to ask Claude Code for its models: {e}"))?;
+    let stdout = child.stdout.take().ok_or("Claude Code CLI has no stdout")?;
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        for line in BufReader::new(stdout).lines().map_while(Result::ok) {
+            let Ok(value) = serde_json::from_str::<serde_json::Value>(&line) else { continue };
+            if value.get("type").and_then(|v| v.as_str()) == Some("control_response")
+                && value.pointer("/response/request_id").and_then(|v| v.as_str()) == Some("kira-models")
+            {
+                let _ = tx.send(value);
+                return;
+            }
+        }
+    });
+    let answer = rx.recv_timeout(Duration::from_secs(10));
+    drop(stdin);
+    let _ = child.kill();
+    let _ = child.wait();
+    let value = answer.map_err(|_| format!("Claude Code did not report its models (pid {pid})"))?;
+
+    let mut ids = Vec::new();
+    let mut labels = std::collections::HashMap::new();
+    for model in value
+        .pointer("/response/response/models")
+        .and_then(|v| v.as_array())
+        .into_iter()
+        .flatten()
+    {
+        let id = model
+            .get("resolvedModel")
+            .or_else(|| model.get("value"))
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .unwrap_or_default();
+        if id.is_empty() || id == "default" {
+            continue;
+        }
+        if !ids.iter().any(|known| known == id) {
+            ids.push(id.to_string());
+        }
+        // "Default (recommended)" names a role, not the model; the same id comes again under its
+        // own alias with the real name.
+        if let Some(name) = model.get("displayName").and_then(|v| v.as_str()) {
+            if !name.starts_with("Default") {
+                labels.entry(id.to_string()).or_insert_with(|| name.to_string());
+            }
+        }
+    }
+    Ok((ids, labels))
+}
+
 // Hands the user a Terminal window with `claude auth login` already running. Deliberately shaped
 // this way, not as an in-app sign-in: Anthropic's Agent SDK terms don't allow third-party apps to
 // *offer* claude.ai login, so KIRA renders no login UI of its own, never sees the browser
@@ -2911,6 +3000,7 @@ fn list_ai_models_native(
 ) -> Result<AiModelListResult, String> {
     if provider.provider_type == "apple_foundation" {
         return Ok(AiModelListResult {
+            model_labels: Default::default(),
             status: "local".to_string(),
             models: vec!["system default".to_string()],
         });
@@ -2919,6 +3009,7 @@ fn list_ai_models_native(
     if provider.provider_type == "codex" {
         let status = codex_status_native()?;
         return Ok(AiModelListResult {
+            model_labels: Default::default(),
             status: if !status.installed {
                 "not installed".to_string()
             } else if status.logged_in {
@@ -2932,21 +3023,36 @@ fn list_ai_models_native(
 
     if provider.provider_type == "claude_code" {
         let status = claude_code_status_native()?;
-        // The CLI has no "list models" subcommand to query, so this reports status only
-        // (leaving the frontend's Model field a plain text input) rather than guessing at ids.
+        if !status.logged_in {
+            return Ok(AiModelListResult {
+                model_labels: Default::default(),
+                status: "not signed in".to_string(),
+                models: vec![],
+            });
+        }
+        // The CLI has no "list models" subcommand, but its stream-json initialize handshake
+        // reports the models this account can use, with display names (what the Agent SDK's
+        // supportedModels() reads; Paseo lists Claude models the same way). No prompt is sent.
+        let (models, model_labels) = claude_code_bin_path()
+            .map(|bin| claude_code_supported_models(&bin))
+            .transpose()?
+            .unwrap_or_default();
         return Ok(AiModelListResult {
-            status: if status.logged_in { "claude-code".to_string() } else { "not signed in".to_string() },
-            models: vec![],
+            model_labels,
+            status: "claude-code".to_string(),
+            models,
         });
     }
 
     if provider.provider_type == "ollama" {
         return match list_local_or_openai_compatible_models(provider, None) {
             Ok(models) => Ok(AiModelListResult {
+                model_labels: Default::default(),
                 status: "local endpoint".to_string(),
                 models,
             }),
             Err(error) => Ok(AiModelListResult {
+                model_labels: Default::default(),
                 status: error,
                 models: vec![],
             }),
@@ -2957,10 +3063,12 @@ fn list_ai_models_native(
         let secret = read_secret_from_keychain(provider_id).ok();
         return match list_local_or_openai_compatible_models(provider, secret.as_deref()) {
             Ok(models) => Ok(AiModelListResult {
+                model_labels: Default::default(),
                 status: "openai-compatible".to_string(),
                 models,
             }),
             Err(error) => Ok(AiModelListResult {
+                model_labels: Default::default(),
                 status: error,
                 models: vec![],
             }),
@@ -2970,15 +3078,18 @@ fn list_ai_models_native(
     match read_secret_from_keychain(provider_id) {
         Ok(secret) if !secret.is_empty() => match list_remote_provider_models(provider, &secret) {
             Ok(models) => Ok(AiModelListResult {
+                model_labels: Default::default(),
                 status: "configured".to_string(),
                 models,
             }),
             Err(error) => Ok(AiModelListResult {
+                model_labels: Default::default(),
                 status: error,
                 models: vec![],
             }),
         },
         _ => Ok(AiModelListResult {
+            model_labels: Default::default(),
             status: "key_missing".to_string(),
             models: vec![],
         }),
@@ -6866,5 +6977,20 @@ mod tests {
         assert!(error.contains("unreadable"), "unhelpful error: {error}");
 
         let _ = fs::remove_dir_all(project_dir);
+    }
+}
+
+#[cfg(test)]
+mod claude_code_models_probe {
+    // Talks to the real CLI; run by hand: cargo test claude_code_models -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn claude_code_models_from_real_cli() {
+        let bin = super::claude_code_bin_path().expect("claude CLI on this machine");
+        let (ids, labels) = super::claude_code_supported_models(&bin).expect("models");
+        println!("{ids:?}\n{labels:?}");
+        assert!(!ids.is_empty());
+        assert!(!ids.iter().any(|id| id == "default"));
+        assert!(ids.iter().all(|id| labels.contains_key(id)), "every model has a name");
     }
 }

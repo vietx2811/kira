@@ -4674,6 +4674,7 @@ function FileWorkspace({
             ? {
               ...candidate,
               discoveredModels: result.models,
+              discoveredModelLabels: result.modelLabels,
               model: result.models.includes(candidate.model) || result.models.length === 0 ? candidate.model : result.models[0],
               lastMessage: result.models.length > 0 ? `${result.models.length} model(s) discovered` : result.status,
             }
@@ -4682,13 +4683,27 @@ function FileWorkspace({
       )
       setAiSettingsStatus(
         result.models.length > 0
-          ? `${provider.name}: ${result.models.join(', ')}`
+          ? `${provider.name}: ${result.models.map((model) => result.modelLabels?.[model] ?? model).join(', ')}`
           : `${provider.name}: ${result.status}`,
       )
     } catch (error) {
       setAiSettingsStatus(error instanceof Error ? error.message : 'Model listing failed')
     }
   }
+
+  // A Claude Code profile connected before its models could be listed (the CLI
+  // reports them since 2026-11-06) offers only its one saved model. Ask once
+  // at launch; the CLI answers without a prompt, so this costs no tokens.
+  useEffect(() => {
+    if (!isTauriRuntime()) return
+    for (const provider of aiProviders) {
+      if (provider.type === 'claude_code' && provider.status === 'connected' && !provider.discoveredModelLabels) {
+        void listAiModels(provider.id)
+      }
+    }
+    // Once per launch, on the profiles as loaded.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   function addReferenceTag(imageId: string, rawTag: string) {
     const tag = normalizeTag(rawTag)
