@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Privacy Policy — KIRA</title>
+  <meta name="description" content="Privacy policy for the KIRA desktop app and the KIRA Capture browser extension, including how Pinterest content is handled." />
+  <link rel="icon" href="../assets/icon.png" />
+  <link rel="stylesheet" href="../assets/style.css" />
+</head>
+<body class="policy">
+  <header class="site-header">
+    <div class="wrap">
+      <a class="brand" href="/">
+        <img src="../assets/icon.png" alt="" />
+        KIRA
+      </a>
+      <nav class="site-nav">
+        <a href="/">Home</a>
+        <a href="/#features">Features</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <header class="page-head">
+      <div class="wrap">
+        <h1>Privacy Policy</h1>
+        <p class="updated">Effective September 10, 2026</p>
+      </div>
+    </header>
+
+    <article>
+      <div class="wrap">
+        <p>
+          KIRA (the "App") is developed by VX Studio ("we", "us"). This policy explains what
+          data the KIRA desktop app and the KIRA Capture browser extension (Chrome and Safari,
+          together the "Extension") access, how it is used, and the choices you have — including
+          when KIRA reads content from or connects to Pinterest.
+        </p>
+
+        <div class="callout">
+          <p><strong>Short version:</strong> KIRA is local-first. Your projects, references, and
+          images are stored on your own Mac in a local <code>.kira</code> package. We do not run
+          servers that store your project data, we do not sell or share your data, and we do not
+          show ads or track you across the web.</p>
+        </div>
+
+        <h2>1. Data the desktop app stores</h2>
+        <p>Everything you import or create in a KIRA project — images, ideas, tags, palettes,
+          diagrams, notes, and version history — is saved locally on your Mac inside that
+          project's <code>.kira</code> package (a SQLite database plus image and thumbnail
+          files). We do not operate a server that receives, stores, or backs up this content.
+          It only leaves your machine if you export it, share the file yourself, or choose to
+          send content to a third-party AI provider as described below.</p>
+
+        <h2>2. Optional AI features</h2>
+        <p>AI assistance in KIRA (summarize, break down, find gaps, tagging suggestions, and
+          similar actions) is opt-in and provider-based:</p>
+        <ul>
+          <li><strong>On-device:</strong> Apple Foundation Models, Apple Vision OCR, and Apple
+            Natural Language run entirely on your Mac; nothing is sent anywhere.</li>
+          <li><strong>Local CLIs:</strong> if you have Claude Code or Codex installed, KIRA can
+            invoke them directly on your machine.</li>
+          <li><strong>Direct API keys:</strong> if you add your own API key for OpenAI,
+            Anthropic, Google Gemini, Ollama, or another OpenAI-compatible endpoint, KIRA sends
+            only the specific content you act on directly from your device to that provider,
+            using your key. Keys are stored locally on your device. We never see or relay this
+            traffic through our own servers, and we don't control how the third-party provider
+            handles data you send them — see their own privacy policy for that.</li>
+        </ul>
+
+        <h2>3. KIRA Capture (browser extension)</h2>
+        <p>The KIRA Capture extension for Chrome and Safari is a local bridge, not a cloud
+          service. When you drag an image, use Alt+right-click, or choose "Capture to KIRA"
+          from the context menu, the extension reads the image URL, page URL, page title, and
+          (if you aim a capture at one) the target canvas node — nothing else on the page.</p>
+        <ul>
+          <li>This information is sent only to <code>127.0.0.1</code> — the KIRA desktop app's
+            own listener running on the same computer. It never reaches any server we operate.</li>
+          <li>If the desktop app isn't running, a pending capture is queued in the browser's
+            local extension storage until it is.</li>
+          <li>The extension does not run in the background on pages you haven't acted on, does
+            not take full-page screenshots, and does not scrape page content beyond what a
+            capture needs.</li>
+        </ul>
+
+        <h2>4. Pinterest content and the Pinterest API</h2>
+        <p>KIRA is built for visual research, and Pinterest is one of the sites people capture
+          reference images from. We handle Pinterest content in two ways:</p>
+        <ul>
+          <li><strong>Capturing a pin you're viewing (current behavior).</strong> When you
+            capture an image from a Pinterest page, KIRA Capture resolves Pinterest's own public
+            CDN URL (<code>pinimg.com</code>) to the original, full-resolution file instead of
+            the preview crop, then downloads that image directly from Pinterest's CDN to your
+            device. This uses only publicly served image URLs already present on the page you're
+            viewing — it does not use the Pinterest API, does not require a Pinterest account,
+            and does not access any private boards, pins, or profile data.</li>
+          <li><strong>Connecting a Pinterest account (optional, API-based import).</strong> Where
+            KIRA offers Pinterest account sign-in to import boards and pins directly — similar to
+            our existing Eagle library import — it works like this:
+            <ul>
+              <li>You authorize access through Pinterest's own OAuth sign-in; KIRA never sees or
+                stores your Pinterest password.</li>
+              <li>KIRA requests read-only access to the boards and pins you choose to import.</li>
+              <li>Imported pin images and metadata (title, description, source link) are saved
+                into your local <code>.kira</code> project, the same as any other imported
+                reference.</li>
+              <li>KIRA does not post, pin, comment, follow, delete, or otherwise modify anything
+                on your Pinterest account, and never shares or sells Pinterest data to third
+                parties or uses it for advertising.</li>
+              <li>Your Pinterest access token is stored locally on your device (in the system
+                keychain), not on a server we operate.</li>
+              <li>You can revoke access at any time from Pinterest's own
+                <a href="https://www.pinterest.com/settings/apps" target="_blank" rel="noopener">connected apps settings</a>,
+                or by disconnecting the integration inside KIRA.</li>
+            </ul>
+          </li>
+        </ul>
+
+        <h2>5. What we don't do</h2>
+        <ul>
+          <li>We don't sell or rent your data to anyone.</li>
+          <li>We don't run analytics or advertising trackers inside the app or the extension.</li>
+          <li>We don't require an account to use KIRA.</li>
+          <li>We don't access files or browser activity outside of what you explicitly capture
+            or import.</li>
+        </ul>
+
+        <h2>6. Data retention and deletion</h2>
+        <p>Project data lives in the <code>.kira</code> package on your disk for as long as you
+          keep it; deleting that file (or the project) removes the data, since there is no
+          server-side copy. Revoking a connected provider (an AI API key or a Pinterest
+          connection) removes the locally stored credential immediately; any content already
+          imported into a project stays in that project until you delete it yourself.</p>
+
+        <h2>7. Children's privacy</h2>
+        <p>KIRA is a professional research and design tool and is not directed at children. We
+          do not knowingly collect data from children under 13.</p>
+
+        <h2>8. Changes to this policy</h2>
+        <p>If this policy changes, we'll update the effective date above and, for material
+          changes, note it in the app's release notes.</p>
+
+        <h2>9. Contact</h2>
+        <p>Questions about this policy or how KIRA handles your data, including Pinterest
+          integration: <a href="mailto:privacy@vietx.xyz">privacy@vietx.xyz</a>.</p>
+      </div>
+    </article>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap">
+      <p>© 2026 VX Studio — KIRA</p>
+      <div class="footer-links">
+        <a href="/">Home</a>
+        <a href="https://github.com/vietx2811/kira">GitHub</a>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>

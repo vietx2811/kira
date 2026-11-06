@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>KIRA — a calm visual research workspace</title>
+  <meta name="description" content="KIRA is a local-first macOS app for turning references into connected ideas, outlines, and presentations. Import, connect, and present — without your material ever leaving your machine." />
+  <link rel="icon" href="assets/icon.png" />
+  <link rel="stylesheet" href="assets/style.css" />
+  <meta property="og:title" content="KIRA — a calm visual research workspace" />
+  <meta property="og:description" content="Turn references into connected ideas, outlines, and presentations. Local-first, on your Mac." />
+  <meta property="og:image" content="assets/workspace-overview.png" />
+  <meta property="og:type" content="website" />
+</head>
+<body>
+  <header class="site-header">
+    <div class="wrap">
+      <a class="brand" href="/">
+        <img src="assets/icon.png" alt="" />
+        KIRA
+      </a>
+      <nav class="site-nav">
+        <a href="#features">Features</a>
+        <a href="#capture">Browser capture</a>
+        <a href="/policy">Privacy</a>
+        <a class="btn btn-quiet" href="https://github.com/vietx2811/kira/releases/tag/v1.1.0">Download</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="wrap">
+        <p class="eyebrow">macOS · Local-first</p>
+        <h1>A calm workspace for turning references into ideas.</h1>
+        <p class="lede">
+          KIRA brings references, thinking, structure, and presentation into one local-first
+          app. Import visual material, arrange it on a flexible canvas, connect evidence to
+          ideas, then move the same project into 3D, Slides, or Outline — without rebuilding
+          the work, and without it ever leaving your Mac.
+        </p>
+        <div class="hero-actions">
+          <a class="btn btn-primary" href="https://github.com/vietx2811/kira/releases/tag/v1.1.0">Download KIRA 1.1.0</a>
+          <a class="btn btn-quiet" href="https://github.com/vietx2811/kira">View source</a>
+        </div>
+        <div class="hero-shot">
+          <img src="assets/workspace-overview.png" alt="KIRA visual research workspace showing a canvas of connected reference images and idea nodes" />
+        </div>
+      </div>
+    </section>
+
+    <section id="features">
+      <div class="wrap">
+        <h2>One project, four views</h2>
+        <p class="section-lede">The same research structure, viewed the way you need it at each stage.</p>
+        <div class="feature-list">
+          <div class="feature-row">
+            <h3>Canvas</h3>
+            <p>Organize references and build the idea graph. Images, palettes, diagrams, and ideas connect through typed relations — supports, contrasts, example, mood — not generic link nodes.</p>
+          </div>
+          <div class="feature-row">
+            <h3>3D</h3>
+            <p>Step back and explore the same graph spatially, as a discovery layer rather than an editing surface.</p>
+          </div>
+          <div class="feature-row">
+            <h3>Slides</h3>
+            <p>Turn the current research structure into a presentation deck, and export straight to HTML or PPTX.</p>
+          </div>
+          <div class="feature-row">
+            <h3>Outline</h3>
+            <p>Generate a structured outline from a cluster of linked ideas — strong points, evidence gaps, narrative order.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="capture">
+      <div class="wrap">
+        <span class="pill">Chrome &amp; Safari</span>
+        <h2 style="margin-top: 14px;">Browser capture, without leaving the page</h2>
+        <p class="section-lede">
+          The KIRA Capture extension is a direct, local bridge into a running project — not a
+          bookmarklet that dumps everything into an inbox to sort later.
+        </p>
+        <div class="feature-list">
+          <div class="feature-row">
+            <h3>Local bridge, not cloud</h3>
+            <p>The desktop app runs its own listener on your machine; the extension talks straight to it. No account, no server round-trip — capture works fully offline.</p>
+          </div>
+          <div class="feature-row">
+            <h3>Resolves the real image</h3>
+            <p>Walks <code>srcset</code>, <code>&lt;picture&gt;</code>, and background images to find the highest-quality source — including a Pinterest-aware upscaling step that pulls full-resolution pins instead of preview crops.</p>
+          </div>
+          <div class="feature-row">
+            <h3>Three capture motions</h3>
+            <p>Drag an image onto KIRA's floating drop pad, Alt+right-click for instant quick-capture, or use the right-click "Capture to KIRA" menu.</p>
+          </div>
+          <div class="feature-row">
+            <h3>Targets a specific node</h3>
+            <p>The drop pad shows your live canvas nodes, so a capture can land on the exact idea it belongs to instead of a generic pile.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="wrap">
+        <h2>Local-first, by design</h2>
+        <p class="section-lede">Everything lives in one project package on your Mac.</p>
+        <div class="feature-list">
+          <div class="feature-row">
+            <h3>Native .kira package</h3>
+            <p>Normalized SQLite data, local thumbnails, image fingerprints, and duplicate detection — no server, no sync.</p>
+          </div>
+          <div class="feature-row">
+            <h3>Optional AI assistance</h3>
+            <p>On-device Apple Foundation Models, or your own Claude Code, Codex, OpenAI, Anthropic, or Gemini connection — always opt-in, always your key.</p>
+          </div>
+          <div class="feature-row">
+            <h3>Version checkpoints</h3>
+            <p>Branches and checkpoints let you explore directions without losing earlier work.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="wrap">
+        <h2>Get KIRA</h2>
+        <p class="section-lede">Currently released for Apple Silicon Macs.</p>
+        <div class="cta-row">
+          <a class="btn btn-primary" href="https://github.com/vietx2811/kira/releases/tag/v1.1.0">Download KIRA 1.1.0</a>
+          <a href="https://github.com/vietx2811/kira#quick-start">Quick start guide →</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap">
+      <p>© 2026 VX Studio — KIRA</p>
+      <div class="footer-links">
+        <a href="/policy">Privacy policy</a>
+        <a href="https://github.com/vietx2811/kira">GitHub</a>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>
