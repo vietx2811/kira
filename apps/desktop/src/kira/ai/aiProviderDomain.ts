@@ -43,6 +43,7 @@ export type AiProviderProfile = {
   secretRef?: string
   defaultFor: AiTaskKind[]
   discoveredModels?: string[]
+  discoveredModelLabels?: Record<string, string>
   lastTestedAt?: string
   lastMessage?: string
   userManaged?: boolean
@@ -60,6 +61,8 @@ export type AiProviderTestResult = {
 export type AiModelListResult = {
   status: string
   models: string[]
+  // Display names by model id, when the provider reports them (Claude Code does).
+  modelLabels?: Record<string, string>
 }
 export type AiGenerationResult = {
   status: string

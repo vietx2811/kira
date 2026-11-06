@@ -25,6 +25,23 @@ describe('listModelOptions', () => {
     ])
   })
 
+  test('shows the name the provider gives a model, the id otherwise', () => {
+    const options = listModelOptions([
+      provider({
+        id: 'claude_code',
+        type: 'claude_code',
+        model: 'claude-opus-5-5',
+        discoveredModels: ['claude-opus-5-5', 'claude-haiku-4-5-20251001', 'claude-new'],
+        discoveredModelLabels: { 'claude-opus-5-5': 'Opus 5.5', 'claude-haiku-4-5-20251001': 'Haiku 4.5' },
+      }),
+    ])
+    expect(options.map((option) => [option.model, option.label])).toEqual([
+      ['claude-opus-5-5', 'Opus 5.5'],
+      ['claude-haiku-4-5-20251001', 'Haiku 4.5'],
+      ['claude-new', 'claude-new'],
+    ])
+  })
+
   test('the same model name from two providers stays two choices', () => {
     const keys = listModelOptions([
       provider({ id: 'a', type: 'openrouter', model: 'gpt-5' }),
