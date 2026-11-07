@@ -2,6 +2,7 @@ import type { ComponentType } from 'react'
 import { Badge } from '@/components/base/badges/badges'
 import { ButtonGroup, ButtonGroupItem } from '@/components/base/button-group/button-group'
 import { StringSelect } from './StringSelect'
+import { PersonaSection } from './PersonaSection'
 import type { AiProviderProfile, AiRoutingMode } from '@/kira/ai/aiProviderDomain'
 import { aiRoutingLabels } from '@/kira/ai/aiProviderDomain'
 
@@ -38,6 +39,7 @@ export function SettingsGeneralTab({
 }) {
   return (
     <div className="flex flex-col gap-6">
+      <PersonaSection lang={lang} />
       <section className="flex flex-wrap items-end gap-3 border-b border-secondary pb-5" aria-label="AI defaults">
         <StringSelect
           aria-label="Routing"

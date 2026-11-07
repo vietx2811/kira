@@ -40,6 +40,8 @@ import { installScrambledClickRepair } from './kira/input/scrambledClickRepair'
 import { edgeLabelText, placeEdgeLabels } from './kira/canvas/edgeLabels'
 import { RELATIONS, normalizeRelation, relationWeight, type Relation } from './kira/canvas/relations'
 import { autoLayout, type AutoLayoutEdge, type AutoLayoutNode } from './kira/canvas/autoLayout'
+import { currentPersonaContext, withPersona } from './kira/ai/persona'
+import { loadPersonaContext } from './kira/ai/personaStore'
 import { MermaidPreview } from './components/application/mermaid/MermaidPreview'
 import { layerFlowchart, parseMermaidFlowchart } from './kira/mermaid/parseMermaid'
 import { buildBoardDraftPrompt, layoutBoardDraft, parseBoardDraft, type BoardDraft } from './kira/ai/boardDraft'
@@ -18024,7 +18026,11 @@ async function generateNativeAiText(provider: AiProviderProfile, prompt: string)
   // used to send provider and prompt at the top level, so every call failed
   // with "missing required key request" and no AI text feature ever ran in
   // the macOS app.
-  return invoke<AiGenerationResult>('generate_ai_text', { request: { provider: providerRequestPayload(provider), prompt } })
+  // Every text prompt starts with the user's persona (~/.creative-os/user.json),
+  // when there is one: kira/ai/persona.ts.
+  return invoke<AiGenerationResult>('generate_ai_text', {
+    request: { provider: providerRequestPayload(provider), prompt: withPersona(prompt, currentPersonaContext()) },
+  })
 }
 
 async function generateNativeAiVision(provider: AiProviderProfile, imageDataUrl: string, prompt: string) {
@@ -18825,6 +18831,8 @@ function safeDownloadName(value: string) {
 // click after typing inside out, which WebKit then drops. See
 // kira/input/scrambledClickRepair.ts.
 if (isTauriRuntime()) installScrambledClickRepair()
+// Read once at startup; Settings > About you updates it when saved.
+if (isTauriRuntime()) void loadPersonaContext()
 
 createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

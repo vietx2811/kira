@@ -152,6 +152,7 @@ User chốt 2026-09-15 (báo cáo `docs/research/2026-09-15-design-skills-github
 ## Ràng buộc đã chốt
 
 - **Claude Code provider**: CLI của user tự lo đăng nhập và token. KIRA không render login UI, không đọc hay lưu token; đăng nhập chỉ bằng mở Terminal chạy `claude auth login`. Không thêm OAuth hay device-code trong app: user đã từ chối.
+- **Persona của user** (chốt 2026-11-08): Kira tự đọc `~/.creative-os/user.json` (chỉ đúng file đó) lúc mở app và đặt khối "ABOUT THE USER" trước mọi prompt văn bản (`kira/ai/persona.ts`). Sửa trong Settings > General > Về bạn; lưu giữ nguyên các trường của công cụ khác trong file. Đọc thẳng `CLAUDE.md` và thư mục memory của Claude Code vào KIRA: **chưa chốt**, đang cân nhắc.
 - **Copy hiển thị cho user**: không em dash, dùng dấu phẩy, hai chấm hoặc dấu chấm (theo `.impeccable/critique/`). Prompt template gửi LLM không bị ràng buộc này.
 
 ## Gotcha khi dev
