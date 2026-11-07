@@ -7,8 +7,12 @@
   1. **Thuật toán hiện tại (`layoutBoardDraft`) có một lỗi nặng hơn "chồng chéo cạnh": nó làm nhiều node đè khít lên đúng một điểm khi đồ thị có chu trình hoặc đủ sâu.** Đo được trên fixture C (10 node, một vòng lặp phản hồi + 2 node rời): **10 cặp node chồng khít lên nhau** (5 node cùng một toạ độ `(50, 92)`), vì `y = clamp(22 + line*16, 8, 92)` bão hoà ở mức 92 ngay khi số "hàng" vượt khoảng 5 — một board AI vẽ đủ dài hoặc có vòng lặp sẽ tự nuốt chửng các node cuối vào một chồng không đọc được, mà số liệu "giao cắt cạnh" bằng 0 không hề cho thấy lỗi này.
   2. Trên bảng 12 node tiêu biểu của AI (đúng giới hạn `BOARD_DRAFT_MAX_NODES`, có cả liên kết chéo nhánh như chính prompt của Kira yêu cầu), giữ nguyên cách chia hàng hiện tại nhưng **đổi thứ tự trong hàng theo barycenter 3 lượt + tìm kiếm cục bộ toàn đồ thị** làm **giao cắt giảm từ 8 xuống 4 (50%)** và tổng chiều dài cạnh giảm từ 428,6 xuống 380,8 (khoảng 11%), đo trực tiếp bằng cổng thuật toán gốc.
   3. **Khuyến nghị kiến trúc: không có một thuật toán cho mọi hình dạng.** Cây/mindmap một nguồn → vẫn hàng theo tầng (`layerFlowchart` đã đúng hướng) nhưng phải thêm bước giảm giao cắt (barycenter + tìm kiếm cục bộ, đã đo ở trên). Đồ thị có chu trình hoặc rời rạc → chuyển sang force-directed (đo được: xoá sạch 10 cặp chồng khít, còn 1 giao cắt, nhưng tổng chiều dài cạnh tăng — đánh đổi hợp lý vì mục tiêu lúc này là *không chồng*, không phải *ngắn nhất*).
-  4. **Thư viện khuyến nghị tích hợp: `elkjs` cho pha layered/tidy-tree (web worker, lazy-load), `WebCola` cho pha force có ràng buộc (giữ node đã ghim đứng yên, loại cạnh "Liên quan" khỏi lực kéo) — không dùng `libavoid-js` hay `d3-flextree` ở MVP.** Lý do license và bảo trì ở §3.
+  4. **Thư viện khuyến nghị tích hợp: `elkjs` cho pha layered/tidy-tree (web worker, lazy-load), `WebCola` cho pha force có ràng buộc (giữ node đã ghim đứng yên, loại cạnh "Liên quan" khỏi lực kéo) — không dùng `libavoid-js` ở MVP (giải sai bài toán, không phải vì license), cân nhắc vendor `d3-flextree` cho tidy-tree biết kích thước card.** Bundle, bảo trì, nghĩa vụ license đi kèm (không còn là rào cản, chỉ là thông tin) ở §3.
   5. **Chưa đưa kích thước card thật (ảnh, palette, ý dài) vào bất kỳ thuật toán nào hôm nay, kể cả hai thuật toán thử trong prototype này** — đây là việc phải làm trước khi đưa ra production, không phải tuỳ chọn; xem §2.2.
+
+### Cập nhật 2026-11-07, sau khi báo cáo được gửi lần đầu
+
+User xác nhận: **KIRA sẽ miễn phí, license thương mại không còn là rào cản chọn thư viện.** Phần đánh giá license dưới đây (elkjs EPL-2.0/GPL-3.0, libavoid-js LGPL-2.1, d3-flextree WTFPL) **giữ nguyên làm thông tin tham khảo** (mỗi license đi kèm một nghĩa vụ cụ thể, ví dụ EPL buộc giữ notice, LGPL buộc công bố mã nguồn nếu sửa chính thư viện — người dùng nên biết để tuân thủ đúng, dù không phải lý do để loại), nhưng **không còn là tiêu chí loại bỏ**. Thứ tự ưu tiên đổi lại theo đúng yêu cầu mới: **chất lượng thuật toán trước, rồi kích thước bundle, rồi độ hợp Tauri + React 19** — xem đánh giá độ hợp ở §3.1 (mới thêm) và quyết định #5 đã sửa thành thông tin, không còn là lựa chọn chặn.
 
 Nhãn nguồn: **[code]**, **[ngoài]**, **[ngoài-phụ]**, **[suy luận]**, **[đo]** = số đo trực tiếp từ prototype trong báo cáo này.
 
@@ -45,7 +49,7 @@ Nhãn nguồn: **[code]**, **[ngoài]**, **[ngoài-phụ]**, **[suy luận]**, *
 
 | Thư viện | License [ngoài] | Hoạt động/bảo trì [ngoài] | Phù hợp hình dạng nào |
 |---|---|---|---|
-| **elkjs** (cổng JS của Eclipse Layout Kernel) | `EPL-2.0 OR GPL-3.0-or-later` theo npm — **cần chọn một nhánh khi phân phối**; dự án khác phải viết hẳn issue riêng để quyết định việc này cho bản MIT của họ [ngoài, `elkjs` trên npm, dẫn qua thảo luận kỹ thuật trong các repo khác] | Có bản thực tế dùng Web Worker (`elk-worker.min.js`), có dự án báo asset worker ~1,6MB chỉ tải khi bật auto-layout, không phình bundle chính nếu lazy-load đúng cách [ngoài-phụ, một dự án tự đo] | **Layered** (cây, DAG), **mrtree** (mindmap hai phía đối xứng gốc-giữa), **radial**, **force**, **rectpacking** — nhiều thuật toán trong một gói, đúng mục tiêu "chọn layout theo hình dạng" |
+| **elkjs** (cổng JS của Eclipse Layout Kernel) | Dual: `EPL-2.0 OR GPL-3.0-or-later` theo npm — **chọn nhánh EPL-2.0** khi phân phối (nghĩa vụ: giữ notice bản quyền, không copyleft lan sang code gọi nó) [ngoài, `elkjs` trên npm] | Có bản thực tế dùng Web Worker (`elk-worker.min.js`), có dự án báo asset worker ~1,6MB chỉ tải khi bật auto-layout, không phình bundle chính nếu lazy-load đúng cách [ngoài-phụ, một dự án tự đo] | **Layered** (cây, DAG), **mrtree** (mindmap hai phía đối xứng gốc-giữa), **radial**, **force**, **rectpacking** — nhiều thuật toán trong một gói, đúng mục tiêu "chọn layout theo hình dạng" |
 | **@dagrejs/dagre** | MIT cho `dagre-d3` (không tìm thấy công bố license riêng cho lõi `dagre`, chỉ số gián tiếp) [ngoài-phụ] | Dagre gốc được chính cộng đồng Mermaid/React Flow gọi là "không còn bảo trì" (nguồn 2021, chưa có xác nhận mới hơn trong lần tìm này) | Chỉ layered, nhẹ hơn elkjs nhưng rủi ro bảo trì cao hơn |
 | **d3-hierarchy** (`tree`, `cluster`) | Không xác định được license cụ thể trong lần tìm này — cần tự kiểm | Là một phần bộ D3 đang dùng rộng rãi, không có dấu hiệu ngừng | **Tidy tree 1 phía** sạch, nhanh, nhưng giả định mọi node cùng kích thước (không nhận chiều rộng/cao riêng từng node) |
 | **d3-flextree** | **WTFPL** (không ràng buộc gì) [ngoài, trang Snyk] | **Không còn hoạt động**, bản phát hành gần nhất "4 năm trước" tính tới lúc khảo sát [ngoài, Snyk] | Giải đúng bài toán "tidy tree với node kích thước khác nhau" KIRA cần (ảnh to hơn ý), nhưng không ai bảo trì. License tự do tuyệt đối nên **vendor thẳng mã nguồn** (copy vào repo, không phụ thuộc npm) là lựa chọn hợp lệ, không phải rủi ro pháp lý — chỉ là rủi ro "không ai sửa nếu có bug" |
@@ -54,11 +58,12 @@ Nhãn nguồn: **[code]**, **[ngoài]**, **[ngoài-phụ]**, **[suy luận]**, *
 | **WebCola** (độc lập, không qua Cytoscape) | MIT [ngoài] | Có dấu hiệu cập nhật trong năm khảo sát theo một listing bên thứ ba (chưa xác thực trực tiếp) [ngoài-phụ] | Layout có **ràng buộc tường minh** (constraint-based): đúng nhu cầu "node đã ghim không di chuyển", "cạnh `related` không kéo layout" — đây là layout **duy nhất trong danh sách có API ràng buộc sẵn** cho đúng hai yêu cầu đó, không cần tự chế |
 | **libavoid-js** | **LGPL-2.1-or-later** [ngoài, xác nhận ở nhiều downstream: `cytoscape-libavoid`, một fork Rust] | Viết và duy trì bởi một tác giả tại một phòng lab đại học; không có dữ liệu hoạt động 2026 trực tiếp cho bản JS, chỉ thấy một dự án khác ghim bản `0.4.5` hôm 2026-10-19 [ngoài-phụ] | Định tuyến cạnh **orthogonal né vật cản** — đúng cho "đường kẻ vuông góc né card", nhưng đây là **định tuyến cạnh, không phải đặt node** |
 
-**License, nói rõ cho app thương mại đóng gói [suy luận, không phải tư vấn pháp lý]:**
+**Nghĩa vụ đi kèm từng license, chỉ để biết — KIRA miễn phí nên đây không còn là tiêu chí loại [suy luận, không phải tư vấn pháp lý]:**
 
-- **elkjs (EPL-2.0 hoặc GPL-3.0):** dùng nguyên bản qua npm, không sửa mã nguồn elkjs, nói chung được xem là ổn cho ứng dụng đóng gói theo cách diễn giải phổ biến của EPL-2.0 (nghĩa vụ copyleft chỉ áp lên phần mã **sửa đổi của chính elkjs**, không lan sang code gọi nó) — nhưng đây là câu hỏi cần **luật sư hoặc người phụ trách giấy phép của user xác nhận**, không phải việc Researcher tự quyết.
-- **WebCola (MIT):** không có ràng buộc gì thêm, an toàn tuyệt đối cho app thương mại.
-- **libavoid-js (LGPL-2.1):** nếu chạy qua WASM không sửa đổi, LGPL cho phép liên kết vào phần mềm độc quyền mà không bắt mở mã phần đó; nghĩa vụ chỉ áp khi **sửa** chính thư viện. Vẫn nên xác nhận với người phụ trách giấy phép trước khi đưa vào sản phẩm bán ra.
+- **elkjs (chọn nhánh EPL-2.0):** dùng nguyên bản qua npm, không sửa mã nguồn elkjs → chỉ cần giữ notice bản quyền trong bản phân phối (thường là một dòng trong "about"/"licenses" của app); không bắt công bố mã nguồn của KIRA.
+- **WebCola (MIT):** không nghĩa vụ gì ngoài giữ notice.
+- **libavoid-js (LGPL-2.1):** nếu chạy qua WASM không sửa đổi, LGPL cho phép liên kết vào phần mềm độc quyền mà không bắt mở mã phần đó; nghĩa vụ chỉ phát sinh nếu **sửa** chính mã nguồn libavoid, lúc đó phải công bố đúng phần đã sửa.
+- **d3-flextree (WTFPL):** không nghĩa vụ gì, kể cả vendor nguyên mã nguồn vào repo.
 
 ### 1.3 Định tuyến cạnh (orthogonal vs curved)
 
@@ -112,6 +117,19 @@ Giữ nguyên `layerFlowchart` (gán hàng), chỉ thay bước "thứ tự tron
 | **3 (đồ thị chu trình/rời rạc)** | `WebCola` | Vào: `nodes` (có `width`/`height`/`fixed`), `links` (có `source`/`target`, gắn cờ loại khỏi constraint), `constraints` tuỳ chọn | Cola là mô phỏng vật lý liên tục — nặng hơn force rời rạc một lần; 200 node có khả năng cần giới hạn số vòng lặp hoặc chạy trong worker, **chưa đo** |
 | **Không dùng ở MVP** | `libavoid-js` | — | Giải đúng bài toán khác (định tuyến cạnh vuông góc), không phải đặt node; cân nhắc lại chỉ khi đổi hẳn phong cách cạnh sang orthogonal |
 
+### 3.1 Độ hợp Tauri + React 19, và thứ tự ưu tiên theo yêu cầu mới (chất lượng → bundle → độ hợp)
+
+**Cả bốn thư viện (`elkjs`, `WebCola`, `d3-flextree`, `d3-hierarchy`) đều là thư viện tính toán thuần JS/TS, không phải component React** — không ai trong số đó render gì cả, chỉ nhận một đồ thị và trả về toạ độ. KIRA đã tự vẽ node bằng component React của chính mình (`GraphCanvas` và các node card); tích hợp chỉ là gọi hàm layout rồi gán `x`/`y` vào state React như `layoutBoardDraft` đang làm hôm nay. **Không có vấn đề "độ hợp React 19"** theo nghĩa thường gặp với UI kit (không hook lạ, không Context Provider, không Suspense) — rủi ro duy nhất là chạy đồng bộ một phép tính nặng trên main thread làm giật UI, giải quyết bằng Web Worker (elkjs đã có sẵn; WebCola/d3-flextree/tự viết cần tự bọc worker nếu cần).
+
+**Độ hợp Tauri:** không có phụ thuộc Node-only hay trình duyệt-only nào trong bốn thư viện này (không dùng `fs`, không dùng `window` ngoài cách khởi tạo Worker chuẩn) — chạy được y hệt trong webview của Tauri như trong trình duyệt thường. elkjs dùng WASM/JS thuần cho phần lõi (không phải Java thật chạy trong Tauri, chỉ là Java **dịch sang** JS từ bản gốc Eclipse) nên không cần runtime Java nào trên máy user.
+
+**Xếp lại theo đúng thứ tự ưu tiên mới (chất lượng thuật toán → bundle → độ hợp):**
+
+1. **Tự viết (barycenter + tìm kiếm cục bộ, §2.3):** chất lượng đã đo cụ thể (8→4 giao cắt), bundle gần như 0 (vài trăm dòng, không thêm dependency), độ hợp tuyệt đối (code TypeScript thuần của chính KIRA). **Vẫn là lựa chọn pha 1**, không đổi dù license không còn là rào cản — vì nó đã thắng cả ba tiêu chí, không phải vì ngại elkjs.
+2. **elkjs:** chất lượng cao nhất trong khảo sát (5 thuật toán, kể cả các hình dạng tự viết chưa làm được như mrtree/radial), bundle nặng nhất trong nhóm (ước khoảng 500KB-1,6MB tuỳ nguồn, lazy-load được), độ hợp tốt (Worker sẵn). **Pha 2, khi cần mrtree/radial hoặc cây vượt khả năng thuật toán tự viết** — giữ nguyên khuyến nghị cũ, chỉ bỏ phần "cần duyệt pháp lý trước".
+3. **WebCola:** chất lượng đúng nhu cầu ràng buộc (pin, loại cạnh), bundle nhỏ (MIT, thư viện nhỏ gọn, không có số đo bundle cụ thể tìm được — cần tự đo), độ hợp tốt. **Pha 3, cho đồ thị chu trình/rời rạc**, giữ nguyên.
+4. **d3-flextree:** chất lượng đúng cho đúng một bài toán hẹp (tidy tree biết kích thước), bundle rất nhỏ (một file, có thể vendor), độ hợp tốt nhưng **không ai bảo trì** — rủi ro còn lại là chất lượng mã nguồn theo thời gian, không phải license hay độ hợp. Cân nhắc khi làm §2.2 (kích thước card).
+
 ---
 
 ## 4. Prototype: đo số giao cắt cạnh trước/sau [đo]
@@ -162,7 +180,7 @@ Không đổi — đúng kỳ vọng: cây sạch đã tối ưu sẵn, candidat
 2. **Thứ tự triển khai:** (a) vá barycenter + tìm kiếm cục bộ cho layered trước (rẻ, không thêm dependency, đã đo lợi ích) rồi mới xét `elkjs`/`WebCola` *(khuyến nghị)* · (b) nhảy thẳng sang `elkjs` cho mọi hình dạng, bỏ qua bước vá rẻ
 3. **Force layout khi có chu trình/rời rạc:** (a) `WebCola`, có constraint cho node ghim và cạnh `related` *(khuyến nghị)* · (b) `cytoscape-fcose` nếu muốn trọn bộ Cytoscape luôn (kéo theo toàn bộ thư viện Cytoscape, nặng hơn nếu KIRA không cần phần còn lại của nó)
 4. **Kích thước card khác nhau:** (a) vendor thuật toán `d3-flextree` (WTFPL, copy mã nguồn, không phụ thuộc npm) cho layered *(khuyến nghị)* · (b) tự viết lại từ đầu, không dùng mã có sẵn
-5. **License elkjs/EPL:** (a) xin xác nhận từ người phụ trách pháp lý của user trước khi đưa elkjs vào bản phát hành *(khuyến nghị, không phải việc Researcher tự quyết)* · (b) bỏ qua elkjs hoàn toàn, chỉ dùng thuật toán tự viết + WebCola (cả hai MIT)
+5. ~~License elkjs/EPL~~ — **không còn là quyết định cần chốt** (cập nhật 2026-11-07: KIRA miễn phí, license thương mại không còn là rào cản). Khi dùng elkjs, chỉ cần nhớ chọn nhánh **EPL-2.0** (không phải GPL-3.0) và giữ notice bản quyền trong bản phân phối, không cần hỏi lại ai.
 
 ## Giới hạn
 
