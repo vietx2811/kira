@@ -26,6 +26,7 @@ declare module 'bun:test' {
     toThrow(expected?: string | RegExp): void
     toBeGreaterThanOrEqual(expected: number): void
     toBeLessThanOrEqual(expected: number): void
+    toBeLessThan(expected: number): void
     not: Matchers<T>
   }
 
