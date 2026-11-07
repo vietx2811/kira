@@ -4584,9 +4584,9 @@ button.mini-tags-more:focus-visible {
    and grows out of this slot rather than pushing its neighbours. */
 .kira-launcher-wrap {
   position: relative;
-  flex: 0 0 44px;
-  width: 44px;
-  height: 44px;
+  flex: 0 0 48px;
+  width: 48px;
+  height: 48px;
 }
 
 /* One persistent element that IS the launcher and the composer — no
@@ -4599,12 +4599,12 @@ button.mini-tags-more:focus-visible {
    — see .is-open. */
 .kira-dock {
   position: absolute;
+  right: 0;
   bottom: 0;
-  left: 50%;
   z-index: 9;
   display: grid;
   overflow: hidden;
-  width: 44px;
+  width: 48px;
   grid-template-rows: auto 0fr;
   border: 1px solid transparent;
   border-radius: 50%;
@@ -4621,7 +4621,7 @@ button.mini-tags-more:focus-visible {
     0 12px 28px -8px rgb(0 0 0 / 0.65),
     0 0 0 1px var(--border-soft);
   color: var(--text-main);
-  transform: translate(-50%, 0);
+  transform: none;
   /* --ease-spring is reserved for canvas drag/drop (kira-controls §7); a
      control morph never overshoots. */
   transition:
@@ -4647,7 +4647,8 @@ button.mini-tags-more:focus-visible {
 
 .kira-dock.is-open {
   width: var(--kira-dock-width);
-  transform: translate(calc(-50% + var(--kira-dock-shift, 0px)), calc(-1 * var(--kira-dock-lift, 74px)));
+  /* Anchored to the corner orb: grows left and lifts above the zoom rail. */
+  transform: translateY(calc(-1 * var(--kira-dock-lift, 74px)));
   border-radius: var(--radius-3);
   cursor: default;
   will-change: width, transform;
@@ -4699,7 +4700,7 @@ button.mini-tags-more:focus-visible {
 .kira-dock-orb {
   display: grid;
   width: 100%;
-  height: 42px;
+  height: 44px;
   border: 0;
   border-radius: var(--radius-2);
   background: transparent;
@@ -4713,11 +4714,6 @@ button.mini-tags-more:focus-visible {
    one that just finished): the 44px circle widens into a pill, through the
    dock's own width/border-radius transition, so it reads as the same button
    telling you what it is doing. */
-.kira-dock.has-ai-status {
-  width: 236px;
-  border-radius: 22px;
-}
-
 .kira-ai-status {
   display: flex;
   align-items: center;
@@ -8887,4 +8883,160 @@ button.palette-color-segment:focus-visible code {
 .node-prov-badge:hover {
   color: var(--text-main);
   border-color: color-mix(in srgb, var(--text-main) 30%, transparent);
+}
+
+
+/* Kira corner orb (2026-11-07, user request): the app's own symbol in a
+   round plate with an aura ring in the project's accent, violet and amber
+   tokens. The ring turns while an AI call runs. A user-requested exception to
+   "no decorative gradients in steady-state UI", kept to a 2px ring and a
+   faint halo. */
+@property --kira-orb-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+
+.kira-dock:not(.is-open) {
+  border: 2px solid transparent;
+  background:
+    linear-gradient(var(--surface-inspector), var(--surface-inspector)) padding-box,
+    conic-gradient(from var(--kira-orb-angle), var(--accent-cyan), var(--accent-violet), var(--accent-amber), var(--accent-cyan)) border-box;
+}
+
+.kira-dock-cluster.is-ai-busy .kira-dock:not(.is-open) {
+  animation: kira-orb-turn 2.4s linear infinite;
+}
+
+@keyframes kira-orb-turn {
+  to { --kira-orb-angle: 360deg; }
+}
+
+.kira-launcher-wrap::before {
+  position: absolute;
+  inset: -8px;
+  border-radius: 50%;
+  background:
+    radial-gradient(60% 60% at 30% 35%, color-mix(in srgb, var(--accent-cyan) 40%, transparent), transparent 70%),
+    radial-gradient(60% 60% at 72% 62%, color-mix(in srgb, var(--accent-violet) 38%, transparent), transparent 70%);
+  content: "";
+  filter: blur(8px);
+  opacity: 0.7;
+  pointer-events: none;
+  transition: opacity var(--duration-base) var(--ease-soft);
+}
+
+.kira-dock-cluster.is-asking .kira-launcher-wrap::before {
+  opacity: 0;
+}
+
+.kira-orb-symbol {
+  display: block;
+  width: 24px;
+  height: 24px;
+  pointer-events: none;
+  transition: transform var(--duration-base) var(--ease-out-soft);
+}
+
+.kira-dock-orb:hover .kira-orb-symbol {
+  transform: scale(1.08);
+}
+
+.kira-dock-orb:active .kira-orb-symbol {
+  transform: scale(0.94);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kira-dock-cluster.is-ai-busy .kira-dock:not(.is-open) {
+    animation: none;
+  }
+}
+
+/* Corner placement: after the zoom rail, at the canvas's bottom-right. */
+.kira-dock-cluster {
+  position: relative;
+  margin-right: -6px;
+}
+
+.canvas-bottom-bar .canvas-zoom-rail {
+  margin-right: 0;
+}
+
+/* One caption slot above the orb. The padding bridges the gap so moving the
+   pointer from the orb up to the pill keeps the hover. */
+.kira-orb-caption {
+  position: absolute;
+  right: 0;
+  bottom: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  padding-bottom: 8px;
+  gap: 6px;
+  pointer-events: none;
+}
+
+.kira-orb-caption > *,
+.kira-dock-cluster:hover .kira-orb-caption {
+  pointer-events: auto;
+}
+
+.kira-orb-pill {
+  display: inline-flex;
+  align-items: center;
+  max-width: 260px;
+  height: 32px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--rail-plate);
+  backdrop-filter: blur(24px) saturate(1.35);
+  -webkit-backdrop-filter: blur(24px) saturate(1.35);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.06),
+    0 2px 4px rgb(0 0 0 / 0.35),
+    0 10px 24px -8px rgb(0 0 0 / 0.55);
+  color: var(--text-main);
+  cursor: pointer;
+  font-size: var(--text-small);
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.app-shell[data-color-mode="light"] .kira-orb-pill {
+  box-shadow:
+    inset 0 0 0 1px rgb(35 33 29 / 0.06),
+    0 2px 4px rgb(35 33 29 / 0.1),
+    0 10px 22px -10px rgb(35 33 29 / 0.3);
+}
+
+.kira-orb-pill kbd {
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: var(--text-small);
+}
+
+.kira-conversations-btn {
+  opacity: 0;
+  transform: translateY(4px);
+  visibility: hidden;
+  transition:
+    opacity var(--duration-base) var(--ease-soft),
+    transform var(--duration-base) var(--ease-out-soft),
+    visibility 0s linear var(--duration-base);
+}
+
+.kira-dock-cluster:hover .kira-conversations-btn,
+.kira-dock-cluster:focus-within .kira-conversations-btn {
+  opacity: 1;
+  transform: none;
+  visibility: visible;
+  transition:
+    opacity var(--duration-base) var(--ease-soft),
+    transform var(--duration-base) var(--ease-out-soft),
+    visibility 0s;
+}
+
+.kira-conversations-btn:hover {
+  background: var(--surface-inspector);
 }
