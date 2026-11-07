@@ -39,6 +39,7 @@ import { MermaidImportDialog } from './components/application/mermaid/MermaidImp
 import { installScrambledClickRepair } from './kira/input/scrambledClickRepair'
 import { edgeLabelText, placeEdgeLabels } from './kira/canvas/edgeLabels'
 import { RELATIONS, normalizeRelation, relationWeight, type Relation } from './kira/canvas/relations'
+import { autoLayout, type AutoLayoutEdge, type AutoLayoutNode } from './kira/canvas/autoLayout'
 import { MermaidPreview } from './components/application/mermaid/MermaidPreview'
 import { layerFlowchart, parseMermaidFlowchart } from './kira/mermaid/parseMermaid'
 import { buildBoardDraftPrompt, layoutBoardDraft, parseBoardDraft, type BoardDraft } from './kira/ai/boardDraft'
@@ -701,7 +702,7 @@ type DiscoveryFilter = 'all' | 'candidates' | 'open'
 type GraphCap = 75 | 150 | 300
 type OutlineFilter = 'all' | 'strong' | 'weak'
 type ActiveView = 'Canvas' | '3D' | 'Slides' | 'Outline'
-type GraphOrganizeMode = 'manual' | 'cluster' | 'flow' | 'timeline' | 'palette' | 'importance' | 'grid'
+type GraphOrganizeMode = 'manual' | 'mindmap' | 'cluster' | 'flow' | 'timeline' | 'palette' | 'importance' | 'grid'
 type CanvasTool = 'select' | 'link'
 type DroppedReferencePayload =
   | { kind: 'file'; file: File }
@@ -1662,6 +1663,7 @@ const graphCapLabels: Record<GraphCap, string> = {
 
 const graphOrganizeLabels: Record<GraphOrganizeMode, string> = {
   manual: 'Manual',
+  mindmap: 'Mindmap (auto)',
   cluster: 'Cluster by Idea',
   flow: 'Evidence Flow',
   timeline: 'Timeline',
@@ -3501,8 +3503,8 @@ function FileWorkspace({
     if (!position) return reference
     return {
       ...reference,
-      x: clamp(position.x, 5, 95),
-      y: clamp(position.y, 6, 94),
+      x: clampWorld(position.x),
+      y: clampWorld(position.y),
     }
   }
 
@@ -4419,8 +4421,30 @@ function FileWorkspace({
     onTransfersConsumed()
   }, [incomingTransfers])
 
-  async function organizeCanvas(mode: GraphOrganizeMode) {
+  async function organizeCanvas(mode: GraphOrganizeMode, measured?: OrganizeMeasurements) {
     if (mode === 'manual') return
+    if (mode === 'mindmap') {
+      if (!measured) return
+      const positions = await autoOrganizePositions(
+        { ideas, images, palettes, diagrams, placeholders },
+        links,
+        measured,
+      )
+      if (positions.size === 0) return
+      pushCanvasHistory()
+      const timestamp = nowIso()
+      const place = <T extends { id: string; x: number; y: number; updatedAt?: string }>(kind: GraphNodeKind, items: T[]) =>
+        items.map((item) => {
+          const position = positions.get(`${kind}:${item.id}`)
+          return position ? { ...item, x: position.x, y: position.y, updatedAt: timestamp } : item
+        })
+      setIdeas((current) => place('idea', current))
+      setImages((current) => place('image', current))
+      setPalettes((current) => place('palette', current))
+      setDiagrams((current) => place('diagram', current))
+      setPlaceholders((current) => place('placeholder', current))
+      return
+    }
     pushCanvasHistory()
     const layout = await organizeGraphLayout(mode, ideas, images, links, selection, palettes, diagrams, placeholders)
     setIdeas(layout.ideas)
@@ -8102,7 +8126,7 @@ function GraphCanvas({
   onNodeScaleChange: (kind: GraphNodeKind, id: string, scale: number, begin?: boolean) => void
   onNodeScaleReset: (nodes: CanvasNodeSelection[]) => void
   onDeleteNodes: (nodes: CanvasNodeSelection[]) => void
-  onOrganize: (mode: GraphOrganizeMode) => void
+  onOrganize: (mode: GraphOrganizeMode, measured?: OrganizeMeasurements) => void | Promise<void>
   // Dragging a node onto another open tab hands it off to that file instead of
   // moving it on this canvas — see moveNode()'s tab-bar hit-test below.
   onMoveNodeToOtherFile: (node: CanvasNodeSelection, targetFileId: string) => void
@@ -8199,7 +8223,7 @@ function GraphCanvas({
   const [relationFilter, setRelationFilter] = useState<RelationFilter>('all')
   const [discoveryFilter, setDiscoveryFilter] = useState<DiscoveryFilter>('all')
   const [graphCap, setGraphCap] = useState<GraphCap>(300)
-  const [organizeMode, setOrganizeMode] = useState<GraphOrganizeMode>('cluster')
+  const [organizeMode, setOrganizeMode] = useState<GraphOrganizeMode>('mindmap')
   const [isGraphToolsOpen, setIsGraphToolsOpen] = useState(false)
   const [arcMenu, setArcMenu] = useState<Pick<GraphNodeRef, 'kind' | 'id' | 'x' | 'y'> | null>(null)
   const [multiSelectedNodes, setMultiSelectedNodes] = useState<CanvasNodeSelection[]>([])
@@ -8666,7 +8690,7 @@ function GraphCanvas({
       }
       if (event.shiftKey && !event.metaKey && !event.ctrlKey && !event.altKey && key === 'a') {
         event.preventDefault()
-        onOrganize(organizeMode)
+        void runOrganizeRef.current()
         return
       }
       if ((event.metaKey || event.ctrlKey) && !event.altKey && (event.key === '+' || event.key === '=')) {
@@ -8799,8 +8823,8 @@ function GraphCanvas({
     if (!rect) return null
 
     return {
-      x: clamp(((event.clientX - rect.left - graphTransform.x) / graphTransform.scale / rect.width) * 100, 5, 95),
-      y: clamp(((event.clientY - rect.top - graphTransform.y) / graphTransform.scale / rect.height) * 100, 6, 94),
+      x: clampWorld(((event.clientX - rect.left - graphTransform.x) / graphTransform.scale / rect.width) * 100),
+      y: clampWorld(((event.clientY - rect.top - graphTransform.y) / graphTransform.scale / rect.height) * 100),
     }
   }
 
@@ -9223,8 +9247,8 @@ function GraphCanvas({
 
     event.preventDefault()
     onNodeMove(kind, id, {
-      x: clamp(pointer.x - activeDrag.offsetX, 5, 95),
-      y: clamp(pointer.y - activeDrag.offsetY, 6, 94),
+      x: clampWorld(pointer.x - activeDrag.offsetX),
+      y: clampWorld(pointer.y - activeDrag.offsetY),
     })
   }
 
@@ -9264,8 +9288,8 @@ function GraphCanvas({
     if (!pointer) return
     event.preventDefault()
     onFrameMove(active.id, {
-      x: clamp(pointer.x - active.offsetX, 5, 95),
-      y: clamp(pointer.y - active.offsetY, 6, 94),
+      x: clampWorld(pointer.x - active.offsetX),
+      y: clampWorld(pointer.y - active.offsetY),
     })
   }
 
@@ -10162,9 +10186,66 @@ function GraphCanvas({
     }))
   }
 
-  function resetGraphView() {
-    setGraphTransform({ x: 0, y: 0, scale: 1 })
+  // Fit every card into the visible part of the canvas (between the side
+  // panels, above the bottom bar). The viewport scales around its centre
+  // (.graph-viewport transform-origin 50% 50%), so card positions are read
+  // back from the screen and inverted through the current transform.
+  function fitGraphToContent() {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const canvasBox = canvas.getBoundingClientRect()
+    const cards = canvas.querySelectorAll<HTMLElement>('.graph-viewport [data-node-kind][data-node-id]')
+    if (cards.length === 0 || canvasBox.width === 0) {
+      setGraphTransform({ x: 0, y: 0, scale: 1 })
+      return
+    }
+    const { x: tx, y: ty, scale } = graphTransform
+    const cx = canvasBox.width / 2
+    const cy = canvasBox.height / 2
+    let minX = Infinity
+    let minY = Infinity
+    let maxX = -Infinity
+    let maxY = -Infinity
+    cards.forEach((card) => {
+      const box = card.getBoundingClientRect()
+      const left = cx + (box.left - canvasBox.left - cx - tx) / scale
+      const top = cy + (box.top - canvasBox.top - cy - ty) / scale
+      minX = Math.min(minX, left)
+      minY = Math.min(minY, top)
+      maxX = Math.max(maxX, left + box.width / scale)
+      maxY = Math.max(maxY, top + box.height / scale)
+    })
+    const styles = getComputedStyle(canvas)
+    const leftInset = Number.parseFloat(styles.getPropertyValue('--canvas-overlay-left-inset')) || 0
+    const rightInset = Number.parseFloat(styles.getPropertyValue('--canvas-right-inset')) || 0
+    const area = { left: leftInset + 32, right: canvasBox.width - rightInset - 32, top: 72, bottom: canvasBox.height - 96 }
+    const nextScale = clamp(
+      Math.min((area.right - area.left) / Math.max(1, maxX - minX), (area.bottom - area.top) / Math.max(1, maxY - minY), 1),
+      0.12,
+      1,
+    )
+    const targetX = (area.left + area.right) / 2
+    const targetY = (area.top + area.bottom) / 2
+    const contentX = (minX + maxX) / 2
+    const contentY = (minY + maxY) / 2
+    setGraphTransform({
+      x: clamp(targetX - cx - nextScale * (contentX - cx), -2400, 2400),
+      y: clamp(targetY - cy - nextScale * (contentY - cy), -1800, 1800),
+      scale: Number(nextScale.toFixed(3)),
+    })
   }
+
+  function resetGraphView() {
+    fitGraphToContent()
+  }
+
+  // Organize, then fit the result into view once the new positions render.
+  async function runOrganize() {
+    await onOrganize(organizeMode, { sizes: nodeSizes, canvas: { width: canvasWidth, height: canvasHeight } })
+    window.requestAnimationFrame(() => window.requestAnimationFrame(fitGraphToContent))
+  }
+  const runOrganizeRef = useRef(runOrganize)
+  runOrganizeRef.current = runOrganize
 
   function startPan(event: React.PointerEvent<HTMLDivElement>) {
     const target = event.target instanceof Element ? event.target : null
@@ -10384,7 +10465,7 @@ function GraphCanvas({
           <button type="button" aria-label="Zoom in" onClick={() => updateZoom(0.15)}>
             <RailIcon name="zin" />
           </button>
-          <button type="button" aria-label="Reset canvas view" onClick={resetGraphView}>
+          <button type="button" aria-label="Fit board in view" onClick={resetGraphView}>
             <RailIcon name="fit" />
           </button>
           <span className="canvas-zoom-status">
@@ -11474,7 +11555,7 @@ function GraphCanvas({
                 >
                   {(item) => <Select.Item id={item.id}>{item.label}</Select.Item>}
                 </Select>
-                <Button color="secondary" size="sm" onPress={() => onOrganize(organizeMode)}>
+                <Button color="secondary" size="sm" onPress={() => void runOrganize()}>
                   Apply
                 </Button>
               </div>
@@ -16273,6 +16354,59 @@ type LayoutVerificationReport = {
   span: number
 }
 
+type OrganizeMeasurements = {
+  /** Rendered card sizes in px at zoom 1, keyed `${kind}:${id}`. */
+  sizes: Map<string, { w: number; h: number }>
+  /** Canvas size in px: 100% of the world on each axis. */
+  canvas: { width: number; height: number }
+}
+
+// Mindmap auto-organize (kira/canvas/autoLayout.ts): lays the board out at
+// real card sizes, then maps px to world percent around the world's centre.
+// "Related" links never pull the layout.
+async function autoOrganizePositions(
+  nodes: { ideas: Idea[]; images: EvidenceImage[]; palettes: PaletteNode[]; diagrams: DiagramNode[]; placeholders: PlaceholderNode[] },
+  links: EvidenceLink[],
+  measured: OrganizeMeasurements,
+) {
+  const { width, height } = measured.canvas
+  const result = new Map<string, { x: number; y: number }>()
+  if (width <= 0 || height <= 0) return result
+  const entries: AutoLayoutNode[] = []
+  const add = (kind: GraphNodeKind, items: Array<{ id: string; importance?: number; scale?: number }>) => {
+    for (const item of items) {
+      const key = `${kind}:${item.id}`
+      const size = measured.sizes.get(key)
+      const fallbackScale = effectiveNodeScale(item)
+      entries.push({
+        key,
+        width: Math.max(40, size?.w ?? layoutNodeWidth(kind, fallbackScale)),
+        height: Math.max(30, size?.h ?? layoutNodeHeight(kind, fallbackScale)),
+        weight: item.importance ?? 0,
+      })
+    }
+  }
+  add('idea', nodes.ideas)
+  add('image', nodes.images)
+  add('palette', nodes.palettes)
+  add('diagram', nodes.diagrams)
+  add('placeholder', nodes.placeholders)
+  const edges: AutoLayoutEdge[] = links.map((link) => ({
+    source: `${link.sourceKind ?? 'image'}:${link.sourceNodeId ?? link.imageId}`,
+    target: `${link.targetKind ?? 'idea'}:${link.targetNodeId ?? link.ideaId}`,
+    relation: link.relation,
+  }))
+  const { default: ELK } = await import('elkjs/lib/elk.bundled.js')
+  const layout = await autoLayout(new ELK(), entries, edges, { aspectRatio: width / height })
+  for (const [key, point] of layout.positions) {
+    result.set(key, {
+      x: Number(clampWorld(50 + (point.x / width) * 100).toFixed(2)),
+      y: Number(clampWorld(50 + (point.y / height) * 100).toFixed(2)),
+    })
+  }
+  return result
+}
+
 async function organizeGraphLayout(
   mode: GraphOrganizeMode,
   ideas: Idea[],
@@ -16414,6 +16548,17 @@ async function organizeGraphLayout(
     diagrams: nextDiagrams,
     placeholders: nextPlaceholders,
   }
+}
+
+// The board's world is measured in percent of the canvas at zoom 1, but it is
+// not limited to one screen: auto-organize lays a large board out at real
+// card sizes and zooms to fit, so cards can sit beyond 0-100. Dragging stays
+// inside this wider range.
+const WORLD_PERCENT_MIN = -400
+const WORLD_PERCENT_MAX = 500
+
+function clampWorld(value: number) {
+  return clamp(value, WORLD_PERCENT_MIN, WORLD_PERCENT_MAX)
 }
 
 function layoutKey(kind: LayoutNodeKind, id: string) {
