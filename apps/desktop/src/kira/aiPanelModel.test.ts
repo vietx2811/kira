@@ -9,6 +9,7 @@ import { describe, expect, test } from 'bun:test'
 import {
   acceptBulk,
   acceptItem,
+  acceptNodesBatch,
   bulkAcceptable,
   createEmptyAiPanelState,
   dismissSkillCheckpoint,
@@ -16,7 +17,9 @@ import {
   markCreateNodeItemEdited,
   markStaleOnUserEdit,
   needsYouCount,
+  proposeNodesBatch,
   rejectItem,
+  rejectNodesBatch,
   removeAppliedNode,
   revertAcceptedItem,
   revertRemovedItem,
@@ -27,6 +30,7 @@ import {
 import type {
   AiChangeSet,
   AiCreateNodeItem,
+  AiCreateNodesBatchItem,
   AiDeleteNodeItem,
   AiEditPaletteItem,
   AiEditTextItem,
@@ -34,6 +38,7 @@ import type {
   AiSkillCheckpoint,
   AiThread,
 } from './aiPanelTypes'
+import { SOURCE_DRAFT_ID } from './aiPanelTypes'
 
 // ---------------------------------------------------------------------------
 // Fixtures: mockup.js s3-changes ("Tách nhánh concept Hanoi noir" +
@@ -104,6 +109,158 @@ function deleteItem(): AiDeleteNodeItem {
     linkCountAffected: 2,
   }
 }
+
+// ---------------------------------------------------------------------------
+// Fixtures: create-nodes-batch ("mở rộng nhánh" — docs/research/
+// 2026-11-07-kira-agent-workflow.md §1.1, §1.3). A separate changeset from
+// branchesChangeSet()/s3State() above so adding it never shifts those
+// fixtures' hardcoded expected counts.
+// ---------------------------------------------------------------------------
+
+function batchItem(status: AiCreateNodesBatchItem['status'] = 'pending'): AiCreateNodesBatchItem {
+  return {
+    kind: 'create-nodes-batch',
+    id: 'item-expand-batch',
+    createdAt: '2026-09-14T15:00:00.000Z',
+    status,
+    nodes: [
+      { draftId: 'n1', nodeId: 'idea-child-1', title: 'Cold light', content: 'Fluorescent, clinical.', x: 60, y: 40 },
+      { draftId: 'n2', nodeId: 'idea-child-2', title: 'Warm light', content: 'Tungsten, intimate.', x: 70, y: 50 },
+    ],
+    links: [
+      { fromDraftId: SOURCE_DRAFT_ID, toDraftId: 'n1', relation: 'contrasts', label: 'tension' },
+      { fromDraftId: SOURCE_DRAFT_ID, toDraftId: 'n2', relation: 'example' },
+      { fromDraftId: 'n1', toDraftId: 'n2', relation: 'related' },
+    ],
+    sourceNodeId: 'idea-hanoi-noir',
+    sourceNodeKind: 'idea',
+  }
+}
+
+function expandChangeSet(status: AiCreateNodesBatchItem['status'] = 'pending'): AiChangeSet {
+  return {
+    id: 'cs-expand',
+    runId: 'run-expand',
+    threadId: 'thread-expand',
+    title: 'Expand: light quality',
+    createdAt: '2026-09-14T15:00:00.000Z',
+    items: [batchItem(status)],
+  }
+}
+
+describe('create-nodes-batch: propose / accept / reject', () => {
+  test('proposeNodesBatch appends a pending item to the target ChangeSet', () => {
+    const state: AiPanelState = { ...createEmptyAiPanelState(), changeSets: [{ ...expandChangeSet(), items: [] }] }
+    const result = proposeNodesBatch(state, 'cs-expand', batchItem())
+    expect(result.ok).toBe(true)
+    if (!result.ok) throw new Error('unreachable')
+    expect(result.state.changeSets[0]?.items).toHaveLength(1)
+    expect(result.operations).toEqual([])
+    expect(needsYouCount(result.state)).toBe(1)
+  })
+
+  test('proposeNodesBatch refuses an unknown changeSetId', () => {
+    const result = proposeNodesBatch(createEmptyAiPanelState(), 'cs-does-not-exist', batchItem())
+    expect(result.ok).toBe(false)
+  })
+
+  test('acceptNodesBatch returns one create-node op per node and one create-link op per link, including links to the source sentinel', () => {
+    const state: AiPanelState = { ...createEmptyAiPanelState(), changeSets: [expandChangeSet()] }
+    const result = acceptNodesBatch(state, 'cs-expand', 'item-expand-batch')
+    expect(result.ok).toBe(true)
+    if (!result.ok) throw new Error('unreachable')
+    const creates = result.operations.filter((op) => op.type === 'create-node')
+    const links = result.operations.filter((op) => op.type === 'create-link')
+    expect(creates).toHaveLength(2)
+    expect(links).toHaveLength(3)
+    const sourceLink = links.find((op) => op.type === 'create-link' && op.sourceNodeId === 'idea-hanoi-noir')
+    expect(sourceLink).toBeTruthy()
+    if (sourceLink?.type === 'create-link') {
+      expect(sourceLink.sourceKind).toBe('idea')
+      expect(sourceLink.targetNodeId).toBe('idea-child-1')
+      expect(sourceLink.relation).toBe('contrasts')
+    }
+  })
+
+  test('acceptNodesBatch marks the item accepted and records provenance for every new node', () => {
+    const state: AiPanelState = { ...createEmptyAiPanelState(), changeSets: [expandChangeSet()] }
+    const result = acceptNodesBatch(state, 'cs-expand', 'item-expand-batch')
+    if (!result.ok) throw new Error('unreachable')
+    const item = result.state.changeSets[0]?.items[0] as AiCreateNodesBatchItem
+    expect(item.status).toBe('accepted')
+    expect(result.state.provenance['idea:idea-child-1']).toEqual({
+      aiGenerated: true,
+      runId: 'run-expand',
+      threadId: 'thread-expand',
+      editedAfterGeneration: false,
+    })
+    expect(result.state.provenance['idea:idea-child-2']?.aiGenerated).toBe(true)
+  })
+
+  test('acceptNodesBatch drops a link whose endpoint resolves to nothing (stray draftId, or a sentinel with no sourceNodeId)', () => {
+    const noAnchor: AiCreateNodesBatchItem = { ...batchItem(), sourceNodeId: undefined, sourceNodeKind: undefined }
+    const state: AiPanelState = { ...createEmptyAiPanelState(), changeSets: [{ ...expandChangeSet(), items: [noAnchor] }] }
+    const result = acceptNodesBatch(state, 'cs-expand', 'item-expand-batch')
+    if (!result.ok) throw new Error('unreachable')
+    const links = result.operations.filter((op) => op.type === 'create-link')
+    // Only n1->n2 resolves; both source-anchored links are dropped.
+    expect(links).toHaveLength(1)
+  })
+
+  test('acceptNodesBatch refuses a non-pending item', () => {
+    const state: AiPanelState = { ...createEmptyAiPanelState(), changeSets: [expandChangeSet('accepted')] }
+    const result = acceptNodesBatch(state, 'cs-expand', 'item-expand-batch')
+    expect(result.ok).toBe(false)
+  })
+
+  test('acceptNodesBatch refuses a non-batch item (use acceptItem instead)', () => {
+    const state: AiPanelState = { ...createEmptyAiPanelState(), changeSets: [branchesChangeSet()] }
+    const result = acceptNodesBatch(state, 'cs-branches', 'item-text-edit')
+    expect(result.ok).toBe(false)
+  })
+
+  test('rejectNodesBatch moves a pending item to rejected with no operations', () => {
+    const state: AiPanelState = { ...createEmptyAiPanelState(), changeSets: [expandChangeSet()] }
+    const result = rejectNodesBatch(state, 'cs-expand', 'item-expand-batch')
+    expect(result.ok).toBe(true)
+    if (!result.ok) throw new Error('unreachable')
+    expect((result.state.changeSets[0]?.items[0] as AiCreateNodesBatchItem).status).toBe('rejected')
+    expect(result.operations).toEqual([])
+  })
+
+  test('rejectNodesBatch refuses an already-accepted item', () => {
+    const state: AiPanelState = { ...createEmptyAiPanelState(), changeSets: [expandChangeSet('accepted')] }
+    const result = rejectNodesBatch(state, 'cs-expand', 'item-expand-batch')
+    expect(result.ok).toBe(false)
+  })
+
+  test('a pending batch item counts toward needsYouCount; accepted/rejected do not', () => {
+    expect(needsYouCount({ ...createEmptyAiPanelState(), changeSets: [expandChangeSet('pending')] })).toBe(1)
+    expect(needsYouCount({ ...createEmptyAiPanelState(), changeSets: [expandChangeSet('accepted')] })).toBe(0)
+    expect(needsYouCount({ ...createEmptyAiPanelState(), changeSets: [expandChangeSet('rejected')] })).toBe(0)
+  })
+
+  test('bulkAcceptable excludes a pending batch item (accepting 6-12 new nodes needs its own click)', () => {
+    const mixed: AiChangeSet = { ...branchesChangeSet(), items: [...branchesChangeSet().items, batchItem()] }
+    const eligible = bulkAcceptable(mixed)
+    expect(eligible.some((item) => item.kind === 'create-nodes-batch')).toBe(false)
+  })
+
+  test('revertAcceptedItem sends an accepted batch item back to pending, not stale', () => {
+    const state: AiPanelState = { ...createEmptyAiPanelState(), changeSets: [expandChangeSet('accepted')] }
+    const result = revertAcceptedItem(state, 'cs-expand', 'item-expand-batch')
+    expect(result.ok).toBe(true)
+    if (!result.ok) throw new Error('unreachable')
+    expect((result.state.changeSets[0]?.items[0] as AiCreateNodesBatchItem).status).toBe('pending')
+    expect(result.operations).toEqual([])
+  })
+
+  test('round-trips a create-nodes-batch item through JSON', () => {
+    const original: AiPanelState = { ...createEmptyAiPanelState(), changeSets: [expandChangeSet()] }
+    const restored = fromSnapshot(JSON.parse(JSON.stringify(toSnapshot(original))))
+    expect(restored.changeSets).toEqual(original.changeSets)
+  })
+})
 
 function branchesChangeSet(): AiChangeSet {
   return {

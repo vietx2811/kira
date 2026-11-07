@@ -8829,6 +8829,32 @@ button.palette-color-segment:focus-visible code {
   text-underline-offset: 3px;
 }
 
+/* "Cần bạn" preview list for a pending create-nodes-batch item — just the
+   drafted node titles, no diff/swatch compare needed (nothing exists on the
+   canvas yet to compare against). Same text-small + muted-label convention
+   as .pal-compare above. */
+.batch-node-preview {
+  display: grid;
+  margin: 8px 0 0;
+  padding: 0;
+  gap: 4px;
+  list-style: none;
+  font-size: var(--text-small);
+  color: var(--text-soft);
+}
+
+.batch-node-preview li {
+  position: relative;
+  padding-left: 14px;
+}
+
+.batch-node-preview li::before {
+  position: absolute;
+  left: 0;
+  content: "+";
+  color: var(--text-muted);
+}
+
 .pal-compare {
   display: grid;
   grid-template-columns: 34px minmax(0, 1fr);

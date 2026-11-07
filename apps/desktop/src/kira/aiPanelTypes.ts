@@ -12,8 +12,16 @@
  * Spec sources: docs/design/right-panel/DECISIONS.md,
  * docs/research/2026-09-13-right-panel-and-research-harness.md (§A2-A6),
  * docs/research/2026-09-13-right-panel-harness-oss.md (§2.2),
- * docs/design/right-panel/mockup.js.
+ * docs/design/right-panel/mockup.js,
+ * docs/research/2026-11-07-kira-agent-workflow.md (§1.1, §1.3: the
+ * create-nodes-batch item below).
  */
+
+// kira/canvas/relations.ts is the same kind of sibling, self-contained
+// module this one is (no main.tsx import) — safe to depend on directly,
+// unlike GraphNodeKind/AiProviderType above which are copies because
+// main.tsx itself owns those unions.
+import type { Relation } from './canvas/relations'
 
 // ---------------------------------------------------------------------------
 // Shared primitives (mirrors of main.tsx unions — keep in sync manually)
@@ -153,7 +161,66 @@ export interface AiDeleteNodeItem extends AiChangeItemBase {
   linkCountAffected?: number
 }
 
-export type AiChangeItem = AiCreateNodeItem | AiEditTextItem | AiEditPaletteItem | AiDeleteNodeItem
+export type NodesBatchItemStatus = 'pending' | 'accepted' | 'rejected'
+
+/** A node drafted as part of a create-nodes-batch proposal. `draftId` is a
+ *  label scoped to this one item — how `links` below reference nodes before
+ *  any of them have a real canvas id. `nodeId` is the id the node gets on
+ *  the canvas once the batch is accepted: decided at propose time (by the
+ *  caller, which also builds the id — this module never generates one), not
+ *  at accept time, so the proposal is fully deterministic and reproducible
+ *  in a test. Every batch node is an idea — the two flows that produce a
+ *  batch (expand a branch, draft a whole board) both only ever write ideas. */
+export interface AiNodesBatchDraftNode {
+  draftId: string
+  nodeId: string
+  title: string
+  content: string
+  x: number
+  y: number
+}
+
+/** The reserved draftId a link uses to mean "the existing node this batch
+ *  branches from" (AiCreateNodesBatchItem.sourceNodeId), not one of this
+ *  item's own drafted nodes. Absent when the batch has no anchor (drafting a
+ *  whole board on an empty canvas) — a link naming it in that case is
+ *  dropped (acceptNodesBatch has nothing to resolve it to). */
+export const SOURCE_DRAFT_ID = 'source'
+
+export interface AiNodesBatchDraftLink {
+  fromDraftId: string
+  toDraftId: string
+  relation: Relation
+  label?: string
+}
+
+/** create-nodes-batch: N new idea nodes + links proposed as a single unit —
+ *  "mở rộng nhánh" (expand a branch from an existing node) or "vẽ cả bảng"
+ *  (draft a whole board), research §1.1. Unlike create-node (applied
+ *  immediately, DECISIONS.md #2), this always waits for approval in "Cần
+ *  bạn" — a deliberate difference from the single-node path, not an
+ *  oversight (research §1.1, decision D1a: one node is cheap to see and
+ *  delete, 6-12 nodes landing on the canvas at once is not). Accepting
+ *  creates every node and link as one canvas-history entry, so one Cmd+Z
+ *  undoes the whole block; rejecting creates nothing.
+ *
+ *  There is no per-node create-node item behind an accepted batch — the unit
+ *  of undo and of removal here is the whole block, not one node at a time.
+ *  Deleting a single batch-created node afterward goes through the canvas's
+ *  own delete, same as any other node; the guarded "Gỡ node" flow
+ *  (removeAppliedNode) is for the single-node create-node path only. */
+export interface AiCreateNodesBatchItem extends AiChangeItemBase {
+  kind: 'create-nodes-batch'
+  status: NodesBatchItemStatus
+  nodes: AiNodesBatchDraftNode[]
+  links: AiNodesBatchDraftLink[]
+  /** Node this batch branches from ("mở rộng nhánh"). Absent for a
+   *  whole-board draft, which has no anchor. */
+  sourceNodeId?: string
+  sourceNodeKind?: GraphNodeKind
+}
+
+export type AiChangeItem = AiCreateNodeItem | AiCreateNodesBatchItem | AiEditTextItem | AiEditPaletteItem | AiDeleteNodeItem
 export type AiChangeItemKind = AiChangeItem['kind']
 
 export interface AiChangeSet {
@@ -222,6 +289,23 @@ export type AiCanvasOperation =
       runId: string
       aiGenerated: boolean
       note?: string
+    }
+  // acceptNodesBatch's output (aiPanelModel.ts): one create-node per batch
+  // node, one create-link per batch link that resolved on both ends. main.tsx
+  // creates the Idea/EvidenceLink records and records the node version itself
+  // (no separate record-node-version op — unlike update-node-text/-palette,
+  // there is no "before" to diff against, so it bundles straight into the
+  // create-node handler, same as createAiNode's single-node path already does).
+  | { type: 'create-node'; nodeKind: 'idea'; nodeId: string; title: string; content: string; x: number; y: number; runId: string }
+  | {
+      type: 'create-link'
+      id: string
+      sourceNodeId: string
+      targetNodeId: string
+      sourceKind: GraphNodeKind
+      targetKind: GraphNodeKind
+      relation: Relation
+      label?: string
     }
 
 // ---------------------------------------------------------------------------
