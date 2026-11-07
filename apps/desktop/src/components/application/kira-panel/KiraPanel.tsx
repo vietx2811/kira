@@ -46,7 +46,7 @@
 // rect was the canvas's `svg.edge-layer`, after it's `.kira-panel`'s own
 // `.kp-head`.
 import type { CSSProperties, ReactNode } from 'react'
-import { X } from 'lucide-react'
+import { Minimize2 } from 'lucide-react'
 import { Tab, TabList, Tabs } from '@/components/application/tabs/tabs'
 import { Button } from '@/components/base/buttons/button'
 import { Tooltip } from '@/components/base/tooltip/tooltip'
@@ -107,7 +107,7 @@ export function KiraPanel({
               </TabList>
               <span className="spacer" />
               <Tooltip title={closeLabel} delay={200}>
-                <Button color="tertiary" size="sm" iconLeading={X} aria-label={closeLabel} onPress={onClose} />
+                <Button color="tertiary" size="sm" iconLeading={Minimize2} aria-label={closeLabel} onPress={onClose} />
               </Tooltip>
             </div>
           </div>

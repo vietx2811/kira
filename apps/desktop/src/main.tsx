@@ -123,6 +123,7 @@ import {
   LocateFixed,
   Maximize2,
   Minimize2,
+  MessagesSquare,
   Network,
   Palette,
   PanelRight,
@@ -879,9 +880,10 @@ const UI_STRINGS: Record<string, { en: string; vi: string }> = {
   'kira.scopeFullBoard': { en: 'Full board', vi: 'Toàn bộ bảng' },
   'kira.panel.open': { en: 'Open Kira panel', vi: 'Mở panel Kira' },
   'kira.panel.close': { en: 'Close Kira panel', vi: 'Đóng panel Kira' },
+  'kira.conversations': { en: 'Conversations', vi: 'Trao đổi' },
   'kira.panel.tabChat': { en: 'Chat', vi: 'Chat' },
   'kira.panel.tabNeedsYou': { en: 'Needs you', vi: 'Cần bạn' },
-  'kira.panel.closeButton': { en: 'Close panel', vi: 'Đóng panel' },
+  'kira.panel.closeButton': { en: 'Collapse to the Kira button', vi: 'Thu gọn về nút Kira' },
   'kira.panel.newThread': { en: 'New thread', vi: 'Thread mới' },
   'kira.panel.threadFallbackTitle': { en: 'New thread', vi: 'Thread mới' },
   'kira.panel.emptyTitle': { en: 'No threads yet', vi: 'Chưa có thread nào' },
@@ -7566,7 +7568,9 @@ function App() {
     return () => window.removeEventListener('keydown', handleTabBarKeydown)
   }, [activeFileId, files, kiraPanelOpenByFile, handleKiraPanelOpenChange])
 
-  const tabBar = (aiStatus: TopbarAiStatus) => (
+  // Kira lives in the canvas corner (the orb), not in the tab bar: one entry
+  // point for asking and for the conversations panel. ⌥⌘K still toggles it.
+  const tabBar = () => (
     <nav
       className="file-tab-bar"
       aria-label="Open files"
@@ -7641,23 +7645,6 @@ function App() {
       </div>
       <button type="button" className="file-tab-add" aria-label="New file" title="New file" onClick={() => void requestNewFile()}>
         <Plus size={13} />
-      </button>
-      <button
-        type="button"
-        className={kiraPanelOpenByFile[activeFileId] ? 'panel-toggle is-active' : 'panel-toggle'}
-        aria-pressed={kiraPanelOpenByFile[activeFileId] ?? false}
-        aria-label={
-          kiraPanelOpenByFile[activeFileId]
-            ? t('kira.panel.close', lang)
-            : t('kira.panel.open', lang)
-        }
-        title={`Kira (⌥⌘K) · ${aiStatus.title}`}
-        onClick={() => handleKiraPanelOpenChange(activeFileId, !(kiraPanelOpenByFile[activeFileId] ?? false))}
-      >
-        <span className={`kira-ai-dot is-${aiStatus.state}`} role="img" aria-label={aiStatus.title} />
-        <PanelRight size={13} />
-        <span>Kira</span>
-        {(kiraNeedsYouByFile[activeFileId] ?? 0) > 0 && <span className="count">{kiraNeedsYouByFile[activeFileId]}</span>}
       </button>
     </nav>
   )
@@ -8507,14 +8494,6 @@ function GraphCanvas({
   // there after a flash under the (right-biased) launcher position.
   useLayoutEffect(() => {
     if (!isKiraOpen) return
-    const dock = kiraDockRef.current
-    const bar = dock?.closest('.canvas-bottom-bar')
-    if (dock instanceof HTMLElement && bar instanceof HTMLElement) {
-      const dockBox = dock.getBoundingClientRect()
-      const barBox = bar.getBoundingClientRect()
-      const shift = Math.round((barBox.left + barBox.width / 2) - (dockBox.left + dockBox.width / 2))
-      dock.style.setProperty('--kira-dock-shift', `${shift}px`)
-    }
     // Focus once the content cross-fade has had time to become visible —
     // focusing an invisible field mid-morph would show no caret at all.
     const timer = window.setTimeout(() => kiraInputRef.current?.focus(), 180)
@@ -9803,6 +9782,66 @@ function GraphCanvas({
   // A small box anchored right above the Kira button — not a full side
   // panel. Context and suggestions stay collapsed behind their own toggle
   // so the default view is just "what am I working from" + a text field.
+  // Kira's one entry point, in the canvas corner. The orb asks (quick
+  // composer); above it, one caption slot: the status of whatever AI is doing
+  // (always visible while it runs or just finished), otherwise a
+  // Conversations pill that appears on hover or focus and opens the panel.
+  function renderKiraCorner() {
+    const isBusy = aiActivities.length > 0
+    const hasStatus = isBusy || Boolean(aiOutcome)
+    return (
+      <div
+        className={[
+          'kira-dock-cluster',
+          isBusy ? 'is-ai-busy' : '',
+          kiraSession ? 'is-asking' : '',
+        ].filter(Boolean).join(' ')}
+      >
+        <div className="kira-launcher-wrap">
+          {renderKiraDock()}
+        </div>
+        {!kiraSession && (
+          <div className="kira-orb-caption">
+            {kiraDockStatus}
+            {hasStatus ? (
+              <button
+                type="button"
+                className={[
+                  'kira-orb-pill kira-ai-status',
+                  isBusy ? 'is-running' : `is-${aiOutcome!.kind}`,
+                ].join(' ')}
+                onClick={onOpenKiraPanel}
+              >
+                {isBusy ? (
+                  <span className="kira-ai-status-spinner" aria-hidden="true" />
+                ) : aiOutcome!.kind === 'done' ? (
+                  <Check size={13} aria-hidden="true" />
+                ) : (
+                  <AlertTriangle size={13} aria-hidden="true" />
+                )}
+                <span className="kira-ai-status-label" role="status" aria-live="polite">
+                  {isBusy ? aiActivities[0].label : aiOutcome!.label}
+                </span>
+                {isBusy && (
+                  <span className="kira-ai-status-time">
+                    {Math.max(0, Math.round((statusNow - aiActivities[0].startedAt) / 1000))}s
+                    {aiActivities.length > 1 && ` · ${t('ai.status.more', lang, { count: String(aiActivities.length - 1) })}`}
+                  </span>
+                )}
+              </button>
+            ) : (
+              <button type="button" className="kira-orb-pill kira-conversations-btn" onClick={onOpenKiraPanel}>
+                <MessagesSquare size={13} aria-hidden="true" />
+                <span>{t('kira.conversations', lang)}</span>
+                <kbd>⌥⌘K</kbd>
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+    )
+  }
+
   function renderKiraDock() {
     const open = isKiraOpen
     const anchorNode = kiraSession?.source
@@ -9845,7 +9884,6 @@ function GraphCanvas({
         className={[
           'kira-dock',
           open ? 'is-open' : '',
-          !open && (aiActivities.length > 0 || aiOutcome) ? 'has-ai-status' : '',
           isThinking ? 'is-thinking' : '',
           isError ? 'is-error' : '',
           hasTray ? 'has-tray' : '',
@@ -9864,50 +9902,17 @@ function GraphCanvas({
           closeKiraSession()
         }}
       >
-        {!open && (aiActivities.length > 0 || aiOutcome) ? (
-          // The ✦ button turns into the status of whatever AI is doing (a
-          // draft, a dock request, a chat reply, a palette), anywhere in the
-          // app, and back once it is done. Clicking opens the Kira panel,
-          // where the run and its result are listed.
-          <button
-            type="button"
-            ref={kiraOrbRef}
-            className={[
-              'kira-dock-orb kira-ai-status',
-              aiActivities.length > 0 ? 'is-running' : `is-${aiOutcome!.kind}`,
-            ].join(' ')}
-            onClick={onOpenKiraPanel}
-          >
-            {aiActivities.length > 0 ? (
-              <span className="kira-ai-status-spinner" aria-hidden="true" />
-            ) : aiOutcome!.kind === 'done' ? (
-              <Check size={13} aria-hidden="true" />
-            ) : (
-              <AlertTriangle size={13} aria-hidden="true" />
-            )}
-            <span className="kira-ai-status-label" role="status" aria-live="polite">
-              {aiActivities.length > 0 ? aiActivities[0].label : aiOutcome!.label}
-            </span>
-            {aiActivities.length > 0 && (
-              <span className="kira-ai-status-time">
-                {Math.max(0, Math.round((statusNow - aiActivities[0].startedAt) / 1000))}s
-                {aiActivities.length > 1 && ` · ${t('ai.status.more', lang, { count: String(aiActivities.length - 1) })}`}
-              </span>
-            )}
-          </button>
-        ) : !open ? (
+        {!open ? (
           <button
             type="button"
             ref={kiraOrbRef}
             className="kira-dock-orb"
             aria-label={t('kira.askLabel', lang)}
             aria-expanded={false}
-            data-tooltip="Kira"
             tabIndex={0}
             onClick={() => {
-              // DECISIONS.md #4/#7: while the new panel is open, the dock's
-              // only job is routing to its composer — never the retired
-              // one-shot composer below.
+              // Click asks (the quick composer); the Conversations pill above
+              // the orb opens the full panel.
               if (isKiraPanelOpen) {
                 onKiraPanelOpenChat()
                 return
@@ -9916,7 +9921,7 @@ function GraphCanvas({
               else openKiraFromRail()
             }}
           >
-            <KiraMark size={18} state={isThinking ? 'thinking' : 'rest'} />
+            <img className="kira-orb-symbol" src="/kira-symbol.svg" alt="" draggable={false} />
           </button>
         ) : (
           <div className="kira-dock-composer">
@@ -10371,13 +10376,6 @@ function GraphCanvas({
           </div>
         </div>
 
-        <div className="kira-dock-cluster">
-          {kiraDockStatus}
-          <div className="kira-launcher-wrap">
-            {renderKiraDock()}
-          </div>
-        </div>
-
         <div className="canvas-zoom-rail" aria-label="Canvas zoom">
           <button type="button" aria-label="Zoom out" onClick={() => updateZoom(-0.15)}>
             <RailIcon name="zout" />
@@ -10395,6 +10393,8 @@ function GraphCanvas({
               : `${graphMetrics.visibleNodes}/${graphMetrics.totalNodes}`}
           </span>
         </div>
+
+        {!isKiraPanelOpen && renderKiraCorner()}
         </div>
         {graphMode === 'discover' && (
           <div className="discover-mode-chip" role="status">
