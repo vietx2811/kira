@@ -4149,6 +4149,42 @@ fn home_dir() -> Option<PathBuf> {
     std::env::var_os("HOME").map(PathBuf::from)
 }
 
+// The user's persona, shared with other creative tools (user decision
+// 2026-11-08). Only this one file: Kira never lists or reads anything else
+// under ~/.creative-os.
+fn user_persona_path() -> Result<PathBuf, String> {
+    home_dir()
+        .map(|home| home.join(".creative-os").join("user.json"))
+        .ok_or_else(|| "Home folder not found".to_string())
+}
+
+#[tauri::command]
+fn read_user_persona() -> Result<Option<serde_json::Value>, String> {
+    let path = user_persona_path()?;
+    if !path.exists() {
+        return Ok(None);
+    }
+    let text = fs::read_to_string(&path).map_err(|error| format!("Could not read user.json: {error}"))?;
+    serde_json::from_str(&text)
+        .map(Some)
+        .map_err(|error| format!("user.json is not valid JSON: {error}"))
+}
+
+#[tauri::command]
+fn save_user_persona(persona: serde_json::Value) -> Result<(), String> {
+    if !persona.is_object() {
+        return Err("Persona must be a JSON object".to_string());
+    }
+    let path = user_persona_path()?;
+    let folder = path.parent().ok_or_else(|| "Invalid persona path".to_string())?;
+    fs::create_dir_all(folder).map_err(|error| format!("Could not create ~/.creative-os: {error}"))?;
+    let text = serde_json::to_string_pretty(&persona).map_err(|error| error.to_string())?;
+    // Write beside it, then rename, so another tool never reads half a file.
+    let temporary = folder.join("user.json.kira-tmp");
+    fs::write(&temporary, format!("{text}\n")).map_err(|error| format!("Could not write user.json: {error}"))?;
+    fs::rename(&temporary, &path).map_err(|error| format!("Could not save user.json: {error}"))
+}
+
 fn open_system_target(target: &str) -> Result<(), String> {
     let status = Command::new("open")
         .arg(target)
@@ -4992,6 +5028,8 @@ pub fn run() {
             check_foundation_model_availability,
             normalize_tags_with_foundation_model,
             save_provider_secret,
+            read_user_persona,
+            save_user_persona,
             delete_provider_secret,
             test_ai_provider,
             list_ai_models,
