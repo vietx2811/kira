@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KIRA — canvas node chrome specimen</title>
+<style>
+  :root {
+    --bg-canvas: #101211;
+    --surface-1: #151716;
+    --surface-2: #1b1e1c;
+    --node-surface: var(--surface-1);
+    --node-surface-selected: var(--surface-2);
+    --border-soft: rgb(255 255 255 / 0.06);
+    --border-strong: rgb(255 255 255 / 0.13);
+    --text-main: #f1eee7;
+    --text-soft: #b3afa5;
+    --text-muted: #8f8c80;
+    --accent-cyan: #84cdbc;
+    --accent-strong: #9edccd;
+    --accent-weak: rgb(132 205 188 / 0.28);
+    --accent-faint: rgb(158 220 205 / 0.12);
+    --danger: #d98b7a;
+    --space-2: 8px; --space-3: 12px; --space-4: 16px; --space-5: 20px; --space-6: 24px;
+    --radius-2: 6px; --radius-3: 8px; --radius-4: 12px;
+    --text-mini: 10px; --text-small: 11px; --text-body: 13px; --text-title: 15px; --text-large: 20px;
+    --marker: #e08b6a;
+  }
+  [data-theme="light"] {
+    --bg-canvas: #eeebe3;
+    --surface-1: #fbfaf7;
+    --surface-2: #ffffff;
+    --node-surface: var(--surface-1);
+    --node-surface-selected: var(--surface-2);
+    --border-soft: rgb(20 18 12 / 0.09);
+    --border-strong: rgb(20 18 12 / 0.18);
+    --text-main: #22201a;
+    --text-soft: #5c584c;
+    --text-muted: #8a8574;
+    --accent-cyan: #2f8a74;
+    --accent-strong: #246a58;
+    --accent-weak: rgb(47 138 116 / 0.22);
+    --accent-faint: rgb(47 138 116 / 0.1);
+    --danger: #a8493a;
+    --marker: #b35a33;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg-canvas); color: var(--text-main); font-family: -apple-system, "SF Pro Text", "Inter", system-ui, sans-serif; font-size: var(--text-body); }
+  .page { max-width: 1180px; margin: 0 auto; padding: var(--space-6) var(--space-5) 80px; }
+  .page-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-4); margin-bottom: var(--space-5); flex-wrap: wrap; }
+  .page-head h1 { font-size: var(--text-large); font-weight: 680; margin: 0; }
+  .page-head p { color: var(--text-soft); font-size: var(--text-small); margin: 4px 0 0; }
+  .theme-toggle { display: inline-flex; gap: 4px; background: var(--surface-2); border: 1px solid var(--border-soft); border-radius: var(--radius-3); padding: 2px; }
+  .theme-toggle button { appearance: none; border: none; background: transparent; color: var(--text-soft); font-size: var(--text-small); font-weight: 560; padding: 6px 12px; border-radius: var(--radius-2); cursor: pointer; }
+  .theme-toggle button[aria-pressed="true"] { background: var(--accent-weak); color: var(--accent-strong); }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(440px, 1fr)); gap: var(--space-5); }
+  .state-card { background: var(--surface-1); border: 1px solid var(--border-soft); border-radius: var(--radius-4); padding: var(--space-4); }
+  .state-card h2 { font-size: var(--text-small); font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); margin: 0 0 4px; }
+  .state-card .caption { font-size: var(--text-small); color: var(--text-soft); margin: 0 0 var(--space-4); line-height: 1.5; }
+
+  .stage { position: relative; min-height: 260px; background: var(--bg-canvas); border-radius: var(--radius-3); background-image: radial-gradient(var(--border-strong) 1px, transparent 1px); background-size: 16px 16px; padding: 70px 60px 90px; }
+
+  .node {
+    position: absolute;
+    top: 70px; left: 140px;
+    width: 180px;
+    background: var(--node-surface-selected);
+    border: 1px solid var(--accent-weak);
+    border-radius: var(--radius-3);
+    box-shadow: 0 0 0 1px var(--accent-weak), 0 8px 24px rgb(0 0 0 / 0.28);
+    padding: var(--space-3);
+  }
+  .node .status { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--accent-cyan); margin-bottom: 6px; }
+  .node .title { font-size: var(--text-small); font-weight: 560; color: var(--text-main); margin-bottom: 2px; }
+  .node .body { font-size: var(--text-small); color: var(--text-soft); line-height: 1.4; }
+
+  /* corner controls, current state */
+  .ctl { position: absolute; display: grid; place-items: center; width: 20px; height: 20px; border-radius: var(--radius-2); background: var(--node-surface-selected); font-size: 11px; color: var(--text-soft); }
+  .ctl.kira { top: -9px; left: -9px; border: 1px solid var(--accent-weak); color: var(--accent-strong); }
+  .ctl.add { top: -9px; right: -9px; border: 1px solid var(--accent-weak); }
+  .ctl.prov { top: -12px; right: 10px; width: auto; height: 20px; padding: 0 6px; border-radius: 999px; border: 1px solid var(--border-strong); font-size: var(--text-mini); font-weight: 700; color: var(--text-soft); white-space: nowrap; }
+  .ctl.link { top: 50%; right: -10px; transform: translateY(-50%); border: 1px solid var(--accent-weak); color: var(--accent-cyan); cursor: crosshair; }
+  .ctl.resize { right: -7px; bottom: -7px; width: 14px; height: 14px; border: 1px solid var(--accent-weak); border-radius: 4px; }
+  .pill { position: absolute; top: calc(100% + 10px); left: 50%; transform: translateX(-50%); display: flex; gap: 6px; background: var(--node-surface-selected); border: 1px solid var(--border-soft); border-radius: var(--radius-2); padding: 4px; box-shadow: 0 10px 22px rgb(0 0 0 / 0.26); white-space: nowrap; }
+  .pill button { appearance: none; border: none; background: transparent; display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 5px; font-size: var(--text-small); color: var(--text-soft); }
+  .pill button.danger { color: var(--danger); }
+
+  /* numbered markers for the "before" diagram */
+  .marker { position: absolute; width: 16px; height: 16px; border-radius: 50%; background: var(--marker); color: #1a1310; font-size: 10px; font-weight: 800; display: grid; place-items: center; z-index: 9; box-shadow: 0 0 0 2px var(--bg-canvas); }
+  .m1 { top: -20px; left: -20px; }
+  .m2 { top: -20px; right: -20px; }
+  .m3 { top: -24px; right: 26px; }
+  .m4 { top: 48%; right: -24px; }
+  .m5 { right: -20px; bottom: -20px; }
+  .m6 { top: calc(100% + 36px); left: 50%; transform: translateX(-50%); }
+
+  .legend { margin-top: var(--space-4); font-size: var(--text-small); color: var(--text-soft); line-height: 1.7; }
+  .legend b { color: var(--marker); }
+
+  /* proposed unified toolbar */
+  .unified-toolbar { position: absolute; top: calc(100% + 10px); left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 4px; background: var(--node-surface-selected); border: 1px solid var(--border-strong); border-radius: var(--radius-3); padding: 4px; box-shadow: 0 12px 28px rgb(0 0 0 / 0.3); white-space: nowrap; }
+  .unified-toolbar button { appearance: none; border: none; background: transparent; display: inline-flex; align-items: center; gap: 4px; padding: 5px 9px; border-radius: 5px; font-size: var(--text-small); font-weight: 560; color: var(--text-soft); }
+  .unified-toolbar button.ask-kira { color: var(--accent-strong); background: var(--accent-faint); }
+  .unified-toolbar button.danger { color: var(--danger); }
+  .unified-toolbar .sep { width: 1px; height: 16px; background: var(--border-strong); margin: 0 2px; }
+
+  .dropdown { position: absolute; top: calc(100% + 54px); left: 50%; transform: translateX(-50%); width: 230px; background: var(--node-surface-selected); border: 1px solid var(--border-strong); border-radius: var(--radius-3); box-shadow: 0 16px 34px rgb(0 0 0 / 0.34); padding: 4px; z-index: 6; }
+  .dropdown .item { display: flex; flex-direction: column; padding: 6px 8px; border-radius: 5px; }
+  .dropdown .item .name { font-size: var(--text-small); font-weight: 560; color: var(--text-main); }
+  .dropdown .item .why { font-size: var(--text-mini); color: var(--text-muted); }
+  .dropdown .item.expand { background: var(--accent-faint); }
+  .dropdown .item.expand .name { color: var(--accent-strong); }
+  .dropdown .sep { height: 1px; background: var(--border-soft); margin: 4px 2px; }
+
+  .node.two { left: 60px; top: 60px; }
+  .node.three { left: 260px; top: 110px; }
+  .group-box { position: absolute; border: 1px dashed var(--accent-weak); border-radius: var(--radius-3); }
+</style>
+</head>
+<body data-theme="dark">
+<div class="page">
+  <div class="page-head">
+    <div>
+      <h1>Node canvas, nút rải rác → gom một chỗ</h1>
+      <p>Specimen cho docs/research/2026-11-09-canvas-node-ux.md · token lấy từ apps/desktop/src/styles.css tại 7c50ce7</p>
+    </div>
+    <div class="theme-toggle" role="group" aria-label="Theme">
+      <button type="button" data-theme-btn="dark" aria-pressed="true">Dark</button>
+      <button type="button" data-theme-btn="light" aria-pressed="false">Light</button>
+    </div>
+  </div>
+
+  <div class="grid">
+
+    <div class="state-card">
+      <h2>1 — Hiện trạng</h2>
+      <p class="caption">Một node idea đã chọn: 6 điều khiển nổi ở 6 vị trí khác nhau, kể cả badge AI chen sát nút +.</p>
+      <div class="stage">
+        <div class="node" style="top:70px; left:170px;">
+          <span class="marker m1">1</span>
+          <span class="marker m2">2</span>
+          <span class="marker m3">3</span>
+          <span class="marker m4">4</span>
+          <span class="marker m5">5</span>
+          <span class="status"></span>
+          <div class="title">Định vị KIRA cho nhóm nhỏ</div>
+          <div class="body">Thị trường app canvas chia hai cực...</div>
+          <span class="ctl kira">✦</span>
+          <span class="ctl add">+</span>
+          <span class="ctl prov">AI</span>
+          <span class="ctl link">⇄</span>
+          <span class="ctl resize"></span>
+          <span class="marker m6">6</span>
+          <div class="pill">
+            <button>ⓘ Details</button>
+            <button class="danger">🗑 Delete</button>
+          </div>
+        </div>
+      </div>
+      <div class="legend">
+        <b>1</b> Ask Kira (góc trên-trái) · <b>2</b> + Arc menu (góc trên-phải) · <b>3</b> Badge AI, cách 2 chỉ 19px ·
+        <b>4</b> Link handle (cạnh phải giữa) · <b>5</b> Resize (góc dưới-phải) · <b>6</b> Pill Details/Delete (trôi nổi dưới node)
+      </div>
+    </div>
+
+    <div class="state-card">
+      <h2>2 — Đề xuất</h2>
+      <p class="caption">Cùng node: chỉ còn resize (trực tiếp) + handle Link/Expand gộp (cạnh phải) + một thanh lệnh dưới node.</p>
+      <div class="stage">
+        <div class="node" style="top:70px; left:170px;">
+          <span class="status"></span>
+          <div class="title">Định vị KIRA cho nhóm nhỏ</div>
+          <div class="body">Thị trường app canvas chia hai cực...</div>
+          <span class="ctl link" title="Kéo để nối · thả vào chỗ trống để tạo node liên kết">⇄+</span>
+          <span class="ctl resize"></span>
+          <div class="unified-toolbar">
+            <button class="ask-kira">✦ Ask Kira ▾</button>
+            <div class="sep"></div>
+            <button>ⓘ Details</button>
+            <button class="danger">🗑 Delete</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="state-card">
+      <h2>3 — Dropdown "Ask Kira" mở</h2>
+      <p class="caption">4 gợi ý theo kind (kiraSuggestions) + Mở rộng nhánh + Hỏi câu khác — hợp nhất 3 đường AI cũ thành một.</p>
+      <div class="stage" style="padding-bottom: 220px;">
+        <div class="node" style="top:40px; left:170px;">
+          <span class="status"></span>
+          <div class="title">Định vị KIRA cho nhóm nhỏ</div>
+          <div class="body">Thị trường app canvas chia hai cực...</div>
+          <span class="ctl link">⇄+</span>
+          <span class="ctl resize"></span>
+          <div class="unified-toolbar">
+            <button class="ask-kira" style="background:var(--accent-weak)">✦ Ask Kira ▴</button>
+            <div class="sep"></div>
+            <button>ⓘ Details</button>
+            <button class="danger">🗑 Delete</button>
+          </div>
+          <div class="dropdown">
+            <div class="item"><span class="name">Sharpen this into a positioning line</span><span class="why">Distill the idea to one sentence</span></div>
+            <div class="item"><span class="name">What would kill this idea?</span><span class="why">Stress-test the concept</span></div>
+            <div class="item"><span class="name">Three adjacent territories</span><span class="why">Widen the exploration</span></div>
+            <div class="sep"></div>
+            <div class="item expand"><span class="name">✦ Mở rộng nhánh</span><span class="why">Tạo 4-6 node con liên kết, undo được</span></div>
+            <div class="sep"></div>
+            <div class="item"><span class="name">Hỏi câu khác...</span><span class="why">Mở Kira dock trống</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="state-card">
+      <h2>4 — Multi-select</h2>
+      <p class="caption">2 node đã chọn: hiện tại không có gì ngoài phím Delete. Đề xuất: cùng hình dạng thanh công cụ, neo dưới vùng chọn chung.</p>
+      <div class="stage">
+        <div class="group-box" style="left:40px; top:50px; width:320px; height:160px;"></div>
+        <div class="node two">
+          <span class="status"></span>
+          <div class="title">Định vị KIRA</div>
+          <div class="body">Nhóm brand nhỏ...</div>
+        </div>
+        <div class="node three">
+          <span class="status"></span>
+          <div class="title">Góc nhìn đối thủ</div>
+          <div class="body">Milanote quá nhẹ cho AI...</div>
+        </div>
+        <div class="unified-toolbar" style="left: 200px; top: 230px; transform: translateX(-50%);">
+          <button class="ask-kira">✦ Ask Kira</button>
+          <div class="sep"></div>
+          <button>⇄ Link 2 node</button>
+          <button>▢ Nhóm vào Frame</button>
+          <div class="sep"></div>
+          <button class="danger">🗑 Delete</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <p class="legend" style="margin-top: 24px; border-left: 2px solid var(--accent-weak); padding-left: 12px;">
+    Bảng màu light là suy luận theo tinh thần DESIGN.md (warm neutral, một accent teal), không trích trực tiếp từ <code>buildProjectAppearanceStyle()</code>. Xem mục Giới hạn trong báo cáo đầy đủ.
+  </p>
+</div>
+
+<script>
+  document.querySelectorAll('[data-theme-btn]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      document.body.setAttribute('data-theme', btn.getAttribute('data-theme-btn'));
+      document.querySelectorAll('[data-theme-btn]').forEach(function (b) {
+        b.setAttribute('aria-pressed', String(b === btn));
+      });
+    });
+  });
+</script>
+</body>
+</html>
