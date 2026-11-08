@@ -2369,7 +2369,7 @@ function FileWorkspace({
   const [sortMode, setSortMode] = useState<SortMode>('recent')
   const [batchTag, setBatchTag] = useState('')
   const [libraryStatus, setLibraryStatus] = useState('Ready')
-  const [pinDownload, setPinDownload] = useState<{ imageId: string; title: string; progress: number | null } | null>(null)
+  const [imageDownload, setImageDownload] = useState<{ imageId: string; title: string; progress: number | null } | null>(null)
   const [isCanvasNoticeVisible, setIsCanvasNoticeVisible] = useState(false)
   const canvasNoticeTimerRef = useRef(0)
 
@@ -3516,10 +3516,12 @@ function FileWorkspace({
 
     // Queued after the capture is actually persisted — replace/placeholder
     // attachment can assign a different id than reference.id, and upgrading
-    // by the wrong id would silently patch nothing.
+    // by the wrong id would silently patch nothing. Page captures already
+    // carry their preview via capture.imageUrl (og:image) — this is only
+    // for kind: 'image', whose thumb starts out as the remote image URL.
     if (capture.createIdeaTitle?.trim()) {
       const persistedId = attachCaptureToNewIdea(reference, capture.createIdeaTitle.trim())
-      void upgradePinterestCapture(persistedId, reference.title, capture.url)
+      if (capture.kind === 'image') void downloadAndAnalyzeCaptureImage(persistedId, reference.title, capture.url)
       return
     }
 
@@ -3529,19 +3531,28 @@ function FileWorkspace({
 
     if (target) {
       const persistedId = attachCaptureToGraphNode(reference, target)
-      if (persistedId) void upgradePinterestCapture(persistedId, reference.title, capture.url)
+      if (persistedId && capture.kind === 'image') void downloadAndAnalyzeCaptureImage(persistedId, reference.title, capture.url)
       return
     }
 
     appendReferences([reference], '1 browser capture imported')
-    void upgradePinterestCapture(reference.id, reference.title, capture.url)
+    if (capture.kind === 'image') void downloadAndAnalyzeCaptureImage(reference.id, reference.title, capture.url)
   }
 
-  // Browser captures only ever carry a remote thumbnail URL (see
-  // createReferenceFromCapture). For Pinterest pins specifically, walk the
-  // CDN's resolution candidates, actually download the highest-quality one
-  // that resolves, and swap it into the already-added image once ready.
-  async function upgradePinterestCapture(imageId: string, title: string, sourceUrl: string) {
+  // research 2026-11-09 §5#8 / visual-explore Pha 0: a browser capture only
+  // ever carried a remote thumbnail URL (createReferenceFromCapture), so the
+  // library had to hit the origin server every time it rendered one, and
+  // paletteFromName colored it from the URL STRING, not the actual pixels —
+  // no perceptualHash either, so a captured image never matched anything in
+  // "Find similar" or duplicate detection. Downloads once into the project
+  // (same size cap as the old Pinterest-only path, now general; Pinterest
+  // pins still get their higher-res CDN candidates tried first), then runs
+  // it through analyzeImageDataUrl exactly like a local file import
+  // (createReferenceFromFile) — real palette, real perceptualHash, real
+  // dimensions. The resulting data: URL is what main.tsx:1707's save path
+  // already materializes to a file under the project package; sourceUrl
+  // keeps the original remote address regardless of download outcome.
+  async function downloadAndAnalyzeCaptureImage(imageId: string, title: string, sourceUrl: string, options: { silent?: boolean } = {}) {
     let url: URL
     try {
       url = new URL(sourceUrl)
@@ -3549,10 +3560,10 @@ function FileWorkspace({
       return
     }
 
-    const candidates = resolvePinterestOriginalCandidates(url)
-    if (candidates.length === 0) return
+    const pinterestCandidates = resolvePinterestOriginalCandidates(url)
+    const candidates = pinterestCandidates.length > 0 ? pinterestCandidates : [url.toString()]
 
-    setPinDownload({ imageId, title, progress: null })
+    setImageDownload({ imageId, title, progress: null })
     let lastProgressUpdate = 0
 
     try {
@@ -3568,7 +3579,7 @@ function FileWorkspace({
         if (!contentType.startsWith('image/')) continue
 
         const total = Number(response.headers.get('content-length')) || 0
-        if (total > MAX_PINTEREST_DOWNLOAD_BYTES) continue
+        if (total > MAX_CAPTURE_DOWNLOAD_BYTES) continue
 
         const reader = response.body.getReader()
         const chunks: BlobPart[] = []
@@ -3579,7 +3590,7 @@ function FileWorkspace({
           const { done, value } = await reader.read()
           if (done) break
           received += value.length
-          if (received > MAX_PINTEREST_DOWNLOAD_BYTES) {
+          if (received > MAX_CAPTURE_DOWNLOAD_BYTES) {
             exceededLimit = true
             break
           }
@@ -3587,7 +3598,7 @@ function FileWorkspace({
           const now = Date.now()
           if (total > 0 && now - lastProgressUpdate > 80) {
             lastProgressUpdate = now
-            setPinDownload({ imageId, title, progress: received / total })
+            setImageDownload({ imageId, title, progress: received / total })
           }
         }
 
@@ -3596,20 +3607,71 @@ function FileWorkspace({
           continue
         }
 
-        const dataUrl = await readFileAsDataUrl(new Blob(chunks, { type: contentType }))
+        const blob = new Blob(chunks, { type: contentType })
+        const dataUrl = await readFileAsDataUrl(blob)
+        const analysis = await analyzeImageDataUrl(dataUrl)
+        const timestamp = nowIso()
         setImages((current) =>
-          current.map((image) => (image.id === imageId ? { ...image, thumb: dataUrl, updatedAt: nowIso() } : image)),
+          current.map((image) =>
+            image.id === imageId
+              ? {
+                  ...image,
+                  thumb: dataUrl,
+                  palette: analysis.palette.length > 0 ? analysis.palette : image.palette,
+                  width: analysis.width,
+                  height: analysis.height,
+                  sizeBytes: blob.size,
+                  mimeType: contentType,
+                  perceptualHash: analysis.perceptualHash,
+                  updatedAt: timestamp,
+                }
+              : image,
+          ),
         )
-        setLibraryStatus('Downloaded original pin image')
+        if (!options.silent) setLibraryStatus('Downloaded capture image')
         return
       }
-      setLibraryStatus('Could not fetch original pin quality, using preview')
+      if (!options.silent) setLibraryStatus("Couldn't download capture image, kept the original link")
     } catch {
-      setLibraryStatus('Could not fetch original pin quality, using preview')
+      if (!options.silent) setLibraryStatus("Couldn't download capture image, kept the original link")
     } finally {
-      setPinDownload((current) => (current?.imageId === imageId ? null : current))
+      setImageDownload((current) => (current?.imageId === imageId ? null : current))
     }
   }
+
+  // research 2026-11-09 §5#8: captures made before this feature landed are
+  // stuck with a remote-URL thumb and no perceptualHash forever unless
+  // something goes back for them. One pass per opened project, one image at
+  // a time (not Promise.all — "nhẹ, không chặn UI"), silent either way: a
+  // background sweep toasting on every one of N old captures would be worse
+  // than the silence it's fixing. A failed download is simply not re-tried
+  // until the project is reopened; the image keeps its original link thumb.
+  const captureBackfillRanForRef = useRef<string | null>(null)
+  useEffect(() => {
+    const projectKey = projectPackage?.path ?? null
+    if (captureBackfillRanForRef.current === projectKey) return
+    captureBackfillRanForRef.current = projectKey
+
+    const candidates = images
+      // 'image' not just 'browser': a page capture is tagged ['browser','page']
+      // and its thumb is capture.imageUrl (og:image) — out of scope here, same
+      // as the immediate post-capture path above (capture.kind === 'image').
+      .filter((image) => image.tags.includes('browser') && image.tags.includes('image') && /^https?:\/\//i.test(image.thumb))
+      .slice(0, 20)
+    if (candidates.length === 0) return
+
+    let cancelled = false
+    void (async () => {
+      for (const image of candidates) {
+        if (cancelled) return
+        await downloadAndAnalyzeCaptureImage(image.id, image.title, image.sourceUrl || image.thumb, { silent: true })
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectPackage?.path])
 
   function attachCaptureToNewIdea(reference: EvidenceImage, title: string): string {
     pushCanvasHistory()
@@ -3999,7 +4061,9 @@ function FileWorkspace({
         `${extensionCaptures.length} browser capture${extensionCaptures.length === 1 ? '' : 's'} imported`,
       )
       references.forEach((reference, index) => {
-        void upgradePinterestCapture(reference.id, reference.title, extensionCaptures[index].url)
+        if (extensionCaptures[index].kind === 'image') {
+          void downloadAndAnalyzeCaptureImage(reference.id, reference.title, extensionCaptures[index].url)
+        }
       })
       return
     }
@@ -4037,7 +4101,9 @@ function FileWorkspace({
         `${extensionCaptures.length} browser capture${extensionCaptures.length === 1 ? '' : 's'} imported`,
       )
       references.forEach((reference, index) => {
-        void upgradePinterestCapture(reference.id, reference.title, extensionCaptures[index].url)
+        if (extensionCaptures[index].kind === 'image') {
+          void downloadAndAnalyzeCaptureImage(reference.id, reference.title, extensionCaptures[index].url)
+        }
       })
       return
     }
@@ -7304,7 +7370,7 @@ function FileWorkspace({
           totalCount={images.length}
           batchTag={batchTag}
           searchQuery={searchQuery}
-          downloadProgress={pinDownload}
+          downloadProgress={imageDownload}
           selectedReferenceIds={selectedReferenceIds}
           selected={selection}
           lang={lang}
@@ -15146,7 +15212,12 @@ function createReferenceFromCapture(capture: KiraCapturePayload, index: number):
     title,
     content: title,
     source: sourceText,
-    palette: paletteFromName(`${capture.kind}:${capture.url}`),
+    // research 2026-11-09 §5#8: a name-derived palette was never the real
+    // image's colors. For kind: 'image', downloadAndAnalyzeCaptureImage
+    // replaces this with the real one moments later; starting empty is more
+    // honest than a fake placeholder in that brief window. A page capture
+    // has no downloaded image to analyze, so it keeps the name-derived one.
+    palette: capture.kind === 'image' ? [] : paletteFromName(`${capture.kind}:${capture.url}`),
     tags: mergeUniqueTags(['browser', capture.kind, ...(capture.tags ?? [])], sourceTags.slice(0, 3)),
     suggestions: createSuggestionRecords(
       mergeUniqueTags(['browser capture', capture.kind === 'image' ? 'image capture' : 'page capture', url.hostname], sourceTags).slice(0, 5),
@@ -15178,10 +15249,10 @@ function readFileAsDataUrl(file: Blob): Promise<string> {
   })
 }
 
-// Caps how much of a "pin original" response gets buffered into memory as a
-// data URL — enforced both from Content-Length and while streaming, since a
+// Caps how much of a capture download gets buffered into memory as a data
+// URL — enforced both from Content-Length and while streaming, since a
 // missing or dishonest header shouldn't let a response grow unbounded.
-const MAX_PINTEREST_DOWNLOAD_BYTES = 25 * 1024 * 1024
+const MAX_CAPTURE_DOWNLOAD_BYTES = 25 * 1024 * 1024
 
 // Pinterest CDN paths look like /{size}/aa/bb/cc/{hash}.{ext}, where {size} is
 // a resolution segment (60x60, 236x, 564x, ...) and `originals` is the true
