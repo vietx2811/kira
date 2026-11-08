@@ -12,7 +12,7 @@ declare const chrome: {
       addListener: (
         callback: (
           info: { menuItemId: string | number; srcUrl?: string; pageUrl?: string },
-          tab?: { title?: string; url?: string },
+          tab?: { id?: number; title?: string; url?: string },
         ) => void,
       ) => void
     }
@@ -48,6 +48,7 @@ declare const chrome: {
   }
   tabs: {
     query: (queryInfo: { active: boolean; currentWindow: boolean }) => Promise<Array<{ id?: number; title?: string; url?: string }>>
+    sendMessage: (tabId: number, message: unknown) => Promise<unknown>
   }
   windows: {
     create: (createData: {

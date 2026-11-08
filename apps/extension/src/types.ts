@@ -48,6 +48,11 @@ export type KiraBridgeMessage =
   | { type: 'kira-post-capture'; capture: KiraCapturePayload }
   | { type: 'kira-get-context' }
   | { type: 'kira-open-drag-window'; capture: PendingCapture }
+  // background.ts has no DOM of its own (service worker) — this relays a
+  // user-facing toast to the tab's content script for paths it can't show
+  // feedback on directly, e.g. the native "Capture Image to KIRA" context
+  // menu item rejecting an embedded (data:/blob:) image.
+  | { type: 'kira-show-toast'; message: string }
 
 export type KiraBridgeResponse =
   | { ok: true; context?: KiraCaptureContext | null }

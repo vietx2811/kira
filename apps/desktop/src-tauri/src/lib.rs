@@ -4750,14 +4750,46 @@ fn start_capture_server(app: AppHandle) {
     });
 }
 
+// A capture payload is small (URL, title, a few tags) — this just has to be
+// well above any realistic size, not a real upload limit. Bounds the read
+// loop below so a lying or malicious Content-Length can't hold a thread
+// reading forever / blow up memory; a body that genuinely exceeds this gets
+// read up to the cap, fails JSON parsing, and comes back as a 400 like any
+// other malformed body (research 2026-11-09 §5#1 only measured ~70KB).
+const CAPTURE_MAX_BODY_BYTES: usize = 5 * 1024 * 1024;
+const CAPTURE_READ_CHUNK: usize = 8192;
+
 fn handle_capture_stream(mut stream: TcpStream, app: &AppHandle) -> Result<(), String> {
-    let mut buffer = [0_u8; 65536];
-    let size = stream
-        .read(&mut buffer)
+    // The read loop below can block on a connection that opens but trickles
+    // data (or none) — previously a single read() couldn't hang this way, so
+    // there was no timeout; now there has to be one.
+    stream
+        .set_read_timeout(Some(Duration::from_secs(5)))
         .map_err(|error| error.to_string())?;
-    let request = String::from_utf8_lossy(&buffer[..size]);
+    let request = read_capture_http_request(&mut stream)?;
+    let headers = request.split("\r\n\r\n").next().unwrap_or_default();
+    let origin = extract_header_value(headers, "Origin");
+
+    // research 2026-11-09 §7: ACAO: * plus no auth meant any webpage that
+    // could reach loopback could read /context (file + node titles) or push
+    // nodes via /capture. Only the browser extension's own origins (or no
+    // Origin at all — curl, same-process tooling) get served; anyone else
+    // gets a bare 403 with no payload, matching "/context trả gì cho origin
+    // lạ" = nothing.
+    if !origin_is_allowed(origin) {
+        stream
+            .write_all(http_response(403, "Forbidden", None, "{\"ok\":false,\"error\":\"origin not allowed\"}").as_bytes())
+            .map_err(|error| error.to_string())?;
+        return Ok(());
+    }
+    // Reflects the exact Origin back (the standard allow-listing pattern —
+    // ACAO can't be "*" once requests are being distinguished by origin).
+    // None here means no Origin header was sent at all, so there is nothing
+    // to reflect and the header is simply omitted.
+    let allow_origin = origin;
+
     let response = match parse_capture_http_request(&request) {
-        CaptureHttpRequest::Options => http_response(204, "No Content", ""),
+        CaptureHttpRequest::Options => http_response(204, "No Content", allow_origin, ""),
         CaptureHttpRequest::Context => {
             let state = app.state::<CaptureContextState>();
             let context = state
@@ -4765,19 +4797,97 @@ fn handle_capture_stream(mut stream: TcpStream, app: &AppHandle) -> Result<(), S
                 .lock()
                 .map(|value| value.clone())
                 .unwrap_or_else(|_| "{}".to_string());
-            http_response(200, "OK", &context)
+            http_response(200, "OK", allow_origin, &context)
         }
-        CaptureHttpRequest::Post(payload) => {
-            app.emit(CAPTURE_EVENT, payload)
-                .map_err(|error| error.to_string())?;
-            http_response(200, "OK", "{\"ok\":true}")
-        }
-        CaptureHttpRequest::Invalid => http_response(404, "Not Found", "{\"ok\":false}"),
+        CaptureHttpRequest::Post(payload) => match validate_capture_payload(&payload) {
+            // Only acked once the payload is something parseKiraCapturePayload
+            // (main.tsx) will actually accept — a prior version of this
+            // handler emitted and replied 200 unconditionally, so a dropped
+            // data: URL, a missing title, or truncated JSON (below) all came
+            // back as success and the extension showed "Saved" for a capture
+            // that silently went nowhere (research 2026-11-09 §5#1).
+            Ok(()) => {
+                app.emit(CAPTURE_EVENT, payload)
+                    .map_err(|error| error.to_string())?;
+                http_response(200, "OK", allow_origin, "{\"ok\":true}")
+            }
+            Err(reason) => http_response(
+                400,
+                "Bad Request",
+                allow_origin,
+                &format!("{{\"ok\":false,\"error\":{}}}", json_quote(&reason)),
+            ),
+        },
+        CaptureHttpRequest::Invalid => http_response(404, "Not Found", allow_origin, "{\"ok\":false}"),
     };
 
     stream
         .write_all(response.as_bytes())
         .map_err(|error| error.to_string())
+}
+
+// Reads headers, then the declared Content-Length worth of body (if any),
+// looping stream.read() until satisfied or the connection closes — the
+// previous implementation read once into a fixed 64KB buffer, so a request
+// delivered across two TCP writes (headers then body) came back 404 with an
+// empty body, and a body over 64KB was silently truncated into broken JSON
+// (research 2026-11-09 §5#1, measured at both ~70KB and a split write).
+fn read_capture_http_request(stream: &mut TcpStream) -> Result<String, String> {
+    let mut buffer: Vec<u8> = Vec::new();
+    let mut chunk = [0_u8; CAPTURE_READ_CHUNK];
+
+    let headers_end = loop {
+        if let Some(pos) = find_subslice(&buffer, b"\r\n\r\n") {
+            break pos + 4;
+        }
+        if buffer.len() > CAPTURE_MAX_BODY_BYTES {
+            return Ok(String::from_utf8_lossy(&buffer).into_owned());
+        }
+        let read = stream.read(&mut chunk).map_err(|error| error.to_string())?;
+        if read == 0 {
+            // Closed before headers completed — whatever arrived is all there is.
+            return Ok(String::from_utf8_lossy(&buffer).into_owned());
+        }
+        buffer.extend_from_slice(&chunk[..read]);
+    };
+
+    let headers = String::from_utf8_lossy(&buffer[..headers_end]).into_owned();
+    let content_length = extract_header_value(&headers, "Content-Length")
+        .and_then(|value| value.trim().parse::<usize>().ok())
+        .unwrap_or(0)
+        .min(CAPTURE_MAX_BODY_BYTES);
+
+    while buffer.len() < headers_end + content_length {
+        let read = stream.read(&mut chunk).map_err(|error| error.to_string())?;
+        if read == 0 {
+            break; // closed early; parse/validate whatever body arrived
+        }
+        buffer.extend_from_slice(&chunk[..read]);
+    }
+
+    Ok(String::from_utf8_lossy(&buffer).into_owned())
+}
+
+fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    haystack
+        .windows(needle.len())
+        .position(|window| window == needle)
+}
+
+fn extract_header_value<'a>(headers: &'a str, name: &str) -> Option<&'a str> {
+    headers.lines().find_map(|line| {
+        let (key, value) = line.split_once(':')?;
+        key.trim().eq_ignore_ascii_case(name).then(|| value.trim())
+    })
+}
+
+fn origin_is_allowed(origin: Option<&str>) -> bool {
+    match origin {
+        None => true,
+        Some(value) => {
+            value.starts_with("chrome-extension://") || value.starts_with("safari-web-extension://")
+        }
+    }
 }
 
 enum CaptureHttpRequest {
@@ -4805,9 +4915,56 @@ fn parse_capture_http_request(request: &str) -> CaptureHttpRequest {
     CaptureHttpRequest::Post(body.to_string())
 }
 
-fn http_response(status: u16, reason: &str, body: &str) -> String {
+// Mirrors parseKiraCapturePayload's structural checks (main.tsx) — kept in
+// sync by hand, since the HTTP response has to be synchronous and
+// app.emit() is fire-and-forget with no reply channel back from the
+// webview. Duplicate-URL rejection stays frontend-only and out of scope
+// here: that's an intentional silent no-op (main.tsx:3490), not a malformed
+// payload, so it still acks 200 same as before.
+fn validate_capture_payload(body: &str) -> Result<(), String> {
+    let value: serde_json::Value =
+        serde_json::from_str(body).map_err(|_| "invalid JSON".to_string())?;
+    if value.get("kiraCapture").and_then(serde_json::Value::as_i64) != Some(1) {
+        return Err("missing kiraCapture marker".to_string());
+    }
+    let kind = value.get("kind").and_then(serde_json::Value::as_str);
+    if kind != Some("image") && kind != Some("page") {
+        return Err("kind must be \"image\" or \"page\"".to_string());
+    }
+    let url = value
+        .get("url")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| "missing url".to_string())?;
+    if !is_http_or_https_url(url) {
+        return Err("url must be http(s): data: and blob: URLs aren't accepted yet".to_string());
+    }
+    if value.get("title").and_then(serde_json::Value::as_str).is_none() {
+        return Err("missing title".to_string());
+    }
+    if value.get("source").and_then(serde_json::Value::as_str).is_none() {
+        return Err("missing source".to_string());
+    }
+    Ok(())
+}
+
+fn is_http_or_https_url(value: &str) -> bool {
+    let lower = value.trim().to_ascii_lowercase();
+    let rest = lower
+        .strip_prefix("http://")
+        .or_else(|| lower.strip_prefix("https://"));
+    rest.is_some_and(|after| !after.is_empty())
+}
+
+fn json_quote(value: &str) -> String {
+    serde_json::to_string(value).unwrap_or_else(|_| "\"invalid payload\"".to_string())
+}
+
+fn http_response(status: u16, reason: &str, allow_origin: Option<&str>, body: &str) -> String {
+    let acao = allow_origin
+        .map(|origin| format!("Access-Control-Allow-Origin: {origin}\r\n"))
+        .unwrap_or_default();
     format!(
-        "HTTP/1.1 {status} {reason}\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}",
+        "HTTP/1.1 {status} {reason}\r\n{acao}Access-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}",
         body.len()
     )
 }
@@ -5889,6 +6046,130 @@ mod tests {
         match parse_capture_http_request("POST /other HTTP/1.1\r\n\r\n{}") {
             CaptureHttpRequest::Invalid => {}
             _ => panic!("expected invalid"),
+        }
+    }
+
+    #[test]
+    fn validate_capture_payload_accepts_well_formed_image_capture() {
+        let payload = "{\"kiraCapture\":1,\"kind\":\"image\",\"url\":\"https://example.com/a.png\",\"title\":\"A\",\"source\":\"example.com\"}";
+        assert_eq!(validate_capture_payload(payload), Ok(()));
+    }
+
+    #[test]
+    fn validate_capture_payload_rejects_broken_json() {
+        let error = validate_capture_payload("{not json").unwrap_err();
+        assert_eq!(error, "invalid JSON");
+    }
+
+    #[test]
+    fn validate_capture_payload_rejects_data_url() {
+        let payload = "{\"kiraCapture\":1,\"kind\":\"image\",\"url\":\"data:image/gif;base64,AA==\",\"title\":\"A\",\"source\":\"example.com\"}";
+        let error = validate_capture_payload(payload).unwrap_err();
+        assert!(error.contains("http(s)"), "unexpected reason: {error}");
+    }
+
+    #[test]
+    fn validate_capture_payload_rejects_missing_title() {
+        let payload = "{\"kiraCapture\":1,\"kind\":\"image\",\"url\":\"https://example.com/a.png\",\"source\":\"example.com\"}";
+        let error = validate_capture_payload(payload).unwrap_err();
+        assert_eq!(error, "missing title");
+    }
+
+    #[test]
+    fn validate_capture_payload_rejects_missing_source() {
+        let payload = "{\"kiraCapture\":1,\"kind\":\"image\",\"url\":\"https://example.com/a.png\",\"title\":\"A\"}";
+        let error = validate_capture_payload(payload).unwrap_err();
+        assert_eq!(error, "missing source");
+    }
+
+    #[test]
+    fn validate_capture_payload_rejects_unknown_kind() {
+        let payload = "{\"kiraCapture\":1,\"kind\":\"video\",\"url\":\"https://example.com/a.mp4\",\"title\":\"A\",\"source\":\"example.com\"}";
+        let error = validate_capture_payload(payload).unwrap_err();
+        assert_eq!(error, "kind must be \"image\" or \"page\"");
+    }
+
+    #[test]
+    fn is_http_or_https_url_accepts_http_and_https_only() {
+        assert!(is_http_or_https_url("https://example.com/a.png"));
+        assert!(is_http_or_https_url("HTTP://example.com"));
+        assert!(!is_http_or_https_url("data:image/gif;base64,AA=="));
+        assert!(!is_http_or_https_url("blob:https://example.com/abc"));
+        assert!(!is_http_or_https_url("javascript:alert(1)"));
+        assert!(!is_http_or_https_url("https://"));
+    }
+
+    #[test]
+    fn origin_is_allowed_accepts_extension_origins_and_absent_origin() {
+        assert!(origin_is_allowed(None));
+        assert!(origin_is_allowed(Some(
+            "chrome-extension://abcdefghijklmnopabcdefghijklmnop"
+        )));
+        assert!(origin_is_allowed(Some("safari-web-extension://abc-def")));
+        assert!(!origin_is_allowed(Some("https://evil.example")));
+        assert!(!origin_is_allowed(Some("null")));
+    }
+
+    #[test]
+    fn extract_header_value_is_case_insensitive_and_trims() {
+        let headers = "POST /capture HTTP/1.1\r\nContent-Length: 42\r\nOrigin: chrome-extension://abc\r\n";
+        assert_eq!(extract_header_value(headers, "content-length"), Some("42"));
+        assert_eq!(
+            extract_header_value(headers, "ORIGIN"),
+            Some("chrome-extension://abc")
+        );
+        assert_eq!(extract_header_value(headers, "X-Missing"), None);
+    }
+
+    // Guards the actual bug (research 2026-11-09 §5#1): a request whose
+    // headers and body arrive as two separate TCP writes used to come back
+    // 404 with an empty body (single read() only saw the headers), and a
+    // body past 64KB was silently truncated into broken JSON. Both have to
+    // survive in one read_capture_http_request() call now.
+    #[test]
+    fn read_capture_http_request_handles_split_writes_and_bodies_over_64kb() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind ephemeral port");
+        let addr = listener.local_addr().expect("local addr");
+
+        let big_note = "x".repeat(70_000);
+        let payload = format!(
+            "{{\"kiraCapture\":1,\"kind\":\"page\",\"url\":\"https://example.com\",\"title\":\"t\",\"source\":\"s\",\"note\":\"{big_note}\"}}"
+        );
+        let request = format!(
+            "POST /capture HTTP/1.1\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+            payload.len(),
+            payload
+        );
+
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("accept");
+            stream
+                .set_read_timeout(Some(Duration::from_secs(2)))
+                .expect("set read timeout");
+            read_capture_http_request(&mut stream).expect("read request")
+        });
+
+        thread::sleep(Duration::from_millis(20));
+        let mut client = TcpStream::connect(addr).expect("connect");
+        let split_at = request.find("\r\n\r\n").expect("header terminator") + 4;
+        client
+            .write_all(request[..split_at].as_bytes())
+            .expect("write headers");
+        thread::sleep(Duration::from_millis(20));
+        client
+            .write_all(request[split_at..].as_bytes())
+            .expect("write body");
+
+        let received = server.join().expect("server thread panicked");
+        assert!(
+            received.ends_with(&payload),
+            "body should arrive whole across two writes and past 64KB, not truncated"
+        );
+        match parse_capture_http_request(&received) {
+            CaptureHttpRequest::Post(body) => {
+                assert_eq!(validate_capture_payload(&body), Ok(()));
+            }
+            _ => panic!("expected a parsed capture post"),
         }
     }
 
