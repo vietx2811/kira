@@ -2495,6 +2495,13 @@ function FileWorkspace({
   const pendingCanvasHistoryCommitRef = useRef(false)
   const pendingCanvasHistorySourceRef = useRef<CanvasHistorySource | null>(null)
   const suppressCanvasHistoryCommitRef = useRef(false)
+  // Set by acceptChangeItem (create-nodes-batch) and draftBoardFromPrompt
+  // instead of pushing canvas history themselves: GraphCanvas is the one
+  // holding nodeSizes/canvasWidth/canvasHeight, so it picks this up, runs the
+  // Mindmap auto-organize with real measurements, and is the one that calls
+  // pushCanvasHistory — making "create nodes, then organize" land as a
+  // single history entry instead of two (one undo step for the whole accept).
+  const [pendingAutoOrganize, setPendingAutoOrganize] = useState<CanvasHistorySource | null>(null)
   const lastPrePresentContentHashRef = useRef('')
   const projectStateRef = useRef({
     ideas,
@@ -3087,9 +3094,11 @@ function FileWorkspace({
       // Exercises applyProjectSnapshot's historySource branch directly —
       // draftBoardFromPrompt's own fix (research §0.1/§1.3#4) — without
       // needing a connected AI provider: builds a tiny snapshot with one
-      // extra idea and applies it the same way draftBoardFromPrompt does
-      // (tagged 'ai-accept' so Cmd+Z also reverts a panel item), so a QA
-      // script can confirm undo restores the PRE-call board.
+      // extra idea and applies it the exact same way draftBoardFromPrompt
+      // does post-kira-organize ('defer' + pendingAutoOrganize, so GraphCanvas's
+      // Mindmap pass is what commits history, tagged 'ai-accept' so Cmd+Z also
+      // reverts a panel item), so a QA script can confirm undo restores the
+      // PRE-call board in one step, not two.
       testApplySnapshotPreserveHistory() {
         const newIdeaId = `idea-devtest-draft-${Date.now()}`
         const testSnapshot: ProjectSnapshot = {
@@ -3102,7 +3111,8 @@ function FileWorkspace({
         const threadId = crypto.randomUUID()
         const changeSetId = crypto.randomUUID()
         const itemId = crypto.randomUUID()
-        applyProjectSnapshot(testSnapshot, { historySource: { kind: 'ai-accept', changeSetId, itemId } })
+        applyProjectSnapshot(testSnapshot, { historySource: 'defer' })
+        setPendingAutoOrganize({ kind: 'ai-accept', changeSetId, itemId })
         setAiPanelState((current) => {
           const thread: AiThread = { id: threadId, title: testSnapshot.project.title, createdAt: now, updatedAt: now, anchorNodeIds: [] }
           const run: AiRun = { id: runId, threadId, providerType: 'apple_foundation', modelLabel: 'dev-test', startedAt: now, finishedAt: now, status: 'done', promptPreview: 'dev test', resultSummary: 'dev test' }
@@ -3162,8 +3172,12 @@ function FileWorkspace({
   // commits untagged, a CanvasHistorySource object tags the commit the same
   // way acceptChangeItem does, so undoCanvas() can revert an "Cần bạn" item
   // along with the canvas (draftBoardFromPrompt uses this to keep its
-  // ChangeSet entry in sync with Cmd+Z).
-  function applyProjectSnapshot(snapshot: ProjectSnapshot, options: { historySource?: true | CanvasHistorySource } = {}) {
+  // ChangeSet entry in sync with Cmd+Z). `'defer'` also preserves history but
+  // commits nothing here: the caller is about to set pendingAutoOrganize, and
+  // GraphCanvas's Mindmap organize pass is the one that calls
+  // pushCanvasHistory, once real measurements are in — so the drafted board
+  // and its auto-organized positions land as one undo step, not two.
+  function applyProjectSnapshot(snapshot: ProjectSnapshot, options: { historySource?: true | CanvasHistorySource | 'defer' } = {}) {
     const hash = JSON.stringify(snapshot)
     setProjectMetadata(snapshot.project)
     setProjectAppearance(snapshot.appearance)
@@ -3187,7 +3201,9 @@ function FileWorkspace({
     setSelection({ type: 'project' })
     setLastSavedHash(hash)
     window.localStorage.setItem(storageKey, hash)
-    if (options.historySource) {
+    if (options.historySource === 'defer') {
+      // no-op: caller owns the commit (see comment above)
+    } else if (options.historySource) {
       pushCanvasHistory(options.historySource === true ? undefined : options.historySource)
     } else {
       resetCanvasHistory({
@@ -3261,7 +3277,8 @@ function FileWorkspace({
       const threadId = crypto.randomUUID()
       const changeSetId = crypto.randomUUID()
       const itemId = crypto.randomUUID()
-      applyProjectSnapshot(snapshot, { historySource: { kind: 'ai-accept', changeSetId, itemId } })
+      applyProjectSnapshot(snapshot, { historySource: 'defer' })
+      setPendingAutoOrganize({ kind: 'ai-accept', changeSetId, itemId })
       setProjectPackage(null)
       setLibraryStatus(`Kira: ${provider.name} drafted ${draft.nodes.length} nodes`)
       setAiPanelState((current) => {
@@ -4609,7 +4626,14 @@ function FileWorkspace({
     onTransfersConsumed()
   }, [incomingTransfers])
 
-  async function organizeCanvas(mode: GraphOrganizeMode, measured?: OrganizeMeasurements) {
+  // `historySource`, when given, tags the commit the same way acceptChangeItem
+  // does (GraphCanvas's pendingAutoOrganize pass is the only caller that
+  // passes one) — and, for 'mindmap', forces the commit even when
+  // autoOrganizePositions comes back empty (unmeasured canvas), so the
+  // accept/draft that triggered it still gets exactly one undo entry instead
+  // of silently landing with no history coverage at all. The plain manual
+  // "Organize" button omits it and keeps the old no-op-on-empty behavior.
+  async function organizeCanvas(mode: GraphOrganizeMode, measured?: OrganizeMeasurements, historySource?: CanvasHistorySource) {
     if (mode === 'manual') return
     if (mode === 'mindmap') {
       if (!measured) return
@@ -4618,8 +4642,8 @@ function FileWorkspace({
         links,
         measured,
       )
-      if (positions.size === 0) return
-      pushCanvasHistory()
+      if (positions.size === 0 && !historySource) return
+      pushCanvasHistory(historySource)
       const timestamp = nowIso()
       const place = <T extends { id: string; x: number; y: number; updatedAt?: string }>(kind: GraphNodeKind, items: T[]) =>
         items.map((item) => {
@@ -4633,7 +4657,7 @@ function FileWorkspace({
       setPlaceholders((current) => place('placeholder', current))
       return
     }
-    pushCanvasHistory()
+    pushCanvasHistory(historySource)
     const layout = await organizeGraphLayout(mode, ideas, images, links, selection, palettes, diagrams, placeholders)
     setIdeas(layout.ideas)
     setImages(layout.images)
@@ -5474,7 +5498,13 @@ function FileWorkspace({
     const isBatch = findChangeItemKind(changeSetId, itemId) === 'create-nodes-batch'
     const result = isBatch ? aiPanelAcceptNodesBatch(aiPanelState, changeSetId, itemId) : aiPanelAcceptItem(aiPanelState, changeSetId, itemId)
     if (!result.ok) return
-    pushCanvasHistory({ kind: 'ai-accept', changeSetId, itemId })
+    const source: CanvasHistorySource = { kind: 'ai-accept', changeSetId, itemId }
+    // A batch places its new nodes with arcPositionsAroundSource's temporary
+    // arc — GraphCanvas picks up pendingAutoOrganize, runs the real Mindmap
+    // layout with measured sizes, and commits history itself, so creation +
+    // reorganize land as one undo step (see pendingAutoOrganize's comment).
+    if (isBatch) setPendingAutoOrganize(source)
+    else pushCanvasHistory(source)
     applyAiCanvasOperations(result.operations)
     setAiPanelState(result.state)
   }
@@ -7456,6 +7486,8 @@ function FileWorkspace({
                 onNodeScaleReset={resetNodeScale}
                 onDeleteNodes={deleteSelectedGraphNodes}
                 onOrganize={organizeCanvas}
+                pendingAutoOrganize={pendingAutoOrganize}
+                onAutoOrganizeApplied={() => setPendingAutoOrganize(null)}
                 onMoveNodeToOtherFile={moveNodeToOtherFile}
                 restorableSessionLabel={restorableSession?.label ?? null}
                 onRestoreSession={restoreLastSession}
@@ -8410,6 +8442,8 @@ function GraphCanvas({
   onNodeScaleReset,
   onDeleteNodes,
   onOrganize,
+  pendingAutoOrganize,
+  onAutoOrganizeApplied,
   onMoveNodeToOtherFile,
   restorableSessionLabel,
   onRestoreSession,
@@ -8507,7 +8541,11 @@ function GraphCanvas({
   onNodeScaleChange: (kind: GraphNodeKind, id: string, scale: number, begin?: boolean) => void
   onNodeScaleReset: (nodes: CanvasNodeSelection[]) => void
   onDeleteNodes: (nodes: CanvasNodeSelection[]) => void
-  onOrganize: (mode: GraphOrganizeMode, measured?: OrganizeMeasurements) => void | Promise<void>
+  onOrganize: (mode: GraphOrganizeMode, measured?: OrganizeMeasurements, historySource?: CanvasHistorySource) => void | Promise<void>
+  // Set by acceptChangeItem/draftBoardFromPrompt instead of pushing canvas
+  // history themselves — see pendingAutoOrganize's comment at its useState.
+  pendingAutoOrganize: CanvasHistorySource | null
+  onAutoOrganizeApplied: () => void
   // Dragging a node onto another open tab hands it off to that file instead of
   // moving it on this canvas — see moveNode()'s tab-bar hit-test below.
   onMoveNodeToOtherFile: (node: CanvasNodeSelection, targetFileId: string) => void
@@ -10330,64 +10368,7 @@ function GraphCanvas({
           </button>
         ) : (
           <div className="kira-dock-composer">
-            {/* 1. Bundled context & tags inside textbox */}
-            <div className="kira-dock-context-bar">
-              {/* Context Scope tag */}
-              <DockSelect
-                className="kira-dock-scope-chip"
-                title="Context scope"
-                ariaLabel="Context scope"
-                open={openDockSelect === 'scope'}
-                onOpenChange={(next) => setOpenDockSelect(next ? 'scope' : null)}
-                value={kiraSession?.scope ?? 'downstream_branch'}
-                options={(Object.keys(aiNodeScopeLabels) as AiNodeScope[]).map((scope) => ({
-                  value: scope,
-                  label: aiNodeScopeLabels[scope],
-                }))}
-                onChange={(next) => setKiraSession((current) => current ? { ...current, scope: next as AiNodeScope, removedContextKeys: [] } : current)}
-              >
-                <Layers size={11} className="kira-dock-chip-icon" />
-                <span className="kira-dock-scope-label">{aiNodeScopeLabels[kiraSession?.scope ?? 'downstream_branch']}</span>
-                <ChevronDown size={10} className="kira-dock-chip-chevron" />
-              </DockSelect>
-
-              {/* Context Node tags */}
-              {contextNodes.map((node) => (
-                <span className="kira-chip" key={`${node.kind}:${node.id}`} title={node.title}>
-                  <span className="kira-chip-kind">{graphNodeKindLabel(node.kind)}</span>
-                  <span className="kira-chip-title">{node.title.length > 18 ? `${node.title.slice(0, 18)}…` : node.title}</span>
-                  <button
-                    type="button"
-                    className="kira-chip-remove"
-                    aria-label={`Remove ${node.title} from context`}
-                    onClick={() => setKiraSession((current) => current ? { ...current, removedContextKeys: [...current.removedContextKeys, `${node.kind}:${node.id}`] } : current)}
-                  >
-                    <X size={10} />
-                  </button>
-                </span>
-              ))}
-
-              {/* Attached file chips */}
-              {kiraSession && kiraSession.attachments.map((attachment) => (
-                <span className="kira-attachment-chip" key={attachment.id} title={attachment.name}>
-                  {attachment.isImage ? (
-                    <img src={attachment.previewUrl} alt="" />
-                  ) : (
-                    <FileText size={11} />
-                  )}
-                  <span className="kira-attachment-name">{attachment.name}</span>
-                  <button
-                    type="button"
-                    aria-label={`Remove ${attachment.name}`}
-                    onClick={() => removeKiraAttachment(attachment.id)}
-                  >
-                    <X size={10} />
-                  </button>
-                </span>
-              ))}
-            </div>
-
-            {/* 2. Textarea with rich auto-expand & long paragraph support */}
+            {/* 1. Textarea with rich auto-expand & long paragraph support */}
             <div className="kira-dock-input-wrap">
               <textarea
                 className="kira-dock-input"
@@ -10407,7 +10388,7 @@ function GraphCanvas({
               />
             </div>
 
-            {/* 3. Bottom controls bar inside the composer box */}
+            {/* 2. Bottom controls bar inside the composer box */}
             <div className="kira-dock-footer">
               <div className="kira-dock-footer-left">
                 {/* Model picker: models of every connected provider, not providers. */}
@@ -10627,6 +10608,25 @@ function GraphCanvas({
   }
   const runOrganizeRef = useRef(runOrganize)
   runOrganizeRef.current = runOrganize
+
+  // acceptChangeItem/draftBoardFromPrompt set pendingAutoOrganize instead of
+  // pushing canvas history themselves (they don't have real node sizes or
+  // canvas dimensions — only GraphCanvas measures those). Picking it up here
+  // and running the Mindmap layout with onOrganize's own historySource arg
+  // means FileWorkspace's organizeCanvas is still the one calling
+  // pushCanvasHistory, just for the FINAL (organized) positions — so node
+  // creation + reorganize commit as one history entry, not two.
+  async function applyPendingAutoOrganize(source: CanvasHistorySource) {
+    await onOrganize('mindmap', { sizes: nodeSizes, canvas: { width: canvasWidth, height: canvasHeight } }, source)
+    onAutoOrganizeApplied()
+    window.requestAnimationFrame(() => window.requestAnimationFrame(fitGraphToContent))
+  }
+  const applyPendingAutoOrganizeRef = useRef(applyPendingAutoOrganize)
+  applyPendingAutoOrganizeRef.current = applyPendingAutoOrganize
+  useEffect(() => {
+    if (!pendingAutoOrganize) return
+    void applyPendingAutoOrganizeRef.current(pendingAutoOrganize)
+  }, [pendingAutoOrganize])
 
   function startPan(event: React.PointerEvent<HTMLDivElement>) {
     const target = event.target instanceof Element ? event.target : null
