@@ -4827,6 +4827,62 @@ button.mini-tags-more:focus-visible {
   font-size: var(--text-small);
 }
 
+/* Attached-file row, shown above the input only when there is something
+   attached (kira-dock composer, PHA "thu gọn composer"). */
+.kira-dock-attachment-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 2px 6px 2px;
+}
+
+.kira-attachment-chip {
+  display: inline-flex;
+  align-items: center;
+  max-width: 160px;
+  height: 22px;
+  padding: 0 4px 0 6px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-1);
+  background: var(--control-patch-weak);
+  color: var(--text-soft);
+  font-size: var(--text-small);
+  gap: 4px;
+}
+
+.kira-attachment-chip img {
+  width: 14px;
+  height: 14px;
+  border-radius: 2px;
+  object-fit: cover;
+}
+
+.kira-attachment-name {
+  max-width: 100px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kira-attachment-chip button {
+  display: grid;
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  place-items: center;
+  border: 0;
+  border-radius: var(--radius-1);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.kira-attachment-chip button:hover {
+  background: var(--control-patch-strong);
+  color: var(--text-main);
+}
+
 /* Prompt Input Container */
 .kira-dock-input-wrap {
   width: 100%;
