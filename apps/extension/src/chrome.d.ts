@@ -1,6 +1,20 @@
 declare const chrome: {
   action?: {
     openPopup?: () => Promise<void>
+    setBadgeText?: (details: { text: string }) => Promise<void>
+    setBadgeBackgroundColor?: (details: { color: string }) => Promise<void>
+  }
+  alarms: {
+    create: (name: string, info: { delayInMinutes?: number; periodInMinutes?: number }) => void
+    clear: (name: string) => Promise<boolean>
+    onAlarm: {
+      addListener: (callback: (alarm: { name: string }) => void) => void
+    }
+  }
+  commands: {
+    onCommand: {
+      addListener: (callback: (command: string, tab?: { id?: number }) => void) => void
+    }
   }
   contextMenus: {
     create: (properties: {

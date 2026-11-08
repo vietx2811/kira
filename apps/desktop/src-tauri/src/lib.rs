@@ -32,6 +32,7 @@ const MIGRATION_OUTLINE_DRAFTS: &str = "007_outline_drafts";
 const MIGRATION_GRAPH_V2_FIELDS: &str = "008_graph_v2_fields";
 const MIGRATION_IDEA_CONTENT_FIELD: &str = "009_idea_content_field";
 const MIGRATION_NODE_FLAGS: &str = "010_node_flags";
+const MIGRATION_LINK_LABEL: &str = "011_link_label";
 // project_meta key. Present means the package was last written by a build that
 // persists `project`, `appearance` and the node flags. Absent means a legacy
 // save, whose manifest.json is the only place those values survive.
@@ -303,6 +304,8 @@ struct LinkRecord {
     target_kind: Option<String>,
     relation: String,
     note: String,
+    #[serde(default)]
+    label: Option<String>,
     confidence: f64,
     #[serde(default, rename = "createdAt")]
     created_at: Option<String>,
@@ -1140,6 +1143,11 @@ fn migrate(conn: &Connection) -> Result<(), String> {
     add_column_if_missing(conn, "reference_assets", "palette_pinned", "INTEGER")?;
     add_column_if_missing(conn, "reference_assets", "block_order", "TEXT")?;
     record_migration(conn, MIGRATION_NODE_FLAGS)?;
+    // A few words naming how two nodes connect (AI drafts, Mermaid imports) —
+    // EvidenceLink.label in main.tsx, separate from the free-text `note`.
+    // Was never given a column, so it silently vanished on save + reload.
+    add_column_if_missing(conn, "links", "label", "TEXT")?;
+    record_migration(conn, MIGRATION_LINK_LABEL)?;
     Ok(())
 }
 
@@ -1362,7 +1370,7 @@ fn write_snapshot(
 
     for link in &snapshot.links {
         tx.execute(
-            "INSERT INTO links (id, image_id, idea_id, source_node_id, target_node_id, source_kind, target_kind, relation, note, confidence, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+            "INSERT INTO links (id, image_id, idea_id, source_node_id, target_node_id, source_kind, target_kind, relation, note, label, confidence, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
             params![
                 link.id,
                 link.image_id,
@@ -1373,6 +1381,7 @@ fn write_snapshot(
                 link.target_kind,
                 link.relation,
                 link.note,
+                link.label,
                 link.confidence,
                 link.created_at,
                 link.updated_at
@@ -1588,7 +1597,7 @@ fn read_references(conn: &Connection) -> Result<Vec<ReferenceRecord>, String> {
 fn read_links(conn: &Connection) -> Result<Vec<LinkRecord>, String> {
     let mut statement = conn
         .prepare(
-            "SELECT id, image_id, idea_id, source_node_id, target_node_id, source_kind, target_kind, relation, note, confidence, created_at, updated_at FROM links ORDER BY rowid",
+            "SELECT id, image_id, idea_id, source_node_id, target_node_id, source_kind, target_kind, relation, note, label, confidence, created_at, updated_at FROM links ORDER BY rowid",
         )
         .map_err(|error| error.to_string())?;
     let rows = statement
@@ -1603,9 +1612,10 @@ fn read_links(conn: &Connection) -> Result<Vec<LinkRecord>, String> {
                 target_kind: row.get(6)?,
                 relation: row.get(7)?,
                 note: row.get(8)?,
-                confidence: row.get(9)?,
-                created_at: row.get(10)?,
-                updated_at: row.get(11)?,
+                label: row.get(9)?,
+                confidence: row.get(10)?,
+                created_at: row.get(11)?,
+                updated_at: row.get(12)?,
             })
         })
         .map_err(|error| error.to_string())?;
@@ -5413,6 +5423,7 @@ mod tests {
                 target_kind: Some("idea".to_string()),
                 relation: "supports".to_string(),
                 note: "Traceable note".to_string(),
+                label: Some("supports".to_string()),
                 confidence: 0.72,
                 created_at: Some("2026-06-01T03:00:00.000Z".to_string()),
                 updated_at: Some("2026-06-01T03:01:00.000Z".to_string()),
@@ -5550,7 +5561,7 @@ mod tests {
                 row.get(0)
             })
             .expect("count migrations");
-        assert_eq!(migration_count, 10);
+        assert_eq!(migration_count, 11);
 
         fs::remove_dir_all(project_dir).expect("remove temp project");
     }
@@ -6908,7 +6919,7 @@ mod tests {
             "id": "link-a", "imageId": "img-a", "ideaId": "idea-plain",
             "sourceNodeId": "img-a", "targetNodeId": "idea-plain",
             "sourceKind": "image", "targetKind": "idea", "relation": "supports",
-            "note": "Liên kết", "confidence": 0.75,
+            "note": "Liên kết", "label": "hỗ trợ", "confidence": 0.75,
             "createdAt": "2026-09-03T00:00:00.000Z",
             "updatedAt": "2026-09-03T00:01:00.000Z"
         }]);

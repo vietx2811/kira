@@ -673,6 +673,11 @@ type KiraCapturePayload = {
   title: string
   source: string
   pageUrl?: string
+  // Open Graph preview image for a page capture (kind: 'page') — research
+  // 2026-11-09 §5#7: without this, createReferenceFromCapture had nothing
+  // but the page's own URL to use as a thumbnail, so a captured page
+  // rendered as an image node with a broken image for a thumb.
+  imageUrl?: string
   tags?: string[]
   note?: string
   targetNode?: CanvasNodeSelection
@@ -15150,7 +15155,10 @@ function createReferenceFromCapture(capture: KiraCapturePayload, index: number):
     ),
     x: Math.max(62, 84 - column * 9),
     y: 18 + (slot % 5) * 14,
-    thumb: capture.kind === 'image' ? capture.url : capture.url,
+    // A page capture has no image of its own — og:image (capture.imageUrl)
+    // is the real preview when the page has one; falling back to the page's
+    // own URL (not an image) is what rendered as a broken thumb before.
+    thumb: capture.kind === 'page' ? (capture.imageUrl || capture.url) : capture.url,
     importance: 1,
     createdAt: timestamp,
     addedAt: nowIso(),
@@ -15512,6 +15520,9 @@ function parseKiraCapturePayload(value: string): KiraCapturePayload | null {
       title: parsed.title,
       source: parsed.source,
       pageUrl: typeof parsed.pageUrl === 'string' ? parsed.pageUrl : undefined,
+      // Invalid/absent just means no thumbnail override, not a rejected
+      // payload — createReferenceFromCapture already falls back to `url`.
+      imageUrl: typeof parsed.imageUrl === 'string' && parseCaptureUrl(parsed.imageUrl) ? parsed.imageUrl : undefined,
       tags: Array.isArray(parsed.tags) ? parsed.tags.filter((tag): tag is string => typeof tag === 'string') : undefined,
       note: typeof parsed.note === 'string' ? parsed.note : undefined,
       targetNode: isKiraCaptureNodeRef(parsed.targetNode) ? parsed.targetNode : undefined,

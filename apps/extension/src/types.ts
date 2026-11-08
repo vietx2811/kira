@@ -5,6 +5,9 @@ export type KiraCapturePayload = {
   title: string
   source: string
   pageUrl?: string
+  // Open Graph preview image for a page capture (kind: 'page') — the app
+  // uses this as the thumbnail instead of the page's own URL.
+  imageUrl?: string
   tags?: string[]
   note?: string
   targetNode?: KiraCaptureNodeRef
@@ -53,6 +56,10 @@ export type KiraBridgeMessage =
   // feedback on directly, e.g. the native "Capture Image to KIRA" context
   // menu item rejecting an embedded (data:/blob:) image.
   | { type: 'kira-show-toast'; message: string }
+  // The save-hovered-image keyboard command fires in background.ts (there's
+  // no DOM there either), so it asks the content script — the only place
+  // that knows what's currently hovered — to do the actual capture.
+  | { type: 'kira-save-hovered-image' }
 
 export type KiraBridgeResponse =
   | { ok: true; context?: KiraCaptureContext | null }
