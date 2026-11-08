@@ -12,7 +12,7 @@
 // kit `Button` (tertiary sm for quiet actions, primary sm for the
 // committing "Nhận", primary-destructive sm for the one destructive action).
 import { Fragment, useMemo } from 'react'
-import { AlertTriangle, Check, LocateFixed, Palette as PaletteIcon, Pause, Pencil, Plus, Trash2 } from 'lucide-react'
+import { AlertTriangle, Check, Layers, LocateFixed, Palette as PaletteIcon, Pause, Pencil, Plus, Trash2 } from 'lucide-react'
 import { Badge } from '@/components/base/badges/badges'
 import { Button } from '@/components/base/buttons/button'
 import type { AiChangeItem, AiChangeSet, AiSkillCheckpoint, GraphNodeKind } from '@/kira/aiPanelTypes'
@@ -167,6 +167,48 @@ export function KiraChangeItemRow({
               <div className="acts">
                 <Button color="tertiary" size="sm" onPress={() => onRemoveNode(item.nodeKind, item.nodeId)}>
                   {t('kira.change.removeNode')}
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+      </li>
+    )
+  }
+
+  if (item.kind === 'create-nodes-batch') {
+    const isPending = item.status === 'pending'
+    return (
+      <li className={isPending ? 'item is-focused' : 'item'} key={item.id} aria-current={isPending ? 'true' : undefined}>
+        <span className="op"><Layers size={11} /></span>
+        <div className="item-line">
+          <div>
+            <span className="item-kind">{t('kira.change.itemCreateNodesBatch')}</span>
+            <span className="item-target">{t('kira.change.nodesBatchSummary', { count: String(item.nodes.length), linkCount: String(item.links.length) })}</span>
+          </div>
+          <StatusBadge tone={isPending ? 'pending' : 'ok'}>
+            {isPending ? t('kira.change.statusPending') : t(`kira.change.status${item.status === 'accepted' ? 'Accepted' : 'Rejected'}`)}
+          </StatusBadge>
+        </div>
+        {isPending && (
+          <div className="item-body">
+            <ul className="batch-node-preview">
+              {item.nodes.map((node) => (
+                <li key={node.draftId}>{node.title}</li>
+              ))}
+            </ul>
+            <div className="item-foot">
+              {item.sourceNodeId && item.sourceNodeKind && (
+                <Button color="tertiary" size="sm" iconLeading={LocateFixed} onPress={() => onViewOnCanvas(item.sourceNodeKind!, item.sourceNodeId!)}>
+                  {t('kira.change.viewOnCanvas')}
+                </Button>
+              )}
+              <div className="acts">
+                <Button color="tertiary" size="sm" onPress={() => onReject(changeSet.id, item.id)}>
+                  {t('kira.change.reject')}
+                </Button>
+                <Button color="primary" size="sm" onPress={() => onAccept(changeSet.id, item.id)}>
+                  {t('kira.change.accept')}
                 </Button>
               </div>
             </div>

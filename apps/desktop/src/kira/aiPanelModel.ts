@@ -5,18 +5,23 @@
  * main.tsx should wire these in.
  */
 
+import { isRelation } from './canvas/relations'
 import {
   type AiCanvasOperation,
   type AiChangeItem,
   type AiChangeSet,
+  type AiCreateNodesBatchItem,
   type AiModelResult,
   type AiNodeProvenance,
+  type AiNodesBatchDraftLink,
+  type AiNodesBatchDraftNode,
   type AiPanelState,
   type AiPanelSummary,
   type AiSkillCheckpoint,
   type AiThread,
   type GraphNodeKind,
   provenanceKey,
+  SOURCE_DRAFT_ID,
 } from './aiPanelTypes'
 
 export const AI_PANEL_SCHEMA_VERSION = 1
@@ -42,6 +47,10 @@ function itemNeedsYou(item: AiChangeItem): boolean {
     case 'create-node':
       // Applied immediately (DECISIONS.md #2); never counts.
       return false
+    case 'create-nodes-batch':
+      // The opposite default from create-node — always held for review
+      // (decision D1a), so a pending batch counts same as a pending edit.
+      return item.status === 'pending'
     case 'edit-text':
     case 'edit-palette':
       return item.status === 'pending' || item.status === 'stale'
@@ -118,9 +127,13 @@ export function summaryLine(state: AiPanelState): AiPanelSummary {
 
 /** mockup.js cs-rule: "Nhận hàng loạt không bao gồm xoá và mục đã cũ" —
  *  bulk accept excludes delete-node items and stale items. Only pending
- *  edit-text / edit-palette items are bulk-acceptable. */
+ *  edit-text / edit-palette items are bulk-acceptable. create-nodes-batch is
+ *  excluded too, for the same reason delete is: accepting a block of 6-12
+ *  new nodes deserves its own deliberate click, not a side effect of
+ *  sweeping up small text edits (research §1.1 — the whole point of holding
+ *  it for review is that it is not cheap to glance at and discard). */
 export function bulkAcceptable(changeSet: AiChangeSet): AiChangeItem[] {
-  return changeSet.items.filter((item) => item.kind !== 'delete-node' && item.status === 'pending')
+  return changeSet.items.filter((item) => item.kind !== 'delete-node' && item.kind !== 'create-nodes-batch' && item.status === 'pending')
 }
 
 // ---------------------------------------------------------------------------
@@ -194,14 +207,16 @@ function recordVersionOp(item: { kind: string }, run: { runId: string }, nodeKin
 
 /** Accept a pending edit-text, edit-palette, or delete-node item. Refuses
  *  create-node items (already applied — use removeAppliedNode to undo
- *  those instead) and items that are not in a pending state (mockup: a
- *  stale item offers only "Từ chối" / "Đề xuất lại", never "Nhận"). */
+ *  those instead), create-nodes-batch items (use acceptNodesBatch instead —
+ *  a different operation shape, N creates instead of one update), and items
+ *  that are not in a pending state (mockup: a stale item offers only "Từ
+ *  chối" / "Đề xuất lại", never "Nhận"). */
 export function acceptItem(state: AiPanelState, changeSetId: string, itemId: string): AiModelResult {
   const found = findItem(state, changeSetId, itemId)
   if (!found) return { ok: false, reason: 'not-found' }
   const { changeSet, item } = found
 
-  if (item.kind === 'create-node') return { ok: false, reason: 'wrong-kind' }
+  if (item.kind === 'create-node' || item.kind === 'create-nodes-batch') return { ok: false, reason: 'wrong-kind' }
   if (item.status !== 'pending') return { ok: false, reason: `not-pending:${item.status}` }
 
   const runRef = { runId: changeSet.runId }
@@ -244,7 +259,10 @@ export function acceptItem(state: AiPanelState, changeSetId: string, itemId: str
  *  silently redo the exact mutation the user just undid). delete-node has
  *  no 'stale' in its status union (DeleteItemStatus), so it goes back to
  *  'pending' instead, its only actionable state, restoring both "Giữ lại"
- *  and "Xoá".
+ *  and "Xoá". create-nodes-batch has no 'stale' either (NodesBatchItemStatus)
+ *  and, unlike edit-text/-palette, there is no "current node value" for a
+ *  freshly-undone batch to have drifted from — it goes back to 'pending' too,
+ *  same as delete-node, so the user can accept it again or reject it.
  *
  *  Refuses create-node items (acceptItem never mutates those — creation is
  *  applied immediately per DECISIONS.md #2, and undone via
@@ -257,7 +275,7 @@ export function revertAcceptedItem(state: AiPanelState, changeSetId: string, ite
   if (item.kind === 'create-node') return { ok: false, reason: 'wrong-kind' }
   if (item.status !== 'accepted') return { ok: false, reason: `not-accepted:${item.status}` }
 
-  if (item.kind === 'delete-node') {
+  if (item.kind === 'delete-node' || item.kind === 'create-nodes-batch') {
     const next = { ...item, status: 'pending' as const }
     return { ok: true, state: replaceItem(state, changeSetId, itemId, next), operations: [] }
   }
@@ -380,6 +398,117 @@ export function acceptBulk(
     acceptedItemIds.push(item.id)
   }
   return { state: nextState, operations, acceptedItemIds }
+}
+
+// ---------------------------------------------------------------------------
+// create-nodes-batch: propose / accept / reject (research §1.1, §1.3)
+// ---------------------------------------------------------------------------
+
+/** Append a pending create-nodes-batch proposal to an existing ChangeSet.
+ *  The caller (main.tsx) builds the item — every id, and the drafted node
+ *  titles/content/links — since this module never generates an id or calls
+ *  a model; this just validates the ChangeSet exists and inserts the item.
+ *  No canvas operations: nothing is applied until acceptNodesBatch runs. */
+export function proposeNodesBatch(state: AiPanelState, changeSetId: string, item: AiCreateNodesBatchItem): AiModelResult {
+  const changeSet = state.changeSets.find((candidate) => candidate.id === changeSetId)
+  if (!changeSet) return { ok: false, reason: 'not-found' }
+  const changeSets = state.changeSets.map((candidate) =>
+    candidate.id === changeSetId ? { ...candidate, items: [...candidate.items, item] } : candidate,
+  )
+  return { ok: true, state: { ...state, changeSets }, operations: [] }
+}
+
+/** Resolve one end of a batch link to a real canvas node id + kind: either
+ *  one of this item's own drafted nodes (always 'idea'), or, when the
+ *  draftId is the SOURCE_DRAFT_ID sentinel, the existing node the whole
+ *  batch branches from. Returns null if neither resolves (a link naming the
+ *  source when the item has none, or a stray draftId the model invented that
+ *  does not match any drafted node) — the caller drops that link rather than
+ *  create a dangling one. */
+function resolveBatchEndpoint(
+  item: AiCreateNodesBatchItem,
+  nodeByDraftId: Map<string, AiNodesBatchDraftNode>,
+  draftId: string,
+): { nodeId: string; nodeKind: GraphNodeKind } | null {
+  const drafted = nodeByDraftId.get(draftId)
+  if (drafted) return { nodeId: drafted.nodeId, nodeKind: 'idea' }
+  if (draftId === SOURCE_DRAFT_ID && item.sourceNodeId && item.sourceNodeKind) {
+    return { nodeId: item.sourceNodeId, nodeKind: item.sourceNodeKind }
+  }
+  return null
+}
+
+/** Accept a pending create-nodes-batch item: every node becomes a
+ *  create-node operation and every link that resolves on both ends becomes a
+ *  create-link operation, for main.tsx to apply through its canvas history
+ *  in a single commit — kira/README.md §5's rule ("một Cmd+Z hoàn tác đúng
+ *  một accept") applies to the whole block here, not per node. Also records
+ *  provenance for each new node directly in the returned state (same shape
+ *  setNodeProvenance produces), so the canvas "AI" badge shows the moment
+ *  the nodes exist — there is no intermediate state where they're on the
+ *  canvas but unattributed. */
+export function acceptNodesBatch(state: AiPanelState, changeSetId: string, itemId: string): AiModelResult {
+  const found = findItem(state, changeSetId, itemId)
+  if (!found) return { ok: false, reason: 'not-found' }
+  const { changeSet, item } = found
+
+  if (item.kind !== 'create-nodes-batch') return { ok: false, reason: 'wrong-kind' }
+  if (item.status !== 'pending') return { ok: false, reason: `not-pending:${item.status}` }
+
+  const nodeByDraftId = new Map(item.nodes.map((node) => [node.draftId, node]))
+  const operations: AiCanvasOperation[] = item.nodes.map((node) => ({
+    type: 'create-node',
+    nodeKind: 'idea',
+    nodeId: node.nodeId,
+    title: node.title,
+    content: node.content,
+    x: node.x,
+    y: node.y,
+    runId: changeSet.runId,
+  }))
+  item.links.forEach((link, index) => {
+    const from = resolveBatchEndpoint(item, nodeByDraftId, link.fromDraftId)
+    const to = resolveBatchEndpoint(item, nodeByDraftId, link.toDraftId)
+    if (!from || !to) return
+    operations.push({
+      type: 'create-link',
+      id: `${item.id}-link-${index}`,
+      sourceNodeId: from.nodeId,
+      targetNodeId: to.nodeId,
+      sourceKind: from.nodeKind,
+      targetKind: to.nodeKind,
+      relation: link.relation,
+      label: link.label,
+    })
+  })
+
+  const next = { ...item, status: 'accepted' as const }
+  let nextState = replaceItem(state, changeSetId, itemId, next)
+  for (const node of item.nodes) {
+    nextState = setNodeProvenance(nextState, 'idea', node.nodeId, {
+      aiGenerated: true,
+      runId: changeSet.runId,
+      threadId: changeSet.threadId,
+      editedAfterGeneration: false,
+    })
+  }
+  return { ok: true, state: nextState, operations }
+}
+
+/** Reject a pending create-nodes-batch item. Nothing was ever applied to the
+ *  canvas for one (unlike create-node, DECISIONS.md #2's immediate apply —
+ *  this kind always waits, decision D1a), so rejecting is a pure status
+ *  change, no canvas operations. */
+export function rejectNodesBatch(state: AiPanelState, changeSetId: string, itemId: string): AiModelResult {
+  const found = findItem(state, changeSetId, itemId)
+  if (!found) return { ok: false, reason: 'not-found' }
+  const { item } = found
+
+  if (item.kind !== 'create-nodes-batch') return { ok: false, reason: 'wrong-kind' }
+  if (item.status !== 'pending') return { ok: false, reason: `not-pending:${item.status}` }
+
+  const next = { ...item, status: 'rejected' as const }
+  return { ok: true, state: replaceItem(state, changeSetId, itemId, next), operations: [] }
 }
 
 // ---------------------------------------------------------------------------
@@ -508,6 +637,22 @@ const CHECKPOINT_STATUSES = ['waiting', 'resolved', 'cancelled'] as const
 const CREATE_STATUSES = ['applied', 'removed'] as const
 const EDIT_STATUSES = ['pending', 'accepted', 'rejected', 'stale'] as const
 const DELETE_STATUSES = ['pending', 'accepted', 'kept'] as const
+const NODES_BATCH_STATUSES = ['pending', 'accepted', 'rejected'] as const
+
+function parseBatchDraftNode(value: unknown): AiNodesBatchDraftNode | null {
+  if (!isRecord(value)) return null
+  if (!isString(value.draftId) || !isString(value.nodeId) || !isString(value.title) || !isString(value.content)) return null
+  if (typeof value.x !== 'number' || typeof value.y !== 'number') return null
+  return { draftId: value.draftId, nodeId: value.nodeId, title: value.title, content: value.content, x: value.x, y: value.y }
+}
+
+function parseBatchDraftLink(value: unknown): AiNodesBatchDraftLink | null {
+  if (!isRecord(value)) return null
+  if (!isString(value.fromDraftId) || !isString(value.toDraftId) || !isRelation(value.relation)) return null
+  const link: AiNodesBatchDraftLink = { fromDraftId: value.fromDraftId, toDraftId: value.toDraftId, relation: value.relation }
+  if (isString(value.label)) link.label = value.label
+  return link
+}
 
 function parseNodeRef(value: unknown): { kind: GraphNodeKind; id: string } | null {
   if (!isRecord(value)) return null
@@ -616,6 +761,21 @@ function parseChangeItem(value: unknown): AiChangeItem | null {
       status: value.status,
       editedByUserAfterApply: value.editedByUserAfterApply,
     }
+  }
+
+  if (value.kind === 'create-nodes-batch') {
+    if (!isOneOf(value.status, NODES_BATCH_STATUSES)) return null
+    const item: AiChangeItem = {
+      kind: 'create-nodes-batch',
+      id: value.id,
+      createdAt: value.createdAt,
+      status: value.status,
+      nodes: parseArray(value.nodes, parseBatchDraftNode),
+      links: parseArray(value.links, parseBatchDraftLink),
+    }
+    if (isString(value.sourceNodeId)) item.sourceNodeId = value.sourceNodeId
+    if (isOneOf(value.sourceNodeKind, GRAPH_NODE_KINDS)) item.sourceNodeKind = value.sourceNodeKind
+    return item
   }
 
   if (value.kind === 'edit-text') {

@@ -172,6 +172,7 @@ import type {
   AiCanvasOperation,
   AiChangeItem,
   AiChangeSet,
+  AiCreateNodesBatchItem,
   AiMessage,
   AiNodeProvenance,
   AiPanelState,
@@ -179,10 +180,11 @@ import type {
   AiSkillCheckpoint,
   AiThread,
 } from './kira/aiPanelTypes'
-import { provenanceKey } from './kira/aiPanelTypes'
+import { provenanceKey, SOURCE_DRAFT_ID } from './kira/aiPanelTypes'
 import {
   acceptBulk as aiPanelAcceptBulk,
   acceptItem as aiPanelAcceptItem,
+  acceptNodesBatch as aiPanelAcceptNodesBatch,
   bulkAcceptable as aiPanelBulkAcceptable,
   createEmptyAiPanelState,
   dismissSkillCheckpoint as aiPanelDismissSkillCheckpoint,
@@ -192,7 +194,9 @@ import {
   markNodeEditedAfterGeneration as aiPanelMarkNodeEditedAfterGeneration,
   markStaleOnUserEdit as aiPanelMarkStaleOnUserEdit,
   needsYouCount as aiPanelNeedsYouCount,
+  proposeNodesBatch as aiPanelProposeNodesBatch,
   rejectItem as aiPanelRejectItem,
+  rejectNodesBatch as aiPanelRejectNodesBatch,
   removeAppliedNode as aiPanelRemoveAppliedNode,
   revertAcceptedItem as aiPanelRevertAcceptedItem,
   revertRemovedItem as aiPanelRevertRemovedItem,
@@ -919,6 +923,8 @@ const UI_STRINGS: Record<string, { en: string; vi: string }> = {
   'kira.change.rejectAll': { en: 'Reject proposals', vi: 'Bỏ các đề xuất' },
   'kira.change.bulkRule': { en: 'Bulk accept excludes deletes and stale items.', vi: 'Nhận hàng loạt không bao gồm xoá và mục đã cũ.' },
   'kira.change.itemCreateNode': { en: 'Create node', vi: 'Tạo node' },
+  'kira.change.itemCreateNodesBatch': { en: 'Expand into nodes', vi: 'Mở rộng thành node' },
+  'kira.change.nodesBatchSummary': { en: '{count} new nodes · {linkCount} links', vi: '{count} node mới · {linkCount} liên kết' },
   'kira.change.itemEditText': { en: 'Edit text', vi: 'Sửa text' },
   'kira.change.itemEditPalette': { en: 'Change palette', vi: 'Đổi palette' },
   'kira.change.itemDeleteNode': { en: 'Delete node', vi: 'Xoá node' },
@@ -1456,6 +1462,13 @@ type KiraDevApi = {
     graph?: GraphMetrics
     layout?: LayoutVerificationReport
   }
+  // kira-batch QA hooks (2026-11-07) — see their definitions for why these
+  // exist: the real AI-calling paths cannot run in a browser-only session.
+  proposeTestBatch: (sourceId?: string) => { changeSetId: string; itemId: string }
+  acceptChange: (changeSetId: string, itemId: string) => void
+  rejectChange: (changeSetId: string, itemId: string) => void
+  aiPanel: () => AiPanelState
+  testApplySnapshotPreserveHistory: () => { changeSetId: string; itemId: string }
 }
 
 type KiraWindow = Window & {
@@ -3010,12 +3023,117 @@ function FileWorkspace({
           layout: verifyGraphLayout(ideas, images, links, palettes, diagrams, placeholders),
         }
       },
+      // Việc kira-batch (2026-11-07): the real "mở rộng nhánh"/"vẽ cả bảng"
+      // paths call a model, which cannot run in a browser-only QA session
+      // (no provider configured, no Tauri runtime). These three exercise the
+      // REAL propose/accept/reject code — proposeTestBatch builds the same
+      // AiCreateNodesBatchItem shape expandNodeIntoBranches would, skipping
+      // only the model call; acceptChange/rejectChange call the exact
+      // functions the "Cần bạn" tab's buttons call — so a QA script drives
+      // the genuine dispatch (batch items routed to acceptNodesBatch/
+      // rejectNodesBatch, not the generic acceptItem/rejectItem) and genuine
+      // canvas-history/undo wiring, not a reimplementation of it.
+      proposeTestBatch(sourceId?: string) {
+        const sourceNode = sourceId ? resolveGraphNodeRef(sourceId, ideas, images, palettes, diagrams, placeholders) : null
+        const now = nowIso()
+        const runId = crypto.randomUUID()
+        const threadId = crypto.randomUUID()
+        const changeSetId = crypto.randomUUID()
+        const itemId = crypto.randomUUID()
+        const anchor = sourceNode ?? { x: 50, y: 50 }
+        const positions = arcPositionsAroundSource(anchor, 2)
+        const item: AiCreateNodesBatchItem = {
+          kind: 'create-nodes-batch',
+          id: itemId,
+          createdAt: now,
+          status: 'pending',
+          nodes: [
+            { draftId: 'n1', nodeId: `idea-devtest-${Date.now()}-0`, title: 'Dev test child A', content: 'Dev test content A.', x: positions[0].x, y: positions[0].y },
+            { draftId: 'n2', nodeId: `idea-devtest-${Date.now()}-1`, title: 'Dev test child B', content: 'Dev test content B.', x: positions[1].x, y: positions[1].y },
+          ],
+          links: sourceNode
+            ? [{ fromDraftId: SOURCE_DRAFT_ID, toDraftId: 'n1', relation: 'derived-from' as const }, { fromDraftId: 'n1', toDraftId: 'n2', relation: 'related' as const }]
+            : [{ fromDraftId: 'n1', toDraftId: 'n2', relation: 'related' as const }],
+          sourceNodeId: sourceNode?.id,
+          sourceNodeKind: sourceNode?.kind,
+        }
+        setAiPanelState((current) => {
+          const thread: AiThread = { id: threadId, title: 'Dev test batch', createdAt: now, updatedAt: now, anchorNodeIds: sourceNode ? [sourceNode.id] : [] }
+          const run: AiRun = {
+            id: runId, threadId, providerType: 'apple_foundation', modelLabel: 'dev-test',
+            startedAt: now, finishedAt: now, status: 'done', promptPreview: 'dev test', resultSummary: 'dev test',
+          }
+          const changeSet: AiChangeSet = { id: changeSetId, runId, threadId, title: 'Dev test batch', createdAt: now, items: [] }
+          const withThread: AiPanelState = {
+            ...current,
+            threads: [...current.threads, thread],
+            runs: [...current.runs, run],
+            changeSets: [...current.changeSets, changeSet],
+          }
+          const result = aiPanelProposeNodesBatch(withThread, changeSetId, item)
+          return result.ok ? result.state : withThread
+        })
+        return { changeSetId, itemId }
+      },
+      acceptChange(changeSetId: string, itemId: string) {
+        acceptChangeItem(changeSetId, itemId)
+      },
+      rejectChange(changeSetId: string, itemId: string) {
+        rejectChangeItem(changeSetId, itemId)
+      },
+      aiPanel() {
+        return JSON.parse(JSON.stringify(aiPanelState)) as AiPanelState
+      },
+      // Exercises applyProjectSnapshot's historySource branch directly —
+      // draftBoardFromPrompt's own fix (research §0.1/§1.3#4) — without
+      // needing a connected AI provider: builds a tiny snapshot with one
+      // extra idea and applies it the same way draftBoardFromPrompt does
+      // (tagged 'ai-accept' so Cmd+Z also reverts a panel item), so a QA
+      // script can confirm undo restores the PRE-call board.
+      testApplySnapshotPreserveHistory() {
+        const newIdeaId = `idea-devtest-draft-${Date.now()}`
+        const testSnapshot: ProjectSnapshot = {
+          ...toProjectSnapshot(ideas, images, links),
+          project: { ...projectMetadata, title: 'Dev test draft board' },
+          ideas: [...ideas, createTemplateIdea(newIdeaId, 'Dev test draft idea', 'Dev test draft content.', 50, 50, 'forming', 1)],
+        }
+        const now = nowIso()
+        const runId = crypto.randomUUID()
+        const threadId = crypto.randomUUID()
+        const changeSetId = crypto.randomUUID()
+        const itemId = crypto.randomUUID()
+        applyProjectSnapshot(testSnapshot, { historySource: { kind: 'ai-accept', changeSetId, itemId } })
+        setAiPanelState((current) => {
+          const thread: AiThread = { id: threadId, title: testSnapshot.project.title, createdAt: now, updatedAt: now, anchorNodeIds: [] }
+          const run: AiRun = { id: runId, threadId, providerType: 'apple_foundation', modelLabel: 'dev-test', startedAt: now, finishedAt: now, status: 'done', promptPreview: 'dev test', resultSummary: 'dev test' }
+          const item: AiCreateNodesBatchItem = {
+            kind: 'create-nodes-batch', id: itemId, createdAt: now, status: 'accepted',
+            nodes: [{ draftId: newIdeaId, nodeId: newIdeaId, title: 'Dev test draft idea', content: 'Dev test draft content.', x: 50, y: 50 }],
+            links: [],
+          }
+          const changeSet: AiChangeSet = { id: changeSetId, runId, threadId, title: testSnapshot.project.title, createdAt: now, items: [item] }
+          return { ...current, threads: [...current.threads, thread], runs: [...current.runs, run], changeSets: [...current.changeSets, changeSet] }
+        })
+        return { changeSetId, itemId }
+      },
     }
 
     return () => {
       delete devWindow.__kiraDev
     }
-  }, [isActive, diagrams, ideas, images, links, nodeVersions, outlineDrafts, palettes, placeholders, selection, versionHistory, versionState])
+    // aiPanelState: added for the kira-batch dev hooks (proposeTestBatch/
+    // acceptChange/rejectChange/aiPanel, 2026-11-07) — without it in this
+    // list, window.__kiraDev only gets rebuilt when ideas/images/etc. change,
+    // so after proposeTestBatch's setAiPanelState call every method on this
+    // object (including aiPanel() itself) stays a closure over the
+    // aiPanelState from BEFORE that call: aiPanel() reads back empty, and
+    // acceptChange/rejectChange operate on a changeSet that, from their
+    // stale closure's point of view, was never proposed. Confirmed by
+    // reproducing it live before adding this (CLAUDE.md's existing
+    // __kiraDev-rebuilt-every-render gotcha is about holding a REFERENCE
+    // across calls; this is the same root cause — a stale closure — showing
+    // up through a dependency array instead).
+  }, [isActive, aiPanelState, diagrams, ideas, images, links, nodeVersions, outlineDrafts, palettes, placeholders, selection, versionHistory, versionState])
 
   useEffect(() => {
     resetCanvasHistory(currentCanvasHistoryEntry())
@@ -3033,7 +3151,19 @@ function FileWorkspace({
     canvasHistoryStore.getState().setEntry(source ? { ...currentCanvasHistoryEntry(), source } : currentCanvasHistoryEntry())
   }, [diagrams, frames, ideas, images, links, palettes, placeholders, selection])
 
-  function applyProjectSnapshot(snapshot: ProjectSnapshot) {
+  // `historySource` is the one thing that changes this function's history
+  // behavior (research §0.1, §1.3#4: draftBoardFromPrompt used to call this
+  // and always reset history, so a freshly AI-drafted board on a blank tab
+  // could never be undone — the bug's own fix, below). Every other caller —
+  // opening a project, a template, "continue last session" — omits it and
+  // keeps the unconditional reset: starting from a DIFFERENT project's
+  // history would be wrong there, same as today. Passing it preserves the
+  // pre-call state as the undo target instead of wiping history: `true`
+  // commits untagged, a CanvasHistorySource object tags the commit the same
+  // way acceptChangeItem does, so undoCanvas() can revert an "Cần bạn" item
+  // along with the canvas (draftBoardFromPrompt uses this to keep its
+  // ChangeSet entry in sync with Cmd+Z).
+  function applyProjectSnapshot(snapshot: ProjectSnapshot, options: { historySource?: true | CanvasHistorySource } = {}) {
     const hash = JSON.stringify(snapshot)
     setProjectMetadata(snapshot.project)
     setProjectAppearance(snapshot.appearance)
@@ -3057,16 +3187,20 @@ function FileWorkspace({
     setSelection({ type: 'project' })
     setLastSavedHash(hash)
     window.localStorage.setItem(storageKey, hash)
-    resetCanvasHistory({
-      ideas: snapshot.ideas,
-      images: snapshot.images,
-      palettes: snapshot.palettes,
-      diagrams: snapshot.diagrams,
-      placeholders: snapshot.placeholders,
-      frames: snapshot.frames ?? [],
-      links: snapshot.links,
-      selection: { type: 'project' },
-    })
+    if (options.historySource) {
+      pushCanvasHistory(options.historySource === true ? undefined : options.historySource)
+    } else {
+      resetCanvasHistory({
+        ideas: snapshot.ideas,
+        images: snapshot.images,
+        palettes: snapshot.palettes,
+        diagrams: snapshot.diagrams,
+        placeholders: snapshot.placeholders,
+        frames: snapshot.frames ?? [],
+        links: snapshot.links,
+        selection: { type: 'project' },
+      })
+    }
   }
 
   function currentAiSettingsSnapshot(): AiSettingsSnapshot {
@@ -3096,6 +3230,22 @@ function FileWorkspace({
   // Returns an error for the zero state to show, or null once the draft is on
   // the board. No fallback board: a failed or missing model says so instead of
   // dressing a template up as AI output, which is what the old starter did.
+  //
+  // research §0.1/§1.3#4: this used to call applyProjectSnapshot with no
+  // provenance, no ChangeSet, no thread, and reset canvas history — so a
+  // board drafted onto a blank tab could not be undone and left no trace in
+  // "Cần bạn". Fixed two ways: applyProjectSnapshot now PRESERVES history
+  // here (Cmd+Z restores the pre-draft blank tab) instead of clearing it, and
+  // a Thread/Run/ChangeSet is recorded with a create-nodes-batch item — the
+  // same item kind "mở rộng nhánh" proposes, except this one starts
+  // 'accepted', not 'pending': the nodes already exist (createBoardDraftSnapshot
+  // built the whole snapshot — project title, appearance, every node array —
+  // not just nodes+links, so there is no clean "apply via create-node
+  // operations" path here the way acceptNodesBatch has for a branch expansion;
+  // this records the SAME shape of history entry for "Cần bạn" visibility
+  // without re-creating anything). Drafting your own board from your own
+  // prompt onto an empty canvas has nothing to protect against — unlike
+  // "mở rộng nhánh" (decision D1a), it does not wait for approval.
   async function draftBoardFromPrompt(prompt: string): Promise<string | null> {
     const provider = textModelProvider()
     if (!provider) return t('zero.error.noAi', lang)
@@ -3105,9 +3255,45 @@ function FileWorkspace({
         async () => parseBoardDraft((await generateNativeAiText(provider, buildBoardDraftPrompt(prompt))).content),
         (result) => t('ai.status.newIdeas', lang, { count: String(result.nodes.length) }),
       )
-      applyProjectSnapshot(createBoardDraftSnapshot(prompt, draft, currentAiSettingsSnapshot()))
+      const snapshot = createBoardDraftSnapshot(prompt, draft, currentAiSettingsSnapshot())
+      const now = nowIso()
+      const runId = crypto.randomUUID()
+      const threadId = crypto.randomUUID()
+      const changeSetId = crypto.randomUUID()
+      const itemId = crypto.randomUUID()
+      applyProjectSnapshot(snapshot, { historySource: { kind: 'ai-accept', changeSetId, itemId } })
       setProjectPackage(null)
       setLibraryStatus(`Kira: ${provider.name} drafted ${draft.nodes.length} nodes`)
+      setAiPanelState((current) => {
+        const thread: AiThread = { id: threadId, title: snapshot.project.title, createdAt: now, updatedAt: now, anchorNodeIds: [] }
+        const run: AiRun = {
+          id: runId,
+          threadId,
+          providerType: provider.type,
+          modelLabel: provider.model && provider.model !== 'auto' ? provider.model : provider.name,
+          startedAt: now,
+          finishedAt: now,
+          status: 'done',
+          promptPreview: buildBoardDraftPrompt(prompt),
+          resultSummary: `${provider.name}: drafted ${snapshot.ideas.length} nodes`,
+        }
+        const item: AiCreateNodesBatchItem = {
+          kind: 'create-nodes-batch',
+          id: itemId,
+          createdAt: now,
+          status: 'accepted',
+          nodes: snapshot.ideas.map((idea) => ({ draftId: idea.id, nodeId: idea.id, title: idea.title, content: idea.content, x: idea.x, y: idea.y })),
+          links: snapshot.links
+            .map((link) => ({ fromDraftId: link.sourceNodeId ?? link.imageId, toDraftId: link.targetNodeId ?? link.ideaId, relation: link.relation, label: link.label }))
+            .filter((link) => Boolean(link.fromDraftId) && Boolean(link.toDraftId)),
+        }
+        const changeSet: AiChangeSet = { id: changeSetId, runId, threadId, title: snapshot.project.title, createdAt: now, items: [item] }
+        let next: AiPanelState = { ...current, threads: [...current.threads, thread], runs: [...current.runs, run], changeSets: [...current.changeSets, changeSet] }
+        for (const idea of snapshot.ideas) {
+          next = aiPanelSetNodeProvenance(next, 'idea', idea.id, { aiGenerated: true, runId, threadId, editedAfterGeneration: false })
+        }
+        return next
+      })
       return null
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
@@ -5230,12 +5416,63 @@ function FileWorkspace({
           })
           pendingVersion = null
         }
+      } else if (op.type === 'create-node') {
+        // acceptNodesBatch's output (aiPanelModel.ts) — one of these per node
+        // in an accepted create-nodes-batch item. Bundles the version record
+        // in directly (no separate record-node-version op): there is no
+        // "before" to diff a freshly-created node against, same reasoning
+        // createAiNode's single-node path already applies.
+        const timestamp = nowIso()
+        const idea: Idea = {
+          id: op.nodeId,
+          title: op.title,
+          content: op.content,
+          status: 'forming',
+          x: op.x,
+          y: op.y,
+          importance: 1,
+          createdAt: timestamp,
+          addedAt: timestamp,
+          updatedAt: timestamp,
+        }
+        setIdeas((current) => [...current, idea])
+        recordNodeVersion('idea', undefined, idea, 'created', { aiGenerated: true, note: op.runId })
+      } else if (op.type === 'create-link') {
+        const timestamp = nowIso()
+        const link: EvidenceLink = {
+          id: op.id,
+          imageId: op.sourceKind === 'image' ? op.sourceNodeId : op.targetKind === 'image' ? op.targetNodeId : '',
+          ideaId: op.targetKind === 'idea' ? op.targetNodeId : op.sourceNodeId,
+          sourceNodeId: op.sourceNodeId,
+          targetNodeId: op.targetNodeId,
+          sourceKind: op.sourceKind,
+          targetKind: op.targetKind,
+          relation: op.relation,
+          note: op.label ?? '',
+          label: op.label,
+          confidence: 0.7,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        }
+        setLinks((current) => [...current, link])
       }
     }
   }
 
+  // Looks up the item first so a create-nodes-batch item routes to its own
+  // accept/reject functions (different operation shape: N creates, not one
+  // update) instead of the generic edit-text/edit-palette/delete-node path —
+  // aiPanelAcceptItem/aiPanelRejectItem refuse that kind outright
+  // (aiPanelModel.ts). Same 'ai-accept' history tag either way, so
+  // undoCanvas()'s existing revert dispatch (aiPanelRevertAcceptedItem,
+  // itself extended to handle create-nodes-batch) needs no changes here.
+  function findChangeItemKind(changeSetId: string, itemId: string): AiChangeItem['kind'] | null {
+    return aiPanelState.changeSets.find((changeSet) => changeSet.id === changeSetId)?.items.find((item) => item.id === itemId)?.kind ?? null
+  }
+
   function acceptChangeItem(changeSetId: string, itemId: string) {
-    const result = aiPanelAcceptItem(aiPanelState, changeSetId, itemId)
+    const isBatch = findChangeItemKind(changeSetId, itemId) === 'create-nodes-batch'
+    const result = isBatch ? aiPanelAcceptNodesBatch(aiPanelState, changeSetId, itemId) : aiPanelAcceptItem(aiPanelState, changeSetId, itemId)
     if (!result.ok) return
     pushCanvasHistory({ kind: 'ai-accept', changeSetId, itemId })
     applyAiCanvasOperations(result.operations)
@@ -5251,7 +5488,8 @@ function FileWorkspace({
   }
 
   function rejectChangeItem(changeSetId: string, itemId: string) {
-    const result = aiPanelRejectItem(aiPanelState, changeSetId, itemId)
+    const isBatch = findChangeItemKind(changeSetId, itemId) === 'create-nodes-batch'
+    const result = isBatch ? aiPanelRejectNodesBatch(aiPanelState, changeSetId, itemId) : aiPanelRejectItem(aiPanelState, changeSetId, itemId)
     if (result.ok) setAiPanelState(result.state)
   }
 
@@ -5303,11 +5541,152 @@ function FileWorkspace({
     setAiPanelState(result.state)
   }
 
+  // Perf/temporary placement for "mở rộng nhánh" (research §1.1 luồng 2):
+  // an arc of points below the source node, evenly spaced, radius growing a
+  // little with the count so cards do not land stacked on top of each other
+  // at a glance. Not real collision detection against the rest of the board —
+  // Orchestrator's autoLayout (kira/canvas/autoLayout.ts) replaces this once
+  // it lands; this only has to be "not obviously overlapping" until then.
+  function arcPositionsAroundSource(anchor: { x: number; y: number }, count: number): { x: number; y: number }[] {
+    if (count <= 0) return []
+    const radius = clamp(16 + count * 2, 16, 32)
+    const spreadDegrees = Math.min(160, 40 * count)
+    const startDeg = -spreadDegrees / 2
+    const stepDeg = count > 1 ? spreadDegrees / (count - 1) : 0
+    return Array.from({ length: count }, (_, index) => {
+      const deg = startDeg + stepDeg * index
+      const rad = (deg * Math.PI) / 180
+      return {
+        x: clamp(anchor.x + Math.sin(rad) * radius, 8, 92),
+        y: clamp(anchor.y + 14 + Math.cos(rad) * radius * 0.6, 8, 92),
+      }
+    })
+  }
+
+  // "Mở rộng nhánh" (research §1.1 luồng 2, §1.3#3, decision D1a): break_down
+  // and generate_variations, anchored to a real node, propose real child idea
+  // nodes + links as one create-nodes-batch item instead of the old behavior
+  // (one node containing a bulleted list — createAiNode's single-node path,
+  // still used when there is no anchor, e.g. a whole-board chat request).
+  // Reuses buildBoardDraftPrompt/parseBoardDraft unchanged (research §1.3#3:
+  // "đừng viết parser mới") by asking for a board whose first node restates
+  // the existing source idea and the rest are its new children — the first
+  // node is then discarded and any link naming it is repointed at the real
+  // source node (SOURCE_DRAFT_ID), never duplicated onto the canvas.
+  async function expandNodeIntoBranches(request: AiNodeRequest, sourceNode: GraphNodeRef) {
+    const sourceRecord = findNodeRecordByKind(sourceNode.kind, sourceNode.id)
+    const sourceContent = sourceRecord && 'content' in sourceRecord ? sourceRecord.content : ''
+    const instruction = request.prompt.trim() || aiNodeActionPrompts[request.action]
+    const childCount = request.action === 'generate_variations' ? '3' : '4 to 6'
+    const draftRequest = [
+      `Expand on this existing idea with ${childCount} connected sub-ideas: "${sourceNode.title}".`,
+      sourceContent ? `Its current content: ${sourceContent}` : '',
+      `Instruction: ${instruction}`,
+      'The first node in your answer must restate this same existing idea — do not invent a new central idea. The rest are the new sub-ideas, each linked back to the first.',
+    ].filter(Boolean).join('\n\n')
+
+    const requestModel = request.providerOverrideId && request.modelOverride
+      ? { providerId: request.providerOverrideId, model: request.modelOverride }
+      : null
+    const provider = textModelProvider(requestModel)
+    if (!provider) throw new Error(t('zero.error.noAi', lang))
+
+    const prompt = buildBoardDraftPrompt(draftRequest)
+    let draft: BoardDraft
+    try {
+      const result = await trackAi(t('ai.status.writing', lang), () => generateNativeAiText(provider, prompt), t('ai.status.newIdea', lang))
+      draft = parseBoardDraft(result.content)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'AI generation failed'
+      if (provider.type === 'codex' && isCodexLoggedOutError(message)) {
+        focusProviderSetup(provider.id)
+        setAiSettingsStatus('Sign in to Codex (ChatGPT) to run this AI task, then try again.')
+        throw new Error('Sign in to Codex to continue')
+      }
+      throw new Error(message)
+    }
+
+    const centralId = draft.nodes[0]?.id
+    const childNodes = draft.nodes.slice(1)
+    if (childNodes.length === 0) throw new Error('The model did not return any sub-ideas.')
+
+    const positions = arcPositionsAroundSource(sourceNode, childNodes.length)
+    const batchNodes: AiCreateNodesBatchItem['nodes'] = childNodes.map((node, index) => {
+      const spot = positions[index] ?? { x: sourceNode.x, y: sourceNode.y }
+      return {
+        draftId: node.id,
+        nodeId: `idea-ai-${Date.now()}-${index}`,
+        title: node.title,
+        content: node.body || node.title,
+        x: spot.x,
+        y: spot.y,
+      }
+    })
+    const batchLinks: AiCreateNodesBatchItem['links'] = draft.links
+      .map((link) => ({
+        fromDraftId: link.from === centralId ? SOURCE_DRAFT_ID : link.from,
+        toDraftId: link.to === centralId ? SOURCE_DRAFT_ID : link.to,
+        relation: link.relation,
+        label: link.label,
+      }))
+      .filter((link) => link.fromDraftId !== link.toDraftId)
+
+    const now = nowIso()
+    const runId = crypto.randomUUID()
+    const threadId = crypto.randomUUID()
+    const changeSetId = crypto.randomUUID()
+    const itemId = crypto.randomUUID()
+    const title = `${aiNodeActionLabels[request.action]}: ${sourceNode.title}`.slice(0, 82)
+    setAiPanelState((current) => {
+      const thread: AiThread = { id: threadId, title, createdAt: now, updatedAt: now, anchorNodeIds: [sourceNode.id] }
+      const run: AiRun = {
+        id: runId,
+        threadId,
+        providerType: provider.type,
+        modelLabel: provider.model && provider.model !== 'auto' ? provider.model : provider.name,
+        startedAt: now,
+        finishedAt: now,
+        status: 'done',
+        promptPreview: prompt,
+        resultSummary: `${provider.name}: drafted ${batchNodes.length} sub-ideas`,
+      }
+      const item: AiCreateNodesBatchItem = {
+        kind: 'create-nodes-batch',
+        id: itemId,
+        createdAt: now,
+        status: 'pending',
+        nodes: batchNodes,
+        links: batchLinks,
+        sourceNodeId: sourceNode.id,
+        sourceNodeKind: sourceNode.kind,
+      }
+      const changeSet: AiChangeSet = { id: changeSetId, runId, threadId, title, createdAt: now, items: [] }
+      const withThread: AiPanelState = {
+        ...current,
+        threads: [...current.threads, thread],
+        runs: [...current.runs, run],
+        changeSets: [...current.changeSets, changeSet],
+      }
+      const result = aiPanelProposeNodesBatch(withThread, changeSetId, item)
+      return result.ok ? result.state : withThread
+    })
+    setLibraryStatus(`Kira: proposed ${batchNodes.length} sub-ideas for "${sourceNode.title}" — review in Cần bạn`)
+  }
+
   async function createAiNode(request: AiNodeRequest) {
     const sourceNode = request.source
       ? resolveGraphNodeRef(request.source.id, ideas, images, palettes, diagrams, placeholders)
       : null
     if (request.source && !sourceNode) return
+
+    // "Mở rộng nhánh" takes over here, anchored requests only — see
+    // expandNodeIntoBranches's own header comment. A whole-board request
+    // (no source selected) falls through to the single-node body below,
+    // unchanged: "branch" has no node to come out of.
+    if (sourceNode && (request.action === 'break_down' || request.action === 'generate_variations')) {
+      await expandNodeIntoBranches(request, sourceNode)
+      return
+    }
 
     const baseNodes = request.contextNodes
       ?? collectKiraContext(request.source, request.scope, { ideas, images, palettes, diagrams, placeholders, links })
