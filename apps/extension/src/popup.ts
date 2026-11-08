@@ -86,16 +86,57 @@ async function loadCapture() {
   renderImageCandidates()
 }
 
+// research 2026-11-09 §5#7: matches background.ts's context-menu page
+// capture — og:image becomes the thumbnail instead of the page's own URL,
+// og:title/description refine the title/note, canonical refines the URL.
+async function extractPageMetadata(tabId: number) {
+  try {
+    const [result] = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: () => {
+        const byProperty = (property: string) =>
+          document.querySelector(`meta[property="${property}"]`)?.getAttribute('content')?.trim() || ''
+        const byName = (name: string) =>
+          document.querySelector(`meta[name="${name}"]`)?.getAttribute('content')?.trim() || ''
+        return {
+          title: byProperty('og:title') || document.title || '',
+          description: byProperty('og:description') || byName('description') || '',
+          imageUrl: byProperty('og:image') || '',
+          canonicalUrl: document.querySelector('link[rel="canonical"]')?.getAttribute('href')?.trim() || '',
+        }
+      },
+    })
+    return result?.result ?? null
+  } catch {
+    return null
+  }
+}
+
+function isHttpUrl(value: string) {
+  try {
+    const url = new URL(value)
+    return url.protocol === 'http:' || url.protocol === 'https:'
+  } catch {
+    return false
+  }
+}
+
 async function captureActiveTab(): Promise<PendingCapture | null> {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
   if (!tab?.url) return null
 
+  const meta = tab.id !== undefined ? await extractPageMetadata(tab.id) : null
+  const canonicalUrl = meta?.canonicalUrl && isHttpUrl(meta.canonicalUrl) ? meta.canonicalUrl : tab.url
+  const imageUrl = meta?.imageUrl && isHttpUrl(meta.imageUrl) ? meta.imageUrl : undefined
+
   return {
     kiraCapture: 1,
     kind: 'page',
-    url: tab.url,
-    title: tab.title?.trim() || 'Untitled',
-    source: tab.url,
+    url: canonicalUrl,
+    title: meta?.title || tab.title?.trim() || 'Untitled',
+    source: canonicalUrl,
+    imageUrl,
+    note: meta?.description || undefined,
     capturedAt: new Date().toISOString(),
   }
 }

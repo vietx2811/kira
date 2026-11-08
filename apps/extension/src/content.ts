@@ -7,6 +7,7 @@ type KiraCapturePayload = {
   title: string
   source: string
   pageUrl?: string
+  imageUrl?: string
   tags?: string[]
   note?: string
   targetNode?: {
@@ -43,6 +44,7 @@ type KiraBridgeMessage =
   | { type: 'kira-get-context' }
   | { type: 'kira-open-drag-window'; capture: PendingCapture }
   | { type: 'kira-show-toast'; message: string }
+  | { type: 'kira-save-hovered-image' }
 
 type KiraBridgeResponse =
   | { ok: true; context?: KiraCaptureContext | null }
@@ -73,6 +75,19 @@ let dragMoveCount = 0
 let revealDropPadTimer = 0
 let pointerDropCompleting = false
 
+// research 2026-11-09 §5#4: the floating "Save" button that appears over a
+// hovered image. One shared host element, repositioned over whatever image
+// is currently eligible, rather than one per image — cheap, and avoids
+// littering every page's DOM. hoverTargetImage also backs the
+// save-hovered-image keyboard command (§5#5): it's "whatever the button
+// would act on right now", command or click alike.
+const hoverSaveId = 'kira-hover-save'
+const hoverSaveMinSize = 64
+let hoverButtonHost: HTMLElement | null = null
+let hoverButtonEl: HTMLButtonElement | null = null
+let hoverTargetImage: HTMLImageElement | null = null
+let hideHoverButtonTimer = 0
+
 // Native `dragenter/dragover/drop` never fire for the pointer-fallback drag
 // (see handlePointerMoveProbe) since no real HTML5 drag session exists, so
 // every drop-target element registered via wireDropTarget is tracked here to
@@ -97,17 +112,42 @@ document.addEventListener('dragleave', handleDocumentDragLeave, true)
 document.addEventListener('dragend', hideDropPadSoon, true)
 document.addEventListener('drop', hideDropPadSoon, true)
 document.addEventListener('contextmenu', handleAltContextMenu, true)
+document.addEventListener('mouseover', handleHoverSaveProbe, true)
+document.addEventListener('mouseout', handleHoverSaveLeave, true)
+// position:fixed tracks the viewport, not the page — a stale rect after
+// scrolling would point the button at the wrong spot, so just hide it.
+document.addEventListener('scroll', hideHoverButtonSoon, true)
 
 // background.ts has no DOM of its own — this is how it shows the user
 // something when it can't (e.g. the native context-menu item rejecting an
-// embedded image before ever calling postCapture).
+// embedded image before ever calling postCapture), and how the
+// save-hovered-image keyboard command (fired from the OS, so it only ever
+// reaches background.ts) reaches the content script that knows what's
+// hovered.
 chrome.runtime.onMessage.addListener((message: unknown) => {
   if (!message || typeof message !== 'object') return
   const candidate = message as Partial<KiraBridgeMessage>
   if (candidate.type === 'kira-show-toast' && typeof candidate.message === 'string') {
     showToast(candidate.message)
+    return
+  }
+  if (candidate.type === 'kira-save-hovered-image') {
+    saveHoveredImage()
   }
 })
+
+function saveHoveredImage() {
+  if (!hoverTargetImage) {
+    showToast('Hover an image first')
+    return
+  }
+  const capture = captureFromImage(hoverTargetImage)
+  if (capture) {
+    void sendCapture(capture)
+  } else if (isEmbeddedOnlyUrl(bestImageUrlFromImage(hoverTargetImage))) {
+    showToast(embeddedImageMessage)
+  }
+}
 
 function handleDragStart(event: DragEvent) {
   const capture = captureFromDragEvent(event) ?? lastPointerCapture
@@ -352,6 +392,105 @@ function isEmbeddedOnlyUrl(value: string) {
   } catch {
     return false
   }
+}
+
+// research 2026-11-09 §5#4: "Save" button that floats over a hovered image.
+// Skips the deliberately-sized hit-test below rather than every <img> —
+// a page's tiny icons and spacers would otherwise get a button too.
+function isHoverSaveEligible(image: HTMLImageElement) {
+  const rect = image.getBoundingClientRect()
+  return rect.width >= hoverSaveMinSize && rect.height >= hoverSaveMinSize
+}
+
+function handleHoverSaveProbe(event: MouseEvent) {
+  const image = imageFromEventTarget(event.target)
+  if (!image || !isHoverSaveEligible(image)) return
+  window.clearTimeout(hideHoverButtonTimer)
+  if (image !== hoverTargetImage) showHoverButtonFor(image)
+}
+
+function handleHoverSaveLeave(event: MouseEvent) {
+  const related = event.relatedTarget
+  // Moving from the image onto the button itself (or vice versa) isn't a
+  // real "leave" — without this the button would vanish right as the
+  // pointer reaches it.
+  if (related instanceof Node && (related === hoverButtonEl || hoverButtonEl?.contains(related))) return
+  const leavingImage = imageFromEventTarget(event.target)
+  if (leavingImage && leavingImage === hoverTargetImage) hideHoverButtonSoon()
+}
+
+function hideHoverButtonSoon() {
+  window.clearTimeout(hideHoverButtonTimer)
+  hideHoverButtonTimer = window.setTimeout(hideHoverButtonNow, 180)
+}
+
+function hideHoverButtonNow() {
+  hoverTargetImage = null
+  if (hoverButtonHost) hoverButtonHost.style.opacity = '0'
+}
+
+function showHoverButtonFor(image: HTMLImageElement) {
+  hoverTargetImage = image
+  const { button, host } = ensureHoverButton()
+  const rect = image.getBoundingClientRect()
+  host.style.opacity = '1'
+  // Top-right corner, inset slightly, like Pinterest/Cosmos's own hover
+  // button (research 2026-11-09 §2 "7 mẫu hình", #2) — small and in a
+  // corner, so it never blocks dragging the rest of the image.
+  button.style.top = `${Math.max(4, rect.top + 6)}px`
+  button.style.left = `${Math.max(4, rect.right - 34)}px`
+}
+
+function ensureHoverButton(): { host: HTMLElement; button: HTMLButtonElement } {
+  if (hoverButtonHost && hoverButtonEl) return { host: hoverButtonHost, button: hoverButtonEl }
+
+  const host = document.createElement('div')
+  host.id = hoverSaveId
+  host.style.cssText = 'position:fixed;top:0;left:0;z-index:2147483647;opacity:0;pointer-events:none;transition:opacity 120ms ease;'
+  const shadow = host.attachShadow({ mode: 'open' })
+
+  const style = document.createElement('style')
+  style.textContent = `
+    button {
+      all: initial;
+      position: fixed;
+      display: grid;
+      place-items: center;
+      width: 28px;
+      height: 28px;
+      border-radius: 999px;
+      background: rgba(20, 20, 20, 0.88);
+      color: #f1eee7;
+      font: 15px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      cursor: pointer;
+      pointer-events: auto;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+    }
+    button:hover {
+      background: rgba(32, 32, 32, 0.96);
+    }
+  `
+  shadow.append(style)
+
+  const button = document.createElement('button')
+  button.type = 'button'
+  button.title = 'Save to KIRA'
+  button.setAttribute('aria-label', 'Save to KIRA')
+  button.textContent = '+'
+  button.addEventListener('mouseenter', () => window.clearTimeout(hideHoverButtonTimer))
+  button.addEventListener('mouseleave', hideHoverButtonSoon)
+  button.addEventListener('click', (event) => {
+    event.preventDefault()
+    event.stopPropagation()
+    saveHoveredImage()
+    hideHoverButtonNow()
+  })
+  shadow.append(button)
+
+  document.documentElement.append(host)
+  hoverButtonHost = host
+  hoverButtonEl = button
+  return { host, button }
 }
 
 function hasLikelyCaptureDrag(dataTransfer: DataTransfer | null) {

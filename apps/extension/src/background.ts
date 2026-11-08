@@ -8,6 +8,91 @@ const dragWindowPath = 'drag-window.html'
 let dragWindowId: number | null = null
 let dragWindowOpening = false
 
+// research 2026-11-09 §5#3: captures that fail because the app is closed
+// used to overwrite a single storage slot, so only the LAST one survived —
+// everything before it was gone. A bounded queue plus an alarm-driven retry
+// means none of them are lost, and they still get sent once the app is back.
+// Nothing here lives in a module variable: a service worker (Safari
+// especially, per research §6A) can be killed and respawned between any two
+// of these steps, so every function re-reads chrome.storage.local fresh.
+const pendingQueueKey = 'pendingCaptureQueue'
+const maxQueuedCaptures = 50
+const retryAlarmName = 'kira-retry-pending-captures'
+
+type QueuedCapture = { id: string; capture: PendingCapture; queuedAt: string }
+
+async function readQueue(): Promise<QueuedCapture[]> {
+  const stored = await chrome.storage.local.get<{ [pendingQueueKey]: QueuedCapture[] }>([pendingQueueKey])
+  return stored[pendingQueueKey] ?? []
+}
+
+async function updateBadge(count: number) {
+  await chrome.action?.setBadgeText?.({ text: count > 0 ? String(count) : '' })
+}
+
+async function scheduleRetry() {
+  chrome.alarms.create(retryAlarmName, { delayInMinutes: 1, periodInMinutes: 2 })
+}
+
+async function enqueuePendingCapture(capture: PendingCapture) {
+  const queue = await readQueue()
+  const entry: QueuedCapture = { id: crypto.randomUUID(), capture, queuedAt: new Date().toISOString() }
+  // Oldest dropped first once full — what you captured most recently is more
+  // likely still what you're after.
+  const next = [...queue, entry].slice(-maxQueuedCaptures)
+  await chrome.storage.local.set({ [pendingQueueKey]: next })
+  await updateBadge(next.length)
+  await scheduleRetry()
+}
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === retryAlarmName) void flushPendingQueue()
+})
+
+async function flushPendingQueue() {
+  const queue = await readQueue()
+  if (queue.length === 0) {
+    await chrome.alarms.clear(retryAlarmName)
+    await updateBadge(0)
+    return
+  }
+
+  // A single reachability probe first, so a still-closed app doesn't cost a
+  // POST per queued item every time this alarm fires.
+  const reachable = await fetchCaptureContext()
+  if (reachable === null) return
+
+  let stoppedAt = queue.length
+  for (let index = 0; index < queue.length; index += 1) {
+    const result = await postCaptureResult(queue[index].capture)
+    if (result === 'unreachable') {
+      // The app went away again mid-flush — stop, keep this one and
+      // everything after it, and let the next alarm tick pick up from here.
+      stoppedAt = index
+      break
+    }
+    // 'sent' and 'rejected' both drop the entry: a rejected payload is
+    // permanently invalid (e.g. a data: URL slipped through some other
+    // path), so retrying it forever would never help.
+  }
+
+  const remaining = queue.slice(stoppedAt)
+  await chrome.storage.local.set({ [pendingQueueKey]: remaining })
+  await updateBadge(remaining.length)
+  if (remaining.length === 0) await chrome.alarms.clear(retryAlarmName)
+}
+
+// The service worker's top-level code runs every time it's (re)activated —
+// by an event, a message, or the browser restarting — which is exactly when
+// a queue left over from before needs its badge and alarm restored.
+void (async () => {
+  const queue = await readQueue()
+  if (queue.length > 0) {
+    await updateBadge(queue.length)
+    await scheduleRetry()
+  }
+})()
+
 chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.create({
     id: 'kira-copy-image',
@@ -50,29 +135,88 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
     return
   }
 
-  const capture: PendingCapture =
-    info.menuItemId === 'kira-copy-image' && info.srcUrl
-      ? {
-          kiraCapture: 1,
-          kind: 'image',
-          url: info.srcUrl,
-          title: tabTitle,
-          source: tabUrl || info.srcUrl,
-          pageUrl: tabUrl,
-          previewUrl: info.srcUrl,
-          capturedAt: new Date().toISOString(),
-        }
-      : {
-          kiraCapture: 1,
-          kind: 'page',
-          url: tabUrl,
-          title: tabTitle,
-          source: tabUrl,
-          capturedAt: new Date().toISOString(),
-        }
+  if (info.menuItemId === 'kira-copy-image' && info.srcUrl) {
+    void sendOrStageCapture({
+      kiraCapture: 1,
+      kind: 'image',
+      url: info.srcUrl,
+      title: tabTitle,
+      source: tabUrl || info.srcUrl,
+      pageUrl: tabUrl,
+      previewUrl: info.srcUrl,
+      capturedAt: new Date().toISOString(),
+    })
+    return
+  }
 
-  void sendOrStageCapture(capture)
+  void buildPageCapture(tab).then((capture) => {
+    if (capture) void sendOrStageCapture(capture)
+  })
 })
+
+// research 2026-11-09 §5#5: fires from the OS/browser, not a page, so it only
+// ever reaches background.ts — "save hovered image" has to be relayed to the
+// tab's content script, which is the only place that knows what's hovered.
+chrome.commands.onCommand.addListener((command, tab) => {
+  if (command === 'save-page') {
+    void buildPageCapture(tab).then((capture) => {
+      if (capture) void sendOrStageCapture(capture)
+    })
+    return
+  }
+  if (command === 'save-hovered-image' && tab?.id !== undefined) {
+    void chrome.tabs.sendMessage(tab.id, { type: 'kira-save-hovered-image' })
+  }
+})
+
+type PageMetadata = { title: string; description: string; imageUrl: string; canonicalUrl: string }
+
+// research 2026-11-09 §5#7: a page capture used to carry nothing past
+// title/URL, so main.tsx rendered it as an image node whose thumbnail was
+// the page's own URL — never a real image. Runs inside the tab (this file
+// has no DOM of its own), same technique as popup.ts's discoverPageImages.
+async function extractPageMetadata(tabId: number): Promise<PageMetadata> {
+  try {
+    const [result] = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: () => {
+        const byProperty = (property: string) =>
+          document.querySelector(`meta[property="${property}"]`)?.getAttribute('content')?.trim() || ''
+        const byName = (name: string) =>
+          document.querySelector(`meta[name="${name}"]`)?.getAttribute('content')?.trim() || ''
+        return {
+          title: byProperty('og:title') || document.title || '',
+          description: byProperty('og:description') || byName('description') || '',
+          imageUrl: byProperty('og:image') || '',
+          canonicalUrl: document.querySelector('link[rel="canonical"]')?.getAttribute('href')?.trim() || '',
+        }
+      },
+    })
+    return result?.result ?? { title: '', description: '', imageUrl: '', canonicalUrl: '' }
+  } catch {
+    return { title: '', description: '', imageUrl: '', canonicalUrl: '' }
+  }
+}
+
+async function buildPageCapture(tab?: { id?: number; title?: string; url?: string }): Promise<PendingCapture | null> {
+  const tabUrl = tab?.url || ''
+  if (!tabUrl) return null
+  const tabTitle = tab?.title?.trim() || 'Untitled'
+  const meta = tab?.id !== undefined ? await extractPageMetadata(tab.id) : null
+  const canonicalUrl = meta?.canonicalUrl && isHttpUrl(meta.canonicalUrl) ? meta.canonicalUrl : tabUrl
+  const imageUrl = meta?.imageUrl && isHttpUrl(meta.imageUrl) ? meta.imageUrl : undefined
+
+  return {
+    kiraCapture: 1,
+    kind: 'page',
+    url: canonicalUrl,
+    title: meta?.title || tabTitle,
+    source: canonicalUrl,
+    imageUrl,
+    note: meta?.description || undefined,
+    capturedAt: new Date().toISOString(),
+  }
+}
 
 // Sole owner of traffic to the desktop app: content scripts and extension pages
 // ask through here so every request carries the extension's host permissions.
@@ -80,7 +224,11 @@ chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse: (
   if (!isBridgeMessage(message)) return
 
   if (message.type === 'kira-post-capture') {
-    void postCapture(message.capture).then((ok) => sendResponse({ ok }))
+    const capture = message.capture
+    void postCaptureResult(capture).then((result) => {
+      if (result === 'unreachable') void enqueuePendingCapture(capture)
+      sendResponse({ ok: result === 'sent' })
+    })
     return true
   }
 
@@ -89,10 +237,11 @@ chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse: (
     return true
   }
 
-  // background.ts only ever sends this one (to a tab's content script, see
-  // the context-menu handler above) — it's in the union because the type is
-  // bidirectional, not because this listener expects to receive it.
+  // background.ts only ever sends these two (to a tab's content script) —
+  // they're in the union because the type is bidirectional, not because this
+  // listener expects to receive them.
   if (message.type === 'kira-show-toast') return
+  if (message.type === 'kira-save-hovered-image') return
 
   void openDragWindow(message.capture)
     .then(() => sendResponse({ ok: true }))
@@ -115,7 +264,9 @@ chrome.windows.onRemoved.addListener((windowId) => {
 })
 
 async function sendOrStageCapture(capture: PendingCapture) {
-  if (await postCapture(capture)) return
+  const result = await postCaptureResult(capture)
+  if (result === 'sent') return
+  if (result === 'unreachable') await enqueuePendingCapture(capture)
   await chrome.storage.local.set({ [pendingCaptureKey]: capture })
   await chrome.action?.openPopup?.()
 }
@@ -163,15 +314,19 @@ function isBridgeMessage(message: unknown): message is KiraBridgeMessage {
     && typeof candidate.capture.url === 'string'
 }
 
-async function postCapture(capture: KiraCapturePayload) {
+type PostCaptureResult = 'sent' | 'rejected' | 'unreachable'
+
+// Distinguishes "the app is closed" (queue it, retry later) from "the app
+// is open and refused this payload" (it always will — don't queue it).
+async function postCaptureResult(capture: KiraCapturePayload): Promise<PostCaptureResult> {
   try {
     const response = await fetch(captureEndpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(capture),
     })
-    return response.ok
+    return response.ok ? 'sent' : 'rejected'
   } catch {
-    return false
+    return 'unreachable'
   }
 }
