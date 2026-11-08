@@ -4965,6 +4965,97 @@ fn is_http_or_https_url(value: &str) -> bool {
     rest.is_some_and(|after| !after.is_empty())
 }
 
+// research 2026-11-09-visual-explore Pha 0: the native window's origin is
+// tauri://localhost, so window.fetch() against a third-party CDN with no
+// Access-Control-Allow-Origin header (Instagram, Behance, most sites — only
+// a few, like picsum.photos's ACAO: *, happen to work) is blocked by the
+// WebView's own CORS enforcement before the frontend ever sees a response.
+// A native request has no such origin to police. Async (not a plain sync
+// command) for the same reason run_apple_vision_ocr is: this can take
+// seconds and must not freeze the window while it runs.
+const CAPTURE_IMAGE_FETCH_MAX_BYTES: u64 = 25 * 1024 * 1024;
+const CAPTURE_IMAGE_FETCH_TIMEOUT_SECS: u64 = 20;
+const CAPTURE_IMAGE_FETCH_CHUNK_BYTES: usize = 65536;
+
+#[derive(Debug, Serialize)]
+struct CaptureImageBytes {
+    mime: String,
+    base64: String,
+}
+
+#[tauri::command]
+async fn fetch_capture_image(url: String) -> Result<CaptureImageBytes, String> {
+    fetch_capture_image_blocking(&url)
+}
+
+fn fetch_capture_image_blocking(url: &str) -> Result<CaptureImageBytes, String> {
+    if !is_http_or_https_url(url) {
+        return Err("url must be http(s)".to_string());
+    }
+
+    let client = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(CAPTURE_IMAGE_FETCH_TIMEOUT_SECS))
+        .build()
+        .map_err(|error| format!("unable to build HTTP client: {error}"))?;
+    // reqwest::blocking::Client has no cookie store unless .cookie_store(true)
+    // is set on the builder, so this request carries none by default.
+    let mut response = client
+        .get(url)
+        .send()
+        .map_err(|error| format!("could not reach {url}: {error}"))?;
+    if !response.status().is_success() {
+        return Err(format!("{url} returned HTTP {}", response.status()));
+    }
+
+    let content_type = response
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("");
+    let mime = content_type
+        .split(';')
+        .next()
+        .unwrap_or("")
+        .trim()
+        .to_ascii_lowercase();
+    if !mime.starts_with("image/") {
+        return Err(format!("{url} is not an image (content-type: {content_type})"));
+    }
+
+    if let Some(length) = response.content_length() {
+        if length > CAPTURE_IMAGE_FETCH_MAX_BYTES {
+            return Err(format!(
+                "{url} is {length} bytes, over the {CAPTURE_IMAGE_FETCH_MAX_BYTES}-byte limit"
+            ));
+        }
+    }
+
+    let mut buffer: Vec<u8> = Vec::new();
+    let mut chunk = [0_u8; CAPTURE_IMAGE_FETCH_CHUNK_BYTES];
+    loop {
+        let read = response
+            .read(&mut chunk)
+            .map_err(|error| format!("error downloading {url}: {error}"))?;
+        if read == 0 {
+            break;
+        }
+        buffer.extend_from_slice(&chunk[..read]);
+        if buffer.len() as u64 > CAPTURE_IMAGE_FETCH_MAX_BYTES {
+            return Err(format!(
+                "{url} exceeded the {CAPTURE_IMAGE_FETCH_MAX_BYTES}-byte limit while downloading"
+            ));
+        }
+    }
+    if buffer.is_empty() {
+        return Err(format!("{url} returned an empty body"));
+    }
+
+    Ok(CaptureImageBytes {
+        mime,
+        base64: BASE64.encode(&buffer),
+    })
+}
+
 fn json_quote(value: &str) -> String {
     serde_json::to_string(value).unwrap_or_else(|_| "\"invalid payload\"".to_string())
 }
@@ -5211,6 +5302,7 @@ pub fn run() {
             export_slideshow_html,
             export_slideshow_pptx,
             update_capture_context,
+            fetch_capture_image,
             codex_login,
             codex_cancel_login,
             codex_logout,
@@ -6119,6 +6211,117 @@ mod tests {
         assert!(origin_is_allowed(Some("safari-web-extension://abc-def")));
         assert!(!origin_is_allowed(Some("https://evil.example")));
         assert!(!origin_is_allowed(Some("null")));
+    }
+
+    #[test]
+    fn fetch_capture_image_rejects_non_http_url() {
+        let error = fetch_capture_image_blocking("data:image/png;base64,AA==").unwrap_err();
+        assert_eq!(error, "url must be http(s)");
+    }
+
+    // The three tests below spin up a tiny raw-socket HTTP server (same
+    // technique as read_capture_http_request's own test) so the size and
+    // content-type checks are exercised against a real streamed response,
+    // not just a pure-function slice of the logic.
+
+    #[test]
+    fn fetch_capture_image_rejects_declared_oversized_content_length() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind ephemeral port");
+        let addr = listener.local_addr().expect("local addr");
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("accept");
+            let mut buffer = [0_u8; 1024];
+            let _ = stream.read(&mut buffer);
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: image/png\r\nContent-Length: {}\r\n\r\n",
+                CAPTURE_IMAGE_FETCH_MAX_BYTES + 1
+            );
+            let _ = stream.write_all(response.as_bytes());
+        });
+
+        let url = format!("http://{addr}/big.png");
+        let error = fetch_capture_image_blocking(&url).unwrap_err();
+        server.join().expect("server thread panicked");
+        assert!(error.contains("limit"), "unexpected error: {error}");
+    }
+
+    #[test]
+    fn fetch_capture_image_rejects_body_that_exceeds_the_limit_while_streaming() {
+        // Content-Length lies (declares small) — the limit still has to catch
+        // a body that grows past it while being read, not just the header.
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind ephemeral port");
+        let addr = listener.local_addr().expect("local addr");
+        let oversized_body = vec![0_u8; (CAPTURE_IMAGE_FETCH_MAX_BYTES as usize) + 1024];
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("accept");
+            let mut buffer = [0_u8; 1024];
+            let _ = stream.read(&mut buffer);
+            let headers = "HTTP/1.1 200 OK\r\nContent-Type: image/png\r\n\r\n";
+            let _ = stream.write_all(headers.as_bytes());
+            let _ = stream.write_all(&oversized_body);
+        });
+
+        let url = format!("http://{addr}/big-streamed.png");
+        let error = fetch_capture_image_blocking(&url).unwrap_err();
+        server.join().expect("server thread panicked");
+        assert!(error.contains("limit"), "unexpected error: {error}");
+    }
+
+    #[test]
+    fn fetch_capture_image_rejects_non_image_content_type() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind ephemeral port");
+        let addr = listener.local_addr().expect("local addr");
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("accept");
+            let mut buffer = [0_u8; 1024];
+            let _ = stream.read(&mut buffer);
+            let body = "<html></html>";
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\n\r\n{}",
+                body.len(),
+                body
+            );
+            let _ = stream.write_all(response.as_bytes());
+        });
+
+        let url = format!("http://{addr}/page.html");
+        let error = fetch_capture_image_blocking(&url).unwrap_err();
+        server.join().expect("server thread panicked");
+        assert!(error.contains("not an image"), "unexpected error: {error}");
+    }
+
+    #[test]
+    fn fetch_capture_image_returns_base64_bytes_for_a_real_image_response() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind ephemeral port");
+        let addr = listener.local_addr().expect("local addr");
+        let mut png = Cursor::new(Vec::new());
+        image::RgbaImage::from_pixel(1, 1, image::Rgba([10, 20, 30, 255]))
+            .write_to(&mut png, ImageFormat::Png)
+            .expect("write png fixture");
+        let png_bytes = png.into_inner();
+        let png_bytes_for_server = png_bytes.clone();
+
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("accept");
+            let mut buffer = [0_u8; 1024];
+            let _ = stream.read(&mut buffer);
+            let mut response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: image/png\r\nContent-Length: {}\r\n\r\n",
+                png_bytes_for_server.len()
+            )
+            .into_bytes();
+            response.extend_from_slice(&png_bytes_for_server);
+            let _ = stream.write_all(&response);
+        });
+
+        let url = format!("http://{addr}/ok.png");
+        let result = fetch_capture_image_blocking(&url).expect("expected a successful fetch");
+        server.join().expect("server thread panicked");
+        assert_eq!(result.mime, "image/png");
+        assert_eq!(
+            BASE64.decode(result.base64).expect("valid base64"),
+            png_bytes
+        );
     }
 
     #[test]

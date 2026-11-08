@@ -653,6 +653,11 @@ type OcrResult = {
   suggestions: string[]
 }
 
+type NativeCaptureImage = {
+  mime: string
+  base64: string
+}
+
 type LocalModelAvailability = {
   available: boolean
   status: string
@@ -3564,64 +3569,27 @@ function FileWorkspace({
     const candidates = pinterestCandidates.length > 0 ? pinterestCandidates : [url.toString()]
 
     setImageDownload({ imageId, title, progress: null })
-    let lastProgressUpdate = 0
 
     try {
       for (const candidate of candidates) {
-        let response: Response
-        try {
-          response = await fetch(candidate)
-        } catch {
-          continue
-        }
-        if (!response.ok || !response.body) continue
-        const contentType = response.headers.get('content-type') ?? ''
-        if (!contentType.startsWith('image/')) continue
+        const downloaded = await downloadCaptureCandidate(candidate, (progress) =>
+          setImageDownload({ imageId, title, progress }),
+        )
+        if (!downloaded) continue
 
-        const total = Number(response.headers.get('content-length')) || 0
-        if (total > MAX_CAPTURE_DOWNLOAD_BYTES) continue
-
-        const reader = response.body.getReader()
-        const chunks: BlobPart[] = []
-        let received = 0
-        let exceededLimit = false
-
-        for (;;) {
-          const { done, value } = await reader.read()
-          if (done) break
-          received += value.length
-          if (received > MAX_CAPTURE_DOWNLOAD_BYTES) {
-            exceededLimit = true
-            break
-          }
-          chunks.push(value)
-          const now = Date.now()
-          if (total > 0 && now - lastProgressUpdate > 80) {
-            lastProgressUpdate = now
-            setImageDownload({ imageId, title, progress: received / total })
-          }
-        }
-
-        if (exceededLimit) {
-          await reader.cancel().catch(() => undefined)
-          continue
-        }
-
-        const blob = new Blob(chunks, { type: contentType })
-        const dataUrl = await readFileAsDataUrl(blob)
-        const analysis = await analyzeImageDataUrl(dataUrl)
+        const analysis = await analyzeImageDataUrl(downloaded.dataUrl)
         const timestamp = nowIso()
         setImages((current) =>
           current.map((image) =>
             image.id === imageId
               ? {
                   ...image,
-                  thumb: dataUrl,
+                  thumb: downloaded.dataUrl,
                   palette: analysis.palette.length > 0 ? analysis.palette : image.palette,
                   width: analysis.width,
                   height: analysis.height,
-                  sizeBytes: blob.size,
-                  mimeType: contentType,
+                  sizeBytes: downloaded.sizeBytes,
+                  mimeType: downloaded.contentType,
                   perceptualHash: analysis.perceptualHash,
                   updatedAt: timestamp,
                 }
@@ -15254,6 +15222,71 @@ function readFileAsDataUrl(file: Blob): Promise<string> {
 // missing or dishonest header shouldn't let a response grow unbounded.
 const MAX_CAPTURE_DOWNLOAD_BYTES = 25 * 1024 * 1024
 
+// research 2026-11-09-visual-explore Pha 0: the native window's origin
+// (tauri://localhost) means window.fetch() against a CDN with no
+// Access-Control-Allow-Origin header is blocked by the WebView's own CORS
+// enforcement — the fetch() path below only ever worked for the minority of
+// hosts that happen to send ACAO: * (picsum.photos did; most capture
+// sources, e.g. Instagram, Behance, don't). The native command has no such
+// origin to police, so it's used whenever this is actually running as the
+// desktop app; fetch() stays for the plain browser preview, which has no
+// native command to call.
+async function downloadCaptureCandidate(
+  candidate: string,
+  onProgress: (progress: number | null) => void,
+): Promise<{ dataUrl: string; contentType: string; sizeBytes: number } | null> {
+  if (isTauriRuntime()) {
+    let result: NativeCaptureImage
+    try {
+      result = await fetchNativeCaptureImage(candidate)
+    } catch {
+      return null
+    }
+    return {
+      dataUrl: `data:${result.mime};base64,${result.base64}`,
+      contentType: result.mime,
+      sizeBytes: atob(result.base64).length,
+    }
+  }
+
+  let response: Response
+  try {
+    response = await fetch(candidate)
+  } catch {
+    return null
+  }
+  if (!response.ok || !response.body) return null
+  const contentType = response.headers.get('content-type') ?? ''
+  if (!contentType.startsWith('image/')) return null
+
+  const total = Number(response.headers.get('content-length')) || 0
+  if (total > MAX_CAPTURE_DOWNLOAD_BYTES) return null
+
+  const reader = response.body.getReader()
+  const chunks: BlobPart[] = []
+  let received = 0
+  let lastProgressUpdate = 0
+
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    received += value.length
+    if (received > MAX_CAPTURE_DOWNLOAD_BYTES) {
+      await reader.cancel().catch(() => undefined)
+      return null
+    }
+    chunks.push(value)
+    const now = Date.now()
+    if (total > 0 && now - lastProgressUpdate > 80) {
+      lastProgressUpdate = now
+      onProgress(received / total)
+    }
+  }
+
+  const blob = new Blob(chunks, { type: contentType })
+  return { dataUrl: await readFileAsDataUrl(blob), contentType, sizeBytes: blob.size }
+}
+
 // Pinterest CDN paths look like /{size}/aa/bb/cc/{hash}.{ext}, where {size} is
 // a resolution segment (60x60, 236x, 564x, ...) and `originals` is the true
 // full-resolution asset. The extension at `originals` can differ from the
@@ -18455,6 +18488,15 @@ async function captureNativeScreenReference() {
 
 async function updateNativeCaptureContext(context: KiraCaptureContext) {
   return invoke<void>('update_capture_context', { contextJson: JSON.stringify(context) })
+}
+
+// research 2026-11-09-visual-explore Pha 0: the native window's origin is
+// tauri://localhost, so window.fetch() against a CDN with no
+// Access-Control-Allow-Origin header (most sites — picsum.photos's ACAO: *
+// is the exception, not the rule) is blocked by the WebView's own CORS
+// enforcement before a response ever reaches the frontend.
+async function fetchNativeCaptureImage(url: string) {
+  return invoke<NativeCaptureImage>('fetch_capture_image', { url })
 }
 
 async function runNativeAppleVisionOcr(imageDataUrl: string) {
