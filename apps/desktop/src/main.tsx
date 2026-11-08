@@ -10368,6 +10368,31 @@ function GraphCanvas({
           </button>
         ) : (
           <div className="kira-dock-composer">
+            {/* Attached files need to be seen (and removable) before sending —
+                the only row kept from the old context bar, and only rendered
+                when there is something to show. */}
+            {kiraSession && kiraSession.attachments.length > 0 && (
+              <div className="kira-dock-attachment-bar">
+                {kiraSession.attachments.map((attachment) => (
+                  <span className="kira-attachment-chip" key={attachment.id} title={attachment.name}>
+                    {attachment.isImage ? (
+                      <img src={attachment.previewUrl} alt="" />
+                    ) : (
+                      <FileText size={11} />
+                    )}
+                    <span className="kira-attachment-name">{attachment.name}</span>
+                    <button
+                      type="button"
+                      aria-label={`Remove ${attachment.name}`}
+                      onClick={() => removeKiraAttachment(attachment.id)}
+                    >
+                      <X size={10} />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+
             {/* 1. Textarea with rich auto-expand & long paragraph support */}
             <div className="kira-dock-input-wrap">
               <textarea
