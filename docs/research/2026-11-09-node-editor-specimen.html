@@ -1,0 +1,595 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KIRA — node editor specimen</title>
+<style>
+  :root {
+    --bg-base: #0d0e0d;
+    --bg-canvas: #101211;
+    --surface-1: #151716;
+    --surface-2: #1b1e1c;
+    --surface-3: #222620;
+    --node-surface: var(--surface-1);
+    --node-surface-selected: var(--surface-2);
+    --node-border: rgb(255 255 255 / 0.045);
+    --border-soft: rgb(255 255 255 / 0.06);
+    --border-strong: rgb(255 255 255 / 0.13);
+    --text-main: #f1eee7;
+    --text-soft: #b3afa5;
+    --text-muted: #8f8c80;
+    --accent-cyan: #84cdbc;
+    --accent-strong: #9edccd;
+    --accent-weak: rgb(132 205 188 / 0.28);
+    --accent-faint: rgb(158 220 205 / 0.12);
+    --accent-amber: #dfae67;
+    --danger: #d98b7a;
+    --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px; --space-5: 20px; --space-6: 24px;
+    --radius-1: 4px; --radius-2: 6px; --radius-3: 8px; --radius-4: 12px; --radius-5: 20px; --radius-6: 16px;
+    --text-mini: 10px; --text-small: 11px; --text-body: 13px; --text-title: 15px; --text-large: 20px;
+    --ease-out-soft: cubic-bezier(0.16,1,0.3,1);
+    --duration-base: 160ms;
+    --scrim: rgb(5 6 6 / 0.56);
+  }
+  [data-theme="light"] {
+    --bg-base: #f6f4ef;
+    --bg-canvas: #eeebe3;
+    --surface-1: #fbfaf7;
+    --surface-2: #ffffff;
+    --surface-3: #f1eee6;
+    --node-surface: var(--surface-1);
+    --node-surface-selected: var(--surface-2);
+    --node-border: rgb(20 18 12 / 0.07);
+    --border-soft: rgb(20 18 12 / 0.09);
+    --border-strong: rgb(20 18 12 / 0.18);
+    --text-main: #22201a;
+    --text-soft: #5c584c;
+    --text-muted: #8a8574;
+    --accent-cyan: #2f8a74;
+    --accent-strong: #246a58;
+    --accent-weak: rgb(47 138 116 / 0.22);
+    --accent-faint: rgb(47 138 116 / 0.1);
+    --accent-amber: #a9723a;
+    --danger: #a8493a;
+    --scrim: rgb(40 36 28 / 0.28);
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    background: var(--bg-canvas);
+    color: var(--text-main);
+    font-family: -apple-system, "SF Pro Text", "Inter", system-ui, sans-serif;
+    font-size: var(--text-body);
+  }
+  .page {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: var(--space-6) var(--space-5) 80px;
+  }
+  .page-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-4);
+    margin-bottom: var(--space-5);
+    flex-wrap: wrap;
+  }
+  .page-head h1 {
+    font-size: var(--text-large);
+    font-weight: 680;
+    margin: 0;
+  }
+  .page-head p {
+    color: var(--text-soft);
+    font-size: var(--text-small);
+    margin: var(--space-1) 0 0;
+  }
+  .theme-toggle {
+    display: inline-flex;
+    gap: var(--space-1);
+    background: var(--surface-2);
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius-3);
+    padding: 2px;
+  }
+  .theme-toggle button {
+    appearance: none;
+    border: none;
+    background: transparent;
+    color: var(--text-soft);
+    font-size: var(--text-small);
+    font-weight: 560;
+    padding: 6px 12px;
+    border-radius: var(--radius-2);
+    cursor: pointer;
+  }
+  .theme-toggle button[aria-pressed="true"] {
+    background: var(--accent-weak);
+    color: var(--accent-strong);
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+    gap: var(--space-5);
+  }
+  .state-card {
+    background: var(--surface-1);
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius-4);
+    padding: var(--space-4);
+  }
+  .state-card h2 {
+    font-size: var(--text-small);
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+    margin: 0 0 var(--space-1);
+  }
+  .state-card .caption {
+    font-size: var(--text-small);
+    color: var(--text-soft);
+    margin: 0 0 var(--space-3);
+    line-height: 1.5;
+  }
+
+  /* ---- overlay mock ---- */
+  .overlay-mock {
+    position: relative;
+    background: var(--scrim);
+    border-radius: var(--radius-4);
+    padding: var(--space-5) var(--space-4);
+  }
+  .popover {
+    position: relative;
+    width: 100%;
+    max-width: 440px;
+    margin: 0 auto;
+    background: var(--node-surface-selected);
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius-4);
+    box-shadow: 0 24px 48px rgb(0 0 0 / 0.32);
+    overflow: hidden;
+  }
+  .actionbar {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    border-bottom: 1px solid var(--border-soft);
+  }
+  .actionbar .ai-group {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    background: var(--accent-faint);
+    border-radius: var(--radius-2);
+    padding: 2px 8px 2px 6px;
+  }
+  .actionbar .ai-group .chip-label {
+    font-size: var(--text-mini);
+    font-weight: 700;
+    color: var(--accent-strong);
+    letter-spacing: 0.02em;
+  }
+  .ibtn {
+    width: 26px; height: 26px;
+    display: inline-flex; align-items: center; justify-content: center;
+    border-radius: var(--radius-2);
+    color: var(--text-soft);
+    background: transparent;
+    border: none;
+    font-size: 14px;
+  }
+  .actionbar .spacer { flex: 1; }
+  .actionbar .sep {
+    width: 1px; height: 16px;
+    background: var(--border-strong);
+    margin: 0 var(--space-1);
+  }
+  .ibtn.danger { color: var(--danger); }
+
+  .popover-body {
+    padding: var(--space-4) var(--space-4) var(--space-3);
+  }
+  .node-title {
+    font-size: var(--text-title);
+    font-weight: 680;
+    line-height: 1.35;
+    margin: 0 0 var(--space-2);
+    outline: none;
+  }
+  .node-title[data-placeholder]:empty::before {
+    content: attr(data-placeholder);
+    color: var(--text-muted);
+  }
+  .properties-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    font-size: var(--text-small);
+    color: var(--text-soft);
+    margin-bottom: var(--space-3);
+    cursor: default;
+  }
+  .properties-row .dot { color: var(--text-muted); }
+  .properties-row .chev { color: var(--text-muted); font-size: 10px; margin-left: 2px; }
+  .properties-expanded {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: var(--space-1) var(--space-3);
+    font-size: var(--text-small);
+    margin: 0 0 var(--space-3);
+    padding: var(--space-2) var(--space-3);
+    background: var(--surface-3);
+    border-radius: var(--radius-2);
+  }
+  .properties-expanded dt { color: var(--text-muted); }
+  .properties-expanded dd { margin: 0; color: var(--text-soft); }
+
+  .editor-body {
+    position: relative;
+    font-size: var(--text-body);
+    color: var(--text-main);
+    line-height: 1.6;
+    min-height: 120px;
+  }
+  .editor-body p { margin: 0 0 var(--space-2); }
+  .editor-body ul { margin: 0 0 var(--space-2); padding-left: 1.2em; }
+  .editor-body .block {
+    position: relative;
+    padding: 2px 0;
+    border-radius: var(--radius-1);
+  }
+  .editor-body .block.is-hovered {
+    background: var(--surface-3);
+  }
+  .editor-body .block.is-hovered::before {
+    content: "⠿";
+    position: absolute;
+    left: -22px;
+    top: 4px;
+    color: var(--text-muted);
+    font-size: 12px;
+    cursor: grab;
+  }
+  .editor-body .block.is-hovered::after {
+    content: "+";
+    position: absolute;
+    left: -38px;
+    top: 1px;
+    width: 14px; height: 14px;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 3px;
+    background: var(--surface-2);
+    border: 1px solid var(--border-soft);
+    color: var(--text-soft);
+    font-size: 11px;
+  }
+  mark.sel {
+    background: var(--accent-weak);
+    color: inherit;
+    border-radius: 2px;
+  }
+
+  .notes-field {
+    margin-top: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    background: var(--surface-3);
+    border-radius: var(--radius-2);
+    font-size: var(--text-small);
+    color: var(--text-soft);
+  }
+  .notes-field .label {
+    display: block;
+    font-size: var(--text-mini);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+    margin-bottom: 2px;
+  }
+
+  .history-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    font-size: var(--text-small);
+    color: var(--text-muted);
+    padding: var(--space-2) var(--space-4);
+    border-top: 1px solid var(--border-soft);
+  }
+  .history-row .badge {
+    background: var(--surface-3);
+    border-radius: 999px;
+    padding: 0 6px;
+    font-size: var(--text-mini);
+    color: var(--text-soft);
+  }
+
+  /* bubble menu */
+  .bubble-menu {
+    position: absolute;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    background: var(--surface-2);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-3);
+    box-shadow: 0 10px 24px rgb(0 0 0 / 0.3);
+    padding: 3px;
+    z-index: 5;
+  }
+  .bubble-menu .ibtn { width: 24px; height: 24px; font-size: 12px; }
+  .bubble-menu .ask-kira {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 0 8px;
+    height: 24px;
+    border-radius: var(--radius-2);
+    background: var(--accent-faint);
+    color: var(--accent-strong);
+    font-size: var(--text-small);
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .bubble-menu .sep { width: 1px; height: 16px; background: var(--border-strong); margin: 0 2px; }
+
+  /* slash menu */
+  .slash-menu {
+    position: absolute;
+    width: 220px;
+    background: var(--surface-2);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-3);
+    box-shadow: 0 16px 32px rgb(0 0 0 / 0.34);
+    padding: var(--space-1);
+    z-index: 5;
+  }
+  .slash-menu .query {
+    font-size: var(--text-small);
+    color: var(--text-muted);
+    padding: var(--space-1) var(--space-2);
+  }
+  .slash-menu .query b { color: var(--accent-strong); font-weight: 700; }
+  .slash-item {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: 6px var(--space-2);
+    border-radius: var(--radius-2);
+    font-size: var(--text-small);
+    color: var(--text-soft);
+  }
+  .slash-item.active { background: var(--accent-faint); color: var(--text-main); }
+  .slash-item .ico {
+    width: 22px; height: 22px;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--surface-3);
+    border-radius: var(--radius-1);
+    font-size: 12px;
+    color: var(--text-muted);
+    flex-shrink: 0;
+  }
+  .slash-item .meta { display: flex; flex-direction: column; }
+  .slash-item .meta .name { color: var(--text-main); font-weight: 560; font-size: var(--text-small); }
+  .slash-item .meta .hint { font-size: var(--text-mini); color: var(--text-muted); }
+
+  .diff-note {
+    margin-top: var(--space-3);
+    font-size: var(--text-small);
+    color: var(--text-muted);
+    border-left: 2px solid var(--accent-weak);
+    padding-left: var(--space-2);
+  }
+</style>
+</head>
+<body data-theme="dark">
+<div class="page">
+  <div class="page-head">
+    <div>
+      <h1>Node editor, bề mặt đề xuất</h1>
+      <p>Specimen cho docs/research/2026-11-09-node-editor-ux.md · token lấy từ apps/desktop/src/styles.css tại 7829b85</p>
+    </div>
+    <div class="theme-toggle" role="group" aria-label="Theme">
+      <button type="button" data-theme-btn="dark" aria-pressed="true">Dark</button>
+      <button type="button" data-theme-btn="light" aria-pressed="false">Light</button>
+    </div>
+  </div>
+
+  <div class="grid">
+
+    <div class="state-card">
+      <h2>1 — Trạng thái nghỉ</h2>
+      <p class="caption">Tiêu đề là trường riêng (15px/680), Properties gọn một dòng ngay dưới, thân bài chiếm phần lớn chiều cao, History thu gọn ở cuối.</p>
+      <div class="overlay-mock">
+        <div class="popover">
+          <div class="actionbar">
+            <div class="ai-group">
+              <span class="ibtn" style="color:var(--accent-strong)">✦</span>
+              <span class="chip-label">Create outline</span>
+            </div>
+            <div class="spacer"></div>
+            <span class="ibtn" title="AI có dùng node này">◎</span>
+            <span class="ibtn danger" title="Xoá node">🗑</span>
+            <div class="sep"></div>
+            <span class="ibtn" title="Đóng">✕</span>
+          </div>
+          <div class="popover-body">
+            <div class="node-title">Định vị KIRA cho nhóm brand nhỏ</div>
+            <div class="properties-row">
+              <span>cafef.vn</span>
+              <span class="dot">·</span>
+              <span>Quan trọng</span>
+              <span class="dot">·</span>
+              <span>Cập nhật 2 giờ trước</span>
+              <span class="chev">⌄</span>
+            </div>
+            <div class="editor-body">
+              <p>Thị trường app canvas cho sáng tạo đang chia hai cực: Figma quá nặng cho brainstorm, Milanote quá nhẹ cho AI.</p>
+              <ul>
+                <li>Giữ nguyên bản chất canvas tự do</li>
+                <li>Thêm lớp AI không chắn đường viết</li>
+              </ul>
+              <p>Góc KIRA nên chiếm: người làm brand một mình, không có team design riêng.</p>
+            </div>
+          </div>
+          <div class="history-row">
+            <span>History</span>
+            <span class="badge">3</span>
+            <span class="chev" style="margin-left:auto">⌄</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="state-card">
+      <h2>2 — Hover một khối</h2>
+      <p class="caption">Tay cầm ⠿ (kéo đổi vị trí) và dấu + (chèn khối mới) hiện bên trái khối đang hover, không chiếm chỗ khi không dùng.</p>
+      <div class="overlay-mock">
+        <div class="popover">
+          <div class="actionbar">
+            <div class="ai-group">
+              <span class="ibtn" style="color:var(--accent-strong)">✦</span>
+              <span class="chip-label">Create outline</span>
+            </div>
+            <div class="spacer"></div>
+            <span class="ibtn">◎</span>
+            <span class="ibtn danger">🗑</span>
+            <div class="sep"></div>
+            <span class="ibtn">✕</span>
+          </div>
+          <div class="popover-body" style="padding-left: calc(var(--space-4) + 38px);">
+            <div class="node-title">Định vị KIRA cho nhóm brand nhỏ</div>
+            <div class="properties-row">
+              <span>cafef.vn</span><span class="dot">·</span><span>Quan trọng</span>
+              <span class="chev">⌄</span>
+            </div>
+            <div class="editor-body">
+              <div class="block">Thị trường app canvas cho sáng tạo đang chia hai cực: Figma quá nặng cho brainstorm, Milanote quá nhẹ cho AI.</div>
+              <div class="block is-hovered">Giữ nguyên bản chất canvas tự do, thêm lớp AI không chắn đường viết.</div>
+              <div class="block">Góc KIRA nên chiếm: người làm brand một mình, không có team design riêng.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="state-card">
+      <h2>3 — Bôi đen văn bản</h2>
+      <p class="caption">Bubble menu nổi phía trên vùng chọn: Bold, Italic, Link, rồi "Hỏi Kira" — ba hành động map vào action AI đã có, chạy trên đúng đoạn đã chọn.</p>
+      <div class="overlay-mock">
+        <div class="popover">
+          <div class="actionbar">
+            <div class="ai-group"><span class="ibtn" style="color:var(--accent-strong)">✦</span><span class="chip-label">Create outline</span></div>
+            <div class="spacer"></div>
+            <span class="ibtn">◎</span><span class="ibtn danger">🗑</span><div class="sep"></div><span class="ibtn">✕</span>
+          </div>
+          <div class="popover-body" style="padding-top: 56px;">
+            <div class="bubble-menu" style="top: 44px; left: 16px;">
+              <span class="ibtn">B</span>
+              <span class="ibtn" style="font-style:italic">i</span>
+              <span class="ibtn">🔗</span>
+              <div class="sep"></div>
+              <span class="ask-kira">✦ Hỏi Kira</span>
+            </div>
+            <div class="node-title">Định vị KIRA cho nhóm brand nhỏ</div>
+            <div class="properties-row"><span>cafef.vn</span><span class="dot">·</span><span>Quan trọng</span><span class="chev">⌄</span></div>
+            <div class="editor-body">
+              <p>Thị trường app canvas cho sáng tạo đang chia hai cực: <mark class="sel">Figma quá nặng cho brainstorm, Milanote quá nhẹ cho AI</mark>.</p>
+              <p>Góc KIRA nên chiếm: người làm brand một mình, không có team design riêng.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="state-card">
+      <h2>4 — Gõ "/"</h2>
+      <p class="caption">Menu lệnh chèn khối, lọc theo ký tự gõ tiếp. "Diagram" tạo node diagram liên kết, không nhúng mermaid vào văn bản.</p>
+      <div class="overlay-mock">
+        <div class="popover">
+          <div class="actionbar">
+            <div class="ai-group"><span class="ibtn" style="color:var(--accent-strong)">✦</span><span class="chip-label">Create outline</span></div>
+            <div class="spacer"></div>
+            <span class="ibtn">◎</span><span class="ibtn danger">🗑</span><div class="sep"></div><span class="ibtn">✕</span>
+          </div>
+          <div class="popover-body" style="padding-bottom: 180px;">
+            <div class="node-title">Định vị KIRA cho nhóm brand nhỏ</div>
+            <div class="properties-row"><span>cafef.vn</span><span class="dot">·</span><span>Quan trọng</span><span class="chev">⌄</span></div>
+            <div class="editor-body">
+              <p>Thị trường app canvas cho sáng tạo đang chia hai cực.</p>
+              <p style="color:var(--text-muted)">/di</p>
+            </div>
+            <div class="slash-menu" style="top: 78px; left: 16px;">
+              <div class="query">Lọc theo <b>"di"</b></div>
+              <div class="slash-item active">
+                <span class="ico">◇</span>
+                <span class="meta"><span class="name">Diagram</span><span class="hint">Tạo node diagram liên kết</span></span>
+              </div>
+              <div class="slash-item">
+                <span class="ico">☑</span>
+                <span class="meta"><span class="name">To-do</span><span class="hint">Checkbox list</span></span>
+              </div>
+              <div class="slash-item">
+                <span class="ico">―</span>
+                <span class="meta"><span class="name">Divider</span><span class="hint">Đường kẻ phân đoạn</span></span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="state-card">
+      <h2>5 — Properties mở rộng</h2>
+      <p class="caption">So với trạng thái 1: bấm dòng Properties thu gọn mở ra danh sách đầy đủ, một cơ chế disclosure duy nhất, không còn khối "Source" và "Properties" tách rời.</p>
+      <div class="overlay-mock">
+        <div class="popover">
+          <div class="actionbar">
+            <div class="ai-group"><span class="ibtn" style="color:var(--accent-strong)">✦</span><span class="chip-label">Create outline</span></div>
+            <div class="spacer"></div>
+            <span class="ibtn">◎</span><span class="ibtn danger">🗑</span><div class="sep"></div><span class="ibtn">✕</span>
+          </div>
+          <div class="popover-body">
+            <div class="node-title">Định vị KIRA cho nhóm brand nhỏ</div>
+            <div class="properties-row">
+              <span>cafef.vn</span><span class="dot">·</span><span>Quan trọng</span><span class="dot">·</span><span>Cập nhật 2 giờ trước</span>
+              <span class="chev" style="transform:rotate(180deg); display:inline-block">⌄</span>
+            </div>
+            <dl class="properties-expanded">
+              <dt>Source URL</dt><dd>cafef.vn/brand-nho-2026</dd>
+              <dt>Importance</dt><dd>Quan trọng</dd>
+              <dt>Created</dt><dd>12 thg 10, 2026</dd>
+              <dt>Updated</dt><dd>2 giờ trước</dd>
+            </dl>
+            <div class="editor-body">
+              <p>Thị trường app canvas cho sáng tạo đang chia hai cực: Figma quá nặng cho brainstorm, Milanote quá nhẹ cho AI.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <p class="diff-note">
+    Bảng màu light ở đây là suy luận theo tinh thần "warm neutral, một accent teal" của DESIGN.md, không trích trực tiếp từ <code>buildProjectAppearanceStyle()</code> (hàm đó tính theo từng project, không có một giá trị light-mode mặc định đơn giản để đọc tĩnh). Xem mục Giới hạn trong báo cáo đầy đủ.
+  </p>
+</div>
+
+<script>
+  document.querySelectorAll('[data-theme-btn]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var theme = btn.getAttribute('data-theme-btn');
+      document.body.setAttribute('data-theme', theme);
+      document.querySelectorAll('[data-theme-btn]').forEach(function (b) {
+        b.setAttribute('aria-pressed', String(b === btn));
+      });
+    });
+  });
+</script>
+</body>
+</html>
