@@ -21,9 +21,35 @@ chrome.runtime.onInstalled.addListener(() => {
   })
 })
 
+// research 2026-11-09 §5#2: an embedded (data:/blob:) image right-clicked
+// via Chrome's own "Capture Image to KIRA" item used to get sent anyway —
+// isCaptureUrl's http(s)-only rule (content.ts) never runs for this path,
+// since info.srcUrl comes straight from the browser, not through it.
+function isHttpUrl(value: string) {
+  try {
+    const url = new URL(value)
+    return url.protocol === 'http:' || url.protocol === 'https:'
+  } catch {
+    return false
+  }
+}
+
 chrome.contextMenus.onClicked.addListener((info, tab) => {
   const tabTitle = tab?.title?.trim() || 'Untitled'
   const tabUrl = tab?.url || info.pageUrl || ''
+
+  if (info.menuItemId === 'kira-copy-image' && info.srcUrl && !isHttpUrl(info.srcUrl)) {
+    // No DOM here to toast with directly — relay to the tab's content
+    // script, which is where the user actually right-clicked.
+    if (tab?.id !== undefined) {
+      void chrome.tabs.sendMessage(tab.id, {
+        type: 'kira-show-toast',
+        message: "Can't capture this image yet, it's embedded in the page.",
+      })
+    }
+    return
+  }
+
   const capture: PendingCapture =
     info.menuItemId === 'kira-copy-image' && info.srcUrl
       ? {
@@ -62,6 +88,11 @@ chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse: (
     void fetchCaptureContext().then((context) => sendResponse({ ok: context !== null, context }))
     return true
   }
+
+  // background.ts only ever sends this one (to a tab's content script, see
+  // the context-menu handler above) — it's in the union because the type is
+  // bidirectional, not because this listener expects to receive it.
+  if (message.type === 'kira-show-toast') return
 
   void openDragWindow(message.capture)
     .then(() => sendResponse({ ok: true }))

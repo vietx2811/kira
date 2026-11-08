@@ -167,10 +167,13 @@ function extractImageUrlFromHtml(html: string) {
   return candidate ? toCaptureUrl(candidate, pendingCapture?.pageUrl) : null
 }
 
+// research 2026-11-09 §5#2: matches isCaptureUrl (content.ts) and
+// parseCaptureUrl (main.tsx) — data: dropped here used to build a capture
+// the app would silently refuse, while this window still said it worked.
 function toCaptureUrl(value: string, base?: string) {
   try {
     const url = new URL(value, base)
-    return url.protocol === 'http:' || url.protocol === 'https:' || url.protocol === 'data:' ? url.toString() : null
+    return url.protocol === 'http:' || url.protocol === 'https:' ? url.toString() : null
   } catch {
     return null
   }

@@ -248,7 +248,19 @@ async function discoverPageImages(): Promise<PageImageCandidate[]> {
                 : 'jpg'
             })(),
           }))
-          .filter((image) => image.url && image.width >= 160 && image.height >= 120)
+          // research 2026-11-09 §5#2: unlike content.ts/drag-window.ts this
+          // list had no protocol filter at all, so a data:-only image could
+          // be picked here and silently fail app-side. Simply never listing
+          // it (like a size/format filter) needs no separate message — the
+          // Alt+right-click and context-menu paths toast because the user
+          // acted on one specific image; here they'd never see it to begin
+          // with, same as an image below the size floor.
+          .filter((image) =>
+            image.url
+            && (image.url.startsWith('http://') || image.url.startsWith('https://'))
+            && image.width >= 160
+            && image.height >= 120,
+          )
           .slice(0, 20),
     })
     return dedupeImages(result?.result ?? [])

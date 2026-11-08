@@ -42,6 +42,7 @@ type KiraBridgeMessage =
   | { type: 'kira-post-capture'; capture: KiraCapturePayload }
   | { type: 'kira-get-context' }
   | { type: 'kira-open-drag-window'; capture: PendingCapture }
+  | { type: 'kira-show-toast'; message: string }
 
 type KiraBridgeResponse =
   | { ok: true; context?: KiraCaptureContext | null }
@@ -50,6 +51,12 @@ type KiraBridgeResponse =
 const pendingCaptureKey = 'pendingCapture'
 const dropPadId = 'kira-capture-drop-pad'
 const toastId = 'kira-capture-toast'
+// research 2026-11-09 §5#2: isCaptureUrl and parseCaptureUrl (main.tsx)
+// disagreed on data: URLs, so a capture built from one looked fine here,
+// silently failed app-side, and the extension still said "Saved". Sending
+// bytes instead is a later, deliberate decision; for now we just skip and
+// say so.
+const embeddedImageMessage = "Can't capture this image yet, it's embedded in the page."
 
 let draggingCapture: KiraCapturePayload | null = null
 let currentContext: KiraCaptureContext | null = null
@@ -90,6 +97,17 @@ document.addEventListener('dragleave', handleDocumentDragLeave, true)
 document.addEventListener('dragend', hideDropPadSoon, true)
 document.addEventListener('drop', hideDropPadSoon, true)
 document.addEventListener('contextmenu', handleAltContextMenu, true)
+
+// background.ts has no DOM of its own — this is how it shows the user
+// something when it can't (e.g. the native context-menu item rejecting an
+// embedded image before ever calling postCapture).
+chrome.runtime.onMessage.addListener((message: unknown) => {
+  if (!message || typeof message !== 'object') return
+  const candidate = message as Partial<KiraBridgeMessage>
+  if (candidate.type === 'kira-show-toast' && typeof candidate.message === 'string') {
+    showToast(candidate.message)
+  }
+})
 
 function handleDragStart(event: DragEvent) {
   const capture = captureFromDragEvent(event) ?? lastPointerCapture
@@ -158,7 +176,10 @@ function handleAltContextMenu(event: MouseEvent) {
   if (!image) return
 
   const capture = captureFromImage(image)
-  if (!capture) return
+  if (!capture) {
+    if (isEmbeddedOnlyUrl(bestImageUrlFromImage(image))) showToast(embeddedImageMessage)
+    return
+  }
 
   event.preventDefault()
   event.stopPropagation()
@@ -316,7 +337,18 @@ function normalizeCaptureUrl(url: string) {
 function isCaptureUrl(value: string) {
   try {
     const url = new URL(value, location.href)
-    return url.protocol === 'http:' || url.protocol === 'https:' || url.protocol === 'data:'
+    return url.protocol === 'http:' || url.protocol === 'https:'
+  } catch {
+    return false
+  }
+}
+
+// data: (and blob:) aren't http(s), so isCaptureUrl already rejects them —
+// this tells that apart from "no image at all" so callers can say why.
+function isEmbeddedOnlyUrl(value: string) {
+  try {
+    const url = new URL(value, location.href)
+    return url.protocol === 'data:' || url.protocol === 'blob:'
   } catch {
     return false
   }
