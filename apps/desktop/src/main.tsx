@@ -9,10 +9,15 @@ import { getCurrentWindow } from '@tauri-apps/api/window'
 import { open, save } from '@tauri-apps/plugin-dialog'
 import { FocusScope } from 'react-aria'
 import { useEditor, EditorContent, type Editor } from '@tiptap/react'
+import { BubbleMenu } from '@tiptap/react/menus'
 import StarterKit from '@tiptap/starter-kit'
 import TiptapLink from '@tiptap/extension-link'
 import TiptapPlaceholder from '@tiptap/extension-placeholder'
+import TiptapTaskList from '@tiptap/extension-task-list'
+import TiptapTaskItem from '@tiptap/extension-task-item'
 import { Markdown } from 'tiptap-markdown'
+import { SlashCommandExtension, SlashCommandPluginKey } from './kira/editor/SlashMenuExtension'
+import { ensureNodeTitle, mergeIdeaNotesIntoContent } from './kira/editor/nodeMigration'
 import { Segmented } from './components/Segmented'
 import { ReferenceThumb, referenceAspect } from './components/ReferenceThumb'
 import { SettingsView } from './components/application/settings/SettingsView'
@@ -100,7 +105,6 @@ import {
   CircleDot,
   Copy,
   Crop as CropIcon,
-  Database,
   ExternalLink,
   Eye,
   EyeOff,
@@ -150,12 +154,9 @@ import {
   X,
 } from 'lucide-react'
 import {
-  ListBullets,
-  ListNumbers,
   LinkSimple,
   Note as NoteIcon,
   Palette as PaletteIcon,
-  Quotes,
   TextB,
   TextH,
   TextItalic,
@@ -347,9 +348,10 @@ type PendingDelete =
 
 export type Idea = {
   id: string
+  // A real, independently-editable field since the node-editor-ux redesign
+  // (2026-11-09) — no longer derived from `content`'s first line.
   title: string
-  // Markdown, backing the inline rich-text editor (NodeRichEditor). `title`
-  // is derived from this — see deriveTitleFromContent — never set directly.
+  // Markdown, backing the inline rich-text editor (NodeRichEditor).
   content: string
   status: 'forming' | 'strong' | 'thin'
   x: number
@@ -360,6 +362,10 @@ export type Idea = {
   addedAt?: string
   updatedAt?: string
   sourceUrl?: string
+  // Deprecated: the overlay's dedicated Notes field was removed for ideas
+  // (merged into `content` once by mergeIdeaNotesIntoContent on load). Stays
+  // in the type only so an old saved value round-trips through `normalizeIdea`
+  // instead of being silently dropped by a stricter type.
   notes?: string
   // Excludes this node's content from the AI context pipeline
   // (collectKiraContext) without deleting it — see the eye-icon toggle.
@@ -369,9 +375,10 @@ export type Idea = {
 
 export type EvidenceImage = {
   id: string
+  // A real, independently-editable field since the node-editor-ux redesign
+  // (2026-11-09) — no longer derived from `content`'s first line.
   title: string
   // Markdown caption, backing the inline rich-text editor (NodeRichEditor).
-  // `title` is derived from this — see deriveTitleFromContent.
   content: string
   source: string
   originApp?: string
@@ -1162,15 +1169,20 @@ function t(key: string, lang: Lang, vars?: Record<string, string>): string {
 // SegmentedOption / Segmented moved to components/Segmented.tsx (PHA 1
 // Untitled UI migration, 2026-09-16) — imported above.
 
+type AskKiraAction = 'explain' | 'shorten' | 'split' | 'ask'
+
 /** Shared rich-text renderer backing every node's caption — a Tiptap
     instance per visible node, markdown in and out via tiptap-markdown. The
     canvas face renders it read-only (`editable={false}`): a single click
     just selects the node, never places a cursor. Double-click (or the (i)
     button) opens the node's overlay, which mounts a second instance of this
-    same component with `overlayMode` — editable, format toolbar always
-    visible instead of focus-gated, autofocused on open. The mark/node set
-    is deliberately tiny (bold, italic, bullet list, link) to keep markdown
-    round-tripping low-risk. */
+    same component with `overlayMode` — editable, autofocused on open.
+    Formatting lives in a BubbleMenu that appears on text selection (2026-11-09
+    node-editor-ux spec §3.2) instead of a toolbar that sat fixed above the
+    whole editor regardless of context — only the overlay instance wires
+    `onAskKira`, so the bubble menu's "Hỏi Kira" entry only ever renders
+    there; the canvas face is read-only and Tiptap's BubbleMenu already
+    refuses to show on a non-editable instance. */
 function NodeRichEditor({
   content,
   placeholder,
@@ -1179,6 +1191,8 @@ function NodeRichEditor({
   autoFocus,
   editable = true,
   overlayMode = false,
+  onAskKira,
+  onSlashMenuOpenChange,
 }: {
   kind: GraphNodeKind
   nodeId: string
@@ -1189,13 +1203,20 @@ function NodeRichEditor({
   autoFocus?: boolean
   editable?: boolean
   overlayMode?: boolean
+  onAskKira?: (action: AskKiraAction, selectedText: string) => void
+  // Lets the overlay's own Escape-closes-dismissable-layer (useDismissableLayer
+  // on .node-details-popover) know to let the slash menu's own Escape handler
+  // run first instead of closing the whole overlay out from under it.
+  onSlashMenuOpenChange?: (open: boolean) => void
 }): React.ReactElement {
   const onChangeRef = useRef(onChange)
   onChangeRef.current = onChange
   const onEscapeRef = useRef(onEscape)
   onEscapeRef.current = onEscape
+  const onSlashMenuOpenChangeRef = useRef(onSlashMenuOpenChange)
+  onSlashMenuOpenChangeRef.current = onSlashMenuOpenChange
   const [isFocused, setIsFocused] = useState(false)
-  const [, setToolbarRevision] = useState(0)
+  const [isAskKiraOpen, setIsAskKiraOpen] = useState(false)
 
   const editor = useEditor({
     extensions: [
@@ -1207,7 +1228,11 @@ function NodeRichEditor({
         heading: { levels: [1, 2, 3] },
         blockquote: {},
         codeBlock: false,
-        horizontalRule: false,
+        // Re-enabled for the slash menu's Divider item (node-editor-ux spec
+        // §3.2) — tiptap-markdown already knows how to round-trip `---` for
+        // this node by name, no extra config needed (verified against its
+        // bundled default markdown spec table).
+        horizontalRule: {},
         strike: false,
         code: false,
         orderedList: {},
@@ -1220,6 +1245,13 @@ function NodeRichEditor({
       }),
       TiptapLink.configure({ openOnClick: false, autolink: true }),
       TiptapPlaceholder.configure({ placeholder: placeholder ?? '' }),
+      // Phase 1 of the slash menu (node-editor-ux spec §3.2, decision 4a):
+      // To-do is the one block StarterKit doesn't already cover. `nested:
+      // false` keeps markdown round-tripping simple for now — sub-tasks are
+      // explicitly out of scope this phase.
+      TiptapTaskList,
+      TiptapTaskItem.configure({ nested: false }),
+      SlashCommandExtension.configure({ onOpenChange: (open) => onSlashMenuOpenChangeRef.current?.(open) }),
       Markdown.configure({ html: false, tightLists: true, bulletListMarker: '-', linkify: false }),
     ],
     content,
@@ -1227,8 +1259,14 @@ function NodeRichEditor({
     autofocus: autoFocus ? 'end' : false,
     editorProps: {
       attributes: { class: 'node-rich-editor-content' },
-      handleKeyDown: (_view, event) => {
+      handleKeyDown: (view, event) => {
         if (event.key === 'Escape') {
+          // Let the slash menu's own Escape handler close just the menu
+          // first — this prop runs before any plugin's handleKeyDown
+          // (including the Suggestion plugin's), so without this check
+          // Escape always closed the whole overlay, even just to dismiss
+          // the menu while still editing.
+          if (SlashCommandPluginKey.getState(view.state)?.active) return false
           event.preventDefault()
           onEscapeRef.current?.()
           ;(event.target as HTMLElement).blur?.()
@@ -1263,20 +1301,6 @@ function NodeRichEditor({
 
   if (!editor) return <></>
 
-  const showToolbar = overlayMode || isFocused
-  const activeToolbarItems = [
-    editor.isActive('bold') && 'bold',
-    editor.isActive('italic') && 'italic',
-    editor.isActive('heading') && 'heading',
-    editor.isActive('bulletList') && 'bullets',
-    editor.isActive('orderedList') && 'ordered',
-    editor.isActive('blockquote') && 'quote',
-    editor.isActive('link') && 'link',
-  ].filter(Boolean) as string[]
-  const runToolbarCommand = (command: () => void) => {
-    command()
-    setToolbarRevision((revision) => revision + 1)
-  }
   // Heading cycles H1, H2, H3, then back to a paragraph, so one button covers
   // all three levels the editor allows.
   const cycleHeading = () => {
@@ -1298,46 +1322,67 @@ function NodeRichEditor({
     const url = window.prompt('Link URL')
     if (url) editor.chain().focus().setLink({ href: url }).run()
   }
-  // Shortcuts are Tiptap StarterKit's own bindings (Mod = Cmd on macOS); the
-  // tooltip only names them. Heading and link have no single binding.
-  const formatItem = (id: string, label: string, icon: React.ReactElement, run: () => void, shortcut?: string) => (
-    <Tooltip key={id} title={label} description={shortcut} delay={200}>
-      <ButtonGroupItem
-        id={id}
-        aria-label={label}
-        iconLeading={icon}
-        onMouseDown={(event) => event.preventDefault()}
-        onPress={() => runToolbarCommand(run)}
-      />
-    </Tooltip>
-  )
+  const selectedText = () => editor.state.doc.textBetween(editor.state.selection.from, editor.state.selection.to, ' ')
+  const runAskKira = (action: AskKiraAction) => {
+    const text = selectedText().trim()
+    if (!text) return
+    onAskKira?.(action, text)
+    setIsAskKiraOpen(false)
+  }
+  // Typing "/" is the primary way to insert a block (Notion's own model —
+  // node-editor-ux spec §2/§3.2). This button is the secondary, click-to-
+  // discover path decision 5b scoped phase 1 down to: append a fresh
+  // paragraph holding a literal "/" at the very end of the document and
+  // focus it, which the same SlashCommandExtension picks up exactly as if
+  // the user had typed it — no separate "open menu" API to maintain. Not
+  // hover-per-block (that needs the drag-handle package's own position
+  // tracking, explicitly deferred alongside dragging itself).
+  const insertBlockAtEnd = () => {
+    const endPos = editor.state.doc.content.size
+    editor.chain().focus().insertContentAt(endPos, { type: 'paragraph', content: [{ type: 'text', text: '/' }] }).run()
+  }
 
   return (
     <>
-      {/* Overlay mode: always visible, since the overlay's whole purpose is
-          editing. Canvas mode: only while THIS node's editor is focused —
-          not gated on a text selection like Tiptap's default BubbleMenu, so
-          formatting is discoverable the moment typing starts.
-          Kit ButtonGroup, not a row of Buttons: these are toggles that mirror
-          the format at the caret, so each item needs a pressed state
-          (react-aria ToggleButton: aria-pressed, selected styling), which a
-          plain Button lacks. selectedKeys is driven by Tiptap's isActive, not
-          local state, so the highlight always tracks the text. */}
-      {showToolbar && (
-        <div className={overlayMode ? 'node-rich-editor-toolbar is-static' : 'node-rich-editor-toolbar'}>
-          <ButtonGroup aria-label="Text formatting" size="sm" selectionMode="multiple" selectedKeys={new Set(activeToolbarItems)}>
-            {formatItem('bold', 'Bold', <TextB size={13} weight="bold" />, () => editor.chain().focus().toggleBold().run(), '⌘B')}
-            {formatItem('italic', 'Italic', <TextItalic size={13} />, () => editor.chain().focus().toggleItalic().run(), '⌘I')}
-            {formatItem('heading', 'Heading', <TextH size={13} />, cycleHeading)}
-            {formatItem('bullets', 'Bullet list', <ListBullets size={13} />, () => editor.chain().focus().toggleBulletList().run(), '⇧⌘8')}
-            {formatItem('ordered', 'Numbered list', <ListNumbers size={13} />, () => editor.chain().focus().toggleOrderedList().run(), '⇧⌘7')}
-            {formatItem('quote', 'Quote', <Quotes size={13} />, () => editor.chain().focus().toggleBlockquote().run(), '⇧⌘B')}
-          </ButtonGroup>
-          <span className="node-rich-editor-toolbar-divider" />
-          <ButtonGroup aria-label="Link formatting" size="sm" selectionMode="multiple" selectedKeys={new Set(activeToolbarItems)}>
-            {formatItem('link', 'Link', <LinkSimple size={13} />, toggleLink)}
-          </ButtonGroup>
-        </div>
+      {overlayMode && (
+        <BubbleMenu editor={editor} className="node-bubble-menu">
+          <button type="button" className={editor.isActive('bold') ? 'icon-button sm is-active' : 'icon-button sm'} aria-label="Bold" onClick={() => editor.chain().focus().toggleBold().run()}>
+            <TextB size={13} weight="bold" />
+          </button>
+          <button type="button" className={editor.isActive('italic') ? 'icon-button sm is-active' : 'icon-button sm'} aria-label="Italic" onClick={() => editor.chain().focus().toggleItalic().run()}>
+            <TextItalic size={13} />
+          </button>
+          <button type="button" className={editor.isActive('heading') ? 'icon-button sm is-active' : 'icon-button sm'} aria-label="Heading" onClick={cycleHeading}>
+            <TextH size={13} />
+          </button>
+          <button type="button" className={editor.isActive('link') ? 'icon-button sm is-active' : 'icon-button sm'} aria-label="Link" onClick={toggleLink}>
+            <LinkSimple size={13} />
+          </button>
+          {onAskKira && (
+            <>
+              <span className="node-bubble-menu-divider" />
+              <div className="node-bubble-menu-ask-kira">
+                <button
+                  type="button"
+                  className={isAskKiraOpen ? 'icon-button sm is-active' : 'icon-button sm'}
+                  aria-label="Hỏi Kira"
+                  aria-expanded={isAskKiraOpen}
+                  onClick={() => setIsAskKiraOpen((open) => !open)}
+                >
+                  <Sparkles size={13} />
+                </button>
+                {isAskKiraOpen && (
+                  <div className="slash-menu node-ask-kira-flyout" role="menu" aria-label="Hỏi Kira">
+                    <button type="button" role="menuitem" className="slash-menu-item" onClick={() => runAskKira('explain')}>Giải thích</button>
+                    <button type="button" role="menuitem" className="slash-menu-item" onClick={() => runAskKira('shorten')}>Viết gọn hơn</button>
+                    <button type="button" role="menuitem" className="slash-menu-item" onClick={() => runAskKira('split')}>Tách thành node con</button>
+                    <button type="button" role="menuitem" className="slash-menu-item" onClick={() => runAskKira('ask')}>Hỏi Kira...</button>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </BubbleMenu>
       )}
       <EditorContent
         editor={editor}
@@ -1348,6 +1393,11 @@ function NodeRichEditor({
           overlayMode ? 'is-overlay' : '',
         ].filter(Boolean).join(' ')}
       />
+      {overlayMode && (
+        <button type="button" className="node-rich-editor-add-block icon-button sm" aria-label="Add block" onClick={insertBlockAtEnd}>
+          <Plus size={13} />
+        </button>
+      )}
     </>
   )
 }
@@ -4255,14 +4305,17 @@ function FileWorkspace({
     }
   }
 
-  function updateIdea(ideaId: string, patch: Partial<Pick<Idea, 'content' | 'sourceUrl' | 'notes'>>) {
-    // `title` is no longer settable directly — it's derived from `content`'s
-    // first line (deriveTitleFromContent) whenever content changes.
-    const derived = patch.content !== undefined ? { title: deriveTitleFromContent(patch.content) } : {}
+  function updateIdea(ideaId: string, patch: Partial<Pick<Idea, 'title' | 'content' | 'sourceUrl' | 'notes'>>) {
+    // `title` is now a real, independently-editable field (node-editor-ux
+    // spec, decision 1a) — no longer recomputed from `content`'s first line
+    // on every edit. A direct title edit (no content change alongside it)
+    // records as 'label_changed', same trigger the other node kinds already
+    // used for this.
     const before = ideas.find((idea) => idea.id === ideaId)
     if (before) {
-      const after = { ...before, ...patch, ...derived, updatedAt: nowIso() }
-      recordNodeVersion('idea', before, after, 'user_edit')
+      const after = { ...before, ...patch, updatedAt: nowIso() }
+      const trigger: NodeVersionTrigger = patch.content !== undefined ? 'user_edit' : patch.title !== undefined ? 'label_changed' : 'user_edit'
+      recordNodeVersion('idea', before, after, trigger)
       // A user edit to an AI-created node's content flips its canvas badge
       // ("AI" -> "AI, đã sửa"), stales any pending edit-text proposal that
       // targeted the same field, and — separately — flags the applied
@@ -4290,17 +4343,17 @@ function FileWorkspace({
         ))
       }
     }
-    setIdeas((current) => current.map((idea) => (idea.id === ideaId ? { ...idea, ...patch, ...derived, updatedAt: nowIso() } : idea)))
+    setIdeas((current) => current.map((idea) => (idea.id === ideaId ? { ...idea, ...patch, updatedAt: nowIso() } : idea)))
   }
 
-  function updateImage(imageId: string, patch: Partial<Pick<EvidenceImage, 'content' | 'sourceUrl' | 'notes'>>) {
-    const derived = patch.content !== undefined ? { title: deriveTitleFromContent(patch.content) } : {}
+  function updateImage(imageId: string, patch: Partial<Pick<EvidenceImage, 'title' | 'content' | 'sourceUrl' | 'notes'>>) {
     const before = images.find((image) => image.id === imageId)
     if (before) {
-      const after = { ...before, ...patch, ...derived, updatedAt: nowIso() }
-      recordNodeVersion('image', before, after, patch.content !== undefined ? 'label_changed' : 'user_edit')
+      const after = { ...before, ...patch, updatedAt: nowIso() }
+      const trigger: NodeVersionTrigger = patch.content !== undefined ? 'user_edit' : patch.title !== undefined ? 'label_changed' : 'user_edit'
+      recordNodeVersion('image', before, after, trigger)
     }
-    setImages((current) => current.map((image) => (image.id === imageId ? { ...image, ...patch, ...derived, updatedAt: nowIso() } : image)))
+    setImages((current) => current.map((image) => (image.id === imageId ? { ...image, ...patch, updatedAt: nowIso() } : image)))
   }
 
   // Pin toggles and block reordering are presentation-only — they don't
@@ -4347,34 +4400,34 @@ function FileWorkspace({
     )
   }
 
-  function updatePalette(paletteId: string, patch: Partial<Pick<PaletteNode, 'content' | 'sourceUrl' | 'notes'>>) {
-    const derived = patch.content !== undefined ? { title: deriveTitleFromContent(patch.content) } : {}
+  function updatePalette(paletteId: string, patch: Partial<Pick<PaletteNode, 'title' | 'content' | 'sourceUrl' | 'notes'>>) {
     const before = palettes.find((palette) => palette.id === paletteId)
     if (before) {
-      const after = { ...before, ...patch, ...derived, updatedAt: nowIso() }
-      recordNodeVersion('palette', before, after, patch.content !== undefined ? 'label_changed' : 'user_edit')
+      const after = { ...before, ...patch, updatedAt: nowIso() }
+      const trigger: NodeVersionTrigger = patch.content !== undefined ? 'user_edit' : patch.title !== undefined ? 'label_changed' : 'user_edit'
+      recordNodeVersion('palette', before, after, trigger)
     }
-    setPalettes((current) => current.map((palette) => (palette.id === paletteId ? { ...palette, ...patch, ...derived, updatedAt: nowIso() } : palette)))
+    setPalettes((current) => current.map((palette) => (palette.id === paletteId ? { ...palette, ...patch, updatedAt: nowIso() } : palette)))
   }
 
-  function updateDiagram(diagramId: string, patch: Partial<Pick<DiagramNode, 'content' | 'sourceUrl' | 'notes' | 'source'>>) {
-    const derived = patch.content !== undefined ? { title: deriveTitleFromContent(patch.content) } : {}
+  function updateDiagram(diagramId: string, patch: Partial<Pick<DiagramNode, 'title' | 'content' | 'sourceUrl' | 'notes' | 'source'>>) {
     const before = diagrams.find((diagram) => diagram.id === diagramId)
     if (before) {
-      const after = { ...before, ...patch, ...derived, updatedAt: nowIso() }
-      recordNodeVersion('diagram', before, after, patch.content !== undefined ? 'label_changed' : 'user_edit')
+      const after = { ...before, ...patch, updatedAt: nowIso() }
+      const trigger: NodeVersionTrigger = patch.content !== undefined ? 'user_edit' : patch.title !== undefined ? 'label_changed' : 'user_edit'
+      recordNodeVersion('diagram', before, after, trigger)
     }
-    setDiagrams((current) => current.map((diagram) => (diagram.id === diagramId ? { ...diagram, ...patch, ...derived, updatedAt: nowIso() } : diagram)))
+    setDiagrams((current) => current.map((diagram) => (diagram.id === diagramId ? { ...diagram, ...patch, updatedAt: nowIso() } : diagram)))
   }
 
-  function updatePlaceholder(placeholderId: string, patch: Partial<Pick<PlaceholderNode, 'content' | 'sourceUrl' | 'notes'>>) {
-    const derived = patch.content !== undefined ? { title: deriveTitleFromContent(patch.content) } : {}
+  function updatePlaceholder(placeholderId: string, patch: Partial<Pick<PlaceholderNode, 'title' | 'content' | 'sourceUrl' | 'notes'>>) {
     const before = placeholders.find((placeholder) => placeholder.id === placeholderId)
     if (before) {
-      const after = { ...before, ...patch, ...derived, updatedAt: nowIso() }
-      recordNodeVersion('placeholder', before, after, patch.content !== undefined ? 'label_changed' : 'user_edit')
+      const after = { ...before, ...patch, updatedAt: nowIso() }
+      const trigger: NodeVersionTrigger = patch.content !== undefined ? 'user_edit' : patch.title !== undefined ? 'label_changed' : 'user_edit'
+      recordNodeVersion('placeholder', before, after, trigger)
     }
-    setPlaceholders((current) => current.map((placeholder) => (placeholder.id === placeholderId ? { ...placeholder, ...patch, ...derived, updatedAt: nowIso() } : placeholder)))
+    setPlaceholders((current) => current.map((placeholder) => (placeholder.id === placeholderId ? { ...placeholder, ...patch, updatedAt: nowIso() } : placeholder)))
   }
 
   // A visibility flag, not a version-worthy content edit — toggling it never
@@ -5912,6 +5965,28 @@ function FileWorkspace({
       setLinks((current) => [...current, link])
     }
     setSelection({ type: 'idea', id: idea.id })
+  }
+
+  // The three one-click bubble-menu actions (node-editor-ux spec §1
+  // decision 3a: "Giải thích" / "Viết gọn hơn" / "Tách thành node con") map
+  // directly onto createAiNode's existing summarize/synthesize/break_down
+  // actions — same pipeline the Kira dock already uses, just scoped to the
+  // selected excerpt instead of the whole node via the instruction text,
+  // since AiNodeRequest has no separate "selection" field of its own.
+  async function askKiraAboutSelection(kind: GraphNodeKind, id: string, action: AiNodeAction, selectedText: string) {
+    const excerpt = selectedText.trim().slice(0, 600)
+    try {
+      await createAiNode({
+        source: { kind, id },
+        action,
+        scope: 'selected',
+        prompt: `${aiNodeActionPrompts[action]} Focus specifically on this excerpt from the node: "${excerpt}"`,
+        providerOverrideId: null,
+        modelOverride: null,
+      })
+    } catch (error) {
+      setLibraryStatus(error instanceof Error ? error.message : 'Kira could not complete that.')
+    }
   }
 
   function updatePaletteColor(paletteId: string, colorIndex: number, color: string) {
@@ -7454,6 +7529,7 @@ function FileWorkspace({
                 onCreateLink={createNodeLink}
                 onCreateLinkedNode={createLinkedNode}
                 onCreateAiNode={createAiNode}
+                onAskKiraAboutSelection={askKiraAboutSelection}
                 aiProviders={aiProviders}
                 aiRoutingMode={aiRoutingMode}
                 selectedAiProviderId={selectedAiProviderId}
@@ -8410,6 +8486,7 @@ function GraphCanvas({
   onCreateLink,
   onCreateLinkedNode,
   onCreateAiNode,
+  onAskKiraAboutSelection,
   aiProviders,
   aiRoutingMode,
   selectedAiProviderId,
@@ -8510,6 +8587,7 @@ function GraphCanvas({
   onCreateLink: (source: Pick<GraphNodeRef, 'kind' | 'id'>, target: Pick<GraphNodeRef, 'kind' | 'id'>, relation?: Relation) => void
   onCreateLinkedNode: (source: Pick<GraphNodeRef, 'kind' | 'id'>, targetKind: GraphNodeKind) => void
   onCreateAiNode: (request: AiNodeRequest) => void | Promise<void>
+  onAskKiraAboutSelection: (kind: GraphNodeKind, id: string, action: AiNodeAction, selectedText: string) => void | Promise<void>
   aiProviders: AiProviderProfile[]
   aiRoutingMode: AiRoutingMode
   selectedAiProviderId: string
@@ -8538,14 +8616,14 @@ function GraphCanvas({
   onToggleAiExcluded: (kind: GraphNodeKind, id: string) => void
   onRebuildOutline: () => void | Promise<void>
   isRebuildingOutline: boolean
-  onIdeaInlineChange: (ideaId: string, patch: Partial<Pick<Idea, 'content' | 'notes' | 'sourceUrl'>>) => void
-  onImageInlineChange: (imageId: string, patch: Partial<Pick<EvidenceImage, 'content' | 'notes' | 'sourceUrl'>>) => void
+  onIdeaInlineChange: (ideaId: string, patch: Partial<Pick<Idea, 'title' | 'content' | 'notes' | 'sourceUrl'>>) => void
+  onImageInlineChange: (imageId: string, patch: Partial<Pick<EvidenceImage, 'title' | 'content' | 'notes' | 'sourceUrl'>>) => void
   onToggleImageTagsPinned: (imageId: string) => void
   onToggleImagePalettePinned: (imageId: string) => void
   onReorderImageBlocks: (imageId: string, order: string[]) => void
-  onPaletteInlineChange: (paletteId: string, patch: Partial<Pick<PaletteNode, 'content' | 'notes' | 'sourceUrl'>>) => void
-  onDiagramInlineChange: (diagramId: string, patch: Partial<Pick<DiagramNode, 'content' | 'notes' | 'sourceUrl' | 'source'>>) => void
-  onPlaceholderInlineChange: (placeholderId: string, patch: Partial<Pick<PlaceholderNode, 'content' | 'notes' | 'sourceUrl'>>) => void
+  onPaletteInlineChange: (paletteId: string, patch: Partial<Pick<PaletteNode, 'title' | 'content' | 'notes' | 'sourceUrl'>>) => void
+  onDiagramInlineChange: (diagramId: string, patch: Partial<Pick<DiagramNode, 'title' | 'content' | 'notes' | 'sourceUrl' | 'source'>>) => void
+  onPlaceholderInlineChange: (placeholderId: string, patch: Partial<Pick<PlaceholderNode, 'title' | 'content' | 'notes' | 'sourceUrl'>>) => void
   onReferenceFindSimilar: (imageId: string) => void | Promise<void>
   findSimilarRunningId: string | null
   onReferenceCrop: (imageId: string) => void
@@ -8730,9 +8808,13 @@ function GraphCanvas({
   const [draggedBlockKey, setDraggedBlockKey] = useState<string | null>(null)
   // Which Details-popover sections are collapsed — a session-level UI
   // preference shared across every node (not per-node state), same as a
-  // sidebar's remembered scroll position. History starts collapsed since
-  // it's the section people open least; everything else starts open.
-  const [collapsedDetailSections, setCollapsedDetailSections] = useState<Set<string>>(() => new Set(['history']))
+  // sidebar's remembered scroll position. History and Properties start
+  // collapsed since they're consulted least; everything else starts open.
+  const [collapsedDetailSections, setCollapsedDetailSections] = useState<Set<string>>(() => new Set(['history', 'properties']))
+  // Gates the node-details-popover's useDismissableLayer below: while the
+  // slash menu is open, Escape should close just the menu (its own
+  // handleKeyDown), not the whole overlay out from under it.
+  const [isSlashMenuOpen, setIsSlashMenuOpen] = useState(false)
   const toggleDetailSection = useCallback((key: string) => {
     setCollapsedDetailSections((current) => {
       const next = new Set(current)
@@ -9048,7 +9130,7 @@ function GraphCanvas({
   )
 
   useDismissableLayer(
-    Boolean(detailsPopoverNode),
+    Boolean(detailsPopoverNode) && !isSlashMenuOpen,
     '.node-details-popover, .node-toolbar',
     closeDetailsPopover,
   )
@@ -9877,7 +9959,7 @@ function GraphCanvas({
     const id = node.id
     const isDetailsOpen = detailsPopoverNode?.kind === kind && detailsPopoverNode.id === id
     const nodeVersionRecords = nodeVersions.filter((version) => version.nodeId === id && version.nodeKind === kind).slice(0, 8)
-    const inlineChange = (patch: { notes?: string; sourceUrl?: string }) => {
+    const inlineChange = (patch: { title?: string; notes?: string; sourceUrl?: string }) => {
       if (kind === 'idea') onIdeaInlineChange(id, patch)
       else if (kind === 'image') onImageInlineChange(id, patch)
       else if (kind === 'palette') onPaletteInlineChange(id, patch)
@@ -9890,6 +9972,20 @@ function GraphCanvas({
       else if (kind === 'palette') onPaletteInlineChange(id, { content: markdown })
       else if (kind === 'diagram') onDiagramInlineChange(id, { content: markdown })
       else onPlaceholderInlineChange(id, { content: markdown })
+    }
+    // Bubble-menu "Hỏi Kira" (node-editor-ux spec §1 decision 3a): the three
+    // canned actions reuse the existing createAiNode pipeline (via the
+    // outer component's askKiraAboutSelection); the free-form question opens
+    // the existing Kira dock instead of building a second AI-answer surface
+    // — the spec's own "...hoặc gửi sang panel Kira" allows exactly this.
+    const onAskKira = (action: AskKiraAction, text: string) => {
+      if (action === 'ask') {
+        openKiraSession('node', { kind, id }, 'selected')
+        setKiraSession((current) => (current ? { ...current, prompt: `About this excerpt: "${text.trim().slice(0, 600)}"\n\n` } : current))
+        return
+      }
+      const mapped: AiNodeAction = action === 'explain' ? 'synthesize' : action === 'shorten' ? 'summarize' : 'break_down'
+      void onAskKiraAboutSelection(kind, id, mapped, text)
     }
 
     // Only the image kind has more than one reorderable block (tags,
@@ -10108,14 +10204,36 @@ function GraphCanvas({
                 <Button color="tertiary" size="sm" aria-label="Close" className="node-details-close" onPress={closeDetails} iconLeading={<X size={13} />} />
               </Tooltip>
             </div>
+            {/* Title is now its own field (node-editor-ux spec, decision 1a) —
+                no longer derived from content's first line — with Properties
+                collapsed to one line directly under it (decision from §1's
+                critique table: Notion-style, not buried at the bottom behind
+                a separate disclosure with its own mechanism). */}
+            <div className="node-header-block">
+              <input
+                type="text"
+                className="node-title-input"
+                aria-label="Title"
+                placeholder="Untitled"
+                value={node.title}
+                onChange={(event) => inlineChange({ title: event.target.value })}
+              />
+              <NodeProperties
+                node={node}
+                collapsed={collapsedDetailSections.has('properties')}
+                onToggleCollapsed={() => toggleDetailSection('properties')}
+              />
+            </div>
             <NodeRichEditor
               kind={kind}
               nodeId={id}
               content={node.content}
-              placeholder="Type something..."
+              placeholder={kind === 'idea' ? 'Type something...' : 'Add a caption...'}
               overlayMode
               autoFocus
               onChange={onOverlayContentChange}
+              onAskKira={onAskKira}
+              onSlashMenuOpenChange={setIsSlashMenuOpen}
             />
             {kind === 'palette' && (
               <section className="block-module">
@@ -10136,15 +10254,23 @@ function GraphCanvas({
                 )}
               </section>
             )}
-            <TextAreaBase
-              aria-label="Notes"
-              className="node-notes-input"
-              rows={2}
-              size="sm"
-              placeholder="Notes..."
-              value={('notes' in node ? node.notes : '') ?? ''}
-              onChange={(event) => inlineChange({ notes: event.target.value })}
-            />
+            {/* Removed for idea (node-editor-ux spec, decision 2a): the field
+                duplicated content with no distinct role there. Old idea notes
+                are merged into content once on load (mergeIdeaNotesIntoContent),
+                never dropped. Other kinds keep it — it names a real, distinct
+                role for them (§0.1/§3.3: a private aside about the thumbnail/
+                palette, not the public caption). */}
+            {kind !== 'idea' && (
+              <TextAreaBase
+                aria-label="Notes"
+                className="node-notes-input"
+                rows={2}
+                size="sm"
+                placeholder="Notes..."
+                value={('notes' in node ? node.notes : '') ?? ''}
+                onChange={(event) => inlineChange({ notes: event.target.value })}
+              />
+            )}
             {kind === 'image' ? (
               <div className="reorderable-blocks">
                 {imageOrder.map((key) => {
@@ -10252,7 +10378,6 @@ function GraphCanvas({
                 <NodeVersionTimeline versions={nodeVersionRecords} onRestore={onNodeVersionRestore} />
               )}
             </section>
-              <NodeMetadata node={node} />
             </div>
           </div>,
           themedPortalTarget(),
@@ -13236,8 +13361,62 @@ function ProjectColorSummary({
   )
 }
 
-function NodeMetadata({
+// A short hostname for the Properties summary row ("example.com · 1.5x ·
+// Updated 2h ago") — not a full URL parse for display, just enough to read
+// at a glance. Tolerant of a bare "example.com" with no protocol, which is
+// what the Source field actually stores (users rarely type "https://").
+function extractHostname(url: string): string {
+  const trimmed = url.trim()
+  if (!trimmed) return ''
+  try {
+    return new URL(trimmed).hostname.replace(/^www\./, '')
+  } catch {
+    try {
+      return new URL(`https://${trimmed}`).hostname.replace(/^www\./, '')
+    } catch {
+      return trimmed
+    }
+  }
+}
+
+function formatRelativeShort(iso: string): string {
+  const elapsedMs = Date.now() - new Date(iso).getTime()
+  if (!Number.isFinite(elapsedMs) || elapsedMs < 0) return ''
+  const minutes = Math.floor(elapsedMs / 60_000)
+  if (minutes < 1) return 'Just now'
+  if (minutes < 60) return `${minutes}m ago`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours}h ago`
+  const days = Math.floor(hours / 24)
+  if (days < 30) return `${days}d ago`
+  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+}
+
+function buildPropertiesSummaryParts(node: Pick<Idea | EvidenceImage | PaletteNode | DiagramNode | PlaceholderNode, 'importance' | 'sourceUrl' | 'updatedAt'>): string[] {
+  const parts: string[] = []
+  if (node.sourceUrl) {
+    const host = extractHostname(node.sourceUrl)
+    if (host) parts.push(host)
+  }
+  if (typeof node.importance === 'number' && node.importance !== 1) parts.push(formatImportance(node.importance))
+  if (node.updatedAt) {
+    const relative = formatRelativeShort(node.updatedAt)
+    if (relative) parts.push(`Updated ${relative}`)
+  }
+  return parts
+}
+
+// Replaces the old native <details> at the bottom of the popover
+// (node-editor-ux spec §1/§3.1): a one-line summary sits right under the
+// title instead, using the same collapsedDetailSections toggle every other
+// section here uses — not its own disclosure mechanism. Source URL is
+// shown only in the summary line (hostname) and dropped from the expanded
+// list, since the editable Source field above already covers it — the
+// previous version listed it in both places.
+function NodeProperties({
   node,
+  collapsed,
+  onToggleCollapsed,
 }: {
   node: Pick<Idea | EvidenceImage | PaletteNode | DiagramNode | PlaceholderNode, 'importance' | 'createdAt' | 'addedAt' | 'updatedAt' | 'sourceUrl'> & {
     width?: number
@@ -13245,62 +13424,70 @@ function NodeMetadata({
     sizeBytes?: number
     mimeType?: string
   }
+  collapsed: boolean
+  onToggleCollapsed: () => void
 }) {
+  const summaryParts = buildPropertiesSummaryParts(node)
   return (
-    <details className="inspector-card metadata-disclosure">
-      <summary>
-        <Database size={14} />
-        Properties
-      </summary>
-      <dl>
-        <div>
-          <dt>Importance</dt>
-          <dd>{formatImportance(node.importance)}</dd>
-        </div>
-        {node.sourceUrl && (
-          <div>
-            <dt>Source URL</dt>
-            <dd>{node.sourceUrl}</dd>
-          </div>
+    <div className="node-properties">
+      <button type="button" className="node-properties-summary" onClick={onToggleCollapsed} aria-expanded={!collapsed}>
+        {summaryParts.length > 0 ? (
+          summaryParts.map((part, index) => (
+            <React.Fragment key={part}>
+              {index > 0 && <span className="dot" aria-hidden="true">·</span>}
+              <span>{part}</span>
+            </React.Fragment>
+          ))
+        ) : (
+          <span className="node-properties-empty">Properties</span>
         )}
-        {node.width && node.height && (
+        <ChevronRight size={11} className={collapsed ? 'node-properties-chevron' : 'node-properties-chevron is-open'} aria-hidden="true" />
+      </button>
+      {!collapsed && (
+        <dl className="node-properties-expanded">
           <div>
-            <dt>Dimensions</dt>
-            <dd>{node.width} x {node.height}</dd>
+            <dt>Importance</dt>
+            <dd>{formatImportance(node.importance)}</dd>
           </div>
-        )}
-        {typeof node.sizeBytes === 'number' && (
-          <div>
-            <dt>Size</dt>
-            <dd>{formatBytes(node.sizeBytes)}</dd>
-          </div>
-        )}
-        {node.mimeType && (
-          <div>
-            <dt>Type</dt>
-            <dd>{formatMimeType(node.mimeType)}</dd>
-          </div>
-        )}
-        {node.createdAt && (
-          <div>
-            <dt>Created</dt>
-            <dd>{formatMetadataTime(node.createdAt)}</dd>
-          </div>
-        )}
-        {node.addedAt && (
-          <div>
-            <dt>Added</dt>
-            <dd>{formatMetadataTime(node.addedAt)}</dd>
-          </div>
-        )}
-        {node.updatedAt && (
-          <div>
-            <dt>Updated</dt>
-            <dd>{formatMetadataTime(node.updatedAt)}</dd>
-          </div>
-        )}
-      </dl>
-    </details>
+          {node.width && node.height && (
+            <div>
+              <dt>Dimensions</dt>
+              <dd>{node.width} x {node.height}</dd>
+            </div>
+          )}
+          {typeof node.sizeBytes === 'number' && (
+            <div>
+              <dt>Size</dt>
+              <dd>{formatBytes(node.sizeBytes)}</dd>
+            </div>
+          )}
+          {node.mimeType && (
+            <div>
+              <dt>Type</dt>
+              <dd>{formatMimeType(node.mimeType)}</dd>
+            </div>
+          )}
+          {node.createdAt && (
+            <div>
+              <dt>Created</dt>
+              <dd>{formatMetadataTime(node.createdAt)}</dd>
+            </div>
+          )}
+          {node.addedAt && (
+            <div>
+              <dt>Added</dt>
+              <dd>{formatMetadataTime(node.addedAt)}</dd>
+            </div>
+          )}
+          {node.updatedAt && (
+            <div>
+              <dt>Updated</dt>
+              <dd>{formatMetadataTime(node.updatedAt)}</dd>
+            </div>
+          )}
+        </dl>
+      )}
+    </div>
   )
 }
 
@@ -15778,15 +15965,6 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value))
 }
 
-// A node's title is no longer directly editable — it's the first non-empty
-// line of its markdown `content`, with the most common inline-markdown
-// markers stripped so the derived label doesn't show raw `**`/`#`/`-` syntax.
-function deriveTitleFromContent(markdown: string): string {
-  const firstLine = markdown.split('\n').find((line) => line.trim().length > 0) ?? ''
-  const stripped = firstLine.replace(/^#+\s*|^>\s*|^\d+\.\s+|^[-*]\s+|\*\*|\*|`/g, '').trim()
-  return stripped.length > 0 ? stripped.slice(0, 120) : 'Untitled'
-}
-
 function smoothGraphEdge(source: Pick<GraphNodeRef, 'x' | 'y'>, target: Pick<GraphNodeRef, 'x' | 'y'>) {
   const start = graphEdgePort(source, target)
   const end = graphEdgePort(target, source)
@@ -18202,20 +18380,23 @@ function isProjectSnapshot(value: unknown): value is ProjectSnapshot {
 }
 
 // Old saved projects wrote a free-text `body` field where `Idea` now expects
-// markdown `content`. Backfill on load, once, without touching `title` — the
-// user's existing title stays exactly as they left it until their next edit
-// starts deriving it from content again (see deriveTitleFromContent).
+// markdown `content`. Backfill on load, once. `title` is never touched by
+// the content backfill — only ensureNodeTitle's own narrower fallback
+// (missing/blank title) can set it. The old dedicated Notes field is merged
+// into content here too (mergeIdeaNotesIntoContent, node-editor-ux spec
+// §1 decision 2a) — ideas are the only kind that lost that field.
 function normalizeIdea(raw: Idea | (Omit<Idea, 'content'> & { body?: string })): Idea {
-  if (typeof (raw as Idea).content === 'string') return raw as Idea
+  const hasContent = typeof (raw as Idea).content === 'string'
   const { body, ...rest } = raw as Omit<Idea, 'content'> & { body?: string }
-  return { ...rest, content: body ?? '' }
+  const withContent = hasContent ? (rest as Idea) : { ...rest, content: body ?? '' }
+  return mergeIdeaNotesIntoContent(ensureNodeTitle(withContent)) as Idea
 }
 
 // Image/Palette/Diagram/Placeholder never had a `body` field — old saves
 // simply lack `content`, so it's backfilled straight from `title`.
 function normalizeNodeContent<T extends { title: string; content?: string }>(raw: T): T & { content: string } {
-  if (typeof raw.content === 'string') return raw as T & { content: string }
-  return { ...raw, content: raw.title }
+  const withContent = typeof raw.content === 'string' ? raw : { ...raw, content: raw.title }
+  return ensureNodeTitle(withContent) as T & { content: string }
 }
 
 function normalizeProjectMetadata(value: unknown): ProjectMetadata {
