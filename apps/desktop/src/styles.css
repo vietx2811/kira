@@ -3763,9 +3763,15 @@ button.mini-tags-more:focus-visible {
 /* node-editor-ux-polish brief point 1: Notion has no textarea-style focus
    ring around the body — the caret alone carries focus. The 2px inset ring
    this used to draw on :focus-within is gone; only the overlay's own
-   padding stays, for comfortable click/tap targets around the text. */
+   padding stays, for comfortable click/tap targets around the text.
+   node-toolbar-polish follow-up point 11: the horizontal half of that
+   padding (12px) was only ever compensated vertically (`margin: -6px 0`),
+   so the body's own text sat 12px to the right of the title input and
+   Properties row above it, which have no such padding. Compensating both
+   axes keeps the padded, comfortable hit area while the text itself lines
+   up flush with everything above it. */
 .node-rich-editor.is-overlay {
-  margin: -6px 0;
+  margin: -6px -12px;
   padding: 6px 12px;
   border-radius: var(--radius-2);
 }
@@ -4458,9 +4464,14 @@ button.mini-tags-more:focus-visible {
   min-height: 120px;
 }
 
+/* Two real groups (node-toolbar-polish follow-up point 10), not one flat
+   row with a `margin-left: auto` hack on a divider to fake the split — see
+   the JSX comment at .node-details-actionbar-right's call site for why
+   that broke for idea/diagram. */
 .node-details-actionbar {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   flex-wrap: wrap;
   gap: 2px;
   margin: -2px -2px 2px;
@@ -4468,13 +4479,20 @@ button.mini-tags-more:focus-visible {
   border-bottom: 1px solid var(--border-soft);
 }
 
+.node-details-actionbar-left,
+.node-details-actionbar-right {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
 .node-details-actionbar-sep {
   width: 1px;
   height: 16px;
-  /* A touch more breathing room than a plain 4px gap so the three action
-     clusters (image ops / AI-context+delete / close) read as groups at a
-     glance — hairline, not a boxed pill, per DESIGN.md's divider convention. */
-  margin: 0 6px 0 auto;
+  /* A touch more breathing room than a plain 4px gap so the AI-context+
+     Delete cluster reads as separate from Close — hairline, not a boxed
+     pill, per DESIGN.md's divider convention. */
+  margin: 0 6px;
   background: var(--border-soft);
 }
 

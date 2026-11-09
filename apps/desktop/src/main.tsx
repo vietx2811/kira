@@ -10221,6 +10221,7 @@ function GraphCanvas({
                   <label>+<input type="file">: the kit has no file-picker
                   control. */}
               <div className="node-details-actionbar">
+              <div className="node-details-actionbar-left">
               {kind === 'image' && (
                 <>
                   <label className="node-toolbar-file file-action" aria-label="Replace image" title="Replace image">
@@ -10291,42 +10292,45 @@ function GraphCanvas({
                   gone — OutlineView has its own "Rebuild" button
                   (onRebuild={rebuildOutlineDraft}); this was a redundant
                   shortcut, not the only entry point. */}
-              {/* Visually separates "do something to this node" (edit/replace/
-                  crop/history — left) from "how it behaves" (AI inclusion —
-                  right) so the row doesn't read as one undifferentiated
-                  strip of identical icons. Kept as a plain hairline <span>,
-                  not a kit ButtonGroup: ButtonGroup renders a joined,
-                  ring-bordered segmented pill (react-aria ToggleButtonGroup
-                  with shared selection state) — exactly the "boxed pill"
-                  DESIGN.md §5's Space-and-Line-First Rule steers away from
-                  for a row like this, and these are one-shot commands, not a
-                  mutually exclusive toggle set. A hairline divider is the
-                  designed tool here, so the CSS for it is not dead. */}
-              <span className="node-details-actionbar-sep" aria-hidden="true" />
-              <Tooltip title={node.aiExcluded ? 'Excluded from AI' : 'Included in AI context'} delay={200}>
-                <Button
-                  color="tertiary"
-                  size="sm"
-                  aria-label={node.aiExcluded ? 'Excluded from AI, click to include' : 'Included in AI context, click to exclude'}
-                  className={node.aiExcluded ? 'is-active' : ''}
-                  onPress={() => onToggleAiExcluded(kind, id)}
-                  iconLeading={node.aiExcluded ? <EyeOff size={13} /> : <Eye size={13} />}
-                />
-              </Tooltip>
-              <Tooltip title="Delete" delay={200}>
-                <Button
-                  color="tertiary"
-                  size="sm"
-                  aria-label="Delete node"
-                  className="is-danger"
-                  onPress={() => onDeleteNodes([{ kind, id }])}
-                  iconLeading={<Trash2 size={13} />}
-                />
-              </Tooltip>
-              <span className="node-details-actionbar-sep" aria-hidden="true" />
-              <Tooltip title="Close" delay={200}>
-                <Button color="tertiary" size="sm" aria-label="Close" className="node-details-close" onPress={closeDetails} iconLeading={<X size={13} />} />
-              </Tooltip>
+              </div>
+              {/* node-toolbar-polish follow-up point 10: AI-context toggle +
+                  Delete + Close used to sit directly in the flex row with a
+                  leading divider pushed right via `margin-left: auto` — for
+                  idea/diagram (no kind-specific button above) that divider
+                  had nothing on its left to separate from, an orphaned mark
+                  rather than a group boundary, and the auto-margin hack only
+                  worked because *something* happened to be the first flex
+                  child. A real two-group row (space-between) doesn't depend
+                  on that: the right group lands at the end whether or not
+                  the left one has anything in it, with no leading divider
+                  needed at all. The one divider that's still a real group
+                  boundary (AI-context+Delete vs Close) stays. */}
+              <div className="node-details-actionbar-right">
+                <Tooltip title={node.aiExcluded ? 'Excluded from AI' : 'Included in AI context'} delay={200}>
+                  <Button
+                    color="tertiary"
+                    size="sm"
+                    aria-label={node.aiExcluded ? 'Excluded from AI, click to include' : 'Included in AI context, click to exclude'}
+                    className={node.aiExcluded ? 'is-active' : ''}
+                    onPress={() => onToggleAiExcluded(kind, id)}
+                    iconLeading={node.aiExcluded ? <EyeOff size={13} /> : <Eye size={13} />}
+                  />
+                </Tooltip>
+                <Tooltip title="Delete" delay={200}>
+                  <Button
+                    color="tertiary"
+                    size="sm"
+                    aria-label="Delete node"
+                    className="is-danger"
+                    onPress={() => onDeleteNodes([{ kind, id }])}
+                    iconLeading={<Trash2 size={13} />}
+                  />
+                </Tooltip>
+                <span className="node-details-actionbar-sep" aria-hidden="true" />
+                <Tooltip title="Close" delay={200}>
+                  <Button color="tertiary" size="sm" aria-label="Close" className="node-details-close" onPress={closeDetails} iconLeading={<X size={13} />} />
+                </Tooltip>
+              </div>
             </div>
             {/* Title is now its own field (node-editor-ux spec, decision 1a) —
                 no longer derived from content's first line — with Properties
