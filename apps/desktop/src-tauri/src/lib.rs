@@ -4218,11 +4218,11 @@ fn validate_pinterest_url(raw: &str) -> Result<(), String> {
         return Err("URL must not specify a port".to_string());
     }
     let host = parsed.host_str().ok_or_else(|| "URL has no host".to_string())?;
-    let labels: Vec<&str> = host.split('.').collect();
-    // "pinterest" must be the label immediately before the TLD — e.g.
-    // ["www", "pinterest", "com"] or ["pinterest", "de"] — not merely
-    // present anywhere in the host.
-    let is_pinterest_host = labels.len() >= 2 && labels[labels.len() - 2] == "pinterest";
+    // Exactly pinterest.com or a subdomain of it, matching the only URLs the
+    // frontend builds (buildPinterestSimilarUrl). Not "pinterest.<any tld>":
+    // a cheap lookalike TLD is not Pinterest's to vouch for.
+    let host = host.to_ascii_lowercase();
+    let is_pinterest_host = host == "pinterest.com" || host.ends_with(".pinterest.com");
     if !is_pinterest_host {
         return Err(format!("Host not allowed: {host}"));
     }
@@ -5379,10 +5379,12 @@ mod tests {
     }
 
     #[test]
-    fn pinterest_url_allows_other_subdomains_and_tlds() {
+    fn pinterest_url_allows_subdomains_only_on_com() {
         assert!(validate_pinterest_url("https://help.pinterest.com/en").is_ok());
-        assert!(validate_pinterest_url("https://pinterest.de/pin/1/").is_ok());
-        assert!(validate_pinterest_url("https://business.pinterest.jp/").is_ok());
+        assert!(validate_pinterest_url("https://WWW.Pinterest.com/pin/1/").is_ok());
+        // Other TLDs are not on the allowlist: the frontend never builds them.
+        assert!(validate_pinterest_url("https://pinterest.de/pin/1/").is_err());
+        assert!(validate_pinterest_url("https://pinterest.xyz/").is_err());
     }
 
     #[test]
