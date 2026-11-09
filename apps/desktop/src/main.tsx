@@ -17,6 +17,7 @@ import TiptapTaskList from '@tiptap/extension-task-list'
 import TiptapTaskItem from '@tiptap/extension-task-item'
 import { Markdown } from 'tiptap-markdown'
 import { SlashCommandExtension, SlashCommandPluginKey } from './kira/editor/SlashMenuExtension'
+import { decideLinkOrExpand } from './kira/canvas/linkOrExpand'
 import { ensureNodeTitle, mergeIdeaNotesIntoContent } from './kira/editor/nodeMigration'
 import { Segmented } from './components/Segmented'
 import { ReferenceThumb, referenceAspect } from './components/ReferenceThumb'
@@ -5253,16 +5254,21 @@ function FileWorkspace({
 
   // Frames don't go through recordNodeVersion/GraphNodeKind — they're a plain
   // named rectangle, not a node with links, importance, or version history.
-  function createFrame(position: Pick<FrameNode, 'x' | 'y'> = { x: 50, y: 50 }) {
+  // width/height default to the tool rail's fixed starter size; "Nhóm vào
+  // Frame" (multi-select toolbar, canvas-node-ux spec §2.1 decision 5a)
+  // passes an explicit size computed from the selection's bounding box
+  // instead, so the frame actually encloses what was selected.
+  function createFrame(options: Pick<FrameNode, 'x' | 'y'> & Partial<Pick<FrameNode, 'width' | 'height'>> = { x: 50, y: 50 }) {
     pushCanvasHistory()
     const timestamp = nowIso()
     const frame: FrameNode = {
       id: `frame-${Date.now()}`,
       title: 'New frame',
       description: 'Group related references',
-      ...position,
-      width: 34,
-      height: 26,
+      x: options.x,
+      y: options.y,
+      width: options.width ?? 34,
+      height: options.height ?? 26,
       createdAt: timestamp,
       addedAt: timestamp,
       updatedAt: timestamp,
@@ -5967,6 +5973,25 @@ function FileWorkspace({
     setSelection({ type: 'idea', id: idea.id })
   }
 
+  // Shared by every one-click "ask Kira about this node" entry point —
+  // node-editor-ux spec §1's bubble-menu actions and canvas-node-ux spec
+  // §2.1's unified "Ask Kira" dropdown both funnel through createAiNode this
+  // same way, just with a different instruction string.
+  async function runAiNodeInstruction(kind: GraphNodeKind, id: string, action: AiNodeAction, prompt: string) {
+    try {
+      await createAiNode({
+        source: { kind, id },
+        action,
+        scope: 'selected',
+        prompt,
+        providerOverrideId: null,
+        modelOverride: null,
+      })
+    } catch (error) {
+      setLibraryStatus(error instanceof Error ? error.message : 'Kira could not complete that.')
+    }
+  }
+
   // The three one-click bubble-menu actions (node-editor-ux spec §1
   // decision 3a: "Giải thích" / "Viết gọn hơn" / "Tách thành node con") map
   // directly onto createAiNode's existing summarize/synthesize/break_down
@@ -5975,18 +6000,22 @@ function FileWorkspace({
   // since AiNodeRequest has no separate "selection" field of its own.
   async function askKiraAboutSelection(kind: GraphNodeKind, id: string, action: AiNodeAction, selectedText: string) {
     const excerpt = selectedText.trim().slice(0, 600)
-    try {
-      await createAiNode({
-        source: { kind, id },
-        action,
-        scope: 'selected',
-        prompt: `${aiNodeActionPrompts[action]} Focus specifically on this excerpt from the node: "${excerpt}"`,
-        providerOverrideId: null,
-        modelOverride: null,
-      })
-    } catch (error) {
-      setLibraryStatus(error instanceof Error ? error.message : 'Kira could not complete that.')
-    }
+    await runAiNodeInstruction(kind, id, action, `${aiNodeActionPrompts[action]} Focus specifically on this excerpt from the node: "${excerpt}"`)
+  }
+
+  // The unified "Ask Kira" dropdown on the canvas node toolbar (canvas-
+  // node-ux spec §2.1 decision 3): one of the 4 real kiraSuggestions[kind]
+  // entries, run against the whole node (no selection involved here).
+  async function runKiraSuggestion(kind: GraphNodeKind, id: string, suggestion: KiraSuggestion) {
+    await runAiNodeInstruction(kind, id, suggestion.action, suggestion.prompt)
+  }
+
+  // "Mở rộng nhánh" in the same dropdown — an empty prompt falls back to
+  // aiNodeActionPrompts.break_down's default instruction, and createAiNode
+  // already special-cases break_down to route through expandNodeIntoBranches
+  // (create 4-6 linked child ideas) regardless of the source node's kind.
+  async function runExpandBranch(kind: GraphNodeKind, id: string) {
+    await runAiNodeInstruction(kind, id, 'break_down', '')
   }
 
   function updatePaletteColor(paletteId: string, colorIndex: number, color: string) {
@@ -7470,6 +7499,7 @@ function FileWorkspace({
                 onExportHtml={exportOutlineHtml}
                 onExportMarkdown={exportOutlineMarkdown}
                 onRebuild={rebuildOutlineDraft}
+                isRebuilding={isRebuildingOutline}
                 onSelectDiagnostic={(diagnosticSelection) => {
                   setSelection(diagnosticSelection)
                   setActiveView('Canvas')
@@ -7530,6 +7560,8 @@ function FileWorkspace({
                 onCreateLinkedNode={createLinkedNode}
                 onCreateAiNode={createAiNode}
                 onAskKiraAboutSelection={askKiraAboutSelection}
+                onRunKiraSuggestion={runKiraSuggestion}
+                onExpandBranch={runExpandBranch}
                 aiProviders={aiProviders}
                 aiRoutingMode={aiRoutingMode}
                 selectedAiProviderId={selectedAiProviderId}
@@ -7556,8 +7588,6 @@ function FileWorkspace({
                 nodeVersions={nodeVersions}
                 onNodeVersionRestore={restoreNodeVersion}
                 onToggleAiExcluded={toggleNodeAiExcluded}
-                onRebuildOutline={rebuildOutlineDraft}
-                isRebuildingOutline={isRebuildingOutline}
                 onIdeaInlineChange={updateIdea}
                 onImageInlineChange={updateImage}
                 onToggleImageTagsPinned={toggleImageTagsPinned}
@@ -8487,6 +8517,8 @@ function GraphCanvas({
   onCreateLinkedNode,
   onCreateAiNode,
   onAskKiraAboutSelection,
+  onRunKiraSuggestion,
+  onExpandBranch,
   aiProviders,
   aiRoutingMode,
   selectedAiProviderId,
@@ -8513,7 +8545,6 @@ function GraphCanvas({
   nodeVersions,
   onNodeVersionRestore,
   onToggleAiExcluded,
-  onRebuildOutline,
   onIdeaInlineChange,
   onImageInlineChange,
   onToggleImageTagsPinned,
@@ -8539,7 +8570,6 @@ function GraphCanvas({
   onPaletteRegenerate,
   paletteRegeneratingId,
   findSimilarRunningId,
-  isRebuildingOutline,
   localModelAvailable,
   modelRunningImageId,
   modelStatusByImageId,
@@ -8588,6 +8618,8 @@ function GraphCanvas({
   onCreateLinkedNode: (source: Pick<GraphNodeRef, 'kind' | 'id'>, targetKind: GraphNodeKind) => void
   onCreateAiNode: (request: AiNodeRequest) => void | Promise<void>
   onAskKiraAboutSelection: (kind: GraphNodeKind, id: string, action: AiNodeAction, selectedText: string) => void | Promise<void>
+  onRunKiraSuggestion: (kind: GraphNodeKind, id: string, suggestion: KiraSuggestion) => void | Promise<void>
+  onExpandBranch: (kind: GraphNodeKind, id: string) => void | Promise<void>
   aiProviders: AiProviderProfile[]
   aiRoutingMode: AiRoutingMode
   selectedAiProviderId: string
@@ -8602,7 +8634,7 @@ function GraphCanvas({
   onCreateIdea: (position?: Pick<Idea, 'x' | 'y'>) => void
   onCreatePalette: (position?: Pick<PaletteNode, 'x' | 'y'>) => void
   onCreatePlaceholder: (position?: Pick<PlaceholderNode, 'x' | 'y'>) => void
-  onCreateFrame: (position?: Pick<FrameNode, 'x' | 'y'>) => void
+  onCreateFrame: (options?: Pick<FrameNode, 'x' | 'y'> & Partial<Pick<FrameNode, 'width' | 'height'>>) => void
   onCreateSticker: (position?: Pick<Idea, 'x' | 'y'>) => void
   onFrameMove: (frameId: string, position: Pick<FrameNode, 'x' | 'y'>) => void
   onFrameResize: (frameId: string, size: Pick<FrameNode, 'width' | 'height'>) => void
@@ -8614,8 +8646,6 @@ function GraphCanvas({
   nodeVersions: NodeVersionRecord[]
   onNodeVersionRestore: (versionId: string) => void
   onToggleAiExcluded: (kind: GraphNodeKind, id: string) => void
-  onRebuildOutline: () => void | Promise<void>
-  isRebuildingOutline: boolean
   onIdeaInlineChange: (ideaId: string, patch: Partial<Pick<Idea, 'title' | 'content' | 'notes' | 'sourceUrl'>>) => void
   onImageInlineChange: (imageId: string, patch: Partial<Pick<EvidenceImage, 'title' | 'content' | 'notes' | 'sourceUrl'>>) => void
   onToggleImageTagsPinned: (imageId: string) => void
@@ -9114,7 +9144,7 @@ function GraphCanvas({
 
   useDismissableLayer(
     isGraphToolsOpen || Boolean(arcMenu) || Boolean(nodeContextMenu) || Boolean(canvasContextMenu),
-    '.node-context-menu, .canvas-context-menu, .node-arc-menu, .graph-tools-drawer, [data-menu-trigger="graph-tools"], .node-add-control, .node-kira-control',
+    '.node-context-menu, .canvas-context-menu, .node-arc-menu, .graph-tools-drawer, [data-menu-trigger="graph-tools"], .node-link-handle',
     () => {
       setIsGraphToolsOpen(false)
       setArcMenu(null)
@@ -9620,17 +9650,6 @@ function GraphCanvas({
     setDetailsPopoverNode({ kind, id })
   }
 
-  function openArcMenu(kind: GraphNodeKind, node: Pick<Idea, 'id' | 'x' | 'y'>, event: React.MouseEvent<HTMLElement>) {
-    event.preventDefault()
-    event.stopPropagation()
-    const anchor = eventPercent(event) ?? { x: node.x, y: node.y }
-    setArcMenu((current) => current?.id === node.id && current.kind === kind ? null : { kind, id: node.id, x: anchor.x, y: anchor.y })
-    onSelect({ type: kind, id: node.id } as Selection)
-    setMultiSelectedNodes([])
-    setNodeContextMenu(null)
-    setCanvasContextMenu(null)
-  }
-
   function beginLinkFromArc(source: Pick<GraphNodeRef, 'kind' | 'id'>) {
     onActiveCanvasToolChange('link')
     onPendingLinkSourceChange(source)
@@ -9659,6 +9678,13 @@ function GraphCanvas({
     if (point) setLinkDragPoint(point)
   }
 
+  // Merged Link/Expand handle (canvas-node-ux spec §2.1 decision 1a):
+  // dropping on an existing node still links (unchanged); dropping on empty
+  // canvas now opens the same create-linked-node menu the old separate "+"
+  // control used (arcMenu — createLinkedNodeFromArc already creates at
+  // arcMenu.x/y and auto-links to arcMenu.kind/id, so reusing that state
+  // needs no new creation logic). decideLinkOrExpand holds the pure
+  // link/menu/no-op decision so it's unit-testable without a real drag.
   function finishDirectLink(event: React.PointerEvent<HTMLDivElement>) {
     const source = linkDragRef.current
     if (!source) return false
@@ -9668,10 +9694,20 @@ function GraphCanvas({
     const targetNode = hit instanceof Element ? hit.closest<HTMLElement>('[data-node-kind][data-node-id]') : null
     const targetKind = targetNode?.dataset.nodeKind as GraphNodeKind | undefined
     const targetId = targetNode?.dataset.nodeId
-    if (!targetKind || !targetId || (targetKind === source.kind && targetId === source.id)) return true
-    onCreateLink(source, { kind: targetKind, id: targetId }, linkCreationRelation)
+    const decision = decideLinkOrExpand(source, targetKind && targetId ? { kind: targetKind, id: targetId } : null)
     onPendingLinkSourceChange(null)
     onActiveCanvasToolChange('select')
+    if (decision.type === 'link') {
+      onCreateLink(source, { kind: decision.target.kind as GraphNodeKind, id: decision.target.id }, linkCreationRelation)
+    } else if (decision.type === 'open-create-menu') {
+      const point = pointerPercent(event)
+      if (point) {
+        setArcMenu({ kind: source.kind, id: source.id, x: point.x, y: point.y })
+        setMultiSelectedNodes([])
+        setNodeContextMenu(null)
+        setCanvasContextMenu(null)
+      }
+    }
     return true
   }
 
@@ -9685,8 +9721,8 @@ function GraphCanvas({
         className="node-link-handle"
         role="button"
         tabIndex={0}
-        aria-label={`Link ${label}`}
-        title="Drag to connect"
+        aria-label={`Link or create from ${label}`}
+        title="Drag to connect — drop on empty canvas to create a linked node"
         onPointerDown={(event) => startDirectLink({ kind, ...node }, event)}
         onKeyDown={(event) => {
           if (event.key !== 'Enter' && event.key !== ' ') return
@@ -9696,32 +9732,6 @@ function GraphCanvas({
         }}
       >
         <Link2 size={10} />
-      </span>
-    )
-  }
-
-  function renderKiraControl(kind: GraphNodeKind, id: string, title: string) {
-    return (
-      <span
-        className="node-kira-control"
-        role="button"
-        tabIndex={0}
-        aria-label={`Ask Kira about ${title}`}
-        onPointerDown={(event) => event.stopPropagation()}
-        onClick={(event) => { event.stopPropagation(); openKiraFromNode(kind, id) }}
-        onKeyDown={(event) => {
-          if (event.key !== 'Enter' && event.key !== ' ') return
-          event.preventDefault()
-          event.stopPropagation()
-          openKiraFromNode(kind, id)
-        }}
-      >
-        {/* kiraSession is GraphCanvas's own state (top of the component) —
-            the only real "Kira is processing" signal available, per
-            kira-controls §7's ban on self-running animation. kira-glint is
-            CSS-gated on .kira-mark.is-thinking (styles.css); renderKiraDock
-            below has its own local `isThinking` for the dock's own mark. */}
-        <KiraMark size={12} state={kiraSession?.status === 'thinking' ? 'thinking' : 'rest'} />
       </span>
     )
   }
@@ -9948,6 +9958,88 @@ function GraphCanvas({
     event.stopPropagation()
   }
 
+  // Wraps the current multi-selection in a new frame sized to its bounding
+  // box (canvas-node-ux spec §2.1 decision 5a) — createFrame/onCreateFrame
+  // already accepts an explicit width/height (widened for exactly this).
+  function groupSelectedIntoFrame(refs: Pick<GraphNodeRef, 'x' | 'y'>[]) {
+    const minX = Math.min(...refs.map((ref) => ref.x))
+    const maxX = Math.max(...refs.map((ref) => ref.x))
+    const minY = Math.min(...refs.map((ref) => ref.y))
+    const maxY = Math.max(...refs.map((ref) => ref.y))
+    const padding = 6
+    onCreateFrame({
+      x: (minX + maxX) / 2,
+      y: (minY + maxY) / 2,
+      width: Math.max(maxX - minX + padding * 2, 20),
+      height: Math.max(maxY - minY + padding * 2, 16),
+    })
+    setMultiSelectedNodes([])
+  }
+
+  // Fills the gap canvas-node-ux spec §0.4 measured: multi-select had no
+  // toolbar at all, only Delete via keyboard. Same shell (.node-toolbar) and
+  // position convention as the single-node one (decision 5a) — anchored
+  // under the selection's bounding box using the same percent coordinate
+  // system the nodes themselves use (resolveGraphNodeRef's x/y), so it pans
+  // and zooms correctly as part of .graph-viewport without any separate
+  // pixel-rect tracking.
+  function renderMultiSelectToolbar() {
+    if (multiSelectedNodes.length === 0 || nodeContextMenu || arcMenu) return null
+    const refs = multiSelectedNodes
+      .map((selection) => resolveGraphNodeRef(selection.id, ideas, images, palettes, diagrams, placeholders))
+      .filter((ref): ref is GraphNodeRef => ref !== null)
+    if (refs.length === 0) return null
+    const minX = Math.min(...refs.map((ref) => ref.x))
+    const maxX = Math.max(...refs.map((ref) => ref.x))
+    const maxY = Math.max(...refs.map((ref) => ref.y))
+
+    return (
+      <div
+        className="multi-select-toolbar node-toolbar"
+        style={{ left: `${(minX + maxX) / 2}%`, top: `${maxY + 7}%` }}
+        onPointerDown={(event) => event.stopPropagation()}
+        onContextMenu={(event) => event.preventDefault()}
+      >
+        <button type="button" aria-label="Ask Kira about the selection" title="Ask Kira" onClick={() => openKiraFromRail()}>
+          <KiraMark size={12} state={kiraSession?.status === 'thinking' ? 'thinking' : 'rest'} />
+        </button>
+        {graphMode === 'edit' && (
+          <>
+            <span className="node-toolbar-sep" aria-hidden="true" />
+            {refs.length === 2 && (
+              <button
+                type="button"
+                aria-label="Link the 2 selected nodes"
+                title="Link 2 node"
+                onClick={() => onCreateLink(refs[0], refs[1], linkCreationRelation)}
+              >
+                <Link2 size={13} />
+              </button>
+            )}
+            <button
+              type="button"
+              aria-label="Group the selection into a frame"
+              title="Nhóm vào Frame"
+              onClick={() => groupSelectedIntoFrame(refs)}
+            >
+              <Frame size={13} />
+            </button>
+            <span className="node-toolbar-sep" aria-hidden="true" />
+            <button
+              type="button"
+              aria-label="Delete selected nodes"
+              title="Delete"
+              className="is-danger"
+              onClick={() => { onDeleteNodes(multiSelectedNodes); setMultiSelectedNodes([]) }}
+            >
+              <Trash2 size={13} />
+            </button>
+          </>
+        )}
+      </div>
+    )
+  }
+
   // A true DOM child of the card (unlike the old canvas-percentage-positioned
   // sibling this replaced), so `top: 100%` below always clears the card's
   // actual rendered height instead of overlapping it for tall cards.
@@ -10040,6 +10132,15 @@ function GraphCanvas({
             stacked on a box, which is what "morphing into a card" means. */}
         {!isDetailsOpen && (
           <div className="node-toolbar">
+            <AskKiraDropdown
+              kind={kind}
+              title={node.title}
+              isThinking={kiraSession?.status === 'thinking'}
+              onSuggestion={(suggestion) => void onRunKiraSuggestion(kind, id, suggestion)}
+              onExpandBranch={() => void onExpandBranch(kind, id)}
+              onAskFreeform={() => openKiraFromNode(kind, id)}
+            />
+            <span className="node-toolbar-sep" aria-hidden="true" />
             <button
               type="button"
               aria-label="Details"
@@ -10054,16 +10155,20 @@ function GraphCanvas({
             {/* Linking already has two other paths — the node's own drag
                 handle (.node-link-handle, direct-manipulation) and the
                 right-click context menu — a third click target here was
-                pure duplication, not a real alternative. */}
-            <button
-              type="button"
-              aria-label="Delete node"
-              title="Delete"
-              className="is-danger"
-              onClick={() => onDeleteNodes([{ kind, id }])}
-            >
-              <Trash2 size={13} />
-            </button>
+                pure duplication, not a real alternative. Hidden in discover
+                mode (view-only) — canvas-node-ux spec's Giới hạn note,
+                resolved: Delete/Link are edit actions, discover hides them. */}
+            {graphMode === 'edit' && (
+              <button
+                type="button"
+                aria-label="Delete node"
+                title="Delete"
+                className="is-danger"
+                onClick={() => onDeleteNodes([{ kind, id }])}
+              >
+                <Trash2 size={13} />
+              </button>
+            )}
           </div>
         )}
         {isDetailsOpen && createPortal(
@@ -10155,18 +10260,15 @@ function GraphCanvas({
                   </Tooltip>
                 </>
               )}
-              {kind === 'idea' && (
-                <Tooltip title={isRebuildingOutline ? 'Creating outline…' : 'Create outline'} delay={200}>
-                  <Button
-                    color="tertiary"
-                    size="sm"
-                    aria-label="Create outline"
-                    isDisabled={isRebuildingOutline}
-                    onPress={() => void onRebuildOutline()}
-                    iconLeading={isRebuildingOutline ? <span className="ai-inline-spinner" aria-hidden="true" /> : <Bot size={13} />}
-                  />
-                </Tooltip>
-              )}
+              {/* The idea-only "Create outline" button that used to live here
+                  (called onRebuildOutline/rebuildOutlineDraft, a whole-board
+                  Outline-view rebuild) is removed — canvas-node-ux spec §2.1
+                  decision 2a: it was the one hardcoded single AI action per
+                  node kind ("đường B" in §0.3), with no way to see or pick
+                  any of the 4 real kiraSuggestions. The feature itself isn't
+                  gone — OutlineView has its own "Rebuild" button
+                  (onRebuild={rebuildOutlineDraft}); this was a redundant
+                  shortcut, not the only entry point. */}
               {/* Visually separates "do something to this node" (edit/replace/
                   crop/history — left) from "how it behaves" (AI inclusion —
                   right) so the row doesn't read as one undifferentiated
@@ -11529,17 +11631,6 @@ function GraphCanvas({
                   handleReferenceDrop(event, { kind: 'idea', ideaId: idea.id, position })
                 }}
               >
-                <span
-                  className="node-add-control"
-                  role="button"
-                  tabIndex={0}
-                  aria-label={`Open ${idea.title} node actions`}
-                  onPointerDown={(event) => event.stopPropagation()}
-                  onClick={(event) => openArcMenu('idea', idea, event)}
-                >
-                  <Plus size={11} />
-                </span>
-                {renderKiraControl('idea', idea.id, idea.title)}
                 {renderDirectLinkHandle('idea', idea, idea.title)}
                 {renderProvenanceBadge('idea', idea.id)}
                 <span
@@ -11611,17 +11702,6 @@ function GraphCanvas({
                   handleReferenceDrop(event, { kind: 'image', imageId: image.id })
                 }}
               >
-                <span
-                  className="node-add-control"
-                  role="button"
-                  tabIndex={0}
-                  aria-label={`Open ${image.title} node actions`}
-                  onPointerDown={(event) => event.stopPropagation()}
-                  onClick={(event) => openArcMenu('image', image, event)}
-                >
-                  <Plus size={11} />
-                </span>
-                {renderKiraControl('image', image.id, image.title)}
                 {renderDirectLinkHandle('image', image, image.title)}
                 <ReferenceThumb image={image} />
                 {(image.palettePinned ?? true) && image.palette.length > 0 && (
@@ -11688,17 +11768,6 @@ function GraphCanvas({
                 onPointerUp={stopNodeDrag}
                 onPointerCancel={stopNodeDrag}
               >
-                <span
-                  className="node-add-control"
-                  role="button"
-                  tabIndex={0}
-                  aria-label={`Open ${palette.title} node actions`}
-                  onPointerDown={(event) => event.stopPropagation()}
-                  onClick={(event) => openArcMenu('palette', palette, event)}
-                >
-                  <Plus size={11} />
-                </span>
-                {renderKiraControl('palette', palette.id, palette.title)}
                 {renderDirectLinkHandle('palette', palette, palette.title)}
                 {renderProvenanceBadge('palette', palette.id)}
                 <PaletteColorStrip colors={palette.colors} />
@@ -11753,17 +11822,6 @@ function GraphCanvas({
                 onPointerUp={stopNodeDrag}
                 onPointerCancel={stopNodeDrag}
               >
-                <span
-                  className="node-add-control"
-                  role="button"
-                  tabIndex={0}
-                  aria-label={`Open ${diagram.title} node actions`}
-                  onPointerDown={(event) => event.stopPropagation()}
-                  onClick={(event) => openArcMenu('diagram', diagram, event)}
-                >
-                  <Plus size={11} />
-                </span>
-                {renderKiraControl('diagram', diagram.id, diagram.title)}
                 {renderDirectLinkHandle('diagram', diagram, diagram.title)}
                 <FileText size={15} />
                 <span className="idea-node-fields" onClick={stopInlineEditEvent}>
@@ -11829,17 +11887,6 @@ function GraphCanvas({
                   handleReferenceDrop(event, { kind: 'placeholder', placeholderId: placeholder.id, position })
                 }}
               >
-                <span
-                  className="node-add-control"
-                  role="button"
-                  tabIndex={0}
-                  aria-label={`Open ${placeholder.title} node actions`}
-                  onPointerDown={(event) => event.stopPropagation()}
-                  onClick={(event) => openArcMenu('placeholder', placeholder, event)}
-                >
-                  <Plus size={11} />
-                </span>
-                {renderKiraControl('placeholder', placeholder.id, placeholder.title)}
                 {renderDirectLinkHandle('placeholder', placeholder, placeholder.title)}
                 <ImagePlus size={16} />
                 <span className="idea-node-fields" onClick={stopInlineEditEvent}>
@@ -11885,6 +11932,7 @@ function GraphCanvas({
               </button>
             </div>
           )}
+          {renderMultiSelectToolbar()}
         </div>
 
         {nodeContextMenu && (
@@ -11903,6 +11951,42 @@ function GraphCanvas({
                   : `${nodeContextMenu.nodes.length} selected`}
               </strong>
             </div>
+            {/* Right-click and double-click stay shortcuts for the same
+                toolbar commands (canvas-node-ux spec §2.1 "đồng bộ cùng danh
+                sách lệnh") instead of a separate, drifting command list. */}
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                if (nodeContextMenu.nodes.length === 1) openKiraFromNode(nodeContextMenu.nodes[0].kind, nodeContextMenu.nodes[0].id)
+                else { setMultiSelectedNodes(nodeContextMenu.nodes); openKiraFromRail() }
+                setNodeContextMenu(null)
+              }}
+            >
+              <KiraMark size={12} />
+              Ask Kira
+            </button>
+            {nodeContextMenu.nodes.length === 1 && (
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  detailsTriggerRef.current = null
+                  // openNodeContextMenu always seeds multiSelectedNodes with
+                  // at least the clicked node (so a 1-node right-click and a
+                  // multi-node one share the same `nodes` array) — clear it
+                  // here or renderNodeBelowStack's own
+                  // `multiSelectedNodes.length > 0` guard keeps the popover
+                  // this is about to open from ever rendering.
+                  setMultiSelectedNodes([])
+                  setDetailsPopoverNode({ kind: nodeContextMenu.nodes[0].kind, id: nodeContextMenu.nodes[0].id })
+                  setNodeContextMenu(null)
+                }}
+              >
+                <NoteIcon size={13} />
+                Details
+              </button>
+            )}
             {nodeContextMenu.nodes.length === 1 && nodeContextMenu.nodes[0].kind === 'image' && (
               <>
                 <button type="button" role="menuitem" onClick={() => { onReferenceFindSimilar(nodeContextMenu.nodes[0].id); setNodeContextMenu(null) }}>
@@ -12850,6 +12934,7 @@ function OutlineView({
   onExportHtml,
   onExportMarkdown,
   onRebuild,
+  isRebuilding,
   onSelectDiagnostic,
   onSelectIdea,
   onSelectImage,
@@ -12861,6 +12946,7 @@ function OutlineView({
   onExportHtml: () => void
   onExportMarkdown: () => void
   onRebuild: () => void
+  isRebuilding: boolean
   onSelectDiagnostic: (selection: Selection) => void
   onSelectIdea: (id: string) => void
   onSelectImage: (id: string) => void
@@ -12901,8 +12987,14 @@ function OutlineView({
               <ButtonGroupItem key={filter} id={filter}>{outlineFilterLabels[filter]}</ButtonGroupItem>
             ))}
           </ButtonGroup>
-          <Button color="tertiary" size="sm" iconLeading={Bot} onPress={onRebuild}>
-            Rebuild
+          <Button
+            color="tertiary"
+            size="sm"
+            isDisabled={isRebuilding}
+            iconLeading={isRebuilding ? <span className="ai-inline-spinner" aria-hidden="true" /> : Bot}
+            onPress={onRebuild}
+          >
+            {isRebuilding ? 'Rebuilding…' : 'Rebuild'}
           </Button>
           <Dropdown.Root>
             <Button color="tertiary" size="sm" iconLeading={ArrowUpFromLine}>
@@ -13530,6 +13622,104 @@ function NodeVersionTimeline({
         </div>
       )}
     </section>
+  )
+}
+
+// Unified "Ask Kira" entry point on the canvas node toolbar (canvas-node-ux
+// spec §2.1 decision 3, §0.3): replaces the old separate .node-kira-control
+// icon (always opened an empty dock) and the idea-only hardcoded "Create
+// outline" action-bar button. Surfaces the 4 real kiraSuggestions[kind]
+// entries that previously only showed up inside the dock after opening it
+// blind, plus "Mở rộng nhánh" (expandNodeIntoBranches, already exists, just
+// had no direct node-face entry point) and a free-form "Hỏi câu khác..."
+// that opens the same dock as before.
+function AskKiraDropdown({
+  kind,
+  title,
+  isThinking,
+  onSuggestion,
+  onExpandBranch,
+  onAskFreeform,
+}: {
+  kind: GraphNodeKind
+  title: string
+  isThinking: boolean
+  onSuggestion: (suggestion: KiraSuggestion) => void
+  onExpandBranch: () => void
+  onAskFreeform: () => void
+}) {
+  const [isOpen, setIsOpen] = useState(false)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const suggestions = kiraSuggestions[kind] ?? []
+
+  useEffect(() => {
+    if (!isOpen) return
+    function handlePointerDown(event: PointerEvent) {
+      if (containerRef.current && event.target instanceof Node && !containerRef.current.contains(event.target)) {
+        setIsOpen(false)
+      }
+    }
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') setIsOpen(false)
+    }
+    document.addEventListener('pointerdown', handlePointerDown, true)
+    document.addEventListener('keydown', handleKeyDown, true)
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown, true)
+      document.removeEventListener('keydown', handleKeyDown, true)
+    }
+  }, [isOpen])
+
+  return (
+    <div className="node-toolbar-ask-kira" ref={containerRef} onPointerDown={(event) => event.stopPropagation()}>
+      <button
+        type="button"
+        className={isOpen ? 'ask-kira is-active' : 'ask-kira'}
+        aria-haspopup="menu"
+        aria-expanded={isOpen}
+        aria-label={`Ask Kira about ${title}`}
+        onClick={() => setIsOpen((open) => !open)}
+      >
+        <KiraMark size={12} state={isThinking ? 'thinking' : 'rest'} />
+        Ask Kira
+        <ChevronDown size={11} aria-hidden="true" />
+      </button>
+      {isOpen && (
+        <div className="node-ask-kira-menu" role="menu" aria-label={`Ask Kira about ${title}`}>
+          {suggestions.map((suggestion) => (
+            <button
+              key={suggestion.id}
+              type="button"
+              role="menuitem"
+              className="node-ask-kira-item"
+              onClick={() => { setIsOpen(false); onSuggestion(suggestion) }}
+            >
+              <span className="name">{suggestion.label}</span>
+              <span className="why">{suggestion.why}</span>
+            </button>
+          ))}
+          <span className="node-ask-kira-sep" aria-hidden="true" />
+          <button
+            type="button"
+            role="menuitem"
+            className="node-ask-kira-item is-expand"
+            onClick={() => { setIsOpen(false); onExpandBranch() }}
+          >
+            <span className="name"><Sparkles size={11} aria-hidden="true" /> Mở rộng nhánh</span>
+            <span className="why">Tạo 4-6 node con liên kết, undo được</span>
+          </button>
+          <span className="node-ask-kira-sep" aria-hidden="true" />
+          <button
+            type="button"
+            role="menuitem"
+            className="node-ask-kira-item"
+            onClick={() => { setIsOpen(false); onAskFreeform() }}
+          >
+            <span className="name">Hỏi câu khác...</span>
+          </button>
+        </div>
+      )}
+    </div>
   )
 }
 

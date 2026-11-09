@@ -3612,6 +3612,23 @@ button.mini-tags-more:focus-visible {
   background: var(--node-surface-selected);
 }
 
+/* Each node is `position: absolute` with its own z-index (2), so it's also
+   its own stacking context — the below-node toolbar's Ask Kira dropdown
+   (z-index: 6) only outranks content *inside that same node*, not sibling
+   nodes elsewhere on the board. A selected node (the only state that can
+   have an open dropdown) needs to outrank its unselected siblings too, or a
+   sibling positioned later/lower just paints over the dropdown. Caught by
+   live verification (canvas-node-ux spec §2.1's Ask Kira dropdown, visibly
+   clipped by a neighboring idea card) — zoom test coverage wouldn't catch
+   this since it only shows up with >1 node on the board. */
+.idea-node.is-selected,
+.image-node.is-selected,
+.palette-node.is-selected,
+.diagram-node.is-selected,
+.placeholder-node.is-selected {
+  z-index: 10;
+}
+
 .idea-node-fields {
   position: relative;
   display: grid;
@@ -3926,96 +3943,13 @@ button.mini-tags-more:focus-visible {
   height: 9px;
 }
 
-.node-add-control {
-  position: absolute;
-  top: -9px;
-  right: -9px;
-  z-index: 3;
-  display: grid;
-  width: 20px;
-  height: 20px;
-  place-items: center;
-  border: 1px solid color-mix(in srgb, var(--accent-cyan), transparent 54%);
-  border-radius: var(--radius-2);
-  background: var(--node-surface-selected);
-  color: var(--text-main);
-  opacity: 0;
-  /* Node chrome keeps a constant on-screen size; only the content scales. */
-  transform: scale(calc(0.82 / var(--node-render-scale)));
-  transform-origin: top right;
-  transition: opacity 120ms ease, transform 120ms ease, background 120ms ease;
-}
-
-/* Selection-gated, not hover-gated: sweeping across a dense board should not
-   flash a control on every node the cursor crosses. */
-.idea-node.is-selected .node-add-control,
-.image-node.is-selected .node-add-control,
-.palette-node.is-selected .node-add-control,
-.diagram-node.is-selected .node-add-control,
-.placeholder-node.is-selected .node-add-control {
-  opacity: 1;
-  transform: scale(calc(1 / var(--node-render-scale)));
-}
-
-.node-add-control:hover {
-  background: var(--glass-active);
-}
-
-/* Mirrors .node-add-control on the opposite corner — "add" and "ask" get
-   equal weight on every node. Selection-gated, same as .node-add-control. */
-.node-kira-control {
-  position: absolute;
-  top: -9px;
-  left: -9px;
-  z-index: 3;
-  display: grid;
-  width: 20px;
-  height: 20px;
-  place-items: center;
-  border: 1px solid var(--kira-border);
-  border-radius: var(--radius-2);
-  background: var(--node-surface-selected);
-  color: var(--kira-mid);
-  opacity: 0;
-  transform: scale(calc(0.82 / var(--node-render-scale)));
-  transform-origin: top left;
-  transition: opacity 120ms ease, transform 120ms ease, background 120ms ease, box-shadow 120ms ease;
-}
-
-.idea-node.is-selected .node-kira-control,
-.image-node.is-selected .node-kira-control,
-.palette-node.is-selected .node-kira-control,
-.diagram-node.is-selected .node-kira-control,
-.placeholder-node.is-selected .node-kira-control {
-  opacity: 1;
-  border-color: color-mix(in srgb, var(--accent-cyan), transparent 54%);
-  transform: scale(calc(1 / var(--node-render-scale)));
-}
-
-/* Was unconditional (every selected node's Kira control glinted forever,
-   whether or not Kira was doing anything) — kira-controls §7 bans a
-   self-running animation not tied to real state. Gated the same way
-   kira-orbit/kira-breathe gate the dock's mark below: only while this
-   KiraMark instance actually carries .is-thinking (main.tsx now passes the
-   real session state through, not just size). */
-:is(.idea-node, .image-node, .palette-node, .diagram-node, .placeholder-node).is-selected .node-kira-control .kira-mark.is-thinking {
-  animation: kira-glint 7.6s linear infinite;
-}
-
-/* Matches the specificity of the .is-selected rule above (0,3,0) — the
-   control is only ever visible while selected, so a lower-specificity hover
-   rule here would silently lose the cascade to that rule's own
-   transform/background and never apply. */
-:is(.idea-node, .image-node, .palette-node, .diagram-node, .placeholder-node).is-selected .node-kira-control:hover {
-  background-size: 220% 220%;
-  animation: kira-sweep-travel 720ms var(--ease-out-soft) forwards;
-  box-shadow: 0 0 0 4px transparent;
-  transform: scale(calc(1.14 / var(--node-render-scale)));
-}
-
-:is(.idea-node, .image-node, .palette-node, .diagram-node, .placeholder-node).is-selected .node-kira-control:hover .kira-mark-satellite {
-  animation-play-state: paused;
-}
+/* .node-add-control and .node-kira-control (the old separate "+" and "Ask
+   Kira" corner icons) are gone — canvas-node-ux spec §2.1 decisions 1a/3:
+   "+" merged into .node-link-handle below (drop on empty canvas instead of
+   a separate click target), "Ask Kira" moved into the unified below-node
+   toolbar (.node-toolbar-ask-kira, further down this file). The shared
+   kira-glint/kira-sweep-travel keyframes stay — the Kira dock's own mark
+   still uses them. */
 
 .node-link-handle {
   position: absolute;
@@ -4269,6 +4203,117 @@ button.mini-tags-more:focus-visible {
   /* Selected is ink, not teal (DESIGN.md §3 One Accent Rule). */
   background: var(--control-patch);
   color: var(--text-main);
+}
+
+.node-toolbar-sep {
+  width: 1px;
+  height: 18px;
+  align-self: center;
+  background: var(--border-soft);
+}
+
+/* The unified "Ask Kira" entry point (canvas-node-ux spec §2.1 decision 3)
+   — wider than the icon-only buttons around it, since it carries a label,
+   so it opts out of .node-toolbar button's fixed 26x26 box. */
+.node-toolbar-ask-kira {
+  position: relative;
+}
+
+.node-toolbar button.ask-kira {
+  width: auto;
+  height: 26px;
+  padding: 0 8px 0 6px;
+  gap: 4px;
+  color: var(--kira-mid);
+  font-size: var(--text-small);
+  font-weight: var(--weight-control);
+  white-space: nowrap;
+}
+
+.node-toolbar button.ask-kira:hover,
+.node-toolbar button.ask-kira.is-active {
+  background: var(--kira-tint);
+  color: var(--text-main);
+}
+
+/* Multi-select's toolbar (decision 5a) reuses .node-toolbar's look, just
+   anchored at the selection's bounding box instead of a single node — see
+   renderMultiSelectToolbar's own comment for the positioning model. */
+.multi-select-toolbar {
+  position: absolute;
+  z-index: 5;
+  transform: translate(-50%, 0);
+}
+
+/* Dropdown panel for the Ask Kira trigger above — same floating-list look
+   established for the node editor's slash menu (styles.css's .slash-menu),
+   just anchored under this button instead of the text caret. */
+.node-ask-kira-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 6;
+  display: grid;
+  gap: 1px;
+  width: 230px;
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-3);
+  background: var(--node-surface-selected);
+  box-shadow: 0 16px 34px rgb(0 0 0 / 0.34);
+}
+
+/* Specificity note: these buttons are nested inside .node-toolbar (the
+   trigger lives in the collapsed pill), so the generic icon-square rule
+   `.node-toolbar button` (0,1,1) would otherwise win over a plain
+   `.node-ask-kira-item` (0,1,0) and collapse every item onto the same
+   26x26 grid cell. `.node-ask-kira-menu .node-ask-kira-item` (0,2,0) is
+   deliberately the higher-specificity selector here. */
+.node-ask-kira-menu .node-ask-kira-item {
+  display: flex;
+  flex-direction: column;
+  width: auto;
+  height: auto;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: var(--radius-2);
+  background: transparent;
+  color: var(--text-main);
+  text-align: left;
+  cursor: pointer;
+}
+
+.node-ask-kira-menu .node-ask-kira-item:hover {
+  background: var(--glass-hover);
+}
+
+.node-ask-kira-menu .node-ask-kira-item .name {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--text-small);
+  font-weight: var(--weight-control);
+}
+
+.node-ask-kira-menu .node-ask-kira-item .why {
+  font-size: var(--text-mini);
+  color: var(--text-muted);
+}
+
+.node-ask-kira-menu .node-ask-kira-item.is-expand {
+  background: var(--kira-tint);
+}
+
+.node-ask-kira-menu .node-ask-kira-item.is-expand .name {
+  color: var(--kira-mid);
+}
+
+.node-ask-kira-sep {
+  height: 1px;
+  margin: 4px 2px;
+  background: var(--border-soft);
 }
 
 /* Full-screen scrim — clicking it (not its child panel, see the
@@ -8889,15 +8934,21 @@ button.palette-color-segment:focus-visible code {
 /* ================= Provenance badge on canvas nodes (mockup.js provBadge)
    — neutral, text-carries-the-meaning per DESIGN.md §4/"không dùng màu
    accent, không dùng dải màu Kira". ================= */
+/* Moved onto the node face (canvas-node-ux spec §2.1 decision 6) — no longer
+   a floating control poking above the card border (it used to sit 19px from
+   the old "+" control; that control is gone now that Link/Expand are
+   merged, but the badge belongs inline with the card's own content either
+   way, not hovering outside it). A small inset chip, top-right, inside the
+   card's own padding. */
 .node-prov-badge {
   position: absolute;
-  top: -12px;
-  right: 10px;
+  top: 6px;
+  right: 6px;
   z-index: 3;
   display: inline-flex;
   align-items: center;
-  height: 22px;
-  padding: 0 8px;
+  height: 18px;
+  padding: 0 6px;
   border: 1px solid var(--border-strong);
   border-radius: 999px;
   background: var(--surface-2);
