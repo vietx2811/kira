@@ -4266,11 +4266,24 @@ button.mini-tags-more:focus-visible {
 }
 
 .node-toolbar button.ask-kira {
+  /* .node-toolbar button's base rule sets `display: grid` (a single-column
+     icon square) — never overridden here before, so this button's 3
+     children (mark, label, chevron) stacked into 3 separate implicit grid
+     rows instead of one row, overflowing the toolbar (node-toolbar-polish
+     follow-up, point 7, caught by a real screenshot + getBoundingClientRect,
+     not something a selector-only review would show). */
+  display: inline-flex;
+  align-items: center;
   width: auto;
   height: 26px;
   padding: 0 8px 0 6px;
   gap: 4px;
-  color: var(--kira-mid);
+  /* Was --kira-mid (the pink/magenta Kira brand tint) — point 7: reads as
+     off-tone next to Details/Delete's plain --text-soft. Ink & Paper
+     control color, same as every other tertiary icon button in this bar;
+     the trigger is still visually distinct via its label and the kira-tint
+     hover/active background below. */
+  color: var(--text-soft);
   font-size: var(--text-small);
   font-weight: var(--weight-control);
   white-space: nowrap;
@@ -4317,10 +4330,15 @@ button.mini-tags-more:focus-visible {
    `.node-ask-kira-item` (0,1,0) and collapse every item onto the same
    26x26 grid cell. `.node-ask-kira-menu .node-ask-kira-item` (0,2,0) is
    deliberately the higher-specificity selector here. */
+/* Row layout — icon, then a name/description text column (point 8: "như
+   menu chuẩn, có icon nếu kit có"). Text itself stays left-aligned; it only
+   ever looked otherwise in a stale/pre-merge screenshot (see commit
+   message), not in this CSS. */
 .node-ask-kira-menu .node-ask-kira-item {
   display: flex;
-  flex-direction: column;
-  width: auto;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
   height: auto;
   padding: 6px 8px;
   border: 0;
@@ -4335,10 +4353,19 @@ button.mini-tags-more:focus-visible {
   background: var(--glass-hover);
 }
 
-.node-ask-kira-menu .node-ask-kira-item .name {
+.node-ask-kira-item-icon {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.node-ask-kira-item-text {
   display: flex;
-  align-items: center;
-  gap: 4px;
+  flex-direction: column;
+  min-width: 0;
+  text-align: left;
+}
+
+.node-ask-kira-menu .node-ask-kira-item .name {
   font-size: var(--text-small);
   font-weight: var(--weight-control);
 }
@@ -4352,7 +4379,8 @@ button.mini-tags-more:focus-visible {
   background: var(--kira-tint);
 }
 
-.node-ask-kira-menu .node-ask-kira-item.is-expand .name {
+.node-ask-kira-menu .node-ask-kira-item.is-expand .name,
+.node-ask-kira-menu .node-ask-kira-item.is-expand .node-ask-kira-item-icon {
   color: var(--kira-mid);
 }
 

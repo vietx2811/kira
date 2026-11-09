@@ -33,7 +33,7 @@ import { Select } from '@/components/base/select/select'
 import { Slider } from '@/components/base/slider/slider'
 import { TextArea, TextAreaBase } from '@/components/base/textarea/textarea'
 import { Toggle } from '@/components/base/toggle/toggle'
-import { Tooltip } from '@/components/base/tooltip/tooltip'
+import { Tooltip, TooltipTrigger } from '@/components/base/tooltip/tooltip'
 import { Dialog, Modal, ModalOverlay } from '@/components/application/modals/modal'
 import { UiKitPortalHost } from '@/kira/uikit/PortalHost'
 import { KiraPanel } from './components/application/kira-panel/KiraPanel'
@@ -91,6 +91,7 @@ import {
 } from './kira/ai/aiProviderDomain'
 import {
   AlertTriangle,
+  AlignLeft,
   ArrowDownToLine,
   ArrowUp,
   ArrowUpFromLine,
@@ -145,11 +146,13 @@ import {
   Search,
   Settings,
   ShieldCheck,
+  Shuffle,
   SlidersHorizontal,
   Sparkles,
   StickyNote,
   Tag,
   Trash2,
+  Wand2,
   Workflow,
   ZoomOut,
   X,
@@ -10143,17 +10146,34 @@ function GraphCanvas({
               onAskFreeform={() => openKiraFromNode(kind, id)}
             />
             <span className="node-toolbar-sep" aria-hidden="true" />
-            <button
-              type="button"
-              aria-label="Details"
-              title="Notes, source, tags, history"
-              onClick={(event) => {
-                detailsTriggerRef.current = event.currentTarget
-                setDetailsPopoverNode({ kind, id })
-              }}
-            >
-              <NoteIcon size={13} />
-            </button>
+            {/* Plain `title=` is a native OS tooltip — point 9 (node-toolbar-
+                polish follow-up): invisible to a headless screenshot (it only
+                renders on a real hover, OS-chrome-drawn, not in the DOM) and
+                inconsistent with the styled kit Tooltip the Details popover's
+                own action bar already uses. Switched to the same kit
+                Tooltip here for both reasons — which also means the trigger
+                has to be the kit's TooltipTrigger (an AriaButton), not a
+                plain <button>: AriaTooltipTrigger wires its hover/focus
+                handlers through React Aria's context system, which a plain
+                native button never reads. Still renders a real <button>
+                underneath (confirmed live — the existing `.node-toolbar
+                button` CSS keeps matching), so this is CSS-invisible. */}
+            <Tooltip title="Details" description="Notes, source, tags, history" delay={200}>
+              <TooltipTrigger
+                aria-label="Details"
+                onPress={(event) => {
+                  // PressEvent.target is whatever DOM node was actually
+                  // pressed — here that's the <NoteIcon> svg inside the
+                  // button, not the button itself, and .focus() on an SVG
+                  // is a silent no-op (confirmed live: focus fell through
+                  // to <body> until this walked up to the real button).
+                  detailsTriggerRef.current = (event.target as HTMLElement).closest('button')
+                  setDetailsPopoverNode({ kind, id })
+                }}
+              >
+                <NoteIcon size={13} />
+              </TooltipTrigger>
+            </Tooltip>
             {/* Linking already has two other paths — the node's own drag
                 handle (.node-link-handle, direct-manipulation) and the
                 right-click context menu — a third click target here was
@@ -10161,15 +10181,15 @@ function GraphCanvas({
                 mode (view-only) — canvas-node-ux spec's Giới hạn note,
                 resolved: Delete/Link are edit actions, discover hides them. */}
             {graphMode === 'edit' && (
-              <button
-                type="button"
-                aria-label="Delete node"
-                title="Delete"
-                className="is-danger"
-                onClick={() => onDeleteNodes([{ kind, id }])}
-              >
-                <Trash2 size={13} />
-              </button>
+              <Tooltip title="Delete" delay={200}>
+                <TooltipTrigger
+                  aria-label="Delete node"
+                  className="is-danger"
+                  onPress={() => onDeleteNodes([{ kind, id }])}
+                >
+                  <Trash2 size={13} />
+                </TooltipTrigger>
+              </Tooltip>
             )}
           </div>
         )}
@@ -13679,6 +13699,17 @@ function NodeVersionTimeline({
 // blind, plus "Mở rộng nhánh" (expandNodeIntoBranches, already exists, just
 // had no direct node-face entry point) and a free-form "Hỏi câu khác..."
 // that opens the same dock as before.
+// node-toolbar-polish follow-up, point 8: a "standard menu" carries an icon
+// per row, not just title + description. Mapped by AiNodeAction so every
+// kiraSuggestions entry (and the free-form "Hỏi câu khác..." item) gets one.
+const ASK_KIRA_ACTION_ICONS: Record<AiNodeAction, LucideIcon> = {
+  summarize: AlignLeft,
+  break_down: GitBranch,
+  synthesize: Wand2,
+  find_gaps: Search,
+  generate_variations: Shuffle,
+}
+
 function AskKiraDropdown({
   kind,
   title,
@@ -13732,18 +13763,24 @@ function AskKiraDropdown({
       </button>
       {isOpen && (
         <div className="node-ask-kira-menu" role="menu" aria-label={`Ask Kira about ${title}`}>
-          {suggestions.map((suggestion) => (
-            <button
-              key={suggestion.id}
-              type="button"
-              role="menuitem"
-              className="node-ask-kira-item"
-              onClick={() => { setIsOpen(false); onSuggestion(suggestion) }}
-            >
-              <span className="name">{suggestion.label}</span>
-              <span className="why">{suggestion.why}</span>
-            </button>
-          ))}
+          {suggestions.map((suggestion) => {
+            const Icon = ASK_KIRA_ACTION_ICONS[suggestion.action]
+            return (
+              <button
+                key={suggestion.id}
+                type="button"
+                role="menuitem"
+                className="node-ask-kira-item"
+                onClick={() => { setIsOpen(false); onSuggestion(suggestion) }}
+              >
+                <Icon size={14} className="node-ask-kira-item-icon" aria-hidden="true" />
+                <span className="node-ask-kira-item-text">
+                  <span className="name">{suggestion.label}</span>
+                  <span className="why">{suggestion.why}</span>
+                </span>
+              </button>
+            )
+          })}
           <span className="node-ask-kira-sep" aria-hidden="true" />
           <button
             type="button"
@@ -13751,8 +13788,11 @@ function AskKiraDropdown({
             className="node-ask-kira-item is-expand"
             onClick={() => { setIsOpen(false); onExpandBranch() }}
           >
-            <span className="name"><Sparkles size={11} aria-hidden="true" /> Mở rộng nhánh</span>
-            <span className="why">Tạo 4-6 node con liên kết, undo được</span>
+            <Sparkles size={14} className="node-ask-kira-item-icon" aria-hidden="true" />
+            <span className="node-ask-kira-item-text">
+              <span className="name">Mở rộng nhánh</span>
+              <span className="why">Tạo 4-6 node con liên kết, undo được</span>
+            </span>
           </button>
           <span className="node-ask-kira-sep" aria-hidden="true" />
           <button
@@ -13761,7 +13801,10 @@ function AskKiraDropdown({
             className="node-ask-kira-item"
             onClick={() => { setIsOpen(false); onAskFreeform() }}
           >
-            <span className="name">Hỏi câu khác...</span>
+            <MessagesSquare size={14} className="node-ask-kira-item-icon" aria-hidden="true" />
+            <span className="node-ask-kira-item-text">
+              <span className="name">Hỏi câu khác...</span>
+            </span>
           </button>
         </div>
       )}
