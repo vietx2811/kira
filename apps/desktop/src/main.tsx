@@ -8799,13 +8799,20 @@ function GraphCanvas({
   const [nodeContextMenu, setNodeContextMenu] = useState<{ x: number; y: number; nodes: CanvasNodeSelection[] } | null>(null)
   const [canvasContextMenu, setCanvasContextMenu] = useState<CanvasContextMenu | null>(null)
   const [detailsPopoverNode, setDetailsPopoverNode] = useState<CanvasNodeSelection | null>(null)
-  // Whichever element opened the overlay (the toolbar's Details button, or
-  // the node card itself on double-click) — focus returns here when the
-  // overlay closes, so keyboard/screen-reader users land back where they
-  // started instead of at the top of the document. Shared by every close
-  // path (scrim click, X button, Escape/outside-click via
-  // useDismissableLayer) so none of them skip the restore.
+  // The node card itself (`[data-node-kind][data-node-id]`, tabIndex 0) —
+  // focus returns here when the overlay closes, so keyboard/screen-reader
+  // users land back on the node instead of at the top of the document.
+  // Always the card, never the small affordance that opened it (the
+  // toolbar's Details button, a right-click menu item): those can move,
+  // hide, or in the context-menu's case not exist as a DOM node by the
+  // time the overlay closes, while the card is the one stable landing
+  // spot every entry path shares. Shared by every close path (scrim
+  // click, X button, Escape/outside-click via useDismissableLayer) so
+  // none of them skip the restore.
   const detailsTriggerRef = useRef<HTMLElement | null>(null)
+  function findNodeCardElement(kind: GraphNodeKind, id: string): HTMLElement | null {
+    return document.querySelector<HTMLElement>(`[data-node-kind="${kind}"][data-node-id="${CSS.escape(id)}"]`)
+  }
   function closeDetailsPopover() {
     setDetailsPopoverNode(null)
     detailsTriggerRef.current?.focus()
@@ -10161,13 +10168,11 @@ function GraphCanvas({
             <Tooltip title="Details" description="Notes, source, tags, history" delay={200}>
               <TooltipTrigger
                 aria-label="Details"
-                onPress={(event) => {
-                  // PressEvent.target is whatever DOM node was actually
-                  // pressed — here that's the <NoteIcon> svg inside the
-                  // button, not the button itself, and .focus() on an SVG
-                  // is a silent no-op (confirmed live: focus fell through
-                  // to <body> until this walked up to the real button).
-                  detailsTriggerRef.current = (event.target as HTMLElement).closest('button')
+                onPress={() => {
+                  // Focus returns to the node card on close (findNodeCardElement),
+                  // not to this button — a small icon that a later layout
+                  // change could move or hide out from under the restore.
+                  detailsTriggerRef.current = findNodeCardElement(kind, id)
                   setDetailsPopoverNode({ kind, id })
                 }}
               >
@@ -11997,7 +12002,7 @@ function GraphCanvas({
                 type="button"
                 role="menuitem"
                 onClick={() => {
-                  detailsTriggerRef.current = null
+                  detailsTriggerRef.current = findNodeCardElement(nodeContextMenu.nodes[0].kind, nodeContextMenu.nodes[0].id)
                   // openNodeContextMenu always seeds multiSelectedNodes with
                   // at least the clicked node (so a 1-node right-click and a
                   // multi-node one share the same `nodes` array) — clear it
