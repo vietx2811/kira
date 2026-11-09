@@ -1479,15 +1479,30 @@ button {
   transform: translate(-50%, 0);
 }
 
-/* research 2026-11-09 pinterest-similar-flow §3.2 + Orchestrator follow-up:
-   unlike .canvas-notice (an auto-dismissing toast), this stays up for the
-   anchor's whole 15-minute window, so it lives at the TOP of the canvas
-   instead — the bottom is already .canvas-notice's and .canvas-bottom-bar's
-   territory, and this one could otherwise linger there for much longer
-   than either. */
+/* Orchestrator follow-up (post-merge polish): originally anchored to the
+   TOP of the canvas, which put it right where .content-view-switch (the
+   Canvas/3D/Slides/Outline segmented control) already sits — and the two
+   drift relative to each other as the Library panel opens/closes, because
+   the switcher centers within WorkspaceChrome's own topbar grid while this
+   chip centers within .view-region, a narrower, independently-shifting
+   container. Measured live at 1440px: panel open, chip.right (855) sat 3px
+   from switcher.left (858); panel closed, the switcher (698-822) landed
+   entirely inside the chip's span (665-855) — a real overlap, not a
+   near-miss. Moved to the BOTTOM instead, stacked above .canvas-notice
+   (which already solved this exact class of problem for itself — see its
+   own comment) with a clear gap, so it shares .canvas-notice's
+   already-verified-safe horizontal band instead of drifting against a
+   completely different container. The +56px both this and .canvas-notice
+   add assumes a single-row .canvas-bottom-bar (its usual 56px) — at 1024px
+   with the Library panel open, the bar wraps to two rows (112px) and that
+   assumption briefly undercounts it. Measured gap at that width/state:
+   only 8px with a 48px clear-space term, tight enough to risk the two
+   touching if the bar wraps further (more tool groups, a future addition)
+   — 72px leaves real headroom instead of chasing the exact wrapped
+   height. */
 .discovery-anchor-chip {
   position: absolute;
-  top: var(--space-4);
+  bottom: calc(var(--space-4) * 2 + 56px + 72px);
   left: 50%;
   z-index: 50;
   display: flex;
