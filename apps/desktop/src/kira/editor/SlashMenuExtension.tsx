@@ -9,8 +9,35 @@ import { Extension, type Editor, type Range } from '@tiptap/core'
 import { ReactRenderer } from '@tiptap/react'
 import { PluginKey } from '@tiptap/pm/state'
 import Suggestion, { exitSuggestion, type SuggestionKeyDownProps, type SuggestionProps } from '@tiptap/suggestion'
+import {
+  CheckSquare,
+  Heading1,
+  Heading2,
+  Heading3,
+  List,
+  ListOrdered,
+  Minus,
+  Quote as QuoteIcon,
+  Type,
+  type LucideIcon,
+} from 'lucide-react'
 import { forwardRef, useEffect, useImperativeHandle, useState } from 'react'
 import { filterSlashCommands, type SlashCommandItem } from './slashCommands'
+
+// node-editor-ux-polish brief point 6: Notion-style rows (icon + label +
+// one-line description), not bare text. Kept out of slashCommands.ts so
+// that module stays plain data with no React/lucide import.
+const SLASH_COMMAND_ICONS: Record<SlashCommandItem['id'], LucideIcon> = {
+  text: Type,
+  heading1: Heading1,
+  heading2: Heading2,
+  heading3: Heading3,
+  bulletList: List,
+  orderedList: ListOrdered,
+  quote: QuoteIcon,
+  divider: Minus,
+  todo: CheckSquare,
+}
 
 // Exported so the editor's own `editorProps.handleKeyDown` (main.tsx) can
 // check whether the menu is open before treating Escape as "close the whole
@@ -66,19 +93,26 @@ const SlashMenuList = forwardRef<SlashMenuListHandle, SlashMenuListProps>((props
 
   return (
     <div className="slash-menu" role="listbox" aria-label="Insert block">
-      {props.items.map((item, index) => (
-        <button
-          key={item.id}
-          type="button"
-          role="option"
-          aria-selected={index === selectedIndex}
-          className={index === selectedIndex ? 'slash-menu-item is-selected' : 'slash-menu-item'}
-          onMouseEnter={() => setSelectedIndex(index)}
-          onClick={() => props.command(item)}
-        >
-          {item.label}
-        </button>
-      ))}
+      {props.items.map((item, index) => {
+        const Icon = SLASH_COMMAND_ICONS[item.id]
+        return (
+          <button
+            key={item.id}
+            type="button"
+            role="option"
+            aria-selected={index === selectedIndex}
+            className={index === selectedIndex ? 'slash-menu-item is-selected' : 'slash-menu-item'}
+            onMouseEnter={() => setSelectedIndex(index)}
+            onClick={() => props.command(item)}
+          >
+            <Icon size={15} className="slash-menu-item-icon" aria-hidden="true" />
+            <span className="slash-menu-item-text">
+              <span className="name">{item.label}</span>
+              <span className="description">{item.description}</span>
+            </span>
+          </button>
+        )
+      })}
     </div>
   )
 })

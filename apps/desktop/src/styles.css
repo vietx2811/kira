@@ -3678,7 +3678,7 @@ button.mini-tags-more:focus-visible {
 .slash-menu {
   display: grid;
   gap: 1px;
-  min-width: 160px;
+  min-width: 220px;
   max-height: 260px;
   overflow-y: auto;
   padding: 4px;
@@ -3694,8 +3694,14 @@ button.mini-tags-more:focus-visible {
   color: var(--text-muted);
 }
 
+/* Shared by the slash menu's own rows (icon + two-line label/description,
+   node-editor-ux-polish brief point 6) and the bubble menu's plainer "Hỏi
+   Kira" flyout (text only, no icon/description children) — flex handles
+   both without a separate variant. */
 .slash-menu-item {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   width: 100%;
   padding: 6px 8px;
   border: 0;
@@ -3711,6 +3717,28 @@ button.mini-tags-more:focus-visible {
 .slash-menu-item.is-selected {
   background: var(--glass-hover);
   color: var(--text-main);
+}
+
+.slash-menu-item-icon {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.slash-menu-item-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.slash-menu-item-text .name {
+  color: var(--text-main);
+  font-size: var(--text-small);
+}
+
+.slash-menu-item-text .description {
+  color: var(--text-muted);
+  font-size: var(--text-mini);
+  white-space: normal;
 }
 
 /* See the comment in SlashMenuExtension.tsx's onStart: the plugin mounts
@@ -3732,23 +3760,14 @@ button.mini-tags-more:focus-visible {
   outline: none;
 }
 
-/* Focus signal for the node description editor (DESIGN.md §7, one control one
-   focus signal). The contenteditable itself stays outline-free; the wrapper is
-   the visible field, so it draws the same 2px inset ring the kit's Input and
-   TextArea draw on theirs (--accent-cyan, the token the kit ring and the global fallback outline both resolve to).
-   Side padding matches the kit fields' 12px, so the ring lines up with the
-   Notes and Source boxes below and the text with theirs. The vertical padding
-   is paid back by the equal negative margin, so the block keeps its height.
-   Only the editable overlay instance; the canvas face is read-only and never
-   focuses. */
+/* node-editor-ux-polish brief point 1: Notion has no textarea-style focus
+   ring around the body — the caret alone carries focus. The 2px inset ring
+   this used to draw on :focus-within is gone; only the overlay's own
+   padding stays, for comfortable click/tap targets around the text. */
 .node-rich-editor.is-overlay {
   margin: -6px 0;
   padding: 6px 12px;
   border-radius: var(--radius-2);
-}
-
-.node-rich-editor.is-overlay:focus-within {
-  box-shadow: inset 0 0 0 2px var(--accent-cyan);
 }
 
 /* Canvas face, resting state: no cursor, no caret, no edit affordance —
@@ -3759,7 +3778,12 @@ button.mini-tags-more:focus-visible {
   caret-color: transparent;
 }
 
+/* point 2: the body is the node's actual content and should read as the
+   panel's main mass, not the shortest block in it — a floor tall enough to
+   read as "most of the panel" on a typical idea, scrolling inside the
+   popover (which has its own max-height) past that. */
 .node-rich-editor.is-overlay .node-rich-editor-content {
+  min-height: 220px;
   font-size: var(--text-body);
   line-height: 1.55;
 }
@@ -3770,7 +3794,17 @@ button.mini-tags-more:focus-visible {
   font-size: inherit;
 }
 
-.node-rich-editor p.is-editor-empty:first-child::before {
+/* `.is-empty` is the node-level class @tiptap/extensions' Placeholder
+   decorates EVERY empty textblock with (not just the first/whole-doc-empty
+   one — that's `.is-editor-empty`, a separate class only added when the
+   whole doc is empty). This selector used to require `.is-editor-empty
+   :first-child`, so the placeholder only ever rendered on the very first
+   line of a blank node — `showOnlyCurrent` (the extension's own default)
+   already decorates whichever empty paragraph the caret is CURRENTLY in,
+   the data was always there, this CSS just never matched it. Fixing the
+   selector is what makes "/ to insert a block" show up on any empty line,
+   Notion-style (brief point 1), not a Tiptap config change. */
+.node-rich-editor p.is-empty::before {
   float: left;
   height: 0;
   color: var(--text-muted);
@@ -3971,6 +4005,18 @@ button.mini-tags-more:focus-visible {
   transform: translateY(-50%) scale(calc(0.78 / var(--node-render-scale)));
   transform-origin: center;
   transition: opacity 120ms ease, transform var(--duration-fast) var(--ease-out-soft), background 120ms ease;
+}
+
+/* "+" badge, corner-anchored on the handle itself (not centered via the
+   handle's own place-items:center) — node-editor-polish follow-up: the
+   handle now both links and creates, so the glyph needs to say both. */
+.node-link-handle-badge {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  padding: 1px;
+  border-radius: 999px;
+  background: var(--node-surface-selected);
 }
 
 .idea-node:hover .node-link-handle,
@@ -4339,13 +4385,25 @@ button.mini-tags-more:focus-visible {
 .node-details-popover {
   display: grid;
   gap: 14px;
-  width: min(520px, 100%);
+  width: min(560px, 100%);
+  min-height: min(560px, 80vh);
   max-height: 88vh;
   overflow-y: auto;
   padding: 20px 22px;
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-3);
-  background: var(--node-surface-selected);
+  /* --node-surface-selected carries its own alpha in dark mode (94%,
+     buildProjectAppearanceStyle's POPOVER_SURFACE_ALPHA — a deliberate
+     glass tint for most uses of that token). That's too much: with the
+     node's own content sitting directly behind this panel, 6% bleed-through
+     was legible as ghost text behind the header (node-editor-ux-polish
+     brief, point 5, measured against a real node's content, not a blank
+     canvas). background-color (opaque --surface-2, never alpha'd by
+     buildProjectAppearanceStyle) sits under the tinted token as a second
+     layer, so the result reads the same color but is fully opaque against
+     whatever's behind the popover instead of against --surface-2 itself. */
+  background-color: var(--surface-2);
+  background-image: linear-gradient(var(--node-surface-selected), var(--node-surface-selected));
   box-shadow: 0 8px 24px rgba(0,0,0,0.25), 0 0 0 1px var(--border-soft);
   font-size: var(--text-body);
   animation: node-overlay-panel-in 180ms var(--ease-out-soft);
@@ -7346,6 +7404,7 @@ button.palette-color-segment:focus-visible code {
 .source-url-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
+  justify-items: start;
   align-items: center;
   gap: 6px;
 }
@@ -7356,6 +7415,23 @@ button.palette-color-segment:focus-visible code {
 
 .source-url-row .source-url-input {
   min-width: 0;
+  width: 100%;
+}
+
+/* SourceField's collapsed states (quiet-button recipe) — overrides
+   .source-url-row button's 28x28 icon-square rule below, which targets a
+   different (icon-only) button shape than these label+icon pills need.
+   Specificity note: two classes here outrank that rule's class+element
+   pairing, same fix as the Ask Kira dropdown items (canvas-node-ux spec). */
+.source-url-row .source-chip,
+.source-url-row .source-add-button {
+  display: inline-flex;
+  width: auto;
+  height: var(--control-h-sm);
+}
+
+.source-url-row .source-add-button {
+  color: var(--text-muted);
 }
 
 .source-url-row button {

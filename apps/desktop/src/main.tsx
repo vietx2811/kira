@@ -9722,7 +9722,7 @@ function GraphCanvas({
         role="button"
         tabIndex={0}
         aria-label={`Link or create from ${label}`}
-        title="Drag to connect — drop on empty canvas to create a linked node"
+        title="Drag to connect, or drop on empty canvas to create a linked node"
         onPointerDown={(event) => startDirectLink({ kind, ...node }, event)}
         onKeyDown={(event) => {
           if (event.key !== 'Enter' && event.key !== ' ') return
@@ -9732,6 +9732,12 @@ function GraphCanvas({
         }}
       >
         <Link2 size={10} />
+        {/* Small "+" badge (node-editor-polish follow-up): the handle now
+            does two things (link to an existing node, or create+link a new
+            one on an empty-canvas drop) — a plain Link2 glyph only read as
+            the first. Badge, not a swapped icon, so the primary connect
+            affordance stays recognizable. */}
+        <Plus size={7} className="node-link-handle-badge" aria-hidden="true" />
       </span>
     )
   }
@@ -10108,13 +10114,9 @@ function GraphCanvas({
       },
     })
     const sourceUrlField = (
-      <InputBase
-        aria-label="Source URL"
-        size="sm"
-        wrapperClassName="source-url-input"
-        placeholder="Source URL"
+      <SourceField
         value={('sourceUrl' in node ? node.sourceUrl : '') ?? ''}
-        onChange={(event) => inlineChange({ sourceUrl: event.target.value })}
+        onChange={(value) => inlineChange({ sourceUrl: value })}
       />
     )
 
@@ -10330,7 +10332,7 @@ function GraphCanvas({
               kind={kind}
               nodeId={id}
               content={node.content}
-              placeholder={kind === 'idea' ? 'Type something...' : 'Add a caption...'}
+              placeholder={kind === 'idea' ? "Type '/' to insert a block" : "Add a caption, or '/' to insert a block"}
               overlayMode
               autoFocus
               onChange={onOverlayContentChange}
@@ -13496,6 +13498,50 @@ function buildPropertiesSummaryParts(node: Pick<Idea | EvidenceImage | PaletteNo
     if (relative) parts.push(`Updated ${relative}`)
   }
   return parts
+}
+
+// node-editor-ux-polish brief point 3: an always-open empty URL input read
+// as a form field, not a Notion-style property. Empty and not being edited
+// → a quiet "Add source" affordance; has a value → a hostname chip (click
+// to edit); either way, actually typing happens in a real text input only
+// while editing, same as the title/properties row's own disclosure model.
+function SourceField({
+  value,
+  onChange,
+}: {
+  value: string
+  onChange: (value: string) => void
+}) {
+  const [isEditing, setIsEditing] = useState(false)
+  const trimmed = value.trim()
+  if (!isEditing) {
+    return trimmed.length > 0 ? (
+      <button type="button" className="quiet-button sm source-chip" onClick={() => setIsEditing(true)} title={value}>
+        <Link2 size={12} aria-hidden="true" />
+        {extractHostname(trimmed) || trimmed}
+      </button>
+    ) : (
+      <button type="button" className="quiet-button sm source-add-button" onClick={() => setIsEditing(true)}>
+        <Link2 size={12} aria-hidden="true" />
+        Add source
+      </button>
+    )
+  }
+  return (
+    <InputBase
+      autoFocus
+      aria-label="Source URL"
+      size="sm"
+      wrapperClassName="source-url-input"
+      placeholder="Source URL"
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+      onBlur={() => setIsEditing(false)}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === 'Escape') event.currentTarget.blur()
+      }}
+    />
+  )
 }
 
 // Replaces the old native <details> at the bottom of the popover
