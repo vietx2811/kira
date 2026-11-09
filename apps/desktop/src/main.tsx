@@ -2575,6 +2575,21 @@ function FileWorkspace({
     placeholders,
   })
   const recentCaptureKeysRef = useRef(new Map<string, number>())
+  // research 2026-11-09 pinterest-similar-flow §3.2: hover-Save and
+  // Alt+Shift+K (the extension's two fastest capture paths) never carry a
+  // targetNode, so handleKiraCapture always fell through to
+  // appendReferences — a Pinterest "find similar" session never linked its
+  // results back to the node that sent the user there. This short-lived
+  // anchor remembers which node the discovery trip started from; the
+  // fallback branch below consults it when a capture has no explicit
+  // target. An explicit drop-pad target (capture.targetNode set) always
+  // wins — this only fills in when there's no explicit choice.
+  const discoveryAnchorRef = useRef<{ kind: GraphNodeKind; id: string; expiresAt: number } | null>(null)
+  // One Pinterest browsing session's worth of slack (report §3.2's own
+  // proposed figure) — long enough to cover a search-and-save trip, short
+  // enough that a capture from an unrelated later task doesn't silently
+  // attach to a node from an hour ago.
+  const DISCOVERY_ANCHOR_TTL_MS = 15 * 60 * 1000
   const canUndoCanvas = useStore(canvasHistoryStore.temporal, (state) => state.pastStates.length > 0)
   const canRedoCanvas = useStore(canvasHistoryStore.temporal, (state) => state.futureStates.length > 0)
   projectStateRef.current = {
@@ -3584,9 +3599,20 @@ function FileWorkspace({
       return
     }
 
-    const target = capture.targetNode
+    const explicitTarget = capture.targetNode
       ? resolveGraphNodeRef(capture.targetNode.id, state.ideas, state.images, state.palettes, state.diagrams, state.placeholders)
       : null
+    // An explicit drop-pad target always wins over the anchor — only consult
+    // it when the capture itself didn't say where to go. Not cleared on use:
+    // a discovery trip is a browsing session, not a single capture, so it
+    // keeps resolving fresh captures until it expires or a later "Find
+    // similar" press on a different node overwrites it.
+    const anchor = discoveryAnchorRef.current
+    const anchorTarget =
+      !explicitTarget && anchor && anchor.expiresAt > Date.now()
+        ? resolveGraphNodeRef(anchor.id, state.ideas, state.images, state.palettes, state.diagrams, state.placeholders)
+        : null
+    const target = explicitTarget ?? anchorTarget
 
     if (target) {
       const persistedId = attachCaptureToGraphNode(reference, target)
@@ -3596,6 +3622,18 @@ function FileWorkspace({
 
     appendReferences([reference], '1 browser capture imported')
     if (capture.kind === 'image') void downloadAndAnalyzeCaptureImage(reference.id, reference.title, capture.url)
+  }
+
+  // research 2026-11-09 pinterest-similar-flow §3.1/§3.4: window.open matches
+  // the two existing external-app handoffs (Google Slides, Canva below) —
+  // capabilities/default.json grants no webview-create permission, so Tauri
+  // hands the new-window navigation to the OS, opening the user's system
+  // default browser rather than an in-app window. Sets the discovery anchor
+  // first so a capture made during this browsing trip (hover-Save, Alt+Shift+K)
+  // attaches back to this node even with no explicit drop-pad target.
+  function openPinterestSimilar(kind: GraphNodeKind, id: string, node: EvidenceImage) {
+    discoveryAnchorRef.current = { kind, id, expiresAt: Date.now() + DISCOVERY_ANCHOR_TTL_MS }
+    window.open(buildPinterestSimilarUrl(node), '_blank', 'noopener,noreferrer')
   }
 
   // research 2026-11-09 §5#8 / visual-explore Pha 0: a browser capture only
@@ -7601,6 +7639,7 @@ function FileWorkspace({
                 onPlaceholderInlineChange={updatePlaceholder}
                 onReferenceFindSimilar={findSimilarReferences}
                 findSimilarRunningId={findSimilarRunningId}
+                onFindSimilarOnPinterest={openPinterestSimilar}
                 onReferenceCrop={setCropTargetImageId}
                 onReferenceConvertToPalette={(imageId) => createPaletteNode(images.find((image) => image.id === imageId))}
                 onReferenceReplace={replaceReferenceFromFiles}
@@ -8557,6 +8596,7 @@ function GraphCanvas({
   onDiagramInlineChange,
   onPlaceholderInlineChange,
   onReferenceFindSimilar,
+  onFindSimilarOnPinterest,
   onReferenceCrop,
   onReferenceConvertToPalette,
   onReferenceReplace,
@@ -8659,6 +8699,7 @@ function GraphCanvas({
   onPlaceholderInlineChange: (placeholderId: string, patch: Partial<Pick<PlaceholderNode, 'title' | 'content' | 'notes' | 'sourceUrl'>>) => void
   onReferenceFindSimilar: (imageId: string) => void | Promise<void>
   findSimilarRunningId: string | null
+  onFindSimilarOnPinterest: (kind: GraphNodeKind, id: string, node: EvidenceImage) => void
   onReferenceCrop: (imageId: string) => void
   onReferenceConvertToPalette: (imageId: string) => void
   onReferenceReplace: (imageId: string, files: FileList | File[]) => void
@@ -10152,6 +10193,23 @@ function GraphCanvas({
               onExpandBranch={() => void onExpandBranch(kind, id)}
               onAskFreeform={() => openKiraFromNode(kind, id)}
             />
+            {/* research 2026-11-09 pinterest-similar-flow §3.3: this opens a
+                browser tab, it doesn't ask Kira anything — folding it into
+                the AI dropdown above would reproduce the exact "AI action
+                vs. other action" mixup that report flagged against
+                canvas-node-ux. Own quiet-button, image-only (kiraSuggestions
+                already branches per kind at the data layer; this is the
+                same branch at the toolbar). */}
+            {kind === 'image' && (
+              <Tooltip title="Find similar on Pinterest" delay={200}>
+                <TooltipTrigger
+                  aria-label="Find similar on Pinterest"
+                  onPress={() => onFindSimilarOnPinterest(kind, id, node as EvidenceImage)}
+                >
+                  <ExternalLink size={13} />
+                </TooltipTrigger>
+              </Tooltip>
+            )}
             <span className="node-toolbar-sep" aria-hidden="true" />
             {/* Plain `title=` is a native OS tooltip — point 9 (node-toolbar-
                 polish follow-up): invisible to a headless screenshot (it only
@@ -15760,6 +15818,28 @@ async function downloadCaptureCandidate(
 
   const blob = new Blob(chunks, { type: contentType })
   return { dataUrl: await readFileAsDataUrl(blob), contentType, sizeBytes: blob.size }
+}
+
+// research 2026-11-09 pinterest-similar-flow §1/§3.1: there's no public URL
+// that opens "find similar" directly — the magnifier calls Pinterest's own
+// internal API when pressed, not a reusable address, and the report's own
+// live attempt (§1.1) confirmed an unauthenticated session can't even reach
+// a /pin/<id>/ page by navigation. The closest a URL can get: the Pin's own
+// page, if this node's sourceUrl already is one (user presses the magnifier
+// themselves from there), or a tag search otherwise — not the image itself,
+// since Pinterest's image-search only takes an upload through its UI, no
+// documented querystring for an external image URL (§1.3).
+function buildPinterestSimilarUrl(node: EvidenceImage): string {
+  if (node.sourceUrl) {
+    try {
+      const sourceUrl = new URL(node.sourceUrl)
+      const isPinterestHost = sourceUrl.hostname === 'pinterest.com' || sourceUrl.hostname.endsWith('.pinterest.com')
+      if (isPinterestHost && sourceUrl.pathname.startsWith('/pin/')) return node.sourceUrl
+    } catch {
+      // Not a parseable URL — fall through to the tag search below.
+    }
+  }
+  return `https://www.pinterest.com/search/pins/?q=${encodeURIComponent(node.tags.join(' '))}`
 }
 
 // Pinterest CDN paths look like /{size}/aa/bb/cc/{hash}.{ext}, where {size} is
