@@ -4273,6 +4273,18 @@ button.mini-tags-more:focus-visible {
   transform-origin: top center;
 }
 
+/* Node near the canvas's left edge (JS threshold in renderNodeBelowStack,
+   same x < 18 world-space check as .node-arc-menu.is-edge-left above):
+   centering under the node bled the toolbar's left half — Ask Kira, the
+   first button in .node-toolbar — past the node's own left edge, where
+   the Library panel sits. Anchor the pill's left edge to the node's left
+   edge instead, so it only ever extends rightward. */
+.node-below-stack.is-edge-left {
+  left: 0;
+  transform: scale(calc(1 / var(--node-render-scale)));
+  transform-origin: top left;
+}
+
 /* Expanded: this stops being a small card anchored under the node and
    becomes a full-screen overlay — the scrim (.node-overlay-scrim) covers
    the whole canvas, so position/transform/gap from the collapsed pill
