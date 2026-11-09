@@ -49,6 +49,8 @@ import { autoLayout, type AutoLayoutEdge, type AutoLayoutNode } from './kira/can
 import { currentPersonaContext, withPersona } from './kira/ai/persona'
 import { loadPersonaContext } from './kira/ai/personaStore'
 import { DISCOVERY_ANCHOR_TTL_MS, type DiscoveryAnchor, resolveCaptureTargetNode } from './kira/discoveryAnchor'
+import { buildPinterestSearchQuery, resolvePinterestPinUrl } from './kira/pinterestSimilar'
+import { resolveImportSlot } from './kira/importLayout'
 import { MermaidPreview } from './components/application/mermaid/MermaidPreview'
 import { layerFlowchart, parseMermaidFlowchart } from './kira/mermaid/parseMermaid'
 import { buildBoardDraftPrompt, layoutBoardDraft, parseBoardDraft, type BoardDraft } from './kira/ai/boardDraft'
@@ -10225,10 +10227,23 @@ function GraphCanvas({
     )
 
     const closeDetails = closeDetailsPopover
+    // Node near the canvas's left edge (same `x < 18` world-space threshold
+    // as arcMenu's own is-edge-left, line ~12055): centering the toolbar
+    // under the node bled its left half — the Ask Kira button, since it's
+    // first in .node-toolbar — past the node's own left edge, where the
+    // Library panel covers it. Anchoring the toolbar's own left edge to the
+    // node's left edge instead keeps the whole pill on the node's side.
+    const belowStackClassName = [
+      'node-below-stack',
+      isDetailsOpen ? 'is-expanded' : '',
+      !isDetailsOpen && node.x < 18 ? 'is-edge-left' : '',
+    ]
+      .filter(Boolean)
+      .join(' ')
 
     return (
       <div
-        className={isDetailsOpen ? 'node-below-stack is-expanded' : 'node-below-stack'}
+        className={belowStackClassName}
         onPointerDown={(event) => event.stopPropagation()}
         onContextMenu={(event) => event.preventDefault()}
       >
@@ -15757,7 +15772,11 @@ function createReferenceFromCapture(capture: KiraCapturePayload, index: number):
   const sourceText = capture.pageUrl || capture.source || capture.url
   const title = normalizeTitle(capture.title) || titleFromFilename(url.pathname.split('/').filter(Boolean).at(-1) ?? url.hostname)
   const sourceTags = tagsFromFilename(`${title} ${sourceText}`)
-  const slot = Math.max(0, index - imagesSeed.length)
+  // kira/importLayout.ts: Math.max(0, index - imagesSeed.length) collapsed
+  // every slot to 0 (same x/y) when the board has fewer live images than
+  // the hardcoded seed array (e.g. an emptied board) — see that file's
+  // comment for the exact repro.
+  const slot = resolveImportSlot(index, imagesSeed.length)
   const column = Math.floor(slot / 5)
   const timestamp = capture.capturedAt || nowIso()
 
@@ -15878,21 +15897,17 @@ async function downloadCaptureCandidate(
 // internal API when pressed, not a reusable address, and the report's own
 // live attempt (§1.1) confirmed an unauthenticated session can't even reach
 // a /pin/<id>/ page by navigation. The closest a URL can get: the Pin's own
-// page, if this node's sourceUrl already is one (user presses the magnifier
-// themselves from there), or a tag search otherwise — not the image itself,
+// page, if this node already has one (user presses the magnifier themselves
+// from there, or the capture came from a pin page — resolvePinterestPinUrl
+// checks both `source` and `sourceUrl`, since a browser-extension capture
+// of a pin puts the pin's page URL in `source` and the pinned image's CDN
+// URL in `sourceUrl`), or a tag search otherwise — not the image itself,
 // since Pinterest's image-search only takes an upload through its UI, no
 // documented querystring for an external image URL (§1.3).
 function buildPinterestSimilarUrl(node: EvidenceImage): string {
-  if (node.sourceUrl) {
-    try {
-      const sourceUrl = new URL(node.sourceUrl)
-      const isPinterestHost = sourceUrl.hostname === 'pinterest.com' || sourceUrl.hostname.endsWith('.pinterest.com')
-      if (isPinterestHost && sourceUrl.pathname.startsWith('/pin/')) return node.sourceUrl
-    } catch {
-      // Not a parseable URL — fall through to the tag search below.
-    }
-  }
-  return `https://www.pinterest.com/search/pins/?q=${encodeURIComponent(node.tags.join(' '))}`
+  const pinUrl = resolvePinterestPinUrl(node)
+  if (pinUrl) return pinUrl
+  return `https://www.pinterest.com/search/pins/?q=${encodeURIComponent(buildPinterestSearchQuery(node.title, node.tags))}`
 }
 
 // Routes through the native, allowlisted open_external_url command (see
