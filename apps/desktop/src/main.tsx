@@ -50,9 +50,9 @@ import { currentPersonaContext, withPersona } from './kira/ai/persona'
 import { loadPersonaContext } from './kira/ai/personaStore'
 import { DISCOVERY_ANCHOR_TTL_MS, type DiscoveryAnchor, resolveCaptureTargetNode } from './kira/discoveryAnchor'
 import { buildPinterestSearchQuery, resolvePinterestPinUrl } from './kira/pinterestSimilar'
-import { resolveImportSlot } from './kira/importLayout'
-import { newIdeaDefaults } from './kira/newIdea'
+import { newIdeaDefaults, resolveIdeaFaceDisplay } from './kira/newIdea'
 import { visibleCanvasAreaCenterPercent } from './kira/visibleCanvasCenter'
+import { findOpenSlotNearAnchor, type PlacedPoint } from './kira/placeNode'
 import { MermaidPreview } from './components/application/mermaid/MermaidPreview'
 import { layerFlowchart, parseMermaidFlowchart } from './kira/mermaid/parseMermaid'
 import { buildBoardDraftPrompt, layoutBoardDraft, parseBoardDraft, type BoardDraft } from './kira/ai/boardDraft'
@@ -2582,6 +2582,19 @@ function FileWorkspace({
     placeholders,
   })
   const recentCaptureKeysRef = useRef(new Map<string, number>())
+  // kira/placeNode.ts: GraphCanvas writes its current visible-area center
+  // into this every render (it owns canvasRef/graphTransform — a different
+  // component, see the ref's own effect there) so claimOpenSlot below can
+  // read a reasonably fresh anchor synchronously, outside React's render
+  // cycle (a capture arrives as a Tauri IPC event, not a click).
+  const visibleCanvasCenterRef = useRef<PlacedPoint>({ x: 50, y: 50 })
+  // Positions chosen by claimOpenSlot since the last render that actually
+  // reflected them in ideas/images/palettes/diagrams/placeholders — without
+  // this, several captures arriving a few ms apart (faster than React
+  // re-renders between them) would all see the same "current" occupied set
+  // and could all choose the same open slot. Cleared by the effect below
+  // once state catches up, so it never accumulates stale reservations.
+  const pendingPlacementsRef = useRef<PlacedPoint[]>([])
   // research 2026-11-09 pinterest-similar-flow §3.2: hover-Save and
   // Alt+Shift+K (the extension's two fastest capture paths) never carry a
   // targetNode, so handleKiraCapture always fell through to
@@ -2606,6 +2619,37 @@ function FileWorkspace({
     palettes,
     diagrams,
     placeholders,
+  }
+  // Once a render actually reflects state from this point on, every pending
+  // reservation is now either a real node's position (covered by
+  // projectStateRef itself) or was overridden/discarded by whatever used
+  // it — either way it no longer needs separate tracking.
+  useEffect(() => {
+    pendingPlacementsRef.current = []
+  }, [ideas, images, palettes, diagrams, placeholders])
+
+  // kira/placeNode.ts: the shared "find an empty spot near the visible
+  // canvas center" claim for every genuinely-new node (browser captures,
+  // file import, URL paste — the bottom-toolbar buttons do the same thing
+  // inside GraphCanvas itself, which already has the occupied-node list
+  // and the anchor locally). Callers that are really repositioning or
+  // replacing an existing node (replaceReferenceFromFiles,
+  // attachPlaceholderImageFromFiles, createReferenceFromDroppedPayload)
+  // don't call this — their position gets overridden downstream anyway, so
+  // reserving a slot for it would just leave a phantom reservation.
+  function claimOpenSlot(): PlacedPoint {
+    const state = projectStateRef.current
+    const occupied: PlacedPoint[] = [
+      ...state.ideas,
+      ...state.images,
+      ...state.palettes,
+      ...state.diagrams,
+      ...state.placeholders,
+    ].map((node) => ({ x: node.x, y: node.y }))
+    occupied.push(...pendingPlacementsRef.current)
+    const point = findOpenSlotNearAnchor({ anchor: visibleCanvasCenterRef.current, occupied })
+    pendingPlacementsRef.current = [...pendingPlacementsRef.current, point]
+    return point
   }
   const projectSnapshot = useMemo(
     () => toProjectSnapshot(ideas, images, links, outlineDrafts, palettes, diagrams, placeholders, {
@@ -3583,7 +3627,7 @@ function FileWorkspace({
 
   function handleKiraCapture(capture: KiraCapturePayload) {
     const state = projectStateRef.current
-    const reference = createReferenceFromCapture(capture, state.images.length)
+    const reference = createReferenceFromCapture(capture, claimOpenSlot())
     const duplicateKey = referenceDuplicateKey(reference)
     const now = Date.now()
     const recentCaptureKeys = recentCaptureKeysRef.current
@@ -3855,14 +3899,19 @@ function FileWorkspace({
     if (imageFiles.length === 0) return
 
     const imported = await Promise.all(
-      imageFiles.map((file, index) => createReferenceFromFile(file, images.length + index)),
+      imageFiles.map((file) => createReferenceFromFile(file, claimOpenSlot())),
     )
     appendReferences(imported, `${imported.length} reference${imported.length === 1 ? '' : 's'} imported`)
   }
 
-  async function createReferenceFromDroppedPayload(payload: Exclude<DroppedReferencePayload, { kind: 'existing' }>, index: number) {
-    if (payload.kind === 'file') return createReferenceFromFile(payload.file, index)
-    return createReferenceFromUrl(payload.url, index)
+  // The caller always overrides whatever position this produces — a drop
+  // either replaces an existing node/placeholder (keeps its position) or
+  // lands exactly where the user dropped it (positionReference below) — so
+  // this doesn't need an open-slot claim, just a harmless placeholder.
+  async function createReferenceFromDroppedPayload(payload: Exclude<DroppedReferencePayload, { kind: 'existing' }>) {
+    const placeholderPosition = { x: 50, y: 50 }
+    if (payload.kind === 'file') return createReferenceFromFile(payload.file, placeholderPosition)
+    return createReferenceFromUrl(payload.url, placeholderPosition)
   }
 
   function positionReference(reference: EvidenceImage, position?: Pick<Idea, 'x' | 'y'>) {
@@ -3963,7 +4012,7 @@ function FileWorkspace({
       return
     }
 
-    const created = await createReferenceFromDroppedPayload(payload, images.length)
+    const created = await createReferenceFromDroppedPayload(payload)
     if (target.kind === 'image') {
       replaceReferenceWithReference(target.imageId, created, `Replaced reference with ${created.title}`)
       return
@@ -4008,7 +4057,9 @@ function FileWorkspace({
     }
     const current = images.find((candidate) => candidate.id === imageId)
     if (!current) return
-    const replacement = await createReferenceFromFile(file, images.length)
+    // replaceReferenceWithReference keeps the existing node's x/y — this
+    // position is discarded, so no open-slot claim needed.
+    const replacement = await createReferenceFromFile(file, { x: current.x, y: current.y })
     replaceReferenceWithReference(imageId, { ...replacement, sourceUrl: replacement.sourceUrl ?? current.sourceUrl }, `Replaced ${current.title}`)
   }
 
@@ -4048,7 +4099,9 @@ function FileWorkspace({
     }
     const placeholder = placeholders.find((candidate) => candidate.id === placeholderId)
     if (!placeholder) return
-    const reference = await createReferenceFromFile(file, images.length)
+    // Converted below to take the placeholder's own x/y — this position is
+    // discarded, so no open-slot claim needed.
+    const reference = await createReferenceFromFile(file, { x: placeholder.x, y: placeholder.y })
     const converted: EvidenceImage = {
       ...reference,
       id: `img-placeholder-${Date.now()}`,
@@ -4149,7 +4202,7 @@ function FileWorkspace({
     const extensionCaptures = parseKiraCapturePayloads(pastedText)
     if (extensionCaptures.length > 0) {
       event.preventDefault()
-      const references = extensionCaptures.map((capture, index) => createReferenceFromCapture(capture, images.length + index))
+      const references = extensionCaptures.map((capture) => createReferenceFromCapture(capture, claimOpenSlot()))
       appendReferences(
         references,
         `${extensionCaptures.length} browser capture${extensionCaptures.length === 1 ? '' : 's'} imported`,
@@ -4166,7 +4219,7 @@ function FileWorkspace({
     if (!url) return
 
     event.preventDefault()
-    const captured = createReferenceFromUrl(url, images.length)
+    const captured = createReferenceFromUrl(url, claimOpenSlot())
     appendReferences([captured], '1 URL captured')
   }
 
@@ -4189,7 +4242,7 @@ function FileWorkspace({
     }
     const extensionCaptures = parseKiraCapturePayloads(pastedText)
     if (extensionCaptures.length > 0) {
-      const references = extensionCaptures.map((capture, index) => createReferenceFromCapture(capture, images.length + index))
+      const references = extensionCaptures.map((capture) => createReferenceFromCapture(capture, claimOpenSlot()))
       appendReferences(
         references,
         `${extensionCaptures.length} browser capture${extensionCaptures.length === 1 ? '' : 's'} imported`,
@@ -4208,7 +4261,7 @@ function FileWorkspace({
       return
     }
 
-    appendReferences([createReferenceFromUrl(url, images.length)], '1 URL captured')
+    appendReferences([createReferenceFromUrl(url, claimOpenSlot())], '1 URL captured')
   }
 
   function createNodeLink(
@@ -7662,6 +7715,7 @@ function FileWorkspace({
               />
             ) : (
               <GraphCanvas
+                visibleCanvasCenterRef={visibleCanvasCenterRef}
                 ideas={ideas}
                 images={images}
                 palettes={palettes}
@@ -8620,6 +8674,7 @@ function isInteractiveChromeTarget(target: EventTarget | null) {
 // 2026-09-16) — imported above.
 
 function GraphCanvas({
+  visibleCanvasCenterRef,
   ideas,
   images,
   palettes,
@@ -8722,6 +8777,11 @@ function GraphCanvas({
   nodeProvenance,
   onOpenKiraPanelChanges,
 }: {
+  // kira/placeNode.ts: written every render (see the effect near
+  // visibleCanvasCenter below) so FileWorkspace's claimOpenSlot can read a
+  // reasonably fresh anchor synchronously, outside the render cycle (a
+  // browser capture arrives as a Tauri IPC event, not a click).
+  visibleCanvasCenterRef: React.MutableRefObject<{ x: number; y: number }>
   ideas: Idea[]
   images: EvidenceImage[]
   palettes: PaletteNode[]
@@ -9541,6 +9601,31 @@ function GraphCanvas({
       rightPanelInset,
       graphTransform,
     })
+  }
+
+  // No dependency array — cheap (one ref write) and keeps
+  // visibleCanvasCenterRef fresh for FileWorkspace's claimOpenSlot without
+  // having to guess every input (canvas size, pan/zoom, panel widths) that
+  // should trigger a recompute. Keeps the previous value when the canvas
+  // isn't measurable yet instead of clobbering it with null.
+  useEffect(() => {
+    const center = visibleCanvasCenter()
+    if (center) visibleCanvasCenterRef.current = center
+  })
+
+  // kira/placeNode.ts: the bottom-toolbar node-creation buttons (Image
+  // placeholder, Palette, Idea, Sticker, Frame) used to pass the visible
+  // center as-is, which could land a brand new node exactly on top of an
+  // existing one — GraphCanvas already has every node's position as props,
+  // so it can do the same open-slot search FileWorkspace's claimOpenSlot
+  // does for captures/file/URL, just without the pending-placements buffer
+  // (a toolbar click is a single, user-paced action, not a rapid-fire
+  // burst of events arriving faster than React re-renders).
+  function claimOpenSlotInCanvas(): { x: number; y: number } | null {
+    const center = visibleCanvasCenter()
+    if (!center) return null
+    const occupied = [...ideas, ...images, ...palettes, ...diagrams, ...placeholders].map((node) => ({ x: node.x, y: node.y }))
+    return findOpenSlotNearAnchor({ anchor: center, occupied })
   }
 
   function dragPercent(event: React.DragEvent<HTMLElement>) {
@@ -11319,30 +11404,30 @@ function GraphCanvas({
               <RailIcon name="select" />
             </button>
           </div>
-          {/* kira/visibleCanvasCenter.ts: these used to call with no position at
-              all, falling back to each create*() function's own single
-              hardcoded world x/y — which could land a brand new node behind
-              an open Library panel, since the canvas container is always
-              full-window (the panel is an absolute-positioned overlay, not a
-              layout sibling that shrinks it). visibleCanvasCenter() (defined
-              below, near eventPercent) reads the canvas's current pan/zoom
-              and panel insets and returns null only if the canvas hasn't
-              been measured yet, in which case the create*() functions' own
-              hardcoded defaults still apply. */}
+          {/* kira/placeNode.ts: these used to call with no position at all,
+              falling back to each create*() function's own single hardcoded
+              world x/y — which could land a brand new node behind an open
+              Library panel (the canvas container is always full-window, the
+              panel is an absolute-positioned overlay) or exactly on top of
+              an existing node. claimOpenSlotInCanvas() (defined above, near
+              eventPercent) scans outward from the visible-area center for a
+              spot clear of every current node, returning null only if the
+              canvas hasn't been measured yet — in which case the
+              create*() functions' own hardcoded defaults still apply. */}
           <div className="canvas-tool-group" aria-label="Create nodes">
-            <button type="button" aria-label={t('tool.imagePlaceholder', lang)} data-tooltip={t('tool.imagePlaceholder', lang)} data-tool-kind="image" onClick={() => onCreatePlaceholder(visibleCanvasCenter() ?? undefined)}>
+            <button type="button" aria-label={t('tool.imagePlaceholder', lang)} data-tooltip={t('tool.imagePlaceholder', lang)} data-tool-kind="image" onClick={() => onCreatePlaceholder(claimOpenSlotInCanvas() ?? undefined)}>
               <RailIcon name="image" />
             </button>
-            <button type="button" aria-label={t('tool.palette', lang)} data-tooltip={t('tool.palette', lang)} data-tool-kind="palette" onClick={() => onCreatePalette(visibleCanvasCenter() ?? undefined)}>
+            <button type="button" aria-label={t('tool.palette', lang)} data-tooltip={t('tool.palette', lang)} data-tool-kind="palette" onClick={() => onCreatePalette(claimOpenSlotInCanvas() ?? undefined)}>
               <RailIcon name="palette" />
             </button>
-            <button type="button" aria-label={t('tool.idea', lang)} data-tooltip={t('tool.idea', lang)} data-tool-kind="idea" onClick={() => onCreateIdea(visibleCanvasCenter() ?? undefined)}>
+            <button type="button" aria-label={t('tool.idea', lang)} data-tooltip={t('tool.idea', lang)} data-tool-kind="idea" onClick={() => onCreateIdea(claimOpenSlotInCanvas() ?? undefined)}>
               <RailIcon name="idea" />
             </button>
-            <button type="button" aria-label={t('tool.sticker', lang)} data-tooltip={t('tool.sticker', lang)} data-tool-kind="sticker" onClick={() => onCreateSticker(visibleCanvasCenter() ?? undefined)}>
+            <button type="button" aria-label={t('tool.sticker', lang)} data-tooltip={t('tool.sticker', lang)} data-tool-kind="sticker" onClick={() => onCreateSticker(claimOpenSlotInCanvas() ?? undefined)}>
               <RailIcon name="note" />
             </button>
-            <button type="button" aria-label={t('tool.frame', lang)} data-tooltip={t('tool.frame', lang)} data-tool-kind="frame" onClick={() => onCreateFrame(visibleCanvasCenter() ?? undefined)}>
+            <button type="button" aria-label={t('tool.frame', lang)} data-tooltip={t('tool.frame', lang)} data-tool-kind="frame" onClick={() => onCreateFrame(claimOpenSlotInCanvas() ?? undefined)}>
               <RailIcon name="frame" />
             </button>
           </div>
@@ -11818,6 +11903,12 @@ function GraphCanvas({
 
           {displayView.ideas.map((idea) => {
             const isSelectedIdea = selected.type === 'idea' && selected.id === idea.id
+            // kira/newIdea.ts: a read-only NodeRichEditor shows no
+            // placeholder text (Tiptap's Placeholder extension only
+            // activates when editable) — a new idea's empty content, by
+            // design since the content-duplication fix, rendered a
+            // completely blank face otherwise.
+            const faceDisplay = resolveIdeaFaceDisplay(idea)
             return (
               <div
                 key={idea.id}
@@ -11878,14 +11969,20 @@ function GraphCanvas({
                     a drag starting on its padding. Only click is stopped, so
                     a click on the text doesn't re-fire card selection. */}
                 <span className="idea-node-fields" onClick={stopInlineEditEvent}>
-                  <NodeRichEditor
-                    kind="idea"
-                    nodeId={idea.id}
-                    content={idea.content}
-                    placeholder="Note..."
-                    editable={false}
-                    onChange={(markdown) => onIdeaInlineChange(idea.id, { content: markdown })}
-                  />
+                  {faceDisplay.kind === 'content' ? (
+                    <NodeRichEditor
+                      kind="idea"
+                      nodeId={idea.id}
+                      content={idea.content}
+                      placeholder="Note..."
+                      editable={false}
+                      onChange={(markdown) => onIdeaInlineChange(idea.id, { content: markdown })}
+                    />
+                  ) : (
+                    <span className={faceDisplay.kind === 'placeholder' ? 'idea-node-face-title is-placeholder' : 'idea-node-face-title'}>
+                      {faceDisplay.text}
+                    </span>
+                  )}
                 </span>
                 {renderResizeHandle('idea', idea)}
                 {renderNodeBelowStack('idea', idea)}
@@ -15779,25 +15876,22 @@ function getLibraryTags(images: EvidenceImage[]) {
     .map(([tag]) => tag)
 }
 
-async function createReferenceFromFile(file: File, index: number): Promise<EvidenceImage> {
+async function createReferenceFromFile(file: File, position: Pick<EvidenceImage, 'x' | 'y'>): Promise<EvidenceImage> {
   const thumb = await readFileAsDataUrl(file)
   const analysis = await analyzeImageDataUrl(thumb)
   const tags = mergeUniqueTags(tagsFromFilename(file.name), analysis.tags)
-  // kira/importLayout.ts — same fix as createReferenceFromCapture below.
-  const slot = resolveImportSlot(index, imagesSeed.length)
-  const column = Math.floor(slot / 5)
   const timestamp = nowIso()
 
   return {
-    id: `img-import-${Date.now()}-${index}`,
+    id: `img-import-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`,
     title: titleFromFilename(file.name),
     content: titleFromFilename(file.name),
     source: file.name,
     palette: analysis.palette.length > 0 ? analysis.palette : paletteFromName(file.name),
     tags,
     suggestions: createSuggestionRecords(mergeUniqueTags(suggestionsFromFile(file.name, tags), analysis.suggestions).slice(0, 5), 'local', 0.52),
-    x: Math.max(62, 84 - column * 9),
-    y: 18 + (slot % 5) * 14,
+    x: position.x,
+    y: position.y,
     thumb,
     importance: 1,
     createdAt: timestamp,
@@ -15812,26 +15906,23 @@ async function createReferenceFromFile(file: File, index: number): Promise<Evide
   }
 }
 
-function createReferenceFromUrl(url: URL, index: number): EvidenceImage {
+function createReferenceFromUrl(url: URL, position: Pick<EvidenceImage, 'x' | 'y'>): EvidenceImage {
   const displayUrl = url.toString()
   const fileName = decodeURIComponent(url.pathname.split('/').filter(Boolean).at(-1) ?? url.hostname)
   const titleBase = fileName.includes('.') ? fileName : `${url.hostname} ${fileName}`
   const tags = tagsFromFilename(`${url.hostname} ${fileName}`)
-  // kira/importLayout.ts — same fix as createReferenceFromCapture below.
-  const slot = resolveImportSlot(index, imagesSeed.length)
-  const column = Math.floor(slot / 5)
   const timestamp = nowIso()
 
   return {
-    id: `img-url-${Date.now()}-${index}`,
+    id: `img-url-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`,
     title: titleFromFilename(titleBase),
     content: titleFromFilename(titleBase),
     source: displayUrl,
     palette: paletteFromName(displayUrl),
     tags: tags.length > 0 ? tags : ['url'],
     suggestions: createSuggestionRecords(['url capture', url.hostname, ...tags.slice(0, 2)].slice(0, 4), 'browser', 0.48),
-    x: Math.max(62, 84 - column * 9),
-    y: 18 + (slot % 5) * 14,
+    x: position.x,
+    y: position.y,
     thumb: displayUrl,
     importance: 1,
     createdAt: timestamp,
@@ -15842,21 +15933,15 @@ function createReferenceFromUrl(url: URL, index: number): EvidenceImage {
   }
 }
 
-function createReferenceFromCapture(capture: KiraCapturePayload, index: number): EvidenceImage {
+function createReferenceFromCapture(capture: KiraCapturePayload, position: Pick<EvidenceImage, 'x' | 'y'>): EvidenceImage {
   const url = new URL(capture.url)
   const sourceText = capture.pageUrl || capture.source || capture.url
   const title = normalizeTitle(capture.title) || titleFromFilename(url.pathname.split('/').filter(Boolean).at(-1) ?? url.hostname)
   const sourceTags = tagsFromFilename(`${title} ${sourceText}`)
-  // kira/importLayout.ts: Math.max(0, index - imagesSeed.length) collapsed
-  // every slot to 0 (same x/y) when the board has fewer live images than
-  // the hardcoded seed array (e.g. an emptied board) — see that file's
-  // comment for the exact repro.
-  const slot = resolveImportSlot(index, imagesSeed.length)
-  const column = Math.floor(slot / 5)
   const timestamp = capture.capturedAt || nowIso()
 
   return {
-    id: `img-browser-${Date.now()}-${index}`,
+    id: `img-browser-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`,
     title,
     content: title,
     source: sourceText,
@@ -15872,8 +15957,8 @@ function createReferenceFromCapture(capture: KiraCapturePayload, index: number):
       'browser',
       0.58,
     ),
-    x: Math.max(62, 84 - column * 9),
-    y: 18 + (slot % 5) * 14,
+    x: position.x,
+    y: position.y,
     // A page capture has no image of its own — og:image (capture.imageUrl)
     // is the real preview when the page has one; falling back to the page's
     // own URL (not an image) is what rendered as a broken thumb before.
