@@ -1,7 +1,8 @@
 /**
  * Pure logic for the auto-layout "slot" a newly-imported/captured reference
- * node gets (its x/y grid position), split out of createReferenceFromCapture
- * in main.tsx so the bug below is unit-testable
+ * node gets (its x/y grid position), split out of main.tsx's three
+ * identical inline copies (createReferenceFromFile, createReferenceFromUrl,
+ * createReferenceFromCapture) so the bug below is unit-testable
  * (`bun test apps/desktop/src/kira`) without the app.
  *
  * Bug: the original inline formula was `Math.max(0, index - seedCount)`,

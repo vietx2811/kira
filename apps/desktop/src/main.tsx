@@ -51,6 +51,8 @@ import { loadPersonaContext } from './kira/ai/personaStore'
 import { DISCOVERY_ANCHOR_TTL_MS, type DiscoveryAnchor, resolveCaptureTargetNode } from './kira/discoveryAnchor'
 import { buildPinterestSearchQuery, resolvePinterestPinUrl } from './kira/pinterestSimilar'
 import { resolveImportSlot } from './kira/importLayout'
+import { newIdeaDefaults } from './kira/newIdea'
+import { visibleCanvasAreaCenterPercent } from './kira/visibleCanvasCenter'
 import { MermaidPreview } from './components/application/mermaid/MermaidPreview'
 import { layerFlowchart, parseMermaidFlowchart } from './kira/mermaid/parseMermaid'
 import { buildBoardDraftPrompt, layoutBoardDraft, parseBoardDraft, type BoardDraft } from './kira/ai/boardDraft'
@@ -5288,11 +5290,18 @@ function FileWorkspace({
   function createIdea(options: { focusTitle?: boolean; position?: Pick<Idea, 'x' | 'y'> } = {}) {
     pushCanvasHistory()
     const timestamp = nowIso()
+    // kira/visibleCanvasCenter.ts: GraphCanvas's bottom-toolbar button
+    // already computes and passes a visible-area-centered position when it
+    // can measure the canvas — this hardcoded value is the fallback for
+    // every other caller (e.g. right-click-canvas-context creation, which
+    // supplies its own cursor-derived position; or before first measure).
     const position = options.position ?? { x: 58, y: 42 }
     const idea: Idea = {
       id: `idea-${Date.now()}`,
-      title: 'Untitled idea',
-      content: 'Untitled idea',
+      // kira/newIdea.ts: content used to repeat 'Untitled idea' from the
+      // title, instead of leaving the body empty for NodeRichEditor's own
+      // placeholder.
+      ...newIdeaDefaults(),
       status: 'thin',
       ...position,
       importance: 1,
@@ -5306,6 +5315,9 @@ function FileWorkspace({
     if (options.focusTitle) setIdeaTitleFocusId(idea.id)
   }
 
+  // kira/visibleCanvasCenter.ts: GraphCanvas's bottom-toolbar button already
+  // computes and passes a visible-area-centered position when it can
+  // measure the canvas — this is the fallback for every other caller.
   function createPlaceholder(position: Pick<PlaceholderNode, 'x' | 'y'> = { x: 62, y: 38 }) {
     pushCanvasHistory()
     const timestamp = nowIso()
@@ -5331,6 +5343,9 @@ function FileWorkspace({
   // Frame" (multi-select toolbar, canvas-node-ux spec §2.1 decision 5a)
   // passes an explicit size computed from the selection's bounding box
   // instead, so the frame actually encloses what was selected.
+  // kira/visibleCanvasCenter.ts: GraphCanvas's bottom-toolbar button already
+  // computes and passes a visible-area-centered position when it can
+  // measure the canvas — this is the fallback for every other caller.
   function createFrame(options: Pick<FrameNode, 'x' | 'y'> & Partial<Pick<FrameNode, 'width' | 'height'>> = { x: 50, y: 50 }) {
     pushCanvasHistory()
     const timestamp = nowIso()
@@ -5354,6 +5369,9 @@ function FileWorkspace({
     setFrames((current) => current.map((frame) => (frame.id === frameId ? { ...frame, ...patch, updatedAt: nowIso() } : frame)))
   }
 
+  // kira/visibleCanvasCenter.ts: GraphCanvas's bottom-toolbar button already
+  // computes and passes a visible-area-centered position when it can
+  // measure the canvas — this is the fallback for every other caller.
   function createSticker(position: Pick<Idea, 'x' | 'y'> = { x: 54, y: 46 }) {
     pushCanvasHistory()
     const timestamp = nowIso()
@@ -5405,6 +5423,10 @@ function FileWorkspace({
       colors: sourceImage?.palette?.length ? sourceImage.palette.slice(0, 7) : generatePaletteHarmony(base, 'analogous').slice(0, 7),
       algorithm: sourceImage ? 'image_extract' : 'analogous',
       sourceImageId: sourceImage?.id,
+      // kira/visibleCanvasCenter.ts: GraphCanvas's "Palette" toolbar button
+      // (no image selected) already computes and passes a visible-area-
+      // centered position when it can measure the canvas — this is the
+      // fallback for every other caller.
       ...(position ?? (sourceImage
         ? { x: clamp(sourceImage.x + 10, 8, 92), y: clamp(sourceImage.y + 10, 8, 92) }
         : { x: 60, y: 58 })),
@@ -9494,6 +9516,33 @@ function GraphCanvas({
     }
   }
 
+  // kira/visibleCanvasCenter.ts: the bottom-toolbar node-creation buttons
+  // (Image placeholder, Palette, Idea, Sticker, Frame) call their create*()
+  // with no position, which used to fall back to one hardcoded world x/y —
+  // landing behind an open Library panel, since the canvas container is
+  // always full-window (the panel is an absolute-positioned overlay, not a
+  // layout sibling that shrinks it — see --canvas-overlay-left-inset's own
+  // comment at canvasOverlayLeftInset's declaration). This reads the same
+  // insets fitGraphToContent already uses and returns the current center of
+  // the actually-visible area, or null before the canvas has been measured
+  // (first paint) — callers fall back to their own hardcoded default then.
+  function visibleCanvasCenter(): { x: number; y: number } | null {
+    const canvas = canvasRef.current
+    if (!canvas) return null
+    const box = canvas.getBoundingClientRect()
+    if (box.width === 0 || box.height === 0) return null
+    const styles = getComputedStyle(canvas)
+    const leftPanelInset = Number.parseFloat(styles.getPropertyValue('--canvas-overlay-left-inset')) || 0
+    const rightPanelInset = Number.parseFloat(styles.getPropertyValue('--canvas-right-inset')) || 0
+    return visibleCanvasAreaCenterPercent({
+      canvasWidth: box.width,
+      canvasHeight: box.height,
+      leftPanelInset,
+      rightPanelInset,
+      graphTransform,
+    })
+  }
+
   function dragPercent(event: React.DragEvent<HTMLElement>) {
     const rect = canvasRef.current?.getBoundingClientRect()
     if (!rect) return null
@@ -10252,6 +10301,19 @@ function GraphCanvas({
             card below absorbs both — one floating object instead of a pill
             stacked on a box, which is what "morphing into a card" means. */}
         {!isDetailsOpen && (
+          // Theme for the Tooltips below: this toolbar renders inside the
+          // canvas tree, outside any UiKitPortalHost (the nearest one closes
+          // well before GraphCanvas's own JSX opens) — react-aria-components'
+          // Tooltip/Popover portal to document.body by default, which sits
+          // outside .app-shell and never sees the per-project color tokens
+          // buildProjectAppearanceStyle() writes inline there (same gap
+          // PortalHost.tsx documents, same fix the two Relation/Link Selects
+          // a few hundred lines down already use). Reported live: hovering
+          // "Details" for 3+ seconds in the real app showed nothing, while
+          // the themed rail Settings tooltip (already inside WorkspaceChrome's
+          // own UiKitPortalHost) worked. uikit-passthrough-host keeps the
+          // wrapper from affecting .node-toolbar's own flex layout.
+          <UiKitPortalHost className="kira-uikit uikit-passthrough-host">
           <div className="node-toolbar">
             <AskKiraDropdown
               kind={kind}
@@ -10323,6 +10385,7 @@ function GraphCanvas({
               </Tooltip>
             )}
           </div>
+          </UiKitPortalHost>
         )}
         {isDetailsOpen && createPortal(
           <div className="node-overlay-scrim" onClick={closeDetails}>
@@ -11256,20 +11319,30 @@ function GraphCanvas({
               <RailIcon name="select" />
             </button>
           </div>
+          {/* kira/visibleCanvasCenter.ts: these used to call with no position at
+              all, falling back to each create*() function's own single
+              hardcoded world x/y — which could land a brand new node behind
+              an open Library panel, since the canvas container is always
+              full-window (the panel is an absolute-positioned overlay, not a
+              layout sibling that shrinks it). visibleCanvasCenter() (defined
+              below, near eventPercent) reads the canvas's current pan/zoom
+              and panel insets and returns null only if the canvas hasn't
+              been measured yet, in which case the create*() functions' own
+              hardcoded defaults still apply. */}
           <div className="canvas-tool-group" aria-label="Create nodes">
-            <button type="button" aria-label={t('tool.imagePlaceholder', lang)} data-tooltip={t('tool.imagePlaceholder', lang)} data-tool-kind="image" onClick={() => onCreatePlaceholder()}>
+            <button type="button" aria-label={t('tool.imagePlaceholder', lang)} data-tooltip={t('tool.imagePlaceholder', lang)} data-tool-kind="image" onClick={() => onCreatePlaceholder(visibleCanvasCenter() ?? undefined)}>
               <RailIcon name="image" />
             </button>
-            <button type="button" aria-label={t('tool.palette', lang)} data-tooltip={t('tool.palette', lang)} data-tool-kind="palette" onClick={() => onCreatePalette()}>
+            <button type="button" aria-label={t('tool.palette', lang)} data-tooltip={t('tool.palette', lang)} data-tool-kind="palette" onClick={() => onCreatePalette(visibleCanvasCenter() ?? undefined)}>
               <RailIcon name="palette" />
             </button>
-            <button type="button" aria-label={t('tool.idea', lang)} data-tooltip={t('tool.idea', lang)} data-tool-kind="idea" onClick={() => onCreateIdea()}>
+            <button type="button" aria-label={t('tool.idea', lang)} data-tooltip={t('tool.idea', lang)} data-tool-kind="idea" onClick={() => onCreateIdea(visibleCanvasCenter() ?? undefined)}>
               <RailIcon name="idea" />
             </button>
-            <button type="button" aria-label={t('tool.sticker', lang)} data-tooltip={t('tool.sticker', lang)} data-tool-kind="sticker" onClick={() => onCreateSticker()}>
+            <button type="button" aria-label={t('tool.sticker', lang)} data-tooltip={t('tool.sticker', lang)} data-tool-kind="sticker" onClick={() => onCreateSticker(visibleCanvasCenter() ?? undefined)}>
               <RailIcon name="note" />
             </button>
-            <button type="button" aria-label={t('tool.frame', lang)} data-tooltip={t('tool.frame', lang)} data-tool-kind="frame" onClick={() => onCreateFrame()}>
+            <button type="button" aria-label={t('tool.frame', lang)} data-tooltip={t('tool.frame', lang)} data-tool-kind="frame" onClick={() => onCreateFrame(visibleCanvasCenter() ?? undefined)}>
               <RailIcon name="frame" />
             </button>
           </div>
@@ -15710,7 +15783,8 @@ async function createReferenceFromFile(file: File, index: number): Promise<Evide
   const thumb = await readFileAsDataUrl(file)
   const analysis = await analyzeImageDataUrl(thumb)
   const tags = mergeUniqueTags(tagsFromFilename(file.name), analysis.tags)
-  const slot = Math.max(0, index - imagesSeed.length)
+  // kira/importLayout.ts — same fix as createReferenceFromCapture below.
+  const slot = resolveImportSlot(index, imagesSeed.length)
   const column = Math.floor(slot / 5)
   const timestamp = nowIso()
 
@@ -15743,7 +15817,8 @@ function createReferenceFromUrl(url: URL, index: number): EvidenceImage {
   const fileName = decodeURIComponent(url.pathname.split('/').filter(Boolean).at(-1) ?? url.hostname)
   const titleBase = fileName.includes('.') ? fileName : `${url.hostname} ${fileName}`
   const tags = tagsFromFilename(`${url.hostname} ${fileName}`)
-  const slot = Math.max(0, index - imagesSeed.length)
+  // kira/importLayout.ts — same fix as createReferenceFromCapture below.
+  const slot = resolveImportSlot(index, imagesSeed.length)
   const column = Math.floor(slot / 5)
   const timestamp = nowIso()
 
