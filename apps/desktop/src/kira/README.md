@@ -53,6 +53,18 @@ Spec sources: `docs/design/right-panel/DECISIONS.md`,
   comment. Delete this file if `bun-types` is added later (it would
   redeclare the same module).
 
+- **`discoveryAnchor.ts`** / **`discoveryAnchor.test.ts`** — unrelated to
+  the right panel above; co-located here for the same reason (pure,
+  unit-testable, no main.tsx import). The "discovery anchor"
+  (`docs/research/2026-11-09-pinterest-similar-flow.md` §3.2) remembers
+  which canvas node a Pinterest "find similar" trip started from, so a
+  browser capture made during that trip (no explicit target) attaches back
+  to it. `resolveCaptureTargetNode` is wired into main.tsx's
+  `handleKiraCapture`; `discoveryAnchorRef` (synchronous read) and
+  `discoveryAnchorState` (the "Đang gắn vào: ..." chip's render) live in
+  `FileWorkspace` and are kept in sync by `openPinterestSimilar` /
+  `clearDiscoveryAnchor`.
+
 ## Integration points for main.tsx (not done in this change — main.tsx was a
 claimed hot file the whole time this module was written)
 

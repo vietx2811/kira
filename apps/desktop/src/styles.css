@@ -1479,6 +1479,57 @@ button {
   transform: translate(-50%, 0);
 }
 
+/* research 2026-11-09 pinterest-similar-flow §3.2 + Orchestrator follow-up:
+   unlike .canvas-notice (an auto-dismissing toast), this stays up for the
+   anchor's whole 15-minute window, so it lives at the TOP of the canvas
+   instead — the bottom is already .canvas-notice's and .canvas-bottom-bar's
+   territory, and this one could otherwise linger there for much longer
+   than either. */
+.discovery-anchor-chip {
+  position: absolute;
+  top: var(--space-4);
+  left: 50%;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: min(420px, calc(100% - 32px));
+  padding: 6px 8px 6px 12px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-2);
+  background: var(--surface-inspector);
+  box-shadow: var(--panel-shadow);
+  color: var(--text-main);
+  font-size: var(--text-small);
+  transform: translateX(-50%);
+}
+
+.discovery-anchor-chip-label {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.discovery-anchor-chip-dismiss {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-1);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.discovery-anchor-chip-dismiss:hover {
+  background: var(--surface-2);
+  color: var(--text-main);
+}
+
 .library-resize-handle {
   position: absolute;
   top: 0;

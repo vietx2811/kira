@@ -48,6 +48,7 @@ import { RELATIONS, normalizeRelation, relationWeight, type Relation } from './k
 import { autoLayout, type AutoLayoutEdge, type AutoLayoutNode } from './kira/canvas/autoLayout'
 import { currentPersonaContext, withPersona } from './kira/ai/persona'
 import { loadPersonaContext } from './kira/ai/personaStore'
+import { DISCOVERY_ANCHOR_TTL_MS, type DiscoveryAnchor, resolveCaptureTargetNode } from './kira/discoveryAnchor'
 import { MermaidPreview } from './components/application/mermaid/MermaidPreview'
 import { layerFlowchart, parseMermaidFlowchart } from './kira/mermaid/parseMermaid'
 import { buildBoardDraftPrompt, layoutBoardDraft, parseBoardDraft, type BoardDraft } from './kira/ai/boardDraft'
@@ -802,6 +803,8 @@ export type Lang = 'en' | 'vi'
 // concept using different keys in two places will show up as translated in
 // one place and not the other.
 const UI_STRINGS: Record<string, { en: string; vi: string }> = {
+  'discoveryAnchor.label': { en: 'Attaching to: {title}', vi: 'Đang gắn vào: {title}' },
+  'discoveryAnchor.dismiss': { en: 'Stop attaching', vi: 'Bỏ neo' },
   'idea.status.strong': { en: 'Idea strength: strong', vi: 'Độ chín ý tưởng: mạnh' },
   'idea.status.forming': { en: 'Idea strength: forming', vi: 'Độ chín ý tưởng: đang hình thành' },
   'idea.status.thin': { en: 'Idea strength: thin', vi: 'Độ chín ý tưởng: còn mỏng' },
@@ -2583,13 +2586,14 @@ function FileWorkspace({
   // anchor remembers which node the discovery trip started from; the
   // fallback branch below consults it when a capture has no explicit
   // target. An explicit drop-pad target (capture.targetNode set) always
-  // wins — this only fills in when there's no explicit choice.
-  const discoveryAnchorRef = useRef<{ kind: GraphNodeKind; id: string; expiresAt: number } | null>(null)
-  // One Pinterest browsing session's worth of slack (report §3.2's own
-  // proposed figure) — long enough to cover a search-and-save trip, short
-  // enough that a capture from an unrelated later task doesn't silently
-  // attach to a node from an hour ago.
-  const DISCOVERY_ANCHOR_TTL_MS = 15 * 60 * 1000
+  // wins — this only fills in when there's no explicit choice. Resolution
+  // logic (still-valid / explicit-wins / deleted-node-ignored) lives in
+  // kira/discoveryAnchor.ts, pure and unit-tested on its own.
+  // Ref for the synchronous read inside handleKiraCapture (a plain
+  // function, not reactive); discoveryAnchorState mirrors it purely so the
+  // "Đang gắn vào: ..." chip can render and auto-hide on expiry.
+  const discoveryAnchorRef = useRef<DiscoveryAnchor | null>(null)
+  const [discoveryAnchorState, setDiscoveryAnchorState] = useState<DiscoveryAnchor | null>(null)
   const canUndoCanvas = useStore(canvasHistoryStore.temporal, (state) => state.pastStates.length > 0)
   const canRedoCanvas = useStore(canvasHistoryStore.temporal, (state) => state.futureStates.length > 0)
   projectStateRef.current = {
@@ -3602,17 +3606,16 @@ function FileWorkspace({
     const explicitTarget = capture.targetNode
       ? resolveGraphNodeRef(capture.targetNode.id, state.ideas, state.images, state.palettes, state.diagrams, state.placeholders)
       : null
-    // An explicit drop-pad target always wins over the anchor — only consult
-    // it when the capture itself didn't say where to go. Not cleared on use:
-    // a discovery trip is a browsing session, not a single capture, so it
-    // keeps resolving fresh captures until it expires or a later "Find
-    // similar" press on a different node overwrites it.
-    const anchor = discoveryAnchorRef.current
-    const anchorTarget =
-      !explicitTarget && anchor && anchor.expiresAt > Date.now()
-        ? resolveGraphNodeRef(anchor.id, state.ideas, state.images, state.palettes, state.diagrams, state.placeholders)
-        : null
-    const target = explicitTarget ?? anchorTarget
+    // Not cleared on use: a discovery trip is a browsing session, not a
+    // single capture, so the anchor keeps resolving fresh captures until it
+    // expires or a later "Find similar" press on a different node
+    // overwrites it.
+    const target = resolveCaptureTargetNode(
+      explicitTarget,
+      discoveryAnchorRef.current,
+      Date.now(),
+      (_kind, id) => resolveGraphNodeRef(id, state.ideas, state.images, state.palettes, state.diagrams, state.placeholders),
+    )
 
     if (target) {
       const persistedId = attachCaptureToGraphNode(reference, target)
@@ -3624,17 +3627,44 @@ function FileWorkspace({
     if (capture.kind === 'image') void downloadAndAnalyzeCaptureImage(reference.id, reference.title, capture.url)
   }
 
-  // research 2026-11-09 pinterest-similar-flow §3.1/§3.4: window.open matches
-  // the two existing external-app handoffs (Google Slides, Canva below) —
-  // capabilities/default.json grants no webview-create permission, so Tauri
-  // hands the new-window navigation to the OS, opening the user's system
-  // default browser rather than an in-app window. Sets the discovery anchor
-  // first so a capture made during this browsing trip (hover-Save, Alt+Shift+K)
-  // attaches back to this node even with no explicit drop-pad target.
+  // Orchestrator decision (supersedes the §3.4 window.open plan this
+  // comment used to describe): window.open would bring a browser window to
+  // the front of the user's screen the instant this runs, which is the
+  // same "steals frontmost" territory CLAUDE.md requires a grant for, and
+  // whether it lands in the system browser vs. an in-app webview isn't
+  // something to hang on Tauri/wry version behavior. Routed through the
+  // native, allowlisted open_external_url command instead — see
+  // openExternalPinterestUrl and validate_pinterest_url in src-tauri/src/
+  // lib.rs. Sets the discovery anchor first so a capture made during this
+  // browsing trip (hover-Save, Alt+Shift+K) attaches back to this node
+  // even with no explicit drop-pad target.
   function openPinterestSimilar(kind: GraphNodeKind, id: string, node: EvidenceImage) {
-    discoveryAnchorRef.current = { kind, id, expiresAt: Date.now() + DISCOVERY_ANCHOR_TTL_MS }
-    window.open(buildPinterestSimilarUrl(node), '_blank', 'noopener,noreferrer')
+    const nextAnchor: DiscoveryAnchor = { kind, id, expiresAt: Date.now() + DISCOVERY_ANCHOR_TTL_MS }
+    discoveryAnchorRef.current = nextAnchor
+    setDiscoveryAnchorState(nextAnchor)
+    void openExternalPinterestUrl(buildPinterestSimilarUrl(node))
   }
+
+  // User-facing control for the anchor the chip below shows: an explicit
+  // "never mind" and the auto-hide-on-expiry both go through this so the
+  // ref (handleKiraCapture's synchronous read) and the state (the chip's
+  // render) can never drift apart.
+  function clearDiscoveryAnchor() {
+    discoveryAnchorRef.current = null
+    setDiscoveryAnchorState(null)
+  }
+
+  useEffect(() => {
+    if (!discoveryAnchorState) return
+    const remaining = discoveryAnchorState.expiresAt - Date.now()
+    if (remaining <= 0) {
+      clearDiscoveryAnchor()
+      return
+    }
+    const timer = window.setTimeout(clearDiscoveryAnchor, remaining)
+    return () => window.clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [discoveryAnchorState])
 
   // research 2026-11-09 §5#8 / visual-explore Pha 0: a browser capture only
   // ever carried a remote thumbnail URL (createReferenceFromCapture), so the
@@ -7422,6 +7452,14 @@ function FileWorkspace({
   // what actually keeps N open tabs from costing N live canvases.
   if (!isActive) return null
 
+  // null when the anchor has nothing left to resolve to (deleted node) —
+  // handleKiraCapture already treats that the same as no anchor at all
+  // (kira/discoveryAnchor.ts), so the chip simply stops rendering rather
+  // than needing its own cleanup path.
+  const discoveryAnchorNode = discoveryAnchorState
+    ? resolveGraphNodeRef(discoveryAnchorState.id, ideas, images, palettes, diagrams, placeholders)
+    : null
+
   return (
     <main className="app-shell" data-glass-state={glassStatus} data-color-mode={shellColorMode} data-rail-icons={railIconMode} style={shellThemeStyle} onPaste={capturePastedReference}>
       {tabBar(topbarAiStatus)}
@@ -7529,6 +7567,21 @@ function FileWorkspace({
             {(activeView === 'Canvas' || activeView === 'Slides') && (
               <div className={isCanvasNoticeVisible ? 'canvas-notice is-visible' : 'canvas-notice'} role="status">
                 {canvasNoticeText}
+              </div>
+            )}
+            {activeView === 'Canvas' && discoveryAnchorNode && (
+              <div className="discovery-anchor-chip" role="status">
+                <span className="discovery-anchor-chip-label">
+                  {t('discoveryAnchor.label', lang, { title: discoveryAnchorNode.title || graphNodeKindLabel(discoveryAnchorNode.kind) })}
+                </span>
+                <button
+                  type="button"
+                  className="discovery-anchor-chip-dismiss"
+                  aria-label={t('discoveryAnchor.dismiss', lang)}
+                  onClick={clearDiscoveryAnchor}
+                >
+                  <X size={12} />
+                </button>
               </div>
             )}
             {activeView === 'Outline' ? (
@@ -15840,6 +15893,22 @@ function buildPinterestSimilarUrl(node: EvidenceImage): string {
     }
   }
   return `https://www.pinterest.com/search/pins/?q=${encodeURIComponent(node.tags.join(' '))}`
+}
+
+// Routes through the native, allowlisted open_external_url command (see
+// validate_pinterest_url in src-tauri/src/lib.rs) instead of window.open —
+// Orchestrator decision: window.open would steal frontmost the instant it
+// runs, and whether it opens the system browser or an in-app webview isn't
+// something to hang on Tauri/wry version behavior; a host-allowlisted
+// native command is both narrower and fully testable without a screen.
+// Outside Tauri (no IPC, e.g. the Browser-pane preview during UI work)
+// falls back to window.open so the preview still opens something.
+async function openExternalPinterestUrl(url: string) {
+  if (!isTauriRuntime()) {
+    window.open(url, '_blank', 'noopener,noreferrer')
+    return
+  }
+  await invoke<void>('open_external_url', { url })
 }
 
 // Pinterest CDN paths look like /{size}/aa/bb/cc/{hash}.{ext}, where {size} is

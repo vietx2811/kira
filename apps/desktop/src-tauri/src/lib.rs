@@ -4195,6 +4195,46 @@ fn save_user_persona(persona: serde_json::Value) -> Result<(), String> {
     fs::rename(&temporary, &path).map_err(|error| format!("Could not save user.json: {error}"))
 }
 
+// docs/research/2026-11-09-pinterest-similar-flow.md §3.3/§3.4 + Orchestrator
+// decision: open_system_target's existing callers only ever pass our own
+// constant strings (chrome://extensions, a packaged extension path, ...),
+// never anything derived from node data — widening either of them to accept
+// an arbitrary URL would turn a closed list into "open anything". This gets
+// its own narrow check instead: https only, no embedded credentials, no
+// explicit port, and a host that is exactly `pinterest.<tld>` or a
+// subdomain of it. The host check is label-exact (not a substring match) so
+// a lookalike like `evilpinterest.com` or a suffix trick like
+// `pinterest.com.evil.com` (a subdomain of evil.com, not of pinterest.com)
+// both fail it.
+fn validate_pinterest_url(raw: &str) -> Result<(), String> {
+    let parsed = url::Url::parse(raw).map_err(|_| "Invalid URL".to_string())?;
+    if parsed.scheme() != "https" {
+        return Err("Only https URLs are allowed".to_string());
+    }
+    if !parsed.username().is_empty() || parsed.password().is_some() {
+        return Err("URL must not contain credentials".to_string());
+    }
+    if parsed.port().is_some() {
+        return Err("URL must not specify a port".to_string());
+    }
+    let host = parsed.host_str().ok_or_else(|| "URL has no host".to_string())?;
+    let labels: Vec<&str> = host.split('.').collect();
+    // "pinterest" must be the label immediately before the TLD — e.g.
+    // ["www", "pinterest", "com"] or ["pinterest", "de"] — not merely
+    // present anywhere in the host.
+    let is_pinterest_host = labels.len() >= 2 && labels[labels.len() - 2] == "pinterest";
+    if !is_pinterest_host {
+        return Err(format!("Host not allowed: {host}"));
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn open_external_url(url: String) -> Result<(), String> {
+    validate_pinterest_url(&url)?;
+    open_system_target(&url)
+}
+
 fn open_system_target(target: &str) -> Result<(), String> {
     let status = Command::new("open")
         .arg(target)
@@ -5295,6 +5335,7 @@ pub fn run() {
             generate_ai_vision,
             get_extension_install_status,
             open_extension_install_target,
+            open_external_url,
             sync_chrome_extension_dist_command,
             export_outline_markdown,
             export_outline_html,
@@ -5329,6 +5370,54 @@ mod tests {
     fn image_data_url_splitter_rejects_non_base64_input() {
         assert!(split_data_url("https://example.com/image.png").is_err());
         assert!(split_data_url("data:image/png,not-base64").is_err());
+    }
+
+    #[test]
+    fn pinterest_url_allows_apex_and_www() {
+        assert!(validate_pinterest_url("https://pinterest.com/pin/123456789012345678/").is_ok());
+        assert!(validate_pinterest_url("https://www.pinterest.com/search/pins/?q=warm+metal").is_ok());
+    }
+
+    #[test]
+    fn pinterest_url_allows_other_subdomains_and_tlds() {
+        assert!(validate_pinterest_url("https://help.pinterest.com/en").is_ok());
+        assert!(validate_pinterest_url("https://pinterest.de/pin/1/").is_ok());
+        assert!(validate_pinterest_url("https://business.pinterest.jp/").is_ok());
+    }
+
+    #[test]
+    fn pinterest_url_rejects_non_https_scheme() {
+        assert!(validate_pinterest_url("http://pinterest.com/pin/1/").is_err());
+        assert!(validate_pinterest_url("file:///etc/passwd").is_err());
+        assert!(validate_pinterest_url("javascript:alert(1)").is_err());
+    }
+
+    #[test]
+    fn pinterest_url_rejects_lookalike_hosts() {
+        // A different domain that merely contains "pinterest" in a label —
+        // not a subdomain of pinterest.<tld>.
+        assert!(validate_pinterest_url("https://evilpinterest.com/").is_err());
+        // A subdomain of evil.com, not of pinterest.com, despite the string
+        // "pinterest.com" appearing as a prefix of the host.
+        assert!(validate_pinterest_url("https://pinterest.com.evil.com/").is_err());
+        assert!(validate_pinterest_url("https://pinterest.evil.com/").is_err());
+        assert!(validate_pinterest_url("https://notpinterest.io/").is_err());
+    }
+
+    #[test]
+    fn pinterest_url_rejects_credentials_and_explicit_port() {
+        assert!(validate_pinterest_url("https://user:pass@pinterest.com/").is_err());
+        assert!(validate_pinterest_url("https://pinterest.com:8443/").is_err());
+        // :443 is https's default port — url::Url normalizes it away, so
+        // `.port()` returns None here exactly as it would with no port
+        // written at all. Not a case this check needs to (or can) reject.
+        assert!(validate_pinterest_url("https://pinterest.com:443/").is_ok());
+    }
+
+    #[test]
+    fn pinterest_url_rejects_malformed_input() {
+        assert!(validate_pinterest_url("not a url").is_err());
+        assert!(validate_pinterest_url("").is_err());
     }
 
     #[test]
