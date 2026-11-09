@@ -3850,6 +3850,20 @@ button.mini-tags-more:focus-visible {
   caret-color: transparent;
 }
 
+/* kira/newIdea.ts resolveIdeaFaceDisplay: stands in for NodeRichEditor on
+   the face when an idea has no content yet — a read-only Tiptap editor
+   shows no placeholder text (that extension only activates when editable),
+   so an empty-content idea rendered completely blank otherwise. Inherits
+   .idea-node-fields' own font-size (same as NodeRichEditor's content, no
+   explicit size set either) so swapping between the two never jumps size. */
+.idea-node-face-title {
+  color: var(--text-main);
+}
+
+.idea-node-face-title.is-placeholder {
+  color: var(--text-soft);
+}
+
 /* point 2: the body is the node's actual content and should read as the
    panel's main mass, not the shortest block in it — a floor tall enough to
    read as "most of the panel" on a typical idea, scrolling inside the
