@@ -114,7 +114,7 @@ export function EvidenceInbox({
   totalCount: number
   batchTag: string
   searchQuery: string
-  downloadProgress: { imageId: string; title: string; progress: number | null } | null
+  downloadProgress: { count: number; title: string; progress: number | null } | null
   selectedReferenceIds: Set<string>
   selected: Selection
   lang: Lang
@@ -599,14 +599,24 @@ export function EvidenceInbox({
       {downloadProgress && (
         <div className="library-download-bar" role="status">
           <span className="library-download-label">
-            {downloadProgress.progress != null
-              ? t('library.download.labelWithProgress', { title: downloadProgress.title, percent: String(Math.round(downloadProgress.progress * 100)) })
-              : t('library.download.label', { title: downloadProgress.title })}
+            {downloadProgress.count > 1
+              ? t('library.download.labelCount', { count: String(downloadProgress.count) })
+              : downloadProgress.progress != null
+                ? t('library.download.labelWithProgress', { title: downloadProgress.title, percent: String(Math.round(downloadProgress.progress * 100)) })
+                : t('library.download.label', { title: downloadProgress.title })}
           </span>
           <div className="library-download-track">
             <div
-              className={downloadProgress.progress == null ? 'library-download-fill is-indeterminate' : 'library-download-fill'}
-              style={downloadProgress.progress == null ? undefined : { transform: `scaleX(${Math.min(1, downloadProgress.progress)})` }}
+              className={
+                downloadProgress.count > 1 || downloadProgress.progress == null
+                  ? 'library-download-fill is-indeterminate'
+                  : 'library-download-fill'
+              }
+              style={
+                downloadProgress.count > 1 || downloadProgress.progress == null
+                  ? undefined
+                  : { transform: `scaleX(${Math.min(1, downloadProgress.progress)})` }
+              }
             />
           </div>
         </div>

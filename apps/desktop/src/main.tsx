@@ -53,6 +53,7 @@ import { buildPinterestSearchQuery, resolvePinterestPinUrl } from './kira/pinter
 import { newIdeaDefaults, resolveIdeaFaceDisplay } from './kira/newIdea'
 import { visibleCanvasAreaCenterPercent } from './kira/visibleCanvasCenter'
 import { findOpenSlotNearAnchor, type PlacedPoint } from './kira/placeNode'
+import { withTimeout } from './kira/invokeTimeout'
 import { MermaidPreview } from './components/application/mermaid/MermaidPreview'
 import { layerFlowchart, parseMermaidFlowchart } from './kira/mermaid/parseMermaid'
 import { buildBoardDraftPrompt, layoutBoardDraft, parseBoardDraft, type BoardDraft } from './kira/ai/boardDraft'
@@ -1029,6 +1030,7 @@ const UI_STRINGS: Record<string, { en: string; vi: string }> = {
   'library.dropHint': { en: 'Drop images into Library', vi: 'Thả hình ảnh vào Thư viện' },
   'library.download.label': { en: 'Downloading original · {title}', vi: 'Đang tải bản gốc · {title}' },
   'library.download.labelWithProgress': { en: 'Downloading original · {title} ({percent}%)', vi: 'Đang tải bản gốc · {title} ({percent}%)' },
+  'library.download.labelCount': { en: 'Downloading {count} images', vi: 'Đang tải {count} ảnh' },
   'library.batch.selected': { en: '{count} selected', vi: 'Đã chọn {count}' },
   'library.batch.tagAria': { en: 'Batch tag', vi: 'Gắn thẻ hàng loạt' },
   'library.batch.tagPlaceholder': { en: 'Tag', vi: 'Thẻ' },
@@ -2435,7 +2437,23 @@ function FileWorkspace({
   const [sortMode, setSortMode] = useState<SortMode>('recent')
   const [batchTag, setBatchTag] = useState('')
   const [libraryStatus, setLibraryStatus] = useState('Ready')
-  const [imageDownload, setImageDownload] = useState<{ imageId: string; title: string; progress: number | null } | null>(null)
+  // research fix-capture-download-hang 2026-11-10: a Map keyed by imageId,
+  // not a single slot, because concurrent captures (3 paste events in a row,
+  // for instance) each run their own downloadAndAnalyzeCaptureImage call —
+  // a single-slot state only ever showed whichever one started last, and a
+  // finished download's `finally` clearing by imageId could wipe a different
+  // in-flight download out of the bar entirely.
+  const [imageDownloads, setImageDownloads] = useState<Map<string, { title: string; progress: number | null }>>(
+    new Map(),
+  )
+  const imageDownloadSummary = useMemo(() => {
+    if (imageDownloads.size === 0) return null
+    if (imageDownloads.size === 1) {
+      const [, entry] = [...imageDownloads][0]
+      return { count: 1, title: entry.title, progress: entry.progress }
+    }
+    return { count: imageDownloads.size, title: '', progress: null }
+  }, [imageDownloads])
   const [isCanvasNoticeVisible, setIsCanvasNoticeVisible] = useState(false)
   const canvasNoticeTimerRef = useRef(0)
 
@@ -3738,12 +3756,12 @@ function FileWorkspace({
     const pinterestCandidates = resolvePinterestOriginalCandidates(url)
     const candidates = pinterestCandidates.length > 0 ? pinterestCandidates : [url.toString()]
 
-    setImageDownload({ imageId, title, progress: null })
+    setImageDownloads((current) => new Map(current).set(imageId, { title, progress: null }))
 
     try {
       for (const candidate of candidates) {
         const downloaded = await downloadCaptureCandidate(candidate, (progress) =>
-          setImageDownload({ imageId, title, progress }),
+          setImageDownloads((current) => new Map(current).set(imageId, { title, progress })),
         )
         if (!downloaded) continue
 
@@ -3773,7 +3791,12 @@ function FileWorkspace({
     } catch {
       if (!options.silent) setLibraryStatus("Couldn't download capture image, kept the original link")
     } finally {
-      setImageDownload((current) => (current?.imageId === imageId ? null : current))
+      setImageDownloads((current) => {
+        if (!current.has(imageId)) return current
+        const next = new Map(current)
+        next.delete(imageId)
+        return next
+      })
     }
   }
 
@@ -7598,7 +7621,7 @@ function FileWorkspace({
           totalCount={images.length}
           batchTag={batchTag}
           searchQuery={searchQuery}
-          downloadProgress={imageDownload}
+          downloadProgress={imageDownloadSummary}
           selectedReferenceIds={selectedReferenceIds}
           selected={selection}
           lang={lang}
@@ -19288,8 +19311,22 @@ async function updateNativeCaptureContext(context: KiraCaptureContext) {
 // Access-Control-Allow-Origin header (most sites — picsum.photos's ACAO: *
 // is the exception, not the rule) is blocked by the WebView's own CORS
 // enforcement before a response ever reaches the frontend.
+//
+// research fix-capture-download-hang 2026-11-10: the native side already
+// times out its own fetch at CAPTURE_IMAGE_FETCH_TIMEOUT_SECS (20s, lib.rs),
+// but that only covers the HTTP request itself — it can't protect against
+// the invoke() promise never settling at all (e.g. a panicked command task).
+// This JS-side backstop is generous (comfortably above the native timeout)
+// so it only ever fires on that kind of failure, not on a slow-but-honest
+// download.
+const FETCH_NATIVE_CAPTURE_IMAGE_TIMEOUT_MS = 30_000
+
 async function fetchNativeCaptureImage(url: string) {
-  return invoke<NativeCaptureImage>('fetch_capture_image', { url })
+  return withTimeout(
+    invoke<NativeCaptureImage>('fetch_capture_image', { url }),
+    FETCH_NATIVE_CAPTURE_IMAGE_TIMEOUT_MS,
+    'fetch_capture_image',
+  )
 }
 
 async function runNativeAppleVisionOcr(imageDataUrl: string) {
