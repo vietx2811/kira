@@ -1751,7 +1751,14 @@ button {
 .inspector {
   border-left: 0;
   border-radius: var(--shell-card-radius);
-  background: var(--glass-inspector);
+  /* Was --glass-inspector — buildProjectAppearanceStyle() writes that one
+     with alpha (0.86/0.9) for floating chrome that's meant to let the
+     canvas read through. This panel is docked, not floating (DESIGN.md §6
+     Material-On-Chrome Rule: panels stay opaque, same reasoning
+     .inbox/.library-drawer-panel already follow with --surface-drawer) —
+     Orchestrator caught canvas nodes showing through it live. Report
+     2026-11-10 bố cục review, point 1. */
+  background: var(--surface-inspector);
   box-shadow: none;
 }
 
@@ -3822,11 +3829,23 @@ button.mini-tags-more:focus-visible {
 /* point 2: the body is the node's actual content and should read as the
    panel's main mass, not the shortest block in it — a floor tall enough to
    read as "most of the panel" on a typical idea, scrolling inside the
-   popover (which has its own max-height) past that. */
+   popover (which has its own max-height) past that.
+   Report 2026-11-10 bố cục review, point 2: 220px was tuned for the old
+   centered-modal popover, where this was the one and only "main mass" in
+   the panel. In the side-peek (this is .node-rich-editor.is-overlay's only
+   remaining call site), an image/palette/diagram/placeholder's caption is
+   a short aside next to the real content above (the image preview, the
+   color swatches, ...) — a 220px floor on an empty caption just read as a
+   large dead gap there. Kept tall only for idea, where the caption is
+   still the node's one real body of text. */
 .node-rich-editor.is-overlay .node-rich-editor-content {
-  min-height: 220px;
+  min-height: 48px;
   font-size: var(--text-body);
   line-height: 1.55;
+}
+
+.node-details-idea-body .node-rich-editor.is-overlay .node-rich-editor-content {
+  min-height: 220px;
 }
 
 /* The global `p` rule is still an ad-hoc 0.86rem and would undercut the body token
@@ -4559,6 +4578,19 @@ button.mini-tags-more:focus-visible {
 
 .node-explore-tray-item:hover {
   background: var(--control-patch);
+}
+
+/* Report 2026-11-10 bố cục review, point 3: same reset pattern as
+   .node-details-actionbar button above — color="tertiary" has no resting
+   background in the kit's own classes by design (quiet, text-only until
+   hover), so without this it falls through to the browser's native button
+   chrome. Scoped to this one class, not every button in the tray: Keep/
+   Keep all use color="secondary", which already supplies its own
+   background via the kit's utility classes — a bare `button` selector
+   here would be unlayered plain CSS and so would outrank (not lose to)
+   that utility background regardless of specificity, clobbering it. */
+.node-explore-tray-discard {
+  background: transparent;
 }
 
 .node-explore-tray-item img {
@@ -6438,7 +6470,13 @@ button.palette-color-segment:focus-visible code {
   border-radius: 0 0 var(--radius-2) var(--radius-2);
 }
 
+/* Report 2026-11-10 bố cục review, minor point: gap alone is a no-op
+   without a layout mode — .inspector-card's own base rule has none
+   (display: block by default), unlike .node-version-card below, which
+   already pairs its own gap with display: grid. Without this, Name/
+   Description/Author/Kind/Style note sat flush against each other. */
 .project-file-card {
+  display: grid;
   gap: 10px;
 }
 
@@ -7625,6 +7663,19 @@ button.palette-color-segment:focus-visible code {
 .node-header-block {
   display: grid;
   gap: 4px;
+}
+
+/* Report 2026-11-10 bố cục review, point 2: the one thing worth seeing
+   first about an image node, where the caption below it is often empty.
+   "fit" (object-fit: contain, not cover) — a crop here would show a
+   different picture than clicking Crop in the action bar above actually
+   produces. */
+.node-details-image-preview {
+  width: 100%;
+  max-height: 220px;
+  border-radius: var(--radius-3);
+  background: var(--surface-1);
+  object-fit: contain;
 }
 
 .node-title-input {

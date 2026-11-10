@@ -13,6 +13,7 @@ import {
   removePendingCapture,
   resolveCaptureTargetNode,
   resolveDiscoveryAnchorTarget,
+  shouldReplaceCaptureTarget,
 } from './discoveryAnchor'
 
 const NOW = 1_700_000_000_000
@@ -162,5 +163,25 @@ describe('removePendingCapture', () => {
 describe('getPendingCaptures', () => {
   test('a node with no queue returns an empty array, not undefined', () => {
     expect(getPendingCaptures<Capture>({}, 'image', 'node-1')).toEqual([])
+  })
+})
+
+describe('shouldReplaceCaptureTarget', () => {
+  test('a placeholder target replaces (filling an empty slot)', () => {
+    expect(shouldReplaceCaptureTarget('placeholder')).toBe(true)
+  })
+
+  // The regression this guards: Keep used to replace the anchored image
+  // node's own picture outright (replaceReferenceWithReference) — an
+  // image target must now create a new linked node instead, same as
+  // idea/palette/diagram already did.
+  test('an image target does not replace', () => {
+    expect(shouldReplaceCaptureTarget('image')).toBe(false)
+  })
+
+  test('idea and diagram targets do not replace', () => {
+    expect(shouldReplaceCaptureTarget('idea')).toBe(false)
+    expect(shouldReplaceCaptureTarget('diagram')).toBe(false)
+    expect(shouldReplaceCaptureTarget('palette')).toBe(false)
   })
 })

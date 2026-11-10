@@ -119,3 +119,17 @@ export function getPendingCaptures<TNode>(
 ): TNode[] {
   return queue[pendingCaptureKey(kind, id)] ?? []
 }
+
+/**
+ * Report 2026-11-10 bố cục review, point 4: attaching a capture (whether
+ * via an explicit drop-pad target or Keep/Keep-all on a discovery-anchor
+ * tray item) to an existing node replaces it outright only when that node
+ * is an empty placeholder slot — filling an empty slot isn't destroying
+ * anything. Every other kind, image included, gets a new node linked to
+ * the target instead, so a capture never silently overwrites a reference
+ * the user already has on the canvas (the bug this fixes: Keep used to
+ * replace the anchored image node's own picture).
+ */
+export function shouldReplaceCaptureTarget(targetKind: GraphNodeKind): boolean {
+  return targetKind === 'placeholder'
+}

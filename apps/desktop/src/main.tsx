@@ -56,6 +56,7 @@ import {
   pushPendingCapture,
   removePendingCapture,
   resolveDiscoveryAnchorTarget,
+  shouldReplaceCaptureTarget,
 } from './kira/discoveryAnchor'
 import { buildPinterestSearchQuery, resolvePinterestPinUrl } from './kira/pinterestSimilar'
 import { newIdeaDefaults, resolveIdeaFaceDisplay } from './kira/newIdea'
@@ -926,6 +927,19 @@ const UI_STRINGS: Record<string, { en: string; vi: string }> = {
   'sidePeek.explore.keep': { en: 'Keep', vi: 'Giữ' },
   'sidePeek.explore.discard': { en: 'Discard', vi: 'Bỏ' },
   'sidePeek.explore.keepAll': { en: 'Keep all', vi: 'Giữ tất cả' },
+  // Report 2026-11-10 bố cục review, minor point: the rest of the
+  // side-peek's section labels, still hardcoded English.
+  'sidePeek.section.colors': { en: 'Colors', vi: 'Màu sắc' },
+  'sidePeek.section.source': { en: 'Source', vi: 'Nguồn' },
+  'sidePeek.section.history': { en: 'History', vi: 'Lịch sử' },
+  'sidePeek.section.tags': { en: 'Tags', vi: 'Thẻ' },
+  'sidePeek.section.palette': { en: 'Palette', vi: 'Bảng màu' },
+  'sidePeek.tags.suggested': { en: 'Suggested tags: click to add', vi: 'Thẻ gợi ý, bấm để thêm' },
+  'sidePeek.source.add': { en: 'Add source', vi: 'Thêm nguồn' },
+  'sidePeek.notes.aria': { en: 'Notes', vi: 'Ghi chú' },
+  'sidePeek.notes.placeholder': { en: 'Notes...', vi: 'Ghi chú...' },
+  'sidePeek.properties.updated': { en: 'Updated {time}', vi: 'Cập nhật {time}' },
+  'sidePeek.colorScheme.title': { en: 'Color Scheme', vi: 'Bảng màu canvas' },
   'library.empty.title': { en: 'No references yet', vi: 'Chưa có tư liệu tham khảo' },
   'library.empty.body': { en: 'Drag in images, paste a URL, or import a folder to start your moodboard.', vi: 'Kéo thả hình ảnh, dán URL, hoặc nhập một thư mục để bắt đầu moodboard.' },
   'library.empty.import': { en: 'Import images', vi: 'Nhập hình ảnh' },
@@ -3982,14 +3996,25 @@ function FileWorkspace({
     return positioned.id
   }
 
+  // Report 2026-11-10 bố cục review, point 4: dropping onto an existing
+  // image node used to REPLACE it outright (replaceReferenceWithReference)
+  // — fine for an intentional drop-pad gesture (the explicit-target path
+  // still had this as the obvious "put this picture here" action before
+  // this report), but destructive and unacceptable for the discovery
+  // anchor's passive "I saved this while browsing" captures, which never
+  // asked to overwrite the node they happened to be anchored to. Fixed for
+  // both callers the same way (not just the anchor/tray path) per the
+  // report's own "nhất quán nếu cùng hàm" — an image target now falls into
+  // the same create-a-new-linked-node branch every other kind already
+  // used, just positioned near the target via findOpenSlotNearAnchor
+  // (the same occupied-nodes-aware placement claimOpenSlot/
+  // claimOpenSlotInCanvas already use) instead of the old fixed +10/+8
+  // offset, so "Keep all" creating several nodes in one go doesn't stack
+  // them on top of each other. Placeholder stays a replace (filling an
+  // empty slot isn't destroying anything) — unchanged, per the report's
+  // own explicit exception for drop-pad onto a placeholder.
   function attachCaptureToGraphNode(reference: EvidenceImage, target: GraphNodeRef): string | null {
-    if (target.kind === 'image') {
-      const replacedId = replaceReferenceWithReference(target.id, reference, `Replaced reference with ${reference.title}`)
-      setActiveView('Canvas')
-      return replacedId
-    }
-
-    if (target.kind === 'placeholder') {
+    if (shouldReplaceCaptureTarget(target.kind)) {
       const attachedId = attachPlaceholderReference(target.id, reference)
       setActiveView('Canvas')
       return attachedId
@@ -3997,7 +4022,17 @@ function FileWorkspace({
 
     pushCanvasHistory()
     const timestamp = nowIso()
-    const positioned = positionReference(reference, { x: clamp(target.x + 10, 8, 92), y: clamp(target.y + 8, 8, 92) })
+    // claimOpenSlot's own ref: keepAllPendingCaptures calls this function
+    // once per queued item in a tight loop, all in the same tick, before
+    // any of them show up in `images` — without tracking claimed-but-not-
+    // yet-rendered spots the same way claimOpenSlot does, every item in
+    // that loop would resolve the same open slot and land on top of each
+    // other, the exact stacking bug this placement logic exists to avoid.
+    const occupied: PlacedPoint[] = [...ideas, ...images, ...palettes, ...diagrams, ...placeholders].map((node) => ({ x: node.x, y: node.y }))
+    occupied.push(...pendingPlacementsRef.current)
+    const slot = findOpenSlotNearAnchor({ anchor: { x: target.x, y: target.y }, occupied })
+    pendingPlacementsRef.current = [...pendingPlacementsRef.current, slot]
+    const positioned = positionReference(reference, slot)
     setImages((current) => [...current, positioned])
     setLinks((current) => [
       ...current,
@@ -4010,7 +4045,7 @@ function FileWorkspace({
         sourceKind: 'image',
         targetKind: target.kind,
         relation: target.kind === 'idea' ? 'supports' : 'related',
-        note: 'Browser capture dropped onto this node.',
+        note: target.kind === 'image' ? 'Browser capture saved while exploring this image.' : 'Browser capture dropped onto this node.',
         confidence: 0.62,
         createdAt: timestamp,
         updatedAt: timestamp,
@@ -8742,7 +8777,7 @@ function ProjectSettingsPopover({
       <section className="inspector-card project-file-card">
         <div className="section-heading">
           <Palette size={14} />
-          Color Scheme
+          {t('sidePeek.colorScheme.title', lang)}
         </div>
         <ProjectColorSummary
           appearance={appearance}
@@ -10592,6 +10627,7 @@ function GraphCanvas({
     const sourceUrlField = (
       <SourceField
         value={('sourceUrl' in node ? node.sourceUrl : '') ?? ''}
+        addLabel={t('sidePeek.source.add', lang)}
         onChange={(value) => inlineChange({ sourceUrl: value })}
       />
     )
@@ -10918,24 +10954,39 @@ function GraphCanvas({
                 node={node}
                 collapsed={collapsedDetailSections.has('properties')}
                 onToggleCollapsed={() => toggleDetailSection('properties')}
+                updatedLabel={(relativeTime) => t('sidePeek.properties.updated', lang, { time: relativeTime })}
               />
             </div>
-            <NodeRichEditor
-              kind={kind}
-              nodeId={id}
-              content={node.content}
-              placeholder={kind === 'idea' ? "Type '/' to insert a block" : "Add a caption, or '/' to insert a block"}
-              overlayMode
-              autoFocus
-              onChange={onOverlayContentChange}
-              onAskKira={onAskKira}
-              onSlashMenuOpenChange={setIsSlashMenuOpen}
-            />
+            {/* Report 2026-11-10 bố cục review, point 2: the caption editor
+                below (NodeRichEditor's own min-height, tuned for an idea's
+                long-form text) read as a large empty gap on an image node
+                with no caption typed — the thing actually worth seeing
+                here is the image itself, which nothing showed at all. */}
+            {kind === 'image' && (
+              <img
+                className="node-details-image-preview"
+                src={(node as EvidenceImage).thumb}
+                alt=""
+              />
+            )}
+            <div className={kind === 'idea' ? 'node-details-idea-body' : undefined}>
+              <NodeRichEditor
+                kind={kind}
+                nodeId={id}
+                content={node.content}
+                placeholder={kind === 'idea' ? "Type '/' to insert a block" : "Add a caption, or '/' to insert a block"}
+                overlayMode
+                autoFocus
+                onChange={onOverlayContentChange}
+                onAskKira={onAskKira}
+                onSlashMenuOpenChange={setIsSlashMenuOpen}
+              />
+            </div>
             {kind === 'palette' && (
               <section className="block-module">
                 <SectionHeader
                   icon={<PaletteIcon size={14} />}
-                  title="Colors"
+                  title={t('sidePeek.section.colors', lang)}
                   collapsed={collapsedDetailSections.has('colors')}
                   onToggleCollapsed={() => toggleDetailSection('colors')}
                 />
@@ -10958,11 +11009,11 @@ function GraphCanvas({
                 palette, not the public caption). */}
             {kind !== 'idea' && (
               <TextAreaBase
-                aria-label="Notes"
+                aria-label={t('sidePeek.notes.aria', lang)}
                 className="node-notes-input"
                 rows={2}
                 size="sm"
-                placeholder="Notes..."
+                placeholder={t('sidePeek.notes.placeholder', lang)}
                 value={('notes' in node ? node.notes : '') ?? ''}
                 onChange={(event) => inlineChange({ notes: event.target.value })}
               />
@@ -10975,6 +11026,8 @@ function GraphCanvas({
                     return (
                       <div key="tags" className={draggedBlockKey === 'tags' ? 'reorderable-block is-dragging' : 'reorderable-block'} {...dropTargetProps('tags')}>
                         <TagBlock
+                          title={t('sidePeek.section.tags', lang)}
+                          suggestedLabel={t('sidePeek.tags.suggested', lang)}
                           image={image}
                           pinned={image.tagsPinned ?? false}
                           collapsed={collapsedDetailSections.has('tags')}
@@ -11002,6 +11055,7 @@ function GraphCanvas({
                     return (
                       <div key="palette" className={draggedBlockKey === 'palette' ? 'reorderable-block is-dragging' : 'reorderable-block'} {...dropTargetProps('palette')}>
                         <PaletteBlock
+                          title={t('sidePeek.section.palette', lang)}
                           image={image}
                           pinned={image.palettePinned ?? true}
                           collapsed={collapsedDetailSections.has('palette')}
@@ -11017,7 +11071,7 @@ function GraphCanvas({
                       <section className="block-module">
                         <SectionHeader
                           icon={<Link2 size={14} />}
-                          title="Source"
+                          title={t('sidePeek.section.source', lang)}
                           collapsed={collapsedDetailSections.has('source')}
                           onToggleCollapsed={() => toggleDetailSection('source')}
                           dragHandleProps={dragHandleProps('source')}
@@ -11032,7 +11086,7 @@ function GraphCanvas({
               <section className="block-module">
                 <SectionHeader
                   icon={<Link2 size={14} />}
-                  title="Source"
+                  title={t('sidePeek.section.source', lang)}
                   collapsed={collapsedDetailSections.has('source')}
                   onToggleCollapsed={() => toggleDetailSection('source')}
                 />
@@ -11095,7 +11149,19 @@ function GraphCanvas({
                       <div className="node-explore-tray">
                         <div className="node-explore-tray-header">
                           <span>{t('sidePeek.explore.pending', lang, { count: String(pendingCaptures.length) })}</span>
-                          <Button color="tertiary" size="sm" onPress={() => onKeepAllPendingCaptures(kind, id)}>
+                          {/* Report 2026-11-10 bố cục review, point 3: kira-controls
+                              hierarchy — Keep all is the one clearly-intentional
+                              bulk action (secondary/paper), Keep per-item is the
+                              same tier at a smaller size, Discard is quiet (no
+                              background until hover). color="tertiary" alone, as
+                              all three used before this fix, has no resting
+                              background in the kit's own classes — it depends on
+                              an ancestor plain-CSS reset the same way
+                              .node-details-actionbar button already supplies for
+                              the action bar above; this tray had none, so these
+                              fell through to the browser's native button
+                              chrome (measured ~2:1, read as disabled). */}
+                          <Button color="secondary" size="sm" onPress={() => onKeepAllPendingCaptures(kind, id)}>
                             {t('sidePeek.explore.keepAll', lang)}
                           </Button>
                         </div>
@@ -11103,10 +11169,10 @@ function GraphCanvas({
                           <div key={pendingCapture.id} className="node-explore-tray-item">
                             <img src={pendingCapture.thumb} alt="" />
                             <span className="node-explore-tray-item-title">{pendingCapture.title}</span>
-                            <Button color="tertiary" size="sm" onPress={() => onKeepPendingCapture(kind, id, pendingCapture.id)}>
+                            <Button color="secondary" size="xs" onPress={() => onKeepPendingCapture(kind, id, pendingCapture.id)}>
                               {t('sidePeek.explore.keep', lang)}
                             </Button>
-                            <Button color="tertiary" size="sm" onPress={() => onDiscardPendingCapture(kind, id, pendingCapture.id)}>
+                            <Button className="node-explore-tray-discard" color="tertiary" size="xs" onPress={() => onDiscardPendingCapture(kind, id, pendingCapture.id)}>
                               {t('sidePeek.explore.discard', lang)}
                             </Button>
                           </div>
@@ -11124,7 +11190,7 @@ function GraphCanvas({
             <section className="block-module">
               <SectionHeader
                 icon={<History size={14} />}
-                title="History"
+                title={t('sidePeek.section.history', lang)}
                 collapsed={collapsedDetailSections.has('history')}
                 onToggleCollapsed={() => toggleDetailSection('history')}
               />
@@ -14179,7 +14245,10 @@ function formatRelativeShort(iso: string): string {
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
-function buildPropertiesSummaryParts(node: Pick<Idea | EvidenceImage | PaletteNode | DiagramNode | PlaceholderNode, 'importance' | 'sourceUrl' | 'updatedAt'>): string[] {
+function buildPropertiesSummaryParts(
+  node: Pick<Idea | EvidenceImage | PaletteNode | DiagramNode | PlaceholderNode, 'importance' | 'sourceUrl' | 'updatedAt'>,
+  formatUpdated: (relativeTime: string) => string,
+): string[] {
   const parts: string[] = []
   if (node.sourceUrl) {
     const host = extractHostname(node.sourceUrl)
@@ -14188,7 +14257,7 @@ function buildPropertiesSummaryParts(node: Pick<Idea | EvidenceImage | PaletteNo
   if (typeof node.importance === 'number' && node.importance !== 1) parts.push(formatImportance(node.importance))
   if (node.updatedAt) {
     const relative = formatRelativeShort(node.updatedAt)
-    if (relative) parts.push(`Updated ${relative}`)
+    if (relative) parts.push(formatUpdated(relative))
   }
   return parts
 }
@@ -14200,9 +14269,11 @@ function buildPropertiesSummaryParts(node: Pick<Idea | EvidenceImage | PaletteNo
 // while editing, same as the title/properties row's own disclosure model.
 function SourceField({
   value,
+  addLabel,
   onChange,
 }: {
   value: string
+  addLabel: string
   onChange: (value: string) => void
 }) {
   const [isEditing, setIsEditing] = useState(false)
@@ -14216,7 +14287,7 @@ function SourceField({
     ) : (
       <button type="button" className="quiet-button sm source-add-button" onClick={() => setIsEditing(true)}>
         <Link2 size={12} aria-hidden="true" />
-        Add source
+        {addLabel}
       </button>
     )
   }
@@ -14248,6 +14319,7 @@ function NodeProperties({
   node,
   collapsed,
   onToggleCollapsed,
+  updatedLabel,
 }: {
   node: Pick<Idea | EvidenceImage | PaletteNode | DiagramNode | PlaceholderNode, 'importance' | 'createdAt' | 'addedAt' | 'updatedAt' | 'sourceUrl'> & {
     width?: number
@@ -14257,8 +14329,9 @@ function NodeProperties({
   }
   collapsed: boolean
   onToggleCollapsed: () => void
+  updatedLabel: (relativeTime: string) => string
 }) {
-  const summaryParts = buildPropertiesSummaryParts(node)
+  const summaryParts = buildPropertiesSummaryParts(node, updatedLabel)
   return (
     <div className="node-properties">
       <button type="button" className="node-properties-summary" onClick={onToggleCollapsed} aria-expanded={!collapsed}>
@@ -15456,6 +15529,8 @@ function isAiStatusError(status: string): boolean {
 }
 
 function TagBlock({
+  title,
+  suggestedLabel,
   image,
   pinned,
   collapsed,
@@ -15475,6 +15550,8 @@ function TagBlock({
   onTogglePinned,
   dragHandleProps,
 }: {
+  title: string
+  suggestedLabel: string
   image: EvidenceImage
   pinned: boolean
   collapsed: boolean
@@ -15512,7 +15589,7 @@ function TagBlock({
     <section className="block-module">
       <SectionHeader
         icon={<Tag size={14} />}
-        title="Tags"
+        title={title}
         collapsed={collapsed}
         onToggleCollapsed={onToggleCollapsed}
         dragHandleProps={dragHandleProps}
@@ -15603,7 +15680,7 @@ function TagBlock({
               the confirmed-tags row reads as just another tag — unclear
               it's pending and that clicking its label (not just the X)
               accepts it. */}
-          <span className="suggestion-label">Suggested tags: click to add</span>
+          <span className="suggestion-label">{suggestedLabel}</span>
           <div className="suggestion-chips">
           {image.suggestions.map((suggestion) => {
             const label = suggestionLabel(suggestion)
@@ -15639,6 +15716,7 @@ function TagBlock({
 // pin-toggleable block. Pinned renders the same swatch strip directly under
 // the thumbnail on the node face, at the thumbnail's own width.
 function PaletteBlock({
+  title,
   image,
   pinned,
   collapsed,
@@ -15646,6 +15724,7 @@ function PaletteBlock({
   onTogglePinned,
   dragHandleProps,
 }: {
+  title: string
   image: EvidenceImage
   pinned: boolean
   collapsed: boolean
@@ -15657,7 +15736,7 @@ function PaletteBlock({
     <section className="block-module">
       <SectionHeader
         icon={<PaletteIcon size={14} />}
-        title="Palette"
+        title={title}
         collapsed={collapsed}
         onToggleCollapsed={onToggleCollapsed}
         dragHandleProps={dragHandleProps}
