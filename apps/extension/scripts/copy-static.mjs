@@ -1,3 +1,4 @@
+import { lstatSync } from 'node:fs'
 import { copyFile, cp, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -21,4 +22,6 @@ await writeFile(contentPath, contentScript.replace(/\nexport \{\};\s*$/u, '\n'))
 // The Safari target ships checked-in copies of the same bundle. Mirroring them
 // here is what stops Safari from silently running an older build than Chrome.
 const safariResources = join(root, 'safari', 'KIRA Safari', 'KIRA Safari Extension', 'Resources')
-await cp(dist, safariResources, { recursive: true })
+// Skip symlinks: a stray `dist/dist -> dist` (left by running `ln -s` twice
+// when linking dist into a worktree) was mirrored into the Safari bundle.
+await cp(dist, safariResources, { recursive: true, filter: (src) => !lstatSync(src).isSymbolicLink() })
