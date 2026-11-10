@@ -101,6 +101,7 @@ import {
   ArrowDownToLine,
   ArrowUp,
   ArrowUpFromLine,
+  ArrowUpRight,
   Bot,
   Box,
   Brain,
@@ -903,6 +904,8 @@ const UI_STRINGS: Record<string, { en: string; vi: string }> = {
   'canvas.discoverToggle.label': { en: 'Suggest weak links', vi: 'Gợi ý liên kết' },
   'canvas.discoverChip.active': { en: 'Showing suggested links', vi: 'Đang hiện gợi ý liên kết' },
   'canvas.discoverChip.off': { en: 'Turn off', vi: 'Tắt' },
+  'canvas.node.pinterestSimilar.title': { en: 'Find similar on Pinterest', vi: 'Tìm ảnh tương tự trên Pinterest' },
+  'canvas.node.pinterestSimilar.description': { en: 'Open Pinterest in browser', vi: 'Mở Pinterest trong trình duyệt' },
   'library.empty.title': { en: 'No references yet', vi: 'Chưa có tư liệu tham khảo' },
   'library.empty.body': { en: 'Drag in images, paste a URL, or import a folder to start your moodboard.', vi: 'Kéo thả hình ảnh, dán URL, hoặc nhập một thư mục để bắt đầu moodboard.' },
   'library.empty.import': { en: 'Import images', vi: 'Nhập hình ảnh' },
@@ -10272,6 +10275,29 @@ function GraphCanvas({
         <button type="button" aria-label="Ask Kira about the selection" title="Ask Kira" onClick={() => openKiraFromRail()}>
           <KiraMark size={12} state={kiraSession?.status === 'thinking' ? 'thinking' : 'rest'} />
         </button>
+        {/* research pinterest-discoverability 2026-11-10 item 3: the
+            report's bug (2) was a multi-select of images having no
+            Pinterest action at all, since the single-node toolbar button
+            only renders when exactly one node is selected. Only shows when
+            every selected node is an image (GraphNodeRef.kind), and always
+            uses the first one — same "use the first image" scope the task
+            asked for rather than a per-image queue. */}
+        {refs.length > 0 && refs.every((ref) => ref.kind === 'image') && (
+          <button
+            type="button"
+            aria-label={t('canvas.node.pinterestSimilar.title', lang)}
+            title={t('canvas.node.pinterestSimilar.title', lang)}
+            onClick={() => {
+              const firstImage = images.find((image) => image.id === refs[0].id)
+              if (firstImage) onFindSimilarOnPinterest('image', firstImage.id, firstImage)
+            }}
+          >
+            <span className="node-toolbar-pinterest-icon">
+              <Search size={13} />
+              <ArrowUpRight size={9} className="node-toolbar-pinterest-icon-badge" aria-hidden="true" />
+            </span>
+          </button>
+        )}
         {graphMode === 'edit' && (
           <>
             <span className="node-toolbar-sep" aria-hidden="true" />
@@ -10439,12 +10465,30 @@ function GraphCanvas({
                 already branches per kind at the data layer; this is the
                 same branch at the toolbar). */}
             {kind === 'image' && (
-              <Tooltip title="Find similar on Pinterest" delay={200}>
+              // research pinterest-discoverability 2026-11-10: a bare
+              // ExternalLink glyph read as "open a link", not "Pinterest" —
+              // no one recognized it live. Lucide has no Pinterest brand
+              // icon (kira-controls §6.1: glyph UI stays Lucide-only, no
+              // brand/color icons mixed into this family), so this composes
+              // the fallback the research called for instead: a search
+              // glyph (same action family as the internal "Find similar"
+              // button below) with a small outward-arrow badge marking it
+              // as leaving the app. The title+description tooltip is what
+              // actually names "Pinterest" and "browser" — the icon alone
+              // only has to say "search, external".
+              <Tooltip
+                title={t('canvas.node.pinterestSimilar.title', lang)}
+                description={t('canvas.node.pinterestSimilar.description', lang)}
+                delay={200}
+              >
                 <TooltipTrigger
-                  aria-label="Find similar on Pinterest"
+                  aria-label={t('canvas.node.pinterestSimilar.title', lang)}
                   onPress={() => onFindSimilarOnPinterest(kind, id, node as EvidenceImage)}
                 >
-                  <ExternalLink size={13} />
+                  <span className="node-toolbar-pinterest-icon">
+                    <Search size={13} />
+                    <ArrowUpRight size={9} className="node-toolbar-pinterest-icon-badge" aria-hidden="true" />
+                  </span>
                 </TooltipTrigger>
               </Tooltip>
             )}
@@ -10545,6 +10589,26 @@ function GraphCanvas({
                       isDisabled={findSimilarRunningId === id}
                       onPress={() => void onReferenceFindSimilar(id)}
                       iconLeading={findSimilarRunningId === id ? <span className="ai-inline-spinner" aria-hidden="true" /> : <Search size={13} />}
+                    />
+                  </Tooltip>
+                  {/* Distinct from "Find similar" above: that one searches
+                      inside the library, this opens Pinterest in the
+                      browser. The text tooltip (and the "Open Pinterest in
+                      browser" description) carries the distinction here —
+                      ExternalLink alone is fine once the label says
+                      "Pinterest", unlike the icon-only toolbar button above
+                      which has no room for text. */}
+                  <Tooltip
+                    title={t('canvas.node.pinterestSimilar.title', lang)}
+                    description={t('canvas.node.pinterestSimilar.description', lang)}
+                    delay={200}
+                  >
+                    <Button
+                      color="tertiary"
+                      size="sm"
+                      aria-label={t('canvas.node.pinterestSimilar.title', lang)}
+                      onPress={() => onFindSimilarOnPinterest(kind, id, node as EvidenceImage)}
+                      iconLeading={<ExternalLink size={13} />}
                     />
                   </Tooltip>
                   <Tooltip title="Crop" delay={200}>
@@ -12342,6 +12406,25 @@ function GraphCanvas({
                 <button type="button" role="menuitem" onClick={() => { onReferenceFindSimilar(nodeContextMenu.nodes[0].id); setNodeContextMenu(null) }}>
                   <Search size={13} />
                   Find similar
+                </button>
+                {/* research pinterest-discoverability 2026-11-10: this was
+                    the right-click entry the discoverability report found
+                    missing entirely — only the icon-only toolbar button
+                    existed before. Looks up the EvidenceImage from `images`
+                    (same pattern as onReferenceConvertToPalette's call site)
+                    since the context menu only carries the node id, not the
+                    node object onFindSimilarOnPinterest needs. */}
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    const targetImage = images.find((image) => image.id === nodeContextMenu.nodes[0].id)
+                    if (targetImage) onFindSimilarOnPinterest('image', targetImage.id, targetImage)
+                    setNodeContextMenu(null)
+                  }}
+                >
+                  <ExternalLink size={13} />
+                  {t('canvas.node.pinterestSimilar.title', lang)}
                 </button>
                 <button type="button" role="menuitem" onClick={() => { onReferenceCrop(nodeContextMenu.nodes[0].id); setNodeContextMenu(null) }}>
                   <CropIcon size={13} />
