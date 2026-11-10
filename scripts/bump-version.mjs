@@ -5,7 +5,7 @@
 //
 // Release 1.1.0 phải sửa tay 17 file (VERSION, 4 package.json, Cargo.toml/lock,
 // Info.plist, tauri.conf.json, 2 manifest extension, project Safari, tài liệu
-// đóng gói, README). Script này thay đúng những chỗ đó, kiểm từng chỗ thật sự
+// đóng gói, README; sign-kira.sh nay tự đọc version từ Info.plist). Script này thay đúng những chỗ đó, kiểm từng chỗ thật sự
 // đổi, và dừng (không ghi gì) nếu một mẫu không khớp: thà báo lỗi còn hơn
 // release với một file lệch version.
 //
@@ -79,7 +79,6 @@ const plan = [
     ],
   },
   { rel: 'packaging/macos/HUONG-DAN.md', edits: [[new RegExp(`KIRA ${cur}`, 'g'), `KIRA ${next}`, null]] },
-  { rel: 'packaging/macos/sign-kira.sh', edits: [[new RegExp(`KIRA ${cur}`, 'g'), `KIRA ${next}`, 2]] },
   // README: link tải, tên file zip, dòng "Version". Thay mọi lần xuất hiện của
   // version cũ, vì README chỉ nhắc version đang phát hành.
   { rel: 'README.md', edits: [[new RegExp(`(?<![\\d.])${cur}(?![\\d.])`, 'g'), next, null]] },

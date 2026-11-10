@@ -35,16 +35,22 @@ else
   xattr -cr "$APP_PATH" 2>/dev/null || true
 fi
 
+VERSION="$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$APP_PATH/Contents/Info.plist" 2>/dev/null || echo "?")"
+
 if [[ "$IDENTITY" == "-" ]]; then
   SIGN_ARGS=(--force --sign -)
-  echo "Đang ký ad-hoc KIRA 1.1.0 cho máy hiện tại…"
+  echo "Đang ký ad-hoc KIRA $VERSION cho máy hiện tại…"
 else
   SIGN_ARGS=(--force --sign "$IDENTITY" --options runtime --timestamp)
-  echo "Đang ký KIRA 1.1.0 bằng: $IDENTITY"
+  echo "Đang ký KIRA $VERSION bằng: $IDENTITY"
 fi
 
+# Inside-out: every nested Mach-O first (the helpers in Contents/MacOS and the
+# Safari extension's own binary), then the extension bundle with its sandbox
+# entitlements, then the app itself last so its seal covers the signed parts.
 while IFS= read -r -d '' executable; do
   if file "$executable" | grep -q "Mach-O"; then
+    echo "  ký $(basename "$executable")"
     codesign "${SIGN_ARGS[@]}" "$executable"
   fi
 done < <(find "$APP_PATH/Contents" -type f -perm -111 -print0)
