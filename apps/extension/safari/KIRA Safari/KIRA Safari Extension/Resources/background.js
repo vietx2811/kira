@@ -1,6 +1,7 @@
 const pendingCaptureKey = 'pendingCapture';
 const captureEndpoint = 'http://127.0.0.1:47653/capture';
 const contextEndpoint = 'http://127.0.0.1:47653/context';
+const connectionEndpoint = 'http://127.0.0.1:47653/connection';
 const dragWindowPath = 'drag-window.html';
 let dragWindowId = null;
 let dragWindowOpening = false;
@@ -209,6 +210,10 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         });
         return true;
     }
+    if (message.type === 'kira-post-connection') {
+        void postConnectionResult(message.connection).then((result) => sendResponse({ ok: result === 'sent' }));
+        return true;
+    }
     if (message.type === 'kira-get-context') {
         void fetchCaptureContext().then((context) => sendResponse({ ok: context !== null, context }));
         return true;
@@ -288,11 +293,32 @@ function isBridgeMessage(message) {
     const candidate = message;
     if (candidate.type === 'kira-get-context')
         return true;
+    if (candidate.type === 'kira-post-connection') {
+        return candidate.connection?.service === 'pinterest' && typeof candidate.connection.loggedIn === 'boolean';
+    }
     if (candidate.type !== 'kira-post-capture' && candidate.type !== 'kira-open-drag-window')
         return false;
     return candidate.capture?.kiraCapture === 1
         && (candidate.capture.kind === 'image' || candidate.capture.kind === 'page')
         && typeof candidate.capture.url === 'string';
+}
+// Unlike captures (postCaptureResult + enqueuePendingCapture below), a
+// connection-status report that fails to send is never queued and retried:
+// it's a "last seen" snapshot, not something the user is waiting on, and
+// the extension re-derives it and tries again on its own the next time the
+// page's login state changes (see content.ts's reportPinterestLoginSignal).
+async function postConnectionResult(connection) {
+    try {
+        const response = await fetch(connectionEndpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(connection),
+        });
+        return response.ok ? 'sent' : 'rejected';
+    }
+    catch {
+        return 'unreachable';
+    }
 }
 // Distinguishes "the app is closed" (queue it, retry later) from "the app
 // is open and refused this payload" (it always will — don't queue it).

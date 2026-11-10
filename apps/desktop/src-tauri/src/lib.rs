@@ -41,6 +41,11 @@ const SNAPSHOT_FIELDS_LEVEL: &str = "2";
 const CURRENT_SNAPSHOT_VERSION: i64 = 2;
 const CAPTURE_SERVER_ADDR: &str = "127.0.0.1:47653";
 const CAPTURE_EVENT: &str = "kira:capture";
+// docs/research/2026-11-09-pinterest-similar-flow.md §A + Orchestrator
+// decision 2026-11-11: the browser extension's only way to know a
+// connected-service login state, pushed over the same loopback capture
+// server as /capture.
+const CONNECTION_EVENT: &str = "kira:connection";
 const EAGLE_WEB_API_ADDR: &str = "127.0.0.1:41595";
 const AI_PROVIDER_KEYCHAIN_SERVICE: &str = "vxstudio.kira.ai-provider";
 
@@ -4868,6 +4873,19 @@ fn handle_capture_stream(mut stream: TcpStream, app: &AppHandle) -> Result<(), S
                 &format!("{{\"ok\":false,\"error\":{}}}", json_quote(&reason)),
             ),
         },
+        CaptureHttpRequest::ConnectionPost(payload) => match validate_connection_payload(&payload) {
+            Ok(()) => {
+                app.emit(CONNECTION_EVENT, payload)
+                    .map_err(|error| error.to_string())?;
+                http_response(200, "OK", allow_origin, "{\"ok\":true}")
+            }
+            Err(reason) => http_response(
+                400,
+                "Bad Request",
+                allow_origin,
+                &format!("{{\"ok\":false,\"error\":{}}}", json_quote(&reason)),
+            ),
+        },
         CaptureHttpRequest::Invalid => http_response(404, "Not Found", allow_origin, "{\"ok\":false}"),
     };
 
@@ -4944,6 +4962,7 @@ enum CaptureHttpRequest {
     Options,
     Context,
     Post(String),
+    ConnectionPost(String),
     Invalid,
 }
 
@@ -4952,11 +4971,20 @@ fn parse_capture_http_request(request: &str) -> CaptureHttpRequest {
     let headers = parts.next().unwrap_or_default();
     let body = parts.next().unwrap_or_default().trim();
 
-    if headers.starts_with("OPTIONS /capture ") || headers.starts_with("OPTIONS /context ") {
+    if headers.starts_with("OPTIONS /capture ")
+        || headers.starts_with("OPTIONS /context ")
+        || headers.starts_with("OPTIONS /connection ")
+    {
         return CaptureHttpRequest::Options;
     }
     if headers.starts_with("GET /context ") {
         return CaptureHttpRequest::Context;
+    }
+    if headers.starts_with("POST /connection ") {
+        if body.is_empty() {
+            return CaptureHttpRequest::Invalid;
+        }
+        return CaptureHttpRequest::ConnectionPost(body.to_string());
     }
     if !headers.starts_with("POST /capture ") || body.is_empty() {
         return CaptureHttpRequest::Invalid;
@@ -4993,6 +5021,43 @@ fn validate_capture_payload(body: &str) -> Result<(), String> {
     }
     if value.get("source").and_then(serde_json::Value::as_str).is_none() {
         return Err("missing source".to_string());
+    }
+    Ok(())
+}
+
+// docs/research/2026-11-09-pinterest-similar-flow.md §A + Orchestrator
+// decision 2026-11-11: the extension sends nothing but this one bit, never a
+// cookie, URL, name, or picture (CLAUDE.md "Ràng buộc đã chốt", this task's
+// own hard constraints) — so the schema is as narrow as the payload itself.
+// Exactly two fields: `service` from a closed allowlist, room for a second
+// connected service later without widening what any sender on loopback can
+// write under an arbitrary key, and a plain bool. An extra field riding
+// along on an otherwise-valid payload is rejected too, not silently
+// ignored, so a sender that drifts from this shape finds out instead of a
+// partial write landing quietly.
+const KNOWN_CONNECTION_SERVICES: &[&str] = &["pinterest"];
+
+fn validate_connection_payload(body: &str) -> Result<(), String> {
+    let value: serde_json::Value =
+        serde_json::from_str(body).map_err(|_| "invalid JSON".to_string())?;
+    let object = value
+        .as_object()
+        .ok_or_else(|| "payload must be a JSON object".to_string())?;
+    if let Some(unknown) = object
+        .keys()
+        .find(|key| key.as_str() != "service" && key.as_str() != "loggedIn")
+    {
+        return Err(format!("unknown field: {unknown}"));
+    }
+    let service = object
+        .get("service")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| "missing service".to_string())?;
+    if !KNOWN_CONNECTION_SERVICES.contains(&service) {
+        return Err(format!("unsupported service: {service}"));
+    }
+    if !matches!(object.get("loggedIn"), Some(serde_json::Value::Bool(_))) {
+        return Err("loggedIn must be a boolean".to_string());
     }
     Ok(())
 }
@@ -6291,6 +6356,92 @@ mod tests {
         let payload = "{\"kiraCapture\":1,\"kind\":\"video\",\"url\":\"https://example.com/a.mp4\",\"title\":\"A\",\"source\":\"example.com\"}";
         let error = validate_capture_payload(payload).unwrap_err();
         assert_eq!(error, "kind must be \"image\" or \"page\"");
+    }
+
+    #[test]
+    fn connection_http_request_parses_post_body_and_options() {
+        let request = "POST /connection HTTP/1.1\r\nContent-Type: application/json\r\n\r\n{\"service\":\"pinterest\",\"loggedIn\":true}";
+        match parse_capture_http_request(request) {
+            CaptureHttpRequest::ConnectionPost(payload) => {
+                assert_eq!(payload, "{\"service\":\"pinterest\",\"loggedIn\":true}")
+            }
+            _ => panic!("expected connection post"),
+        }
+
+        match parse_capture_http_request("OPTIONS /connection HTTP/1.1\r\n\r\n") {
+            CaptureHttpRequest::Options => {}
+            _ => panic!("expected options"),
+        }
+
+        match parse_capture_http_request("POST /connection HTTP/1.1\r\n\r\n") {
+            CaptureHttpRequest::Invalid => {}
+            _ => panic!("expected invalid for an empty body"),
+        }
+    }
+
+    #[test]
+    fn validate_connection_payload_accepts_known_service_and_bool() {
+        assert_eq!(
+            validate_connection_payload("{\"service\":\"pinterest\",\"loggedIn\":true}"),
+            Ok(())
+        );
+        assert_eq!(
+            validate_connection_payload("{\"service\":\"pinterest\",\"loggedIn\":false}"),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn validate_connection_payload_rejects_broken_json() {
+        let error = validate_connection_payload("{not json").unwrap_err();
+        assert_eq!(error, "invalid JSON");
+    }
+
+    #[test]
+    fn validate_connection_payload_rejects_non_object() {
+        let error = validate_connection_payload("[1,2,3]").unwrap_err();
+        assert_eq!(error, "payload must be a JSON object");
+    }
+
+    #[test]
+    fn validate_connection_payload_rejects_unknown_service() {
+        let error =
+            validate_connection_payload("{\"service\":\"instagram\",\"loggedIn\":true}")
+                .unwrap_err();
+        assert_eq!(error, "unsupported service: instagram");
+    }
+
+    #[test]
+    fn validate_connection_payload_rejects_missing_service() {
+        let error = validate_connection_payload("{\"loggedIn\":true}").unwrap_err();
+        assert_eq!(error, "missing service");
+    }
+
+    #[test]
+    fn validate_connection_payload_rejects_non_bool_logged_in() {
+        let error =
+            validate_connection_payload("{\"service\":\"pinterest\",\"loggedIn\":\"yes\"}")
+                .unwrap_err();
+        assert_eq!(error, "loggedIn must be a boolean");
+    }
+
+    #[test]
+    fn validate_connection_payload_rejects_missing_logged_in() {
+        let error = validate_connection_payload("{\"service\":\"pinterest\"}").unwrap_err();
+        assert_eq!(error, "loggedIn must be a boolean");
+    }
+
+    // The schema is exactly {service, loggedIn} — a well-formed payload that
+    // also smuggles a third field (a cookie, a URL, anything else a sender
+    // on loopback might try to widen this to) is rejected outright rather
+    // than the extra field being silently dropped.
+    #[test]
+    fn validate_connection_payload_rejects_unknown_extra_field() {
+        let error = validate_connection_payload(
+            "{\"service\":\"pinterest\",\"loggedIn\":true,\"cookie\":\"abc\"}",
+        )
+        .unwrap_err();
+        assert_eq!(error, "unknown field: cookie");
     }
 
     #[test]

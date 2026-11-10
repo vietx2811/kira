@@ -59,6 +59,13 @@ import {
   shouldReplaceCaptureTarget,
 } from './kira/discoveryAnchor'
 import { buildPinterestSearchQuery, resolvePinterestPinUrl } from './kira/pinterestSimilar'
+import {
+  classifyPinterestConnectionStatus,
+  formatConnectionLastSeen,
+  parseKiraConnectionPayload,
+  type PinterestConnectionKnowledge,
+  resolvePinterestOpenUrl,
+} from './kira/pinterestConnection'
 import { newIdeaDefaults, resolveIdeaFaceDisplay } from './kira/newIdea'
 import { visibleCanvasAreaCenterPercent } from './kira/visibleCanvasCenter'
 import { findOpenSlotNearAnchor, type PlacedPoint } from './kira/placeNode'
@@ -920,6 +927,23 @@ const UI_STRINGS: Record<string, { en: string; vi: string }> = {
   'canvas.discoverChip.off': { en: 'Turn off', vi: 'Tắt' },
   'canvas.node.pinterestSimilar.title': { en: 'Find similar on Pinterest', vi: 'Tìm ảnh tương tự trên Pinterest' },
   'canvas.node.pinterestSimilar.description': { en: 'Open Pinterest in browser', vi: 'Mở Pinterest trong trình duyệt' },
+  // docs/research/2026-11-09-pinterest-similar-flow.md §A, "Cập nhật
+  // 2026-11-10" phương án 3 — Settings > Capture > Connections.
+  'settings.connections.title': { en: 'Connections', vi: 'Kết nối' },
+  'settings.connections.description': {
+    en: 'A connected service is one the KIRA extension has seen you signed into on its own site. KIRA never reads or stores a password or a token.',
+    vi: 'Một dịch vụ đã kết nối là dịch vụ extension KIRA từng thấy bạn đăng nhập trên trang của chính nó. KIRA không đọc hay lưu mật khẩu hay token.',
+  },
+  'settings.connections.pinterest.name': { en: 'Pinterest', vi: 'Pinterest' },
+  'settings.connections.status.loggedIn': { en: 'Signed in', vi: 'Đã đăng nhập' },
+  'settings.connections.status.loggedOut': { en: 'Signed out', vi: 'Chưa đăng nhập' },
+  'settings.connections.status.unknown': { en: 'Unknown', vi: 'Chưa rõ' },
+  'settings.connections.lastSeen.prefix': { en: 'Last seen', vi: 'Thấy lần cuối' },
+  'settings.connections.lastSeen.unknown': {
+    en: 'Open a Pinterest tab for the extension to check.',
+    vi: 'Mở một tab Pinterest để extension kiểm tra.',
+  },
+  'settings.connections.openLogin': { en: 'Open Pinterest to sign in', vi: 'Mở Pinterest để đăng nhập' },
   // bố cục 2026-11-10: node-details-popover moved into a fixed side-peek.
   'sidePeek.close': { en: 'Close', vi: 'Đóng' },
   'sidePeek.explore.title': { en: 'Explore', vi: 'Khám phá' },
@@ -1166,6 +1190,50 @@ const useRailIconModeStore = create<{ mode: RailIconMode; setMode: (mode: RailIc
     set({ mode })
   },
 }))
+
+// App-wide, like AI settings and rail icons above: the extension's last-seen
+// Pinterest login status isn't scoped to a project either (docs/research/
+// 2026-11-09-pinterest-similar-flow.md §A, "Cập nhật 2026-11-10", phương án
+// 3). Keyed by service so a second connection row (if one is ever added)
+// doesn't need a new storage key.
+type PinterestConnectionsState = { pinterest: PinterestConnectionKnowledge | null }
+const CONNECTIONS_STORAGE_KEY = 'kira:connections'
+
+function readStoredConnections(): PinterestConnectionsState {
+  const fallback: PinterestConnectionsState = { pinterest: null }
+  try {
+    const raw = localStorage.getItem(CONNECTIONS_STORAGE_KEY)
+    if (!raw) return fallback
+    const parsed = JSON.parse(raw) as Partial<PinterestConnectionsState>
+    const pinterest = parsed.pinterest
+    if (
+      pinterest &&
+      typeof pinterest === 'object' &&
+      typeof pinterest.loggedIn === 'boolean' &&
+      typeof pinterest.lastSeenAt === 'string'
+    ) {
+      return { pinterest }
+    }
+    return fallback
+  } catch {
+    return fallback
+  }
+}
+
+const useConnectionsStore = create<PinterestConnectionsState & { setPinterestStatus: (loggedIn: boolean) => void }>()(
+  (set) => ({
+    ...readStoredConnections(),
+    setPinterestStatus: (loggedIn) => {
+      const next: PinterestConnectionsState = { pinterest: { loggedIn, lastSeenAt: new Date().toISOString() } }
+      try {
+        localStorage.setItem(CONNECTIONS_STORAGE_KEY, JSON.stringify(next))
+      } catch {
+        // ignore persistence failures (private mode, etc.)
+      }
+      set(next)
+    },
+  }),
+)
 
 const KIRA_PANEL_MIN_WIDTH = 320
 const KIRA_PANEL_MAX_WIDTH = 480
@@ -2558,6 +2626,8 @@ function FileWorkspace({
   const storedAiSettings = useAiSettingsStore((state) => state.settings)
   const updateAiSettings = useAiSettingsStore((state) => state.update)
   const aiSettings = storedAiSettings ?? initialProject.aiSettings
+  // App-wide (useConnectionsStore), same reasoning as aiSettings above.
+  const pinterestConnectionStatus = useConnectionsStore((state) => state.pinterest)
   const aiProviders = useMemo(() => withDefaultAiProviders(aiSettings.providers), [aiSettings.providers])
   const aiRoutingMode = aiSettings.routingMode
   const selectedAiProviderId = aiSettings.selectedProviderId
@@ -3823,11 +3893,19 @@ function FileWorkspace({
   // lib.rs. Sets the discovery anchor first so a capture made during this
   // browsing trip (hover-Save, Alt+Shift+K) attaches back to this node
   // even with no explicit drop-pad target.
+  //
+  // docs/research/2026-11-09-pinterest-similar-flow.md §A, "Cập nhật
+  // 2026-11-10" phương án 3: when the extension's last-seen status says the
+  // user is signed out of Pinterest, open the login page with `next` set to
+  // this destination instead of the destination itself — resolvePinterestOpenUrl
+  // leaves "unknown" and "logged in" untouched (Pinterest's own
+  // "Welcome to Pinterest" gate already covers the unknown case).
   function openPinterestSimilar(kind: GraphNodeKind, id: string, node: EvidenceImage) {
     const nextAnchor: DiscoveryAnchor = { kind, id, expiresAt: Date.now() + DISCOVERY_ANCHOR_TTL_MS }
     discoveryAnchorRef.current = nextAnchor
     setDiscoveryAnchorState(nextAnchor)
-    void openExternalPinterestUrl(buildPinterestSimilarUrl(node))
+    const destinationUrl = buildPinterestSimilarUrl(node)
+    void openExternalPinterestUrl(resolvePinterestOpenUrl(pinterestConnectionStatus, destinationUrl))
   }
 
   // User-facing control for the anchor the chip below shows: an explicit
@@ -8085,6 +8163,8 @@ function FileWorkspace({
             localModelAvailable={localModelAvailable}
             localModelStatus={localModelStatus}
             extensionInstallStatus={extensionInstallStatus}
+            pinterestConnectionStatus={pinterestConnectionStatus}
+            onOpenPinterestLogin={() => void openExternalPinterestUrl('https://www.pinterest.com/login/')}
             status={aiSettingsStatus}
             lang={lang}
             setLang={setLang}
@@ -8332,6 +8412,33 @@ function App() {
       unlisteners.forEach((unlisten) => unlisten())
     }
   }, [])
+
+  // App-wide, unlike the kira:capture listener in FileWorkspace (which only
+  // the active tab runs, since a capture lands on a specific file): the
+  // Pinterest connection status in Settings isn't attached to any one open
+  // file, so this listens once here regardless of which tab is active or
+  // even whether any project is open yet.
+  const setPinterestConnectionStatus = useConnectionsStore((state) => state.setPinterestStatus)
+  useEffect(() => {
+    if (!isTauriRuntime()) return
+    let unlisten: (() => void) | undefined
+    let disposed = false
+    void listen<string>('kira:connection', (event) => {
+      const connection = parseKiraConnectionPayload(event.payload)
+      if (!connection) return
+      if (connection.service === 'pinterest') setPinterestConnectionStatus(connection.loggedIn)
+    }).then((cleanup) => {
+      if (disposed) {
+        cleanup()
+        return
+      }
+      unlisten = cleanup
+    })
+    return () => {
+      disposed = true
+      unlisten?.()
+    }
+  }, [setPinterestConnectionStatus])
 
   useEffect(() => {
     const timer = window.setTimeout(() => setShowSplash(false), 1050)

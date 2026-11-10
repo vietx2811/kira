@@ -14,6 +14,7 @@ import type {
   AiTaskRoute,
   ExtensionInstallStatus,
 } from '@/kira/ai/aiProviderDomain'
+import type { PinterestConnectionKnowledge } from '@/kira/pinterestConnection'
 import { SettingsGeneralTab } from './SettingsGeneralTab'
 import { SettingsCaptureTab } from './SettingsCaptureTab'
 import { SettingsAiProvidersTab, type ModelSettings } from './SettingsAiProvidersTab'
@@ -88,6 +89,8 @@ export function SettingsView({
   localModelAvailable,
   localModelStatus,
   extensionInstallStatus,
+  pinterestConnectionStatus,
+  onOpenPinterestLogin,
   status,
   lang,
   setLang,
@@ -124,6 +127,8 @@ export function SettingsView({
   localModelAvailable: boolean
   localModelStatus: string
   extensionInstallStatus: ExtensionInstallStatus
+  pinterestConnectionStatus: PinterestConnectionKnowledge | null
+  onOpenPinterestLogin: () => void
   status: string
   lang: 'en' | 'vi'
   setLang: (lang: 'en' | 'vi') => void
@@ -226,6 +231,10 @@ export function SettingsView({
                   onExtensionAction={onExtensionAction}
                   onExtensionRefresh={onExtensionRefresh}
                   onCopyChromeDistPath={onCopyChromeDistPath}
+                  pinterestConnectionStatus={pinterestConnectionStatus}
+                  onOpenPinterestLogin={onOpenPinterestLogin}
+                  lang={lang}
+                  T={T}
                 />
               </TabPanel>
 
