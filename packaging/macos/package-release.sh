@@ -1,7 +1,7 @@
 #!/bin/bash
 # Assembles the distributable release zip from an already-built KIRA.app:
-# KIRA.app + sign-kira.sh + entitlements + instructions, zipped exactly the
-# way README's "download, extract, ./sign-kira.sh" flow expects. Run
+# KIRA.app + "Install KIRA.command" (double-click installer) + sign-kira.sh +
+# entitlements + instructions. Run
 # `pnpm release:mac` first to build and ad-hoc-sign KIRA.app.
 
 set -euo pipefail
@@ -24,7 +24,9 @@ mkdir -p "$RELEASE_DIR"
 rm -rf "$STAGE_DIR"
 mkdir -p "$STAGE_DIR"
 cp -R "$APP_SRC" "$STAGE_DIR/KIRA.app"
+cp "$SCRIPT_DIR/Install KIRA.command" "$STAGE_DIR/"
 cp "$SCRIPT_DIR/sign-kira.sh" "$STAGE_DIR/"
+chmod +x "$STAGE_DIR/Install KIRA.command" "$STAGE_DIR/sign-kira.sh"
 cp "$SCRIPT_DIR/KIRA-Safari-Extension.entitlements" "$STAGE_DIR/"
 cp "$SCRIPT_DIR/HUONG-DAN.md" "$STAGE_DIR/"
 
