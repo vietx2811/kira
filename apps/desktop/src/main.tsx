@@ -726,7 +726,7 @@ type KiraCaptureContext = {
 
 export type LibraryDensity = 'compact' | 'relaxed'
 export type LibraryBrowseMode = 'list' | 'grid'
-export type LibraryPanelMode = 'images' | 'ideas' | 'links'
+export type LibraryPanelMode = 'images' | 'ideas' | 'links' | 'canvas'
 export type SortMode = 'recent' | 'title' | 'source'
 type GraphNodeKind = 'idea' | 'image' | 'palette' | 'diagram' | 'placeholder'
 type GraphMode = 'edit' | 'discover'
@@ -911,6 +911,13 @@ const UI_STRINGS: Record<string, { en: string; vi: string }> = {
   'canvas.discoverChip.off': { en: 'Turn off', vi: 'Tắt' },
   'canvas.node.pinterestSimilar.title': { en: 'Find similar on Pinterest', vi: 'Tìm ảnh tương tự trên Pinterest' },
   'canvas.node.pinterestSimilar.description': { en: 'Open Pinterest in browser', vi: 'Mở Pinterest trong trình duyệt' },
+  // bố cục 2026-11-10: node-details-popover moved into a fixed side-peek.
+  'sidePeek.close': { en: 'Close', vi: 'Đóng' },
+  'sidePeek.explore.title': { en: 'Explore', vi: 'Khám phá' },
+  'sidePeek.explore.pending': { en: '{count} saved while browsing', vi: '{count} ảnh đã lưu khi khám phá' },
+  'sidePeek.explore.keep': { en: 'Keep', vi: 'Giữ' },
+  'sidePeek.explore.discard': { en: 'Discard', vi: 'Bỏ' },
+  'sidePeek.explore.keepAll': { en: 'Keep all', vi: 'Giữ tất cả' },
   'library.empty.title': { en: 'No references yet', vi: 'Chưa có tư liệu tham khảo' },
   'library.empty.body': { en: 'Drag in images, paste a URL, or import a folder to start your moodboard.', vi: 'Kéo thả hình ảnh, dán URL, hoặc nhập một thư mục để bắt đầu moodboard.' },
   'library.empty.import': { en: 'Import images', vi: 'Nhập hình ảnh' },
@@ -1008,6 +1015,11 @@ const UI_STRINGS: Record<string, { en: string; vi: string }> = {
   'library.panel.images': { en: 'Images', vi: 'Hình ảnh' },
   'library.panel.ideas': { en: 'Ideas', vi: 'Ý tưởng' },
   'library.panel.links': { en: 'Links', vi: 'Liên kết' },
+  // bố cục 2026-11-10: Canvas Info moved off the topbar into the library
+  // rail, as its own panel mode next to Images/Ideas/Links.
+  'library.panel.canvas': { en: 'Canvas', vi: 'Thông tin canvas' },
+  'library.aria.openCanvas': { en: 'Open canvas info', vi: 'Mở thông tin canvas' },
+  'library.aria.closeCanvas': { en: 'Close canvas info', vi: 'Đóng thông tin canvas' },
   'library.aria.importImage': { en: 'Import image', vi: 'Nhập hình ảnh' },
   'library.aria.toolsMenu': { en: 'Library tools', vi: 'Công cụ thư viện' },
   'library.aria.importReferences': { en: 'Import reference images', vi: 'Nhập hình ảnh tham khảo' },
@@ -1225,9 +1237,9 @@ function NodeRichEditor({
   editable?: boolean
   overlayMode?: boolean
   onAskKira?: (action: AskKiraAction, selectedText: string) => void
-  // Lets the overlay's own Escape-closes-dismissable-layer (useDismissableLayer
-  // on .node-details-popover) know to let the slash menu's own Escape handler
-  // run first instead of closing the whole overlay out from under it.
+  // Lets the side-peek's own Escape-to-close effect (GraphCanvas, gated on
+  // isSlashMenuOpen) know to let the slash menu's own Escape handler run
+  // first instead of closing the whole side-peek out from under it.
   onSlashMenuOpenChange?: (open: boolean) => void
 }): React.ReactElement {
   const onChangeRef = useRef(onChange)
@@ -2435,6 +2447,14 @@ function FileWorkspace({
   const [projectPackage, setProjectPackage] = useState<ProjectPackageInfo | null>(initialPackage)
   const [restorableSession, setRestorableSession] = useState<{ path: string | null; label: string; snapshot: ProjectSnapshot } | null>(null)
   const [selection, setSelection] = useState<Selection>({ type: 'project' })
+  // bố cục 2026-11-10: lifted out of GraphCanvas (see its own props-list
+  // comment) only so FileWorkspace can compute --canvas-right-inset from
+  // the side-peek's open/width alongside the Kira dock's own inset. Every
+  // existing GraphCanvas-internal reference to multiSelectedNodes behaves
+  // exactly as local state would.
+  const [multiSelectedNodes, setMultiSelectedNodes] = useState<CanvasNodeSelection[]>([])
+  const [sidePeekDismissedFor, setSidePeekDismissedFor] = useState<CanvasNodeSelection | null>(null)
+  const [sidePeekWidth, setSidePeekWidth] = useState(340)
   const [activeView, setActiveView] = useState<ActiveView>('Canvas')
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedTag, setSelectedTag] = useState<string | null>(null)
@@ -2542,7 +2562,6 @@ function FileWorkspace({
   const [settingsFocusTab, setSettingsFocusTab] = useState<'ai' | 'capture'>('ai')
   const [isOnboardingOpen, setIsOnboardingOpen] = useState(() => !readOnboardingCompleted())
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
-  const [isProjectSettingsOpen, setIsProjectSettingsOpen] = useState(false)
   const [extensionInstallStatus, setExtensionInstallStatus] = useState<ExtensionInstallStatus>(() => defaultExtensionInstallStatus())
   const [modelRunningImageId, setModelRunningImageId] = useState<string | null>(null)
   const [modelStatusByImageId, setModelStatusByImageId] = useState<Record<string, string>>({})
@@ -2581,12 +2600,6 @@ function FileWorkspace({
     onKiraNeedsYouCountChange(aiPanelNeedsYouCount(aiPanelState))
   }, [aiPanelState, onKiraNeedsYouCountChange])
   const [isVersionHistoryOpen, setIsVersionHistoryOpen] = useState(false)
-
-  useDismissableLayer(
-    isProjectSettingsOpen,
-    '.project-settings-popover, .workspace-project-settings-button',
-    () => setIsProjectSettingsOpen(false),
-  )
   const [cropTargetImageId, setCropTargetImageId] = useState<string | null>(null)
   const [glassStatus, setGlassStatus] = useState<GlassStatus>(() => (isTauriRuntime() ? 'fallback' : 'browser'))
   const pendingCanvasHistoryCommitRef = useRef(false)
@@ -7292,7 +7305,20 @@ function FileWorkspace({
   // DECISIONS.md bố cục #1: panel overlays the canvas like Library — topbar,
   // zoom, tool rail and dock retreat via --canvas-right-inset, already read
   // (with a 0px fallback) at 5 call sites in styles.css.
-  const canvasRightInset = isKiraPanelOpen ? kiraPanelWidth + 24 : 0
+  const kiraDockInset = isKiraPanelOpen ? kiraPanelWidth + 24 : 0
+  // bố cục 2026-11-10: the side-peek auto-opens for exactly one selected
+  // node, same guard renderNodeBelowStack applies internally — duplicated
+  // here (rather than threaded up as its own boolean) because this is the
+  // only other place that needs it, purely to size --canvas-right-inset.
+  const isSidePeekOpen = multiSelectedNodes.length === 0
+    && isNodeSelection(selection)
+    && !(sidePeekDismissedFor && sidePeekDismissedFor.kind === selection.type && sidePeekDismissedFor.id === selection.id)
+  // --canvas-right-inset now reserves room for the side-peek too, stacked
+  // to the left of the Kira dock (not under it) — the side-peek's own
+  // position (styles.css .node-details-sidepeek) uses --kira-dock-inset
+  // alone instead of this combined total, or it would double-count its own
+  // width against itself.
+  const canvasRightInset = kiraDockInset + (isSidePeekOpen ? sidePeekWidth + 24 : 0)
 
   // ---------------------------------------------------------------------
   // Kira right panel — state glue (docs/design/right-panel/DECISIONS.md).
@@ -7579,12 +7605,12 @@ function FileWorkspace({
           '--canvas-overlay-left-inset': `${canvasOverlayLeftInset}px`,
           '--canvas-overlay-shift': `${canvasOverlayShift}px`,
           '--canvas-right-inset': `${canvasRightInset}px`,
+          '--kira-dock-inset': `${kiraDockInset}px`,
         } as React.CSSProperties}
       >
         <WorkspaceChrome
           activeView={activeView}
           isLibraryCollapsed={isLibraryCollapsed}
-          isProjectSettingsOpen={isProjectSettingsOpen}
           isSettingsOpen={isSettingsOpen}
           isTauriRuntime={isTauriRuntime()}
           libraryPanelMode={libraryPanelMode}
@@ -7603,18 +7629,9 @@ function FileWorkspace({
           onLibraryPanelModeChange={setLibraryPanelMode}
           onOpenSettings={() => setIsSettingsOpen(true)}
           onToggleLibrary={() => setIsLibraryCollapsed((current) => !current)}
-          onToggleProjectSettings={() => setIsProjectSettingsOpen((current) => !current)}
           onWindowDrag={startWindowDrag}
           onWindowMaximize={toggleWindowMaximizeFromChrome}
         />
-        {isProjectSettingsOpen && (
-          <ProjectSettingsPopover
-            project={projectMetadata}
-            appearance={projectAppearance}
-            onProjectMetadataChange={updateProjectMetadata}
-            onProjectAppearanceChange={updateProjectAppearance}
-          />
-        )}
         {libraryPanelMountState.mounted && <EvidenceInbox
           allTags={libraryTags}
           browseMode={libraryBrowseMode}
@@ -7622,6 +7639,22 @@ function FileWorkspace({
           ideas={ideas}
           isCollapsed={!libraryPanelMountState.entered}
           images={visibleImages}
+          // bố cục 2026-11-10: Canvas Info moved off the topbar into this
+          // drawer's own "canvas" panel mode. Passed as a rendered node
+          // rather than raw project/appearance data so EvidenceInbox.tsx
+          // doesn't need ProjectMetadata/ProjectAppearance and the half
+          // dozen color-scheme helpers (projectAccentPresets,
+          // normalizeHexInput, ProjectColorSummary, ...) exported out of
+          // main.tsx just to re-render a popover's old content — the popover
+          // itself still owns that, just mounted here instead of floating.
+          canvasInfoContent={
+            <ProjectSettingsPopover
+              project={projectMetadata}
+              appearance={projectAppearance}
+              onProjectMetadataChange={updateProjectMetadata}
+              onProjectAppearanceChange={updateProjectAppearance}
+            />
+          }
           links={links}
           panelMode={libraryPanelMode}
           selectedTag={selectedTag}
@@ -7747,6 +7780,12 @@ function FileWorkspace({
             ) : (
               <GraphCanvas
                 visibleCanvasCenterRef={visibleCanvasCenterRef}
+                multiSelectedNodes={multiSelectedNodes}
+                setMultiSelectedNodes={setMultiSelectedNodes}
+                sidePeekDismissedFor={sidePeekDismissedFor}
+                setSidePeekDismissedFor={setSidePeekDismissedFor}
+                sidePeekWidth={sidePeekWidth}
+                setSidePeekWidth={setSidePeekWidth}
                 ideas={ideas}
                 images={images}
                 palettes={palettes}
@@ -8551,8 +8590,11 @@ function OnboardingOverlay({
   )
 }
 
-// Anchored under the top bar's own trigger button rather than any node — this
-// is the one settings surface with no canvas card to attach a popover to.
+// bố cục 2026-11-10: used to float under its own topbar trigger button, with
+// no canvas card to attach a popover to; now mounted inline inside the
+// library drawer's own "canvas" panel mode (EvidenceInbox.tsx), which
+// supplies the positioning, scrolling and kira-uikit theme scope this no
+// longer needs to carry itself.
 function ProjectSettingsPopover({
   project,
   appearance,
@@ -8567,7 +8609,7 @@ function ProjectSettingsPopover({
   const [isProjectColorOpen, setIsProjectColorOpen] = useState(false)
   const lang = useLangStore((state) => state.lang)
   return (
-    <div className="project-settings-popover kira-uikit" onPointerDown={(event) => event.stopPropagation()} onContextMenu={(event) => event.preventDefault()}>
+    <div onPointerDown={(event) => event.stopPropagation()} onContextMenu={(event) => event.preventDefault()}>
       <section className="inspector-card project-file-card">
         <Input
           label={t('inspector.name', lang)}
@@ -8807,6 +8849,12 @@ function GraphCanvas({
   onOpenKiraPanel,
   nodeProvenance,
   onOpenKiraPanelChanges,
+  multiSelectedNodes,
+  setMultiSelectedNodes,
+  sidePeekDismissedFor,
+  setSidePeekDismissedFor,
+  sidePeekWidth,
+  setSidePeekWidth,
 }: {
   // kira/placeNode.ts: written every render (see the effect near
   // visibleCanvasCenter below) so FileWorkspace's claimOpenSlot can read a
@@ -8926,6 +8974,18 @@ function GraphCanvas({
   // tab rather than the mockup's per-node popover (scope cut, see report).
   nodeProvenance: Record<string, AiNodeProvenance>
   onOpenKiraPanelChanges: () => void
+  // bố cục 2026-11-10: lifted to FileWorkspace, not GraphCanvas-local state,
+  // so FileWorkspace can compute --canvas-right-inset (needs the side-peek's
+  // open/width alongside the Kira dock's own) without GraphCanvas having to
+  // reach outside its own render. multiSelectedNodes used to be local here;
+  // moving it up changes nothing at any of its existing call sites below,
+  // since the destructured name stays the same.
+  multiSelectedNodes: CanvasNodeSelection[]
+  setMultiSelectedNodes: React.Dispatch<React.SetStateAction<CanvasNodeSelection[]>>
+  sidePeekDismissedFor: CanvasNodeSelection | null
+  setSidePeekDismissedFor: React.Dispatch<React.SetStateAction<CanvasNodeSelection | null>>
+  sidePeekWidth: number
+  setSidePeekWidth: (width: number) => void
 }) {
   const canvasRef = useRef<HTMLDivElement>(null)
   const draggingNodeRef = useRef<{
@@ -9004,56 +9064,53 @@ function GraphCanvas({
   const [organizeMode, setOrganizeMode] = useState<GraphOrganizeMode>('mindmap')
   const [isGraphToolsOpen, setIsGraphToolsOpen] = useState(false)
   const [arcMenu, setArcMenu] = useState<Pick<GraphNodeRef, 'kind' | 'id' | 'x' | 'y'> | null>(null)
-  const [multiSelectedNodes, setMultiSelectedNodes] = useState<CanvasNodeSelection[]>([])
   const [nodeContextMenu, setNodeContextMenu] = useState<{ x: number; y: number; nodes: CanvasNodeSelection[] } | null>(null)
   const [canvasContextMenu, setCanvasContextMenu] = useState<CanvasContextMenu | null>(null)
-  const [detailsPopoverNode, setDetailsPopoverNode] = useState<CanvasNodeSelection | null>(null)
   // The node card itself (`[data-node-kind][data-node-id]`, tabIndex 0) —
-  // focus returns here when the overlay closes, so keyboard/screen-reader
+  // focus returns here when the side-peek closes, so keyboard/screen-reader
   // users land back on the node instead of at the top of the document.
   // Always the card, never the small affordance that opened it (the
   // toolbar's Details button, a right-click menu item): those can move,
   // hide, or in the context-menu's case not exist as a DOM node by the
-  // time the overlay closes, while the card is the one stable landing
-  // spot every entry path shares. Shared by every close path (scrim
-  // click, X button, Escape/outside-click via useDismissableLayer) so
-  // none of them skip the restore.
+  // time the side-peek closes, while the card is the one stable landing
+  // spot every entry path shares.
   const detailsTriggerRef = useRef<HTMLElement | null>(null)
   function findNodeCardElement(kind: GraphNodeKind, id: string): HTMLElement | null {
     return document.querySelector<HTMLElement>(`[data-node-kind="${kind}"][data-node-id="${CSS.escape(id)}"]`)
   }
-  function closeDetailsPopover() {
-    setDetailsPopoverNode(null)
+  // bố cục 2026-11-10: the side-peek auto-opens for whatever single node is
+  // selected (guard already at the top of renderNodeBelowStack) — closing it
+  // is now "dismiss it for this one node, until the next selection", not
+  // "clear an independent open/closed flag". sidePeekDismissedFor is lifted
+  // to FileWorkspace only so --canvas-right-inset can be computed there
+  // alongside the Kira dock's own inset; every reference here behaves
+  // exactly as local state would.
+  function closeSidePeek() {
+    if (isNodeSelection(selected)) setSidePeekDismissedFor({ kind: selected.type, id: selected.id })
     detailsTriggerRef.current?.focus()
   }
-  // Direct Manipulation (DESIGN.md §2.1): the popover should visibly grow
-  // out of the node that opened it, not fade in as a disconnected centered
-  // dialog. A ref callback (not useLayoutEffect — this runs from inside
-  // renderNodeBelowStack, a plain helper fn called per node, not a
-  // component, so hooks aren't legal here) does a one-shot FLIP: read the
-  // trigger's on-screen rect, invert the popover to start there, then
-  // transition it back to its natural resting transform.
-  function applyNodeDetailsMorph(el: HTMLDivElement | null) {
-    if (!el || el.dataset.morphed === 'true') return
-    const origin = detailsTriggerRef.current?.getBoundingClientRect()
-    if (!origin || (origin.width === 0 && origin.height === 0)) return // no usable origin — CSS fallback animation plays instead
-    el.dataset.morphed = 'true'
-    el.style.animation = 'none'
-    const finalRect = el.getBoundingClientRect()
-    const scaleX = origin.width / finalRect.width
-    const scaleY = origin.height / finalRect.height
-    const translateX = origin.left + origin.width / 2 - (finalRect.left + finalRect.width / 2)
-    const translateY = origin.top + origin.height / 2 - (finalRect.top + finalRect.height / 2)
-    el.style.transition = 'none'
-    el.style.opacity = '0'
-    el.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scaleX}, ${scaleY})`
-    void el.offsetHeight // force reflow so the transition below animates from this starting state
-    el.style.transition = 'transform 240ms var(--ease-out-soft), opacity 160ms ease'
-    el.style.opacity = '1'
-    el.style.transform = 'none'
+  function startSidePeekResize(event: React.PointerEvent<HTMLDivElement>) {
+    event.preventDefault()
+    const startX = event.clientX
+    const startWidth = sidePeekWidth
+
+    function handlePointerMove(moveEvent: PointerEvent) {
+      // Dragged from the side-peek's own left edge: moving the pointer left
+      // (negative delta) grows it, same sign flip library drawer resize
+      // doesn't need since that handle sits on the opposite side.
+      setSidePeekWidth(clamp(startWidth - (moveEvent.clientX - startX), 280, 480))
+    }
+
+    function handlePointerUp() {
+      window.removeEventListener('pointermove', handlePointerMove)
+      window.removeEventListener('pointerup', handlePointerUp)
+    }
+
+    window.addEventListener('pointermove', handlePointerMove)
+    window.addEventListener('pointerup', handlePointerUp)
   }
-  // Only one Details popover can be open at a time, so one flat key is
-  // enough to track a drag-to-reorder gesture across its block modules.
+  // Only one side-peek can be open at a time, so one flat key is enough to
+  // track a drag-to-reorder gesture across its block modules.
   const [draggedBlockKey, setDraggedBlockKey] = useState<string | null>(null)
   // Which Details-popover sections are collapsed — a session-level UI
   // preference shared across every node (not per-node state), same as a
@@ -9378,11 +9435,25 @@ function GraphCanvas({
     () => onSelect({ type: 'project' }),
   )
 
-  useDismissableLayer(
-    Boolean(detailsPopoverNode) && !isSlashMenuOpen,
-    '.node-details-popover, .node-toolbar',
-    closeDetailsPopover,
-  )
+  // bố cục 2026-11-10: the side-peek is non-modal (library-drawer-panel
+  // pattern), so unlike the old node-details-popover, an outside click must
+  // NOT close it — clicking the Kira dock, a toolbar button, or anywhere
+  // else on the canvas should leave it open. Only Escape dismisses it
+  // explicitly; deselecting or multi-selecting already closes it via
+  // renderNodeBelowStack's own guard at the top of that function.
+  // isSlashMenuOpen keeps Escape from closing the whole panel out from
+  // under NodeRichEditor's own slash menu (same reason the old popover's
+  // dismiss layer gated on it).
+  useEffect(() => {
+    if (!isNodeSelection(selected) || multiSelectedNodes.length > 0 || isSlashMenuOpen) return
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key !== 'Escape') return
+      closeSidePeek()
+    }
+    document.addEventListener('keydown', handleKeyDown, true)
+    return () => document.removeEventListener('keydown', handleKeyDown, true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected, multiSelectedNodes, isSlashMenuOpen])
 
   useDismissableLayer(
     Boolean(frameDescriptionOpenId),
@@ -9391,7 +9462,10 @@ function GraphCanvas({
   )
 
   useEffect(() => {
-    setDetailsPopoverNode((current) => (current && isNodeSelection(selected) && current.kind === selected.type && current.id === selected.id ? current : null))
+    // "đóng tới lần chọn tiếp theo" (closed until the next selection): any
+    // selection change — a different node, or re-clicking the same one —
+    // clears a manual dismissal, letting the side-peek auto-open again.
+    setSidePeekDismissedFor(null)
     setFrameDescriptionOpenId((current) => (current && selected.type === 'frame' && selected.id === current ? current : null))
   }, [selected])
 
@@ -9911,14 +9985,16 @@ function GraphCanvas({
   }
 
   // Double-clicking anywhere on a node — including its caption text, which
-  // is read-only on the canvas face now — opens the node's overlay, the
+  // is read-only on the canvas face now — opens the node's side-peek, the
   // one place its content is actually editable. Same destination as the
   // (i) button, just reachable without hunting for a small icon first.
+  // Selecting already auto-opens the side-peek; this only has to clear a
+  // dismissal in case it was previously closed for this same node.
   function handleNodeDoubleClick(kind: GraphNodeKind, id: string, event: React.MouseEvent<HTMLElement>) {
     event.preventDefault()
     detailsTriggerRef.current = event.currentTarget
     onSelect({ type: kind, id } as Selection)
-    setDetailsPopoverNode({ kind, id })
+    setSidePeekDismissedFor(null)
   }
 
   function beginLinkFromArc(source: Pick<GraphNodeRef, 'kind' | 'id'>) {
@@ -10349,7 +10425,10 @@ function GraphCanvas({
     if (selected.type !== kind || selected.id !== node.id) return null
 
     const id = node.id
-    const isDetailsOpen = detailsPopoverNode?.kind === kind && detailsPopoverNode.id === id
+    // multiSelectedNodes/selected guards above already establish "exactly
+    // this node is selected, alone" — the only remaining question is
+    // whether it's been manually dismissed since that selection happened.
+    const isDetailsOpen = !(sidePeekDismissedFor && sidePeekDismissedFor.kind === kind && sidePeekDismissedFor.id === id)
     const nodeVersionRecords = nodeVersions.filter((version) => version.nodeId === id && version.nodeKind === kind).slice(0, 8)
     const inlineChange = (patch: { title?: string; notes?: string; sourceUrl?: string }) => {
       if (kind === 'idea') onIdeaInlineChange(id, patch)
@@ -10414,7 +10493,7 @@ function GraphCanvas({
       />
     )
 
-    const closeDetails = closeDetailsPopover
+    const closeDetails = closeSidePeek
     // Node near the canvas's left edge (same `x < 18` world-space threshold
     // as arcMenu's own is-edge-left, line ~12055): centering the toolbar
     // under the node bled its left half — the Ask Kira button, since it's
@@ -10510,6 +10589,10 @@ function GraphCanvas({
                 native button never reads. Still renders a real <button>
                 underneath (confirmed live — the existing `.node-toolbar
                 button` CSS keeps matching), so this is CSS-invisible. */}
+            {/* This toolbar only renders while !isDetailsOpen (see the stack's
+                own conditional below), so this button only ever needs to
+                open the side-peek, never toggle it closed — closing it is
+                the portal content's own Close button, below. */}
             <Tooltip title="Details" description="Notes, source, tags, history" delay={200}>
               <TooltipTrigger
                 aria-label="Details"
@@ -10518,7 +10601,7 @@ function GraphCanvas({
                   // not to this button — a small icon that a later layout
                   // change could move or hide out from under the restore.
                   detailsTriggerRef.current = findNodeCardElement(kind, id)
-                  setDetailsPopoverNode({ kind, id })
+                  setSidePeekDismissedFor(null)
                 }}
               >
                 <NoteIcon size={13} />
@@ -10545,15 +10628,26 @@ function GraphCanvas({
           </UiKitPortalHost>
         )}
         {isDetailsOpen && createPortal(
-          <div className="node-overlay-scrim" onClick={closeDetails}>
-            <div
-              className="node-details-popover"
-              role="dialog"
-              aria-modal="true"
-              aria-label={`${node.title || graphNodeKindLabel(kind)} details`}
-              onClick={(event) => event.stopPropagation()}
-              ref={applyNodeDetailsMorph}
-            >
+          // bố cục 2026-11-10: this used to be a centered modal popover
+          // (scrim + grow-from-node morph). It's now a fixed side-peek —
+          // .inspector's own already-defined panel (position/transition/
+          // opaque-material rules, symmetric to .library-drawer-panel,
+          // styles.css ~1348/1780/1807), non-modal like the library drawer:
+          // no scrim, no role="dialog", clicking the canvas elsewhere
+          // doesn't close it. node-details-sidepeek layers the node-specific
+          // bits (the resize handle, sitting to the left of the Kira dock).
+          <aside
+            className="inspector node-details-sidepeek"
+            // Inline style wins over .inspector's own static `width: 336px`
+            // regardless of selector specificity — this is what makes
+            // startSidePeekResize's drag actually resize the panel, not just
+            // the --canvas-right-inset reservation around it.
+            style={{ width: sidePeekWidth }}
+            aria-label={`${node.title || graphNodeKindLabel(kind)} details`}
+            onContextMenu={(event) => event.preventDefault()}
+          >
+            <div className="node-details-sidepeek-resize" aria-hidden="true" onPointerDown={startSidePeekResize} />
+            <div className="node-details-sidepeek-content">
               {/* Every action that used to live on the node face's toolbar —
                   add-new/AI actions plus the kind-specific ones — is
                   consolidated into this single icon row, so the node face
@@ -10878,8 +10972,8 @@ function GraphCanvas({
               )}
             </section>
             </div>
-          </div>,
-          themedPortalTarget(),
+          </aside>,
+          workspacePortalTarget(),
         )}
       </div>
     )
@@ -12395,10 +12489,12 @@ function GraphCanvas({
                   // at least the clicked node (so a 1-node right-click and a
                   // multi-node one share the same `nodes` array) — clear it
                   // here or renderNodeBelowStack's own
-                  // `multiSelectedNodes.length > 0` guard keeps the popover
-                  // this is about to open from ever rendering.
+                  // `multiSelectedNodes.length > 0` guard keeps the side-peek
+                  // this is about to open from ever rendering. openNodeContextMenu
+                  // already selected this node, so the side-peek will auto-open;
+                  // this only has to clear a prior dismissal.
                   setMultiSelectedNodes([])
-                  setDetailsPopoverNode({ kind: nodeContextMenu.nodes[0].kind, id: nodeContextMenu.nodes[0].id })
+                  setSidePeekDismissedFor(null)
                   setNodeContextMenu(null)
                 }}
               >
@@ -14866,6 +14962,18 @@ function cssTokenColor(token: string, fallback: string) {
 // cssTokenColor()'s existing .app-shell-first lookup above.
 function themedPortalTarget(): Element {
   return document.querySelector('.app-shell') ?? document.documentElement
+}
+
+// The node-details side-peek needs to land as a positioned child of
+// `.workspace`, not `.app-shell`: `.library-drawer-panel`'s own `position:
+// absolute; top/left/bottom: var(--shell-card-inset)` resolves against
+// `.workspace` (the grid's row-2 cell, the one with `position: relative` —
+// `.app-shell` itself is just a static grid container, row 1 above it is
+// the tab strip), and `.inspector` is that same panel's right-edge mirror —
+// see styles.css ~1298. Portaling to `.app-shell` instead would place the
+// peek relative to the viewport, overlapping the tab strip above `.workspace`.
+function workspacePortalTarget(): Element {
+  return document.querySelector('.workspace') ?? themedPortalTarget()
 }
 
 function deleteDialogCopy(pendingDelete: PendingDelete) {

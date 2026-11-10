@@ -65,6 +65,11 @@ export function EvidenceInbox({
   ideas,
   isCollapsed,
   images,
+  // bố cục 2026-11-10: Canvas Info's old floating-popover content, rendered
+  // as-is inside this panel mode. See the canvasInfoContent prop's own
+  // comment at the FileWorkspace call site for why this stays a rendered
+  // node instead of raw project/appearance data.
+  canvasInfoContent,
   links,
   panelMode,
   selectedTag,
@@ -107,6 +112,7 @@ export function EvidenceInbox({
   ideas: Idea[]
   isCollapsed: boolean
   images: EvidenceImage[]
+  canvasInfoContent: React.ReactNode
   links: EvidenceLink[]
   panelMode: LibraryPanelMode
   selectedTag: string | null
@@ -154,20 +160,27 @@ export function EvidenceInbox({
   const setThumbSizePct = useLibraryThumbSizeStore((state) => state.setPct)
   const unassigned = images.filter((image) => image.suggestions.length > 0)
   const selectedCount = selectedReferenceIds.size
+  // 'canvas' has no item list, so its entries below are unused in practice —
+  // the footer and search row that would read them are hidden for it
+  // (panelMode === 'canvas' guards below) — but every mode still needs one,
+  // these being Records typed over the full LibraryPanelMode union.
   const panelCounts: Record<LibraryPanelMode, number> = {
     images: images.length,
     ideas: ideas.length,
     links: links.length,
+    canvas: 0,
   }
   const panelTitleKey: Record<LibraryPanelMode, string> = {
     images: 'library.panel.images',
     ideas: 'library.panel.ideas',
     links: 'library.panel.links',
+    canvas: 'library.panel.canvas',
   }
   const searchPlaceholderKey: Record<LibraryPanelMode, string> = {
     images: 'library.search.images',
     ideas: 'library.search.ideas',
     links: 'library.search.links',
+    canvas: 'library.panel.canvas',
   }
   const visibleIdeas = useMemo(
     () => ideas.filter((idea) => {
@@ -287,6 +300,7 @@ export function EvidenceInbox({
         <div className="panel-title-row">
           <h2>{t(panelTitleKey[panelMode])}</h2>
         </div>
+        {panelMode !== 'canvas' && (
         <div className="panel-actions">
           <Tooltip title={t('library.aria.importImage')} delay={200}>
             <Button color="tertiary" size="sm" iconLeading={ImagePlus} aria-label={t('library.aria.importImage')} onPress={() => importInput.current?.click()} />
@@ -363,6 +377,7 @@ export function EvidenceInbox({
             </Dropdown.Popover>
           </Dropdown.Root>
         </div>
+        )}
         <input
           ref={importInput}
           aria-label={t('library.aria.importReferences')}
@@ -377,6 +392,7 @@ export function EvidenceInbox({
         />
       </div>
 
+      {panelMode !== 'canvas' && (
       <div className="library-toolbar-row" role="group" aria-label={t('library.aria.toolbarRow')}>
         {isSearchOpen ? (
           <div className="library-search-active">
@@ -458,6 +474,7 @@ export function EvidenceInbox({
           </>
         )}
       </div>
+      )}
 
       {panelMode === 'images' ? (
         <div
@@ -574,6 +591,10 @@ export function EvidenceInbox({
           {/* .library-node-row small is hidden by default and revealed on
               hover/selection in CSS — see .library-node-row small. */}
         </div>
+      ) : panelMode === 'canvas' ? (
+        <div className="library-canvas-info">
+          {canvasInfoContent}
+        </div>
       ) : (
         <div className="library-node-list" role="list" aria-label={t('library.panel.links')}>
           {visibleLinks.map((link) => (
@@ -624,6 +645,7 @@ export function EvidenceInbox({
           </div>
         </div>
       )}
+      {panelMode !== 'canvas' && (
       <div className="library-footer">
         {selectedCount > 0 ? (
           <div className="batch-bar">
@@ -661,6 +683,7 @@ export function EvidenceInbox({
           </div>
         )}
       </div>
+      )}
     </aside>
     </UiKitPortalHost>
   )
