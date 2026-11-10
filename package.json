@@ -10,5 +10,16 @@
     "release:mac": "pnpm --filter @kira/desktop release:mac",
     "package:mac": "pnpm release:mac && ./packaging/macos/package-release.sh"
   },
-  "packageManager": "pnpm@10.32.1"
+  "packageManager": "pnpm@10.32.1",
+  "pnpm": {
+    "overrides": {
+      "dompurify@<3.4.17": "^3.4.17",
+      "postcss@<8.5.23": "^8.5.23",
+      "nanoid@>=3 <3.3.18": "^3.3.18",
+      "browserslist@<4.28.7": "^4.28.7",
+      "baseline-browser-mapping@<2.11.0": "^2.11.0",
+      "source-map-js@<1.2.2": "^1.2.2",
+      "markdown-it@>=14 <14.3.3": "^14.3.3"
+    }
+  }
 }
