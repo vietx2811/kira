@@ -41,6 +41,18 @@ export type KiraCaptureNode = KiraCaptureNodeRef & {
   thumb?: string
 }
 
+// docs/research/2026-11-09-pinterest-similar-flow.md §A, "Cập nhật
+// 2026-11-10" phương án 3. Deliberately the only two fields: never a
+// cookie, a URL, a name, or a picture (CLAUDE.md "Ràng buộc đã chốt" + this
+// task's own hard constraints). `service` is a closed union, not `string`,
+// so adding a second connected service later is a type change here, not a
+// typo waiting to happen. Mirrors KNOWN_CONNECTION_SERVICES in lib.rs and
+// KiraConnectionPayload in apps/desktop/src/kira/pinterestConnection.ts.
+export type KiraConnectionPayload = {
+  service: 'pinterest'
+  loggedIn: boolean
+}
+
 /**
  * Every request to the desktop app goes through the service worker.
  * A content script's fetch runs with the page's origin, so from Chrome 142 a
@@ -49,6 +61,7 @@ export type KiraCaptureNode = KiraCaptureNodeRef & {
  */
 export type KiraBridgeMessage =
   | { type: 'kira-post-capture'; capture: KiraCapturePayload }
+  | { type: 'kira-post-connection'; connection: KiraConnectionPayload }
   | { type: 'kira-get-context' }
   | { type: 'kira-open-drag-window'; capture: PendingCapture }
   // background.ts has no DOM of its own (service worker) — this relays a

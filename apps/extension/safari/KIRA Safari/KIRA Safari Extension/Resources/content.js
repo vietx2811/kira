@@ -1154,3 +1154,93 @@ function ensureToast() {
     document.documentElement.append(toast);
     return toast;
 }
+// docs/research/2026-11-09-pinterest-similar-flow.md §A, "Cập nhật
+// 2026-11-10" phương án 3: lets KIRA's Settings show a Pinterest
+// "Connections" row with the extension's last-seen login status. This
+// NEVER reads a cookie, a URL, a name, or a picture — only whether a
+// sign-in control or a profile control is present in the header, reduced
+// to one bool. "Not confident" is reported as nothing at all, never a
+// guess (schedulePinterestLoginCheck below only calls reportPinterestLoginSignal,
+// which drops a null signal on the floor).
+//
+// Not verified against the live Pinterest DOM at the time of writing — this
+// environment has no network access. The two detection helpers
+// (findControlByAccessibleName / findProfileAvatarControl) are the only
+// place this reads page structure; if Pinterest's header markup doesn't
+// match what's assumed here, fix detection there without touching the
+// messaging/debounce code below it.
+const PINTEREST_LOG_IN_LABELS = ['log in', 'sign in', 'đăng nhập'];
+const PINTEREST_SIGN_UP_LABELS = ['sign up', 'đăng ký'];
+function isPinterestHost(hostname) {
+    return hostname === 'pinterest.com' || hostname.endsWith('.pinterest.com');
+}
+function accessibleNameMatches(element, labels) {
+    const raw = (element.getAttribute('aria-label') ?? element.textContent ?? '').trim().toLowerCase();
+    return labels.includes(raw);
+}
+function findControlByAccessibleName(scope, labels) {
+    for (const element of scope.querySelectorAll('a, button')) {
+        if (accessibleNameMatches(element, labels))
+            return element;
+    }
+    return null;
+}
+// A per-user entry point (the avatar) is, unlike "Log in", not something
+// Pinterest labels consistently across locales — so this looks for its
+// shape instead: a link/button carrying an <img> with a real (non-empty)
+// alt, which a generic logo or decorative icon in the same header normally
+// wouldn't have.
+function findProfileAvatarControl(scope) {
+    for (const control of scope.querySelectorAll('a, button')) {
+        const image = control.querySelector('img[alt]');
+        if (image && (image.getAttribute('alt') ?? '').trim().length > 0)
+            return control;
+    }
+    return null;
+}
+/** `null` means "couldn't tell" — on a genuinely ambiguous header (both
+    signals present, or neither), or any host other than pinterest.com. */
+function detectPinterestLoginSignal() {
+    if (!isPinterestHost(location.hostname))
+        return null;
+    const scope = document.querySelector('header') ?? document.body;
+    const hasLogInControl = findControlByAccessibleName(scope, PINTEREST_LOG_IN_LABELS) !== null ||
+        findControlByAccessibleName(scope, PINTEREST_SIGN_UP_LABELS) !== null;
+    const hasProfileControl = findProfileAvatarControl(scope) !== null;
+    if (hasLogInControl && !hasProfileControl)
+        return false;
+    if (hasProfileControl && !hasLogInControl)
+        return true;
+    return null;
+}
+// Only commits to lastSentPinterestLoggedIn once a send actually succeeds —
+// a failed send (app closed) leaves it as-is, so the next DOM change (the
+// MutationObserver below fires often on a page this dynamic) tries again,
+// rather than the extension believing it already reported a status the app
+// never received.
+let lastSentPinterestLoggedIn = null;
+function reportPinterestLoginSignal() {
+    const signal = detectPinterestLoginSignal();
+    if (signal === null || signal === lastSentPinterestLoggedIn)
+        return;
+    void sendBridgeMessage({ type: 'kira-post-connection', connection: { service: 'pinterest', loggedIn: signal } }).then((response) => {
+        if (response?.ok)
+            lastSentPinterestLoggedIn = signal;
+    });
+}
+let pinterestLoginCheckTimer;
+// Debounced: Pinterest's header keeps mutating as the SPA hydrates and as
+// the user navigates (client-side routing doesn't reload this content
+// script), so this runs again after a quiet moment rather than on every
+// single mutation.
+function schedulePinterestLoginCheck() {
+    window.clearTimeout(pinterestLoginCheckTimer);
+    pinterestLoginCheckTimer = window.setTimeout(reportPinterestLoginSignal, 600);
+}
+if (isPinterestHost(location.hostname)) {
+    schedulePinterestLoginCheck();
+    new MutationObserver(schedulePinterestLoginCheck).observe(document.documentElement, {
+        childList: true,
+        subtree: true,
+    });
+}

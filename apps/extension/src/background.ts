@@ -1,8 +1,16 @@
-import type { KiraBridgeMessage, KiraBridgeResponse, KiraCaptureContext, KiraCapturePayload, PendingCapture } from './types'
+import type {
+  KiraBridgeMessage,
+  KiraBridgeResponse,
+  KiraCaptureContext,
+  KiraCapturePayload,
+  KiraConnectionPayload,
+  PendingCapture,
+} from './types'
 
 const pendingCaptureKey = 'pendingCapture'
 const captureEndpoint = 'http://127.0.0.1:47653/capture'
 const contextEndpoint = 'http://127.0.0.1:47653/context'
+const connectionEndpoint = 'http://127.0.0.1:47653/connection'
 const dragWindowPath = 'drag-window.html'
 
 let dragWindowId: number | null = null
@@ -232,6 +240,11 @@ chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse: (
     return true
   }
 
+  if (message.type === 'kira-post-connection') {
+    void postConnectionResult(message.connection).then((result) => sendResponse({ ok: result === 'sent' }))
+    return true
+  }
+
   if (message.type === 'kira-get-context') {
     void fetchCaptureContext().then((context) => sendResponse({ ok: context !== null, context }))
     return true
@@ -306,8 +319,11 @@ async function openDragWindow(capture: PendingCapture) {
 
 function isBridgeMessage(message: unknown): message is KiraBridgeMessage {
   if (!message || typeof message !== 'object') return false
-  const candidate = message as { type?: unknown; capture?: Partial<PendingCapture> }
+  const candidate = message as { type?: unknown; capture?: Partial<PendingCapture>; connection?: Partial<KiraConnectionPayload> }
   if (candidate.type === 'kira-get-context') return true
+  if (candidate.type === 'kira-post-connection') {
+    return candidate.connection?.service === 'pinterest' && typeof candidate.connection.loggedIn === 'boolean'
+  }
   if (candidate.type !== 'kira-post-capture' && candidate.type !== 'kira-open-drag-window') return false
   return candidate.capture?.kiraCapture === 1
     && (candidate.capture.kind === 'image' || candidate.capture.kind === 'page')
@@ -315,6 +331,24 @@ function isBridgeMessage(message: unknown): message is KiraBridgeMessage {
 }
 
 type PostCaptureResult = 'sent' | 'rejected' | 'unreachable'
+
+// Unlike captures (postCaptureResult + enqueuePendingCapture below), a
+// connection-status report that fails to send is never queued and retried:
+// it's a "last seen" snapshot, not something the user is waiting on, and
+// the extension re-derives it and tries again on its own the next time the
+// page's login state changes (see content.ts's reportPinterestLoginSignal).
+async function postConnectionResult(connection: KiraConnectionPayload): Promise<PostCaptureResult> {
+  try {
+    const response = await fetch(connectionEndpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(connection),
+    })
+    return response.ok ? 'sent' : 'rejected'
+  } catch {
+    return 'unreachable'
+  }
+}
 
 // Distinguishes "the app is closed" (queue it, retry later) from "the app
 // is open and refused this payload" (it always will — don't queue it).

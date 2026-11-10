@@ -1,23 +1,82 @@
-import { Clipboard, ExternalLink, RotateCcw } from 'lucide-react'
+import type { ComponentType } from 'react'
+import { Clipboard, ExternalLink, LogIn, RotateCcw } from 'lucide-react'
 import { Button } from '@/components/base/buttons/button'
 import { Badge } from '@/components/base/badges/badges'
 import { Tooltip } from '@/components/base/tooltip/tooltip'
 import type { ExtensionInstallStatus } from '@/kira/ai/aiProviderDomain'
 import { extensionInstallTargets, extensionStatusForTarget } from '@/kira/ai/aiProviderDomain'
+import type { PinterestConnectionKnowledge } from '@/kira/pinterestConnection'
+import { classifyPinterestConnectionStatus, formatConnectionLastSeen } from '@/kira/pinterestConnection'
 
 export function SettingsCaptureTab({
   extensionInstallStatus,
   onExtensionAction,
   onExtensionRefresh,
   onCopyChromeDistPath,
+  pinterestConnectionStatus,
+  onOpenPinterestLogin,
+  lang,
+  T,
 }: {
   extensionInstallStatus: ExtensionInstallStatus
   onExtensionAction: (targetId: string) => void
   onExtensionRefresh: () => void
   onCopyChromeDistPath: () => void | Promise<void>
+  pinterestConnectionStatus: PinterestConnectionKnowledge | null
+  onOpenPinterestLogin: () => void
+  lang: 'en' | 'vi'
+  T: ComponentType<{ k: string }>
 }) {
+  const connectionKind = classifyPinterestConnectionStatus(pinterestConnectionStatus)
+  const connectionBadgeColor = connectionKind === 'logged_in' ? 'success' : connectionKind === 'logged_out' ? 'warning' : 'gray'
+  const connectionStatusKey =
+    connectionKind === 'logged_in'
+      ? 'settings.connections.status.loggedIn'
+      : connectionKind === 'logged_out'
+        ? 'settings.connections.status.loggedOut'
+        : 'settings.connections.status.unknown'
+  const lastSeenLabel =
+    pinterestConnectionStatus && connectionKind !== 'unknown'
+      ? formatConnectionLastSeen(pinterestConnectionStatus.lastSeenAt, lang)
+      : null
   return (
-    <section className="flex flex-col gap-4" aria-label="Extensions">
+    <div className="flex flex-col gap-6">
+      <section className="flex flex-col gap-4" aria-label="Connections">
+        <article className="flex flex-col gap-1 border-b border-secondary pb-4">
+          <h3 className="text-md font-semibold text-primary">
+            <T k="settings.connections.title" />
+          </h3>
+          <p className="text-sm text-tertiary">
+            <T k="settings.connections.description" />
+          </p>
+        </article>
+        <div className="flex items-center justify-between gap-3 border-y border-secondary py-4" role="list">
+          <div className="flex flex-col gap-1" role="listitem">
+            <div className="flex items-center gap-2">
+              <strong className="text-sm font-semibold text-primary">
+                <T k="settings.connections.pinterest.name" />
+              </strong>
+              <Badge color={connectionBadgeColor} size="sm">
+                <T k={connectionStatusKey} />
+              </Badge>
+            </div>
+            <p className="text-sm text-tertiary">
+              {lastSeenLabel ? (
+                <>
+                  <T k="settings.connections.lastSeen.prefix" /> {lastSeenLabel}
+                </>
+              ) : (
+                <T k="settings.connections.lastSeen.unknown" />
+              )}
+            </p>
+          </div>
+          <Button color="secondary" size="sm" iconLeading={LogIn} onPress={onOpenPinterestLogin}>
+            <T k="settings.connections.openLogin" />
+          </Button>
+        </div>
+      </section>
+
+      <section className="flex flex-col gap-4" aria-label="Extensions">
       <article className="flex items-start justify-between gap-4 border-b border-secondary pb-4">
         <div className="flex flex-col gap-1">
           <h3 className="text-md font-semibold text-primary">Extensions</h3>
@@ -98,6 +157,7 @@ export function SettingsCaptureTab({
           )
         })}
       </div>
-    </section>
+      </section>
+    </div>
   )
 }
