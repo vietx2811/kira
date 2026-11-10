@@ -4527,6 +4527,55 @@ button.mini-tags-more:focus-visible {
   gap: 8px;
 }
 
+/* Cập nhật 2026-11-10 §C: the side-peek's "Explore" section — the Pinterest
+   button plus the tray of browser captures saved while the discovery
+   anchor was pointed at this node, waiting for Keep/Discard. */
+.node-explore-section {
+  gap: 10px;
+}
+
+.node-explore-tray {
+  display: grid;
+  gap: 6px;
+}
+
+.node-explore-tray-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: var(--text-small);
+}
+
+.node-explore-tray-item {
+  display: grid;
+  grid-template-columns: 36px 1fr auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 4px;
+  border-radius: var(--radius-2);
+}
+
+.node-explore-tray-item:hover {
+  background: var(--control-patch);
+}
+
+.node-explore-tray-item img {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-2);
+  object-fit: cover;
+}
+
+.node-explore-tray-item-title {
+  overflow: hidden;
+  color: var(--text-main);
+  font-size: var(--text-small);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .node-details-sidepeek-content .diagram-source-input {
   min-height: 120px;
 }

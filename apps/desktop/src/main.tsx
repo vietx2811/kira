@@ -48,7 +48,15 @@ import { RELATIONS, normalizeRelation, relationWeight, type Relation } from './k
 import { autoLayout, type AutoLayoutEdge, type AutoLayoutNode } from './kira/canvas/autoLayout'
 import { currentPersonaContext, withPersona } from './kira/ai/persona'
 import { loadPersonaContext } from './kira/ai/personaStore'
-import { DISCOVERY_ANCHOR_TTL_MS, type DiscoveryAnchor, resolveCaptureTargetNode } from './kira/discoveryAnchor'
+import {
+  DISCOVERY_ANCHOR_TTL_MS,
+  type DiscoveryAnchor,
+  getPendingCaptures,
+  type PendingCaptureQueue,
+  pushPendingCapture,
+  removePendingCapture,
+  resolveDiscoveryAnchorTarget,
+} from './kira/discoveryAnchor'
 import { buildPinterestSearchQuery, resolvePinterestPinUrl } from './kira/pinterestSimilar'
 import { newIdeaDefaults, resolveIdeaFaceDisplay } from './kira/newIdea'
 import { visibleCanvasAreaCenterPercent } from './kira/visibleCanvasCenter'
@@ -1562,6 +1570,11 @@ type KiraDevApi = {
   rejectChange: (changeSetId: string, itemId: string) => void
   aiPanel: () => AiPanelState
   testApplySnapshotPreserveHistory: () => { changeSetId: string; itemId: string }
+  // Cập nhật 2026-11-10 §C verify step: the real path is a POST to the
+  // native capture server (127.0.0.1:47653), native-only — this calls the
+  // same handleKiraCapture a real capture would, for browser-preview
+  // verification of the discovery-anchor tray without a Tauri runtime.
+  simulateCapture: (overrides?: Partial<KiraCapturePayload>) => void
 }
 
 type KiraWindow = Window & {
@@ -2650,6 +2663,13 @@ function FileWorkspace({
   // "Đang gắn vào: ..." chip can render and auto-hide on expiry.
   const discoveryAnchorRef = useRef<DiscoveryAnchor | null>(null)
   const [discoveryAnchorState, setDiscoveryAnchorState] = useState<DiscoveryAnchor | null>(null)
+  // Cập nhật 2026-11-10 §C: a capture made while an anchor is active lands
+  // here instead of straight on the canvas, keyed by the anchored node —
+  // see kira/discoveryAnchor.ts's own comment for why that outlives the
+  // anchor itself. Rendered as the side-peek's "Explore" section's tray;
+  // Keep/Discard/Keep all (below) are this queue's only writers besides
+  // handleKiraCapture's own fallback branch.
+  const [pendingCaptureQueue, setPendingCaptureQueue] = useState<PendingCaptureQueue<EvidenceImage>>({})
   const canUndoCanvas = useStore(canvasHistoryStore.temporal, (state) => state.pastStates.length > 0)
   const canRedoCanvas = useStore(canvasHistoryStore.temporal, (state) => state.futureStates.length > 0)
   projectStateRef.current = {
@@ -3296,6 +3316,17 @@ function FileWorkspace({
         })
         return { changeSetId, itemId }
       },
+      simulateCapture(overrides) {
+        handleKiraCapture({
+          kiraCapture: 1,
+          kind: 'image',
+          url: `https://i.pinimg.com/originals/dev-capture-${Date.now()}.jpg`,
+          title: `Dev capture ${Date.now()}`,
+          source: 'https://www.pinterest.com/pin/dev-capture/',
+          capturedAt: nowIso(),
+          ...overrides,
+        })
+      },
     }
 
     return () => {
@@ -3693,25 +3724,78 @@ function FileWorkspace({
     const explicitTarget = capture.targetNode
       ? resolveGraphNodeRef(capture.targetNode.id, state.ideas, state.images, state.palettes, state.diagrams, state.placeholders)
       : null
-    // Not cleared on use: a discovery trip is a browsing session, not a
-    // single capture, so the anchor keeps resolving fresh captures until it
+
+    if (explicitTarget) {
+      const persistedId = attachCaptureToGraphNode(reference, explicitTarget)
+      if (persistedId && capture.kind === 'image') void downloadAndAnalyzeCaptureImage(persistedId, reference.title, capture.url)
+      return
+    }
+
+    // Cập nhật 2026-11-10 §C: no explicit target (hover-Save, Alt+Shift+K —
+    // neither carries one), but an anchor is active — this used to attach
+    // straight to the canvas the same way explicitTarget does above; now it
+    // waits in the side-peek's "Explore" tray for Keep/Discard instead. Not
+    // cleared on use: a discovery trip is a browsing session, not a single
+    // capture, so the anchor keeps resolving fresh captures until it
     // expires or a later "Find similar" press on a different node
-    // overwrites it.
-    const target = resolveCaptureTargetNode(
-      explicitTarget,
+    // overwrites it. Thumbnail download/analysis is deferred to Keep
+    // (keepPendingCapture) rather than run here — spending that work on a
+    // capture the user might Discard a moment later would be wasted.
+    const anchorTarget = resolveDiscoveryAnchorTarget(
       discoveryAnchorRef.current,
       Date.now(),
       (_kind, id) => resolveGraphNodeRef(id, state.ideas, state.images, state.palettes, state.diagrams, state.placeholders),
     )
-
-    if (target) {
-      const persistedId = attachCaptureToGraphNode(reference, target)
-      if (persistedId && capture.kind === 'image') void downloadAndAnalyzeCaptureImage(persistedId, reference.title, capture.url)
+    const anchor = discoveryAnchorRef.current
+    if (anchorTarget && anchor) {
+      setPendingCaptureQueue((current) => pushPendingCapture(current, anchor.kind, anchor.id, reference))
       return
     }
 
     appendReferences([reference], '1 browser capture imported')
     if (capture.kind === 'image') void downloadAndAnalyzeCaptureImage(reference.id, reference.title, capture.url)
+  }
+
+  // Cập nhật 2026-11-10 §C: resolves the anchored node fresh (not the
+  // snapshot captured when the reference was queued — the node could have
+  // moved, been renamed, or in the worst case been deleted since) so Keep
+  // never attaches against stale coordinates. A deleted target falls back
+  // to appendReferences rather than silently dropping the image the user
+  // explicitly chose to keep.
+  function keepPendingCapture(kind: GraphNodeKind, id: string, captureId: string) {
+    const pending = getPendingCaptures(pendingCaptureQueue, kind, id)
+    const reference = pending.find((item) => item.id === captureId)
+    if (!reference) return
+    setPendingCaptureQueue((current) => removePendingCapture(current, kind, id, (item) => item.id === captureId))
+    const target = resolveGraphNodeRef(id, ideas, images, palettes, diagrams, placeholders)
+    let persistedId: string | null
+    if (target) {
+      persistedId = attachCaptureToGraphNode(reference, target)
+    } else {
+      appendReferences([reference], `Attached ${reference.title}`)
+      persistedId = reference.id
+    }
+    // tags always include capture.kind as one of its entries
+    // (createReferenceFromCapture) — same check the capture-image backfill
+    // sweep above already uses to tell a page capture from an image one.
+    if (persistedId && reference.tags.includes('image')) void downloadAndAnalyzeCaptureImage(persistedId, reference.title, reference.sourceUrl || reference.thumb)
+  }
+
+  function discardPendingCapture(kind: GraphNodeKind, id: string, captureId: string) {
+    setPendingCaptureQueue((current) => removePendingCapture(current, kind, id, (item) => item.id === captureId))
+  }
+
+  // Per captures' own queue order (oldest first): against an image-kind
+  // anchor, attachCaptureToGraphNode replaces that same node each time (the
+  // existing single-capture behavior this tray fronts, canvas-node-ux's own
+  // "replace target" semantics for an image target) — so only the LAST
+  // kept item ends up on the canvas when the anchor is an image, same as
+  // it would have before this tray existed. Not a new limitation Keep All
+  // introduces; see the report for this task.
+  function keepAllPendingCaptures(kind: GraphNodeKind, id: string) {
+    for (const item of getPendingCaptures(pendingCaptureQueue, kind, id)) {
+      keepPendingCapture(kind, id, item.id)
+    }
   }
 
   // Orchestrator decision (supersedes the §3.4 window.open plan this
@@ -7786,6 +7870,10 @@ function FileWorkspace({
                 setSidePeekDismissedFor={setSidePeekDismissedFor}
                 sidePeekWidth={sidePeekWidth}
                 setSidePeekWidth={setSidePeekWidth}
+                pendingCaptureQueue={pendingCaptureQueue}
+                onKeepPendingCapture={keepPendingCapture}
+                onDiscardPendingCapture={discardPendingCapture}
+                onKeepAllPendingCaptures={keepAllPendingCaptures}
                 ideas={ideas}
                 images={images}
                 palettes={palettes}
@@ -8855,6 +8943,10 @@ function GraphCanvas({
   setSidePeekDismissedFor,
   sidePeekWidth,
   setSidePeekWidth,
+  pendingCaptureQueue,
+  onKeepPendingCapture,
+  onDiscardPendingCapture,
+  onKeepAllPendingCaptures,
 }: {
   // kira/placeNode.ts: written every render (see the effect near
   // visibleCanvasCenter below) so FileWorkspace's claimOpenSlot can read a
@@ -8986,6 +9078,13 @@ function GraphCanvas({
   setSidePeekDismissedFor: React.Dispatch<React.SetStateAction<CanvasNodeSelection | null>>
   sidePeekWidth: number
   setSidePeekWidth: (width: number) => void
+  // Cập nhật 2026-11-10 §C: the side-peek's "Explore" section's own tray —
+  // see kira/discoveryAnchor.ts's PendingCaptureQueue for why this is keyed
+  // by node rather than by the (shorter-lived) anchor.
+  pendingCaptureQueue: PendingCaptureQueue<EvidenceImage>
+  onKeepPendingCapture: (kind: GraphNodeKind, id: string, captureId: string) => void
+  onDiscardPendingCapture: (kind: GraphNodeKind, id: string, captureId: string) => void
+  onKeepAllPendingCaptures: (kind: GraphNodeKind, id: string) => void
 }) {
   const canvasRef = useRef<HTMLDivElement>(null)
   const draggingNodeRef = useRef<{
@@ -10430,6 +10529,10 @@ function GraphCanvas({
     // whether it's been manually dismissed since that selection happened.
     const isDetailsOpen = !(sidePeekDismissedFor && sidePeekDismissedFor.kind === kind && sidePeekDismissedFor.id === id)
     const nodeVersionRecords = nodeVersions.filter((version) => version.nodeId === id && version.nodeKind === kind).slice(0, 8)
+    // Cập nhật 2026-11-10 §C: "Explore" is image-only — the discovery anchor
+    // itself is only ever set from an image node (openPinterestSimilar's
+    // only call sites are all kind === 'image').
+    const pendingCaptures = kind === 'image' ? getPendingCaptures(pendingCaptureQueue, kind, id) : []
     const inlineChange = (patch: { title?: string; notes?: string; sourceUrl?: string }) => {
       if (kind === 'idea') onIdeaInlineChange(id, patch)
       else if (kind === 'image') onImageInlineChange(id, patch)
@@ -10953,6 +11056,64 @@ function GraphCanvas({
                     value={(node as DiagramNode).source}
                     onChange={(event) => onDiagramInlineChange(id, { source: event.target.value })}
                   />
+                )}
+              </section>
+            )}
+            {/* Cập nhật 2026-11-10 §C: image-only, since the discovery
+                anchor is only ever set from an image node's "Find similar
+                on Pinterest". No live Pinterest results here — only images
+                the user explicitly saved themselves while that anchor was
+                active (ToS constraint already settled in the earlier
+                visual-explore report: no scraping, no calling Pinterest's
+                own endpoints). */}
+            {kind === 'image' && (
+              <section className="block-module">
+                <SectionHeader
+                  icon={<Search size={14} />}
+                  title={t('sidePeek.explore.title', lang)}
+                  collapsed={collapsedDetailSections.has('explore')}
+                  onToggleCollapsed={() => toggleDetailSection('explore')}
+                />
+                {!collapsedDetailSections.has('explore') && (
+                  <div className="node-details-section node-explore-section">
+                    <Tooltip
+                      title={t('canvas.node.pinterestSimilar.title', lang)}
+                      description={t('canvas.node.pinterestSimilar.description', lang)}
+                      delay={200}
+                    >
+                      <Button
+                        color="secondary"
+                        size="sm"
+                        aria-label={t('canvas.node.pinterestSimilar.title', lang)}
+                        onPress={() => onFindSimilarOnPinterest(kind, id, node as EvidenceImage)}
+                        iconLeading={<ExternalLink size={13} />}
+                      >
+                        {t('canvas.node.pinterestSimilar.title', lang)}
+                      </Button>
+                    </Tooltip>
+                    {pendingCaptures.length > 0 && (
+                      <div className="node-explore-tray">
+                        <div className="node-explore-tray-header">
+                          <span>{t('sidePeek.explore.pending', lang, { count: String(pendingCaptures.length) })}</span>
+                          <Button color="tertiary" size="sm" onPress={() => onKeepAllPendingCaptures(kind, id)}>
+                            {t('sidePeek.explore.keepAll', lang)}
+                          </Button>
+                        </div>
+                        {pendingCaptures.map((pendingCapture) => (
+                          <div key={pendingCapture.id} className="node-explore-tray-item">
+                            <img src={pendingCapture.thumb} alt="" />
+                            <span className="node-explore-tray-item-title">{pendingCapture.title}</span>
+                            <Button color="tertiary" size="sm" onPress={() => onKeepPendingCapture(kind, id, pendingCapture.id)}>
+                              {t('sidePeek.explore.keep', lang)}
+                            </Button>
+                            <Button color="tertiary" size="sm" onPress={() => onDiscardPendingCapture(kind, id, pendingCapture.id)}>
+                              {t('sidePeek.explore.discard', lang)}
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 )}
               </section>
             )}
