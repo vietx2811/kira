@@ -4356,6 +4356,23 @@ button.mini-tags-more:focus-visible {
   background: var(--border-soft);
 }
 
+/* Search glyph + outward-arrow badge, composed because Lucide has no
+   Pinterest brand icon (kira-controls §6.1 keeps glyph UI Lucide-only,
+   currentColor, no color/gradient — both pieces here already follow
+   that). Badge sits in the base glyph's bottom-right corner; `currentColor`
+   keeps it matched to .node-toolbar button's own color states (hover,
+   active) without a separate color rule. */
+.node-toolbar-pinterest-icon {
+  position: relative;
+  display: inline-flex;
+}
+
+.node-toolbar-pinterest-icon-badge {
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+}
+
 /* The unified "Ask Kira" entry point (canvas-node-ux spec §2.1 decision 3)
    — wider than the icon-only buttons around it, since it carries a label,
    so it opts out of .node-toolbar button's fixed 26x26 box. */
