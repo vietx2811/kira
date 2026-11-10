@@ -2531,6 +2531,24 @@ button.mini-tags-more:focus-visible {
   overflow: hidden;
 }
 
+/* Perf (docs/research/2026-09-21-canvas-performance-thresholds.md §2.2): an
+   unregistered custom property is inherited by default, so writing it on
+   .graph-canvas on every pointermove forced a style recalc of every
+   descendant node in the tree (measured 2 245ms per 200 moves at 608 nodes),
+   even though only .graph-canvas::after's own mask-image below reads it.
+   `inherits: false` scopes that invalidation back down to the element itself. */
+@property --grid-hot-x {
+  syntax: '<length-percentage>';
+  inherits: false;
+  initial-value: 50%;
+}
+
+@property --grid-hot-y {
+  syntax: '<length-percentage>';
+  inherits: false;
+  initial-value: 50%;
+}
+
 .graph-canvas {
   position: relative;
   height: 100%;
