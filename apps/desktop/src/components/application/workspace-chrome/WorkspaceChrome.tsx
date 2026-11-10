@@ -21,7 +21,7 @@ import { Tooltip } from '@/components/base/tooltip/tooltip'
 import { UiKitPortalHost } from '@/kira/uikit/PortalHost'
 
 type WorkspaceView = 'Canvas' | '3D' | 'Slides' | 'Outline'
-type LibraryPanelMode = 'images' | 'ideas' | 'links'
+type LibraryPanelMode = 'images' | 'ideas' | 'links' | 'canvas'
 
 /**
  * Workspace chrome, PHA 4 Untitled UI migration (2026-09-17).
@@ -36,7 +36,6 @@ type LibraryPanelMode = 'images' | 'ideas' | 'links'
 export function WorkspaceChrome({
   activeView,
   isLibraryCollapsed,
-  isProjectSettingsOpen,
   isSettingsOpen,
   isTauriRuntime,
   libraryPanelMode,
@@ -50,13 +49,11 @@ export function WorkspaceChrome({
   onSaveProject,
   onLibraryPanelModeChange,
   onToggleLibrary,
-  onToggleProjectSettings,
   onWindowDrag,
   onWindowMaximize,
 }: {
   activeView: WorkspaceView
   isLibraryCollapsed: boolean
-  isProjectSettingsOpen: boolean
   isSettingsOpen: boolean
   isTauriRuntime: boolean
   libraryPanelMode: LibraryPanelMode
@@ -70,7 +67,6 @@ export function WorkspaceChrome({
   onSaveProject: () => void
   onLibraryPanelModeChange: (mode: LibraryPanelMode) => void
   onToggleLibrary: () => void
-  onToggleProjectSettings: () => void
   onWindowDrag: (event: React.PointerEvent<HTMLElement>) => void
   onWindowMaximize: (event: React.MouseEvent<HTMLElement>) => void
 }) {
@@ -85,6 +81,10 @@ export function WorkspaceChrome({
     { mode: 'images', label: 'Images', icon: ImageIcon },
     { mode: 'ideas', label: 'Ideas', icon: Lightbulb },
     { mode: 'links', label: 'Links', icon: Workflow },
+    // bố cục 2026-11-10: Canvas Info moved off the topbar's own button
+    // (SlidersHorizontal, formerly "Open project settings") into this same
+    // rail group, as a fourth library-drawer panel mode.
+    { mode: 'canvas', label: 'Canvas', icon: SlidersHorizontal },
   ]
 
   return (
@@ -113,22 +113,6 @@ export function WorkspaceChrome({
           }))}
         />
 
-        <div className="content-toolbar-actions">
-          <Tooltip title={isProjectSettingsOpen ? 'Close project settings' : 'Open project settings'} placement="bottom" delay={200}>
-            <Button
-              className={[
-                'workspace-project-settings-button p-0!',
-                isProjectSettingsOpen ? 'bg-primary_hover text-secondary' : '',
-              ].filter(Boolean).join(' ')}
-              color="tertiary"
-              size="xs"
-              iconLeading={SlidersHorizontal}
-              aria-label={isProjectSettingsOpen ? 'Close project settings' : 'Open project settings'}
-              aria-pressed={isProjectSettingsOpen}
-              onPress={onToggleProjectSettings}
-            />
-          </Tooltip>
-        </div>
       </header>
 
       <aside

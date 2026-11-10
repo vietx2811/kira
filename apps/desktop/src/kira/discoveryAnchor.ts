@@ -62,3 +62,74 @@ export function resolveCaptureTargetNode<TNode>(
   if (explicitTarget) return explicitTarget
   return resolveDiscoveryAnchorTarget(anchor, now, resolveNode)
 }
+
+/**
+ * Side-peek "Explore" tray (docs/research/2026-11-09-pinterest-similar-flow.md,
+ * Cập nhật 2026-11-10 §C): a browser capture made while an anchor is active
+ * no longer attaches to the canvas immediately — it waits here for the user
+ * to Keep or Discard it, keyed by the anchor's node (not the anchor object
+ * itself, which is short-lived and expires on its own TTL independent of
+ * this queue). A node keeps its queue even after the anchor that filled it
+ * expires or is dismissed: those are real "the user clicked Save" captures,
+ * not something a 15-minute timeout should silently drop.
+ */
+export type PendingCaptureQueue<TNode> = Record<string, TNode[]>
+
+export function pendingCaptureKey(kind: GraphNodeKind, id: string): string {
+  return `${kind}:${id}`
+}
+
+export function pushPendingCapture<TNode>(
+  queue: PendingCaptureQueue<TNode>,
+  kind: GraphNodeKind,
+  id: string,
+  capture: TNode,
+): PendingCaptureQueue<TNode> {
+  const key = pendingCaptureKey(kind, id)
+  return { ...queue, [key]: [...(queue[key] ?? []), capture] }
+}
+
+/** `predicate` identifies the one capture to drop from this node's queue
+    (Keep and Discard both remove exactly one, by whatever TNode's own id
+    looks like — the caller's concern, not this module's). Removes the key
+    entirely once its list empties, so an unrelated caller iterating queue
+    keys never has to filter out empty arrays. */
+export function removePendingCapture<TNode>(
+  queue: PendingCaptureQueue<TNode>,
+  kind: GraphNodeKind,
+  id: string,
+  predicate: (capture: TNode) => boolean,
+): PendingCaptureQueue<TNode> {
+  const key = pendingCaptureKey(kind, id)
+  const existing = queue[key]
+  if (!existing) return queue
+  const next = existing.filter((item) => !predicate(item))
+  if (next.length === existing.length) return queue
+  if (next.length === 0) {
+    const { [key]: _removed, ...rest } = queue
+    return rest
+  }
+  return { ...queue, [key]: next }
+}
+
+export function getPendingCaptures<TNode>(
+  queue: PendingCaptureQueue<TNode>,
+  kind: GraphNodeKind,
+  id: string,
+): TNode[] {
+  return queue[pendingCaptureKey(kind, id)] ?? []
+}
+
+/**
+ * Report 2026-11-10 bố cục review, point 4: attaching a capture (whether
+ * via an explicit drop-pad target or Keep/Keep-all on a discovery-anchor
+ * tray item) to an existing node replaces it outright only when that node
+ * is an empty placeholder slot — filling an empty slot isn't destroying
+ * anything. Every other kind, image included, gets a new node linked to
+ * the target instead, so a capture never silently overwrites a reference
+ * the user already has on the canvas (the bug this fixes: Keep used to
+ * replace the anchored image node's own picture).
+ */
+export function shouldReplaceCaptureTarget(targetKind: GraphNodeKind): boolean {
+  return targetKind === 'placeholder'
+}

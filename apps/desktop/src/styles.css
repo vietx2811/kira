@@ -281,11 +281,11 @@
   scrollbar-color: rgb(255 255 255 / 0.14) transparent;
 }
 
-.project-settings-popover::-webkit-scrollbar,
 .image-list::-webkit-scrollbar,
 .library-node-list::-webkit-scrollbar,
+.library-canvas-info::-webkit-scrollbar,
 .canvas-zero-state::-webkit-scrollbar,
-.node-details-popover::-webkit-scrollbar,
+.node-details-sidepeek-content::-webkit-scrollbar,
 .kira-dock-input::-webkit-scrollbar,
 .kira-dock-suggestions::-webkit-scrollbar,
 .slideshow-rail::-webkit-scrollbar,
@@ -297,11 +297,11 @@
   height: 9px;
 }
 
-.project-settings-popover::-webkit-scrollbar-track,
 .image-list::-webkit-scrollbar-track,
 .library-node-list::-webkit-scrollbar-track,
+.library-canvas-info::-webkit-scrollbar-track,
 .canvas-zero-state::-webkit-scrollbar-track,
-.node-details-popover::-webkit-scrollbar-track,
+.node-details-sidepeek-content::-webkit-scrollbar-track,
 .kira-dock-input::-webkit-scrollbar-track,
 .kira-dock-suggestions::-webkit-scrollbar-track,
 .slideshow-rail::-webkit-scrollbar-track,
@@ -312,11 +312,11 @@
   background: transparent;
 }
 
-.project-settings-popover::-webkit-scrollbar-thumb,
 .image-list::-webkit-scrollbar-thumb,
 .library-node-list::-webkit-scrollbar-thumb,
+.library-canvas-info::-webkit-scrollbar-thumb,
 .canvas-zero-state::-webkit-scrollbar-thumb,
-.node-details-popover::-webkit-scrollbar-thumb,
+.node-details-sidepeek-content::-webkit-scrollbar-thumb,
 .kira-dock-input::-webkit-scrollbar-thumb,
 .kira-dock-suggestions::-webkit-scrollbar-thumb,
 .slideshow-rail::-webkit-scrollbar-thumb,
@@ -330,11 +330,11 @@
   background-clip: padding-box;
 }
 
-.project-settings-popover::-webkit-scrollbar-thumb:hover,
 .image-list::-webkit-scrollbar-thumb:hover,
 .library-node-list::-webkit-scrollbar-thumb:hover,
+.library-canvas-info::-webkit-scrollbar-thumb:hover,
 .canvas-zero-state::-webkit-scrollbar-thumb:hover,
-.node-details-popover::-webkit-scrollbar-thumb:hover,
+.node-details-sidepeek-content::-webkit-scrollbar-thumb:hover,
 .kira-dock-input::-webkit-scrollbar-thumb:hover,
 .kira-dock-suggestions::-webkit-scrollbar-thumb:hover,
 .slideshow-rail::-webkit-scrollbar-thumb:hover,
@@ -345,11 +345,11 @@
   background-color: color-mix(in srgb, var(--text-main) 26%, transparent);
 }
 
-.project-settings-popover::-webkit-scrollbar-corner,
 .image-list::-webkit-scrollbar-corner,
 .library-node-list::-webkit-scrollbar-corner,
+.library-canvas-info::-webkit-scrollbar-corner,
 .canvas-zero-state::-webkit-scrollbar-corner,
-.node-details-popover::-webkit-scrollbar-corner,
+.node-details-sidepeek-content::-webkit-scrollbar-corner,
 .kira-dock-input::-webkit-scrollbar-corner,
 .kira-dock-suggestions::-webkit-scrollbar-corner,
 .slideshow-rail::-webkit-scrollbar-corner,
@@ -743,44 +743,6 @@ button {
   pointer-events: none;
 }
 
-.project-settings-popover {
-  position: absolute;
-  top: 54px;
-  right: calc(var(--canvas-right-inset, 0px) + 12px);
-  z-index: 80;
-  display: grid;
-  gap: 8px;
-  width: 300px;
-  max-height: calc(100vh - 80px);
-  overflow-y: auto;
-  padding: 12px;
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius-3);
-  /* Was --node-surface-selected — the token for a selected canvas node, not
-     a panel. At dark alpha that let the thumbnail underneath read through
-     the NAME/DESCRIPTION/AUTHOR fields. --surface-inspector is the same
-     opaque panel token .kira-panel/aside.inbox/the settings dialog use
-     (DESIGN.md §6 Material-On-Chrome Rule: panels stay opaque). */
-  background: var(--surface-inspector);
-  /* This is a floating popover over the canvas, not a panel docked to the
-     shell edge, so it takes the small floating-chrome-plate shadow
-     (kira-controls §5) also used by .content-view-switch/.kira-dock's
-     closed state — not --panel-shadow, sized for large floating panels. */
-  box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 0.06),
-    0 2px 4px rgb(0 0 0 / 0.45),
-    0 12px 28px -8px rgb(0 0 0 / 0.65);
-  pointer-events: auto;
-}
-
-.app-shell[data-color-mode="light"] .project-settings-popover {
-  box-shadow:
-    inset 0 0 0 1px rgb(35 33 29 / 0.06),
-    0 2px 4px rgb(35 33 29 / 0.1),
-    0 12px 26px -10px rgb(35 33 29 / 0.32);
-}
-
-.content-toolbar-actions,
 .panel-header,
 .section-heading,
 .quiet-button,
@@ -811,27 +773,15 @@ button {
   height: 100%;
 }
 
-.content-toolbar-actions {
-  display: inline-flex;
-  align-items: center;
-  min-width: 0;
-  gap: var(--space-2);
-}
-
-/* PHA 4 Untitled UI migration (2026-09-17): the workspace rail and its
-   project-settings trigger are now kit Button + Tooltip components. Keep
-   only KIRA-specific geometry and the selected-rail marker here; color,
-   focus and disabled states belong to the kit's tokenized Button classes.
-   `display: contents` is required for the same reason as the Library and
-   Kira-panel hosts: the chrome contains positioned siblings of the canvas,
-   so UiKitPortalHost must not introduce a static stacking context. */
+/* PHA 4 Untitled UI migration (2026-09-17): the workspace rail is now kit
+   Button + Tooltip components. Keep only KIRA-specific geometry and the
+   selected-rail marker here; color, focus and disabled states belong to
+   the kit's tokenized Button classes. `display: contents` is required for
+   the same reason as the Library and Kira-panel hosts: the chrome contains
+   positioned siblings of the canvas, so UiKitPortalHost must not introduce
+   a static stacking context. */
 .workspace-chrome-uikit-host {
   display: contents;
-}
-
-.workspace-project-settings-button {
-  width: 34px;
-  height: 34px;
 }
 
 .workspace-chrome-button {
@@ -1017,12 +967,6 @@ button {
     inset 0 1px 0 rgb(255 255 255 / 0.06),
     0 2px 4px rgb(0 0 0 / 0.45),
     0 12px 28px -8px rgb(0 0 0 / 0.65);
-}
-
-.content-toolbar-actions {
-  grid-column: 3;
-  justify-content: end;
-  pointer-events: auto;
 }
 
 .icon-button,
@@ -1807,7 +1751,14 @@ button {
 .inspector {
   border-left: 0;
   border-radius: var(--shell-card-radius);
-  background: var(--glass-inspector);
+  /* Was --glass-inspector — buildProjectAppearanceStyle() writes that one
+     with alpha (0.86/0.9) for floating chrome that's meant to let the
+     canvas read through. This panel is docked, not floating (DESIGN.md §6
+     Material-On-Chrome Rule: panels stay opaque, same reasoning
+     .inbox/.library-drawer-panel already follow with --surface-drawer) —
+     Orchestrator caught canvas nodes showing through it live. Report
+     2026-11-10 bố cục review, point 1. */
+  background: var(--surface-inspector);
   box-shadow: none;
 }
 
@@ -2250,6 +2201,17 @@ small {
   overflow-y: auto;
   padding: var(--space-2) var(--space-3) var(--space-4);
   gap: 6px;
+}
+
+/* Canvas Info panel mode — same scroll-container shape as .library-node-list,
+   just a plain block since its content (ProjectSettingsPopover's own
+   .inspector-card sections) lays itself out rather than being a list. */
+.library-canvas-info {
+  display: block;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-bottom: var(--space-4);
 }
 
 .library-node-row {
@@ -3809,8 +3771,8 @@ button.mini-tags-more:focus-visible {
 
 /* See the comment in SlashMenuExtension.tsx's onStart: the plugin mounts
    this straight into document.body, outside any ancestor the popover's own
-   z-index stack would protect it under. Above the node-details-popover
-   scrim (z-index: 100). */
+   z-index stack would protect it under. Safely above every floating panel
+   in the shell (.inspector's own z-index: 10 among them). */
 .slash-menu-portal {
   z-index: 150;
 }
@@ -3867,11 +3829,23 @@ button.mini-tags-more:focus-visible {
 /* point 2: the body is the node's actual content and should read as the
    panel's main mass, not the shortest block in it — a floor tall enough to
    read as "most of the panel" on a typical idea, scrolling inside the
-   popover (which has its own max-height) past that. */
+   popover (which has its own max-height) past that.
+   Report 2026-11-10 bố cục review, point 2: 220px was tuned for the old
+   centered-modal popover, where this was the one and only "main mass" in
+   the panel. In the side-peek (this is .node-rich-editor.is-overlay's only
+   remaining call site), an image/palette/diagram/placeholder's caption is
+   a short aside next to the real content above (the image preview, the
+   color swatches, ...) — a 220px floor on an empty caption just read as a
+   large dead gap there. Kept tall only for idea, where the caption is
+   still the node's one real body of text. */
 .node-rich-editor.is-overlay .node-rich-editor-content {
-  min-height: 220px;
+  min-height: 48px;
   font-size: var(--text-body);
   line-height: 1.55;
+}
+
+.node-details-idea-body .node-rich-editor.is-overlay .node-rich-editor-content {
+  min-height: 220px;
 }
 
 /* The global `p` rule is still an ad-hoc 0.86rem and would undercut the body token
@@ -4505,71 +4479,136 @@ button.mini-tags-more:focus-visible {
   background: var(--border-soft);
 }
 
-/* Full-screen scrim — clicking it (not its child panel, see the
-   stopPropagation on .node-details-popover) closes the overlay, same as
-   Escape. Dims the canvas so the panel reads as the one thing in focus,
-   the way opening a Notion page does. */
-.node-overlay-scrim {
-  position: fixed;
-  inset: 0;
-  z-index: 100;
-  display: grid;
-  place-items: center;
-  padding: 5vh 24px;
-  background: rgb(5 6 6 / 0.56);
-  animation: node-overlay-scrim-in 160ms var(--ease-out-soft);
+/* .inspector (styles.css ~1348/1780/1807) already supplies position,
+   opaque material, open/close transition and the flex-column shell shared
+   with .inbox — this layers the node-details-specific bits: the panel
+   shadow (library-drawer-panel's own, kept off the bare .inspector base
+   rule since nothing else used it yet), and sitting to the left of the Kira
+   dock via --kira-dock-inset (the dock-only portion of the combined
+   --canvas-right-inset — using the combined value here would double-count
+   this panel's own width against itself). */
+.node-details-sidepeek {
+  right: calc(var(--shell-card-inset) + var(--kira-dock-inset, 0px));
+  box-shadow: var(--panel-shadow);
 }
 
-@keyframes node-overlay-scrim-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
+/* .inspector's shared base rule sets overflow: hidden, which would clip a
+   negative-offset handle the way .library-resize-handle gets to sit astride
+   its panel's edge (that one is a true sibling in .workspace, not a clipped
+   child) — kept fully inside the box instead, at the left edge, rather than
+   straddling it. */
+.node-details-sidepeek-resize {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 1;
+  width: 8px;
+  cursor: col-resize;
+  background: transparent;
 }
 
-.node-details-popover {
+.node-details-sidepeek-resize::after {
+  position: absolute;
+  top: 16px;
+  bottom: 16px;
+  left: 3px;
+  width: 1px;
+  border-radius: var(--radius-2);
+  background: color-mix(in srgb, var(--text-main), transparent 96%);
+  content: "";
+}
+
+.node-details-sidepeek-resize:hover::after {
+  background: color-mix(in srgb, var(--accent-cyan), transparent 45%);
+}
+
+/* bố cục 2026-11-10: this used to be a centered-modal popover (full-screen
+   scrim + its own floating card, own background/border/shadow/animation).
+   It's now the scrollable content of a fixed side-peek — the outer
+   .node-details-sidepeek (below) is .inspector, which already supplies the
+   panel's position, opaque material and open/close transition (styles.css
+   ~1348/1780/1807), so this inner piece only needs to be a padded, scrolling
+   flex child, not a floating card in its own right. */
+.node-details-sidepeek-content {
   display: grid;
+  align-content: start;
   gap: 14px;
-  width: min(560px, 100%);
-  min-height: min(560px, 80vh);
-  max-height: 88vh;
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
-  padding: 20px 22px;
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius-3);
-  /* --node-surface-selected carries its own alpha in dark mode (94%,
-     buildProjectAppearanceStyle's POPOVER_SURFACE_ALPHA — a deliberate
-     glass tint for most uses of that token). That's too much: with the
-     node's own content sitting directly behind this panel, 6% bleed-through
-     was legible as ghost text behind the header (node-editor-ux-polish
-     brief, point 5, measured against a real node's content, not a blank
-     canvas). background-color (opaque --surface-2, never alpha'd by
-     buildProjectAppearanceStyle) sits under the tinted token as a second
-     layer, so the result reads the same color but is fully opaque against
-     whatever's behind the popover instead of against --surface-2 itself. */
-  background-color: var(--surface-2);
-  background-image: linear-gradient(var(--node-surface-selected), var(--node-surface-selected));
-  box-shadow: 0 8px 24px rgba(0,0,0,0.25), 0 0 0 1px var(--border-soft);
+  padding: var(--space-4);
   font-size: var(--text-body);
-  animation: node-overlay-panel-in 180ms var(--ease-out-soft);
 }
-
-@keyframes node-overlay-panel-in {
-  from {
-    opacity: 0;
-    transform: scale(0.97) translateY(6px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-
 
 .node-details-section {
   display: grid;
   gap: 8px;
 }
 
-.node-details-popover .diagram-source-input {
+/* Cập nhật 2026-11-10 §C: the side-peek's "Explore" section — the Pinterest
+   button plus the tray of browser captures saved while the discovery
+   anchor was pointed at this node, waiting for Keep/Discard. */
+.node-explore-section {
+  gap: 10px;
+}
+
+.node-explore-tray {
+  display: grid;
+  gap: 6px;
+}
+
+.node-explore-tray-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: var(--text-small);
+}
+
+.node-explore-tray-item {
+  display: grid;
+  grid-template-columns: 36px 1fr auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 4px;
+  border-radius: var(--radius-2);
+}
+
+.node-explore-tray-item:hover {
+  background: var(--control-patch);
+}
+
+/* Report 2026-11-10 bố cục review, point 3: same reset pattern as
+   .node-details-actionbar button above — color="tertiary" has no resting
+   background in the kit's own classes by design (quiet, text-only until
+   hover), so without this it falls through to the browser's native button
+   chrome. Scoped to this one class, not every button in the tray: Keep/
+   Keep all use color="secondary", which already supplies its own
+   background via the kit's utility classes — a bare `button` selector
+   here would be unlayered plain CSS and so would outrank (not lose to)
+   that utility background regardless of specificity, clobbering it. */
+.node-explore-tray-discard {
+  background: transparent;
+}
+
+.node-explore-tray-item img {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-2);
+  object-fit: cover;
+}
+
+.node-explore-tray-item-title {
+  overflow: hidden;
+  color: var(--text-main);
+  font-size: var(--text-small);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.node-details-sidepeek-content .diagram-source-input {
   min-height: 120px;
 }
 
@@ -6431,7 +6470,13 @@ button.palette-color-segment:focus-visible code {
   border-radius: 0 0 var(--radius-2) var(--radius-2);
 }
 
+/* Report 2026-11-10 bố cục review, minor point: gap alone is a no-op
+   without a layout mode — .inspector-card's own base rule has none
+   (display: block by default), unlike .node-version-card below, which
+   already pairs its own gap with display: grid. Without this, Name/
+   Description/Author/Kind/Style note sat flush against each other. */
 .project-file-card {
+  display: grid;
   gap: 10px;
 }
 
@@ -6453,7 +6498,7 @@ button.palette-color-segment:focus-visible code {
 .project-color-summary:hover,
 .project-color-summary.is-active {
   /* No-Nested-Card Rule (DESIGN.md §5): the resting state stays transparent
-     so this doesn't read as a card-in-card inside .project-settings-popover;
+     so this doesn't read as a card-in-card inside the canvas-info panel;
      border/fill only appear as an interaction state. This toggles the
      disclosure open/closed; it isn't the project's chosen accent (the swatch
      dot inside already shows that), so it stays ink, not teal (DESIGN.md §3
@@ -7618,6 +7663,19 @@ button.palette-color-segment:focus-visible code {
 .node-header-block {
   display: grid;
   gap: 4px;
+}
+
+/* Report 2026-11-10 bố cục review, point 2: the one thing worth seeing
+   first about an image node, where the caption below it is often empty.
+   "fit" (object-fit: contain, not cover) — a crop here would show a
+   different picture than clicking Crop in the action bar above actually
+   produces. */
+.node-details-image-preview {
+  width: 100%;
+  max-height: 220px;
+  border-radius: var(--radius-3);
+  background: var(--surface-1);
+  object-fit: contain;
 }
 
 .node-title-input {

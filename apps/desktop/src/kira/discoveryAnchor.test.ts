@@ -5,9 +5,15 @@ import { describe, expect, test } from 'bun:test'
 import {
   DISCOVERY_ANCHOR_TTL_MS,
   type DiscoveryAnchor,
+  getPendingCaptures,
   isDiscoveryAnchorActive,
+  type PendingCaptureQueue,
+  pendingCaptureKey,
+  pushPendingCapture,
+  removePendingCapture,
   resolveCaptureTargetNode,
   resolveDiscoveryAnchorTarget,
+  shouldReplaceCaptureTarget,
 } from './discoveryAnchor'
 
 const NOW = 1_700_000_000_000
@@ -79,5 +85,103 @@ describe('resolveCaptureTargetNode', () => {
 
   test('no explicit target and no anchor resolves to nothing', () => {
     expect(resolveCaptureTargetNode(null, null, NOW, resolveAnchored)).toBe(null)
+  })
+})
+
+type Capture = { id: string; title: string }
+
+function capture(id: string, title = id): Capture {
+  return { id, title }
+}
+
+describe('pendingCaptureKey', () => {
+  test('combines kind and id, distinguishing same id across kinds', () => {
+    expect(pendingCaptureKey('image', 'node-1')).toBe('image:node-1')
+    expect(pendingCaptureKey('image', 'node-1')).not.toBe(pendingCaptureKey('idea', 'node-1'))
+  })
+})
+
+describe('pushPendingCapture', () => {
+  test('starts a new list for a node with no queue yet', () => {
+    const queue = pushPendingCapture<Capture>({}, 'image', 'node-1', capture('a'))
+    expect(getPendingCaptures(queue, 'image', 'node-1')).toEqual([capture('a')])
+  })
+
+  test('appends to an existing list, oldest first', () => {
+    let queue = pushPendingCapture<Capture>({}, 'image', 'node-1', capture('a'))
+    queue = pushPendingCapture(queue, 'image', 'node-1', capture('b'))
+    expect(getPendingCaptures(queue, 'image', 'node-1')).toEqual([capture('a'), capture('b')])
+  })
+
+  test('does not mutate the queue passed in', () => {
+    const original: PendingCaptureQueue<Capture> = {}
+    pushPendingCapture(original, 'image', 'node-1', capture('a'))
+    expect(original).toEqual({})
+  })
+
+  test('keeps separate queues per node', () => {
+    let queue = pushPendingCapture<Capture>({}, 'image', 'node-1', capture('a'))
+    queue = pushPendingCapture(queue, 'image', 'node-2', capture('b'))
+    expect(getPendingCaptures(queue, 'image', 'node-1')).toEqual([capture('a')])
+    expect(getPendingCaptures(queue, 'image', 'node-2')).toEqual([capture('b')])
+  })
+})
+
+describe('removePendingCapture', () => {
+  test('removes the one capture matching the predicate', () => {
+    let queue = pushPendingCapture<Capture>({}, 'image', 'node-1', capture('a'))
+    queue = pushPendingCapture(queue, 'image', 'node-1', capture('b'))
+    queue = removePendingCapture(queue, 'image', 'node-1', (item) => item.id === 'a')
+    expect(getPendingCaptures(queue, 'image', 'node-1')).toEqual([capture('b')])
+  })
+
+  test('drops the key entirely once its last capture is removed', () => {
+    const queue = pushPendingCapture<Capture>({}, 'image', 'node-1', capture('a'))
+    const next = removePendingCapture(queue, 'image', 'node-1', (item) => item.id === 'a')
+    expect(next).toEqual({})
+    expect(Object.keys(next)).toHaveLength(0)
+  })
+
+  test('a node with no queue is a no-op, not an error', () => {
+    const queue: PendingCaptureQueue<Capture> = {}
+    expect(removePendingCapture(queue, 'image', 'node-1', () => true)).toBe(queue)
+  })
+
+  test('a predicate matching nothing leaves the queue untouched', () => {
+    const queue = pushPendingCapture<Capture>({}, 'image', 'node-1', capture('a'))
+    expect(removePendingCapture(queue, 'image', 'node-1', (item) => item.id === 'z')).toBe(queue)
+  })
+
+  test('does not touch another node\'s queue', () => {
+    let queue = pushPendingCapture<Capture>({}, 'image', 'node-1', capture('a'))
+    queue = pushPendingCapture(queue, 'image', 'node-2', capture('b'))
+    queue = removePendingCapture(queue, 'image', 'node-1', (item) => item.id === 'a')
+    expect(getPendingCaptures(queue, 'image', 'node-2')).toEqual([capture('b')])
+  })
+})
+
+describe('getPendingCaptures', () => {
+  test('a node with no queue returns an empty array, not undefined', () => {
+    expect(getPendingCaptures<Capture>({}, 'image', 'node-1')).toEqual([])
+  })
+})
+
+describe('shouldReplaceCaptureTarget', () => {
+  test('a placeholder target replaces (filling an empty slot)', () => {
+    expect(shouldReplaceCaptureTarget('placeholder')).toBe(true)
+  })
+
+  // The regression this guards: Keep used to replace the anchored image
+  // node's own picture outright (replaceReferenceWithReference) — an
+  // image target must now create a new linked node instead, same as
+  // idea/palette/diagram already did.
+  test('an image target does not replace', () => {
+    expect(shouldReplaceCaptureTarget('image')).toBe(false)
+  })
+
+  test('idea and diagram targets do not replace', () => {
+    expect(shouldReplaceCaptureTarget('idea')).toBe(false)
+    expect(shouldReplaceCaptureTarget('diagram')).toBe(false)
+    expect(shouldReplaceCaptureTarget('palette')).toBe(false)
   })
 })

@@ -48,7 +48,16 @@ import { RELATIONS, normalizeRelation, relationWeight, type Relation } from './k
 import { autoLayout, type AutoLayoutEdge, type AutoLayoutNode } from './kira/canvas/autoLayout'
 import { currentPersonaContext, withPersona } from './kira/ai/persona'
 import { loadPersonaContext } from './kira/ai/personaStore'
-import { DISCOVERY_ANCHOR_TTL_MS, type DiscoveryAnchor, resolveCaptureTargetNode } from './kira/discoveryAnchor'
+import {
+  DISCOVERY_ANCHOR_TTL_MS,
+  type DiscoveryAnchor,
+  getPendingCaptures,
+  type PendingCaptureQueue,
+  pushPendingCapture,
+  removePendingCapture,
+  resolveDiscoveryAnchorTarget,
+  shouldReplaceCaptureTarget,
+} from './kira/discoveryAnchor'
 import { buildPinterestSearchQuery, resolvePinterestPinUrl } from './kira/pinterestSimilar'
 import { newIdeaDefaults, resolveIdeaFaceDisplay } from './kira/newIdea'
 import { visibleCanvasAreaCenterPercent } from './kira/visibleCanvasCenter'
@@ -726,7 +735,7 @@ type KiraCaptureContext = {
 
 export type LibraryDensity = 'compact' | 'relaxed'
 export type LibraryBrowseMode = 'list' | 'grid'
-export type LibraryPanelMode = 'images' | 'ideas' | 'links'
+export type LibraryPanelMode = 'images' | 'ideas' | 'links' | 'canvas'
 export type SortMode = 'recent' | 'title' | 'source'
 type GraphNodeKind = 'idea' | 'image' | 'palette' | 'diagram' | 'placeholder'
 type GraphMode = 'edit' | 'discover'
@@ -911,6 +920,26 @@ const UI_STRINGS: Record<string, { en: string; vi: string }> = {
   'canvas.discoverChip.off': { en: 'Turn off', vi: 'Tắt' },
   'canvas.node.pinterestSimilar.title': { en: 'Find similar on Pinterest', vi: 'Tìm ảnh tương tự trên Pinterest' },
   'canvas.node.pinterestSimilar.description': { en: 'Open Pinterest in browser', vi: 'Mở Pinterest trong trình duyệt' },
+  // bố cục 2026-11-10: node-details-popover moved into a fixed side-peek.
+  'sidePeek.close': { en: 'Close', vi: 'Đóng' },
+  'sidePeek.explore.title': { en: 'Explore', vi: 'Khám phá' },
+  'sidePeek.explore.pending': { en: '{count} saved while browsing', vi: '{count} ảnh đã lưu khi khám phá' },
+  'sidePeek.explore.keep': { en: 'Keep', vi: 'Giữ' },
+  'sidePeek.explore.discard': { en: 'Discard', vi: 'Bỏ' },
+  'sidePeek.explore.keepAll': { en: 'Keep all', vi: 'Giữ tất cả' },
+  // Report 2026-11-10 bố cục review, minor point: the rest of the
+  // side-peek's section labels, still hardcoded English.
+  'sidePeek.section.colors': { en: 'Colors', vi: 'Màu sắc' },
+  'sidePeek.section.source': { en: 'Source', vi: 'Nguồn' },
+  'sidePeek.section.history': { en: 'History', vi: 'Lịch sử' },
+  'sidePeek.section.tags': { en: 'Tags', vi: 'Thẻ' },
+  'sidePeek.section.palette': { en: 'Palette', vi: 'Bảng màu' },
+  'sidePeek.tags.suggested': { en: 'Suggested tags: click to add', vi: 'Thẻ gợi ý, bấm để thêm' },
+  'sidePeek.source.add': { en: 'Add source', vi: 'Thêm nguồn' },
+  'sidePeek.notes.aria': { en: 'Notes', vi: 'Ghi chú' },
+  'sidePeek.notes.placeholder': { en: 'Notes...', vi: 'Ghi chú...' },
+  'sidePeek.properties.updated': { en: 'Updated {time}', vi: 'Cập nhật {time}' },
+  'sidePeek.colorScheme.title': { en: 'Color Scheme', vi: 'Bảng màu canvas' },
   'library.empty.title': { en: 'No references yet', vi: 'Chưa có tư liệu tham khảo' },
   'library.empty.body': { en: 'Drag in images, paste a URL, or import a folder to start your moodboard.', vi: 'Kéo thả hình ảnh, dán URL, hoặc nhập một thư mục để bắt đầu moodboard.' },
   'library.empty.import': { en: 'Import images', vi: 'Nhập hình ảnh' },
@@ -1008,6 +1037,11 @@ const UI_STRINGS: Record<string, { en: string; vi: string }> = {
   'library.panel.images': { en: 'Images', vi: 'Hình ảnh' },
   'library.panel.ideas': { en: 'Ideas', vi: 'Ý tưởng' },
   'library.panel.links': { en: 'Links', vi: 'Liên kết' },
+  // bố cục 2026-11-10: Canvas Info moved off the topbar into the library
+  // rail, as its own panel mode next to Images/Ideas/Links.
+  'library.panel.canvas': { en: 'Canvas', vi: 'Thông tin canvas' },
+  'library.aria.openCanvas': { en: 'Open canvas info', vi: 'Mở thông tin canvas' },
+  'library.aria.closeCanvas': { en: 'Close canvas info', vi: 'Đóng thông tin canvas' },
   'library.aria.importImage': { en: 'Import image', vi: 'Nhập hình ảnh' },
   'library.aria.toolsMenu': { en: 'Library tools', vi: 'Công cụ thư viện' },
   'library.aria.importReferences': { en: 'Import reference images', vi: 'Nhập hình ảnh tham khảo' },
@@ -1225,9 +1259,9 @@ function NodeRichEditor({
   editable?: boolean
   overlayMode?: boolean
   onAskKira?: (action: AskKiraAction, selectedText: string) => void
-  // Lets the overlay's own Escape-closes-dismissable-layer (useDismissableLayer
-  // on .node-details-popover) know to let the slash menu's own Escape handler
-  // run first instead of closing the whole overlay out from under it.
+  // Lets the side-peek's own Escape-to-close effect (GraphCanvas, gated on
+  // isSlashMenuOpen) know to let the slash menu's own Escape handler run
+  // first instead of closing the whole side-peek out from under it.
   onSlashMenuOpenChange?: (open: boolean) => void
 }): React.ReactElement {
   const onChangeRef = useRef(onChange)
@@ -1550,6 +1584,11 @@ type KiraDevApi = {
   rejectChange: (changeSetId: string, itemId: string) => void
   aiPanel: () => AiPanelState
   testApplySnapshotPreserveHistory: () => { changeSetId: string; itemId: string }
+  // Cập nhật 2026-11-10 §C verify step: the real path is a POST to the
+  // native capture server (127.0.0.1:47653), native-only — this calls the
+  // same handleKiraCapture a real capture would, for browser-preview
+  // verification of the discovery-anchor tray without a Tauri runtime.
+  simulateCapture: (overrides?: Partial<KiraCapturePayload>) => void
 }
 
 type KiraWindow = Window & {
@@ -2435,6 +2474,14 @@ function FileWorkspace({
   const [projectPackage, setProjectPackage] = useState<ProjectPackageInfo | null>(initialPackage)
   const [restorableSession, setRestorableSession] = useState<{ path: string | null; label: string; snapshot: ProjectSnapshot } | null>(null)
   const [selection, setSelection] = useState<Selection>({ type: 'project' })
+  // bố cục 2026-11-10: lifted out of GraphCanvas (see its own props-list
+  // comment) only so FileWorkspace can compute --canvas-right-inset from
+  // the side-peek's open/width alongside the Kira dock's own inset. Every
+  // existing GraphCanvas-internal reference to multiSelectedNodes behaves
+  // exactly as local state would.
+  const [multiSelectedNodes, setMultiSelectedNodes] = useState<CanvasNodeSelection[]>([])
+  const [sidePeekDismissedFor, setSidePeekDismissedFor] = useState<CanvasNodeSelection | null>(null)
+  const [sidePeekWidth, setSidePeekWidth] = useState(340)
   const [activeView, setActiveView] = useState<ActiveView>('Canvas')
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedTag, setSelectedTag] = useState<string | null>(null)
@@ -2542,7 +2589,6 @@ function FileWorkspace({
   const [settingsFocusTab, setSettingsFocusTab] = useState<'ai' | 'capture'>('ai')
   const [isOnboardingOpen, setIsOnboardingOpen] = useState(() => !readOnboardingCompleted())
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
-  const [isProjectSettingsOpen, setIsProjectSettingsOpen] = useState(false)
   const [extensionInstallStatus, setExtensionInstallStatus] = useState<ExtensionInstallStatus>(() => defaultExtensionInstallStatus())
   const [modelRunningImageId, setModelRunningImageId] = useState<string | null>(null)
   const [modelStatusByImageId, setModelStatusByImageId] = useState<Record<string, string>>({})
@@ -2581,12 +2627,6 @@ function FileWorkspace({
     onKiraNeedsYouCountChange(aiPanelNeedsYouCount(aiPanelState))
   }, [aiPanelState, onKiraNeedsYouCountChange])
   const [isVersionHistoryOpen, setIsVersionHistoryOpen] = useState(false)
-
-  useDismissableLayer(
-    isProjectSettingsOpen,
-    '.project-settings-popover, .workspace-project-settings-button',
-    () => setIsProjectSettingsOpen(false),
-  )
   const [cropTargetImageId, setCropTargetImageId] = useState<string | null>(null)
   const [glassStatus, setGlassStatus] = useState<GlassStatus>(() => (isTauriRuntime() ? 'fallback' : 'browser'))
   const pendingCanvasHistoryCommitRef = useRef(false)
@@ -2637,6 +2677,13 @@ function FileWorkspace({
   // "Đang gắn vào: ..." chip can render and auto-hide on expiry.
   const discoveryAnchorRef = useRef<DiscoveryAnchor | null>(null)
   const [discoveryAnchorState, setDiscoveryAnchorState] = useState<DiscoveryAnchor | null>(null)
+  // Cập nhật 2026-11-10 §C: a capture made while an anchor is active lands
+  // here instead of straight on the canvas, keyed by the anchored node —
+  // see kira/discoveryAnchor.ts's own comment for why that outlives the
+  // anchor itself. Rendered as the side-peek's "Explore" section's tray;
+  // Keep/Discard/Keep all (below) are this queue's only writers besides
+  // handleKiraCapture's own fallback branch.
+  const [pendingCaptureQueue, setPendingCaptureQueue] = useState<PendingCaptureQueue<EvidenceImage>>({})
   const canUndoCanvas = useStore(canvasHistoryStore.temporal, (state) => state.pastStates.length > 0)
   const canRedoCanvas = useStore(canvasHistoryStore.temporal, (state) => state.futureStates.length > 0)
   projectStateRef.current = {
@@ -3283,6 +3330,17 @@ function FileWorkspace({
         })
         return { changeSetId, itemId }
       },
+      simulateCapture(overrides) {
+        handleKiraCapture({
+          kiraCapture: 1,
+          kind: 'image',
+          url: `https://i.pinimg.com/originals/dev-capture-${Date.now()}.jpg`,
+          title: `Dev capture ${Date.now()}`,
+          source: 'https://www.pinterest.com/pin/dev-capture/',
+          capturedAt: nowIso(),
+          ...overrides,
+        })
+      },
     }
 
     return () => {
@@ -3680,25 +3738,78 @@ function FileWorkspace({
     const explicitTarget = capture.targetNode
       ? resolveGraphNodeRef(capture.targetNode.id, state.ideas, state.images, state.palettes, state.diagrams, state.placeholders)
       : null
-    // Not cleared on use: a discovery trip is a browsing session, not a
-    // single capture, so the anchor keeps resolving fresh captures until it
+
+    if (explicitTarget) {
+      const persistedId = attachCaptureToGraphNode(reference, explicitTarget)
+      if (persistedId && capture.kind === 'image') void downloadAndAnalyzeCaptureImage(persistedId, reference.title, capture.url)
+      return
+    }
+
+    // Cập nhật 2026-11-10 §C: no explicit target (hover-Save, Alt+Shift+K —
+    // neither carries one), but an anchor is active — this used to attach
+    // straight to the canvas the same way explicitTarget does above; now it
+    // waits in the side-peek's "Explore" tray for Keep/Discard instead. Not
+    // cleared on use: a discovery trip is a browsing session, not a single
+    // capture, so the anchor keeps resolving fresh captures until it
     // expires or a later "Find similar" press on a different node
-    // overwrites it.
-    const target = resolveCaptureTargetNode(
-      explicitTarget,
+    // overwrites it. Thumbnail download/analysis is deferred to Keep
+    // (keepPendingCapture) rather than run here — spending that work on a
+    // capture the user might Discard a moment later would be wasted.
+    const anchorTarget = resolveDiscoveryAnchorTarget(
       discoveryAnchorRef.current,
       Date.now(),
       (_kind, id) => resolveGraphNodeRef(id, state.ideas, state.images, state.palettes, state.diagrams, state.placeholders),
     )
-
-    if (target) {
-      const persistedId = attachCaptureToGraphNode(reference, target)
-      if (persistedId && capture.kind === 'image') void downloadAndAnalyzeCaptureImage(persistedId, reference.title, capture.url)
+    const anchor = discoveryAnchorRef.current
+    if (anchorTarget && anchor) {
+      setPendingCaptureQueue((current) => pushPendingCapture(current, anchor.kind, anchor.id, reference))
       return
     }
 
     appendReferences([reference], '1 browser capture imported')
     if (capture.kind === 'image') void downloadAndAnalyzeCaptureImage(reference.id, reference.title, capture.url)
+  }
+
+  // Cập nhật 2026-11-10 §C: resolves the anchored node fresh (not the
+  // snapshot captured when the reference was queued — the node could have
+  // moved, been renamed, or in the worst case been deleted since) so Keep
+  // never attaches against stale coordinates. A deleted target falls back
+  // to appendReferences rather than silently dropping the image the user
+  // explicitly chose to keep.
+  function keepPendingCapture(kind: GraphNodeKind, id: string, captureId: string) {
+    const pending = getPendingCaptures(pendingCaptureQueue, kind, id)
+    const reference = pending.find((item) => item.id === captureId)
+    if (!reference) return
+    setPendingCaptureQueue((current) => removePendingCapture(current, kind, id, (item) => item.id === captureId))
+    const target = resolveGraphNodeRef(id, ideas, images, palettes, diagrams, placeholders)
+    let persistedId: string | null
+    if (target) {
+      persistedId = attachCaptureToGraphNode(reference, target)
+    } else {
+      appendReferences([reference], `Attached ${reference.title}`)
+      persistedId = reference.id
+    }
+    // tags always include capture.kind as one of its entries
+    // (createReferenceFromCapture) — same check the capture-image backfill
+    // sweep above already uses to tell a page capture from an image one.
+    if (persistedId && reference.tags.includes('image')) void downloadAndAnalyzeCaptureImage(persistedId, reference.title, reference.sourceUrl || reference.thumb)
+  }
+
+  function discardPendingCapture(kind: GraphNodeKind, id: string, captureId: string) {
+    setPendingCaptureQueue((current) => removePendingCapture(current, kind, id, (item) => item.id === captureId))
+  }
+
+  // Per captures' own queue order (oldest first): against an image-kind
+  // anchor, attachCaptureToGraphNode replaces that same node each time (the
+  // existing single-capture behavior this tray fronts, canvas-node-ux's own
+  // "replace target" semantics for an image target) — so only the LAST
+  // kept item ends up on the canvas when the anchor is an image, same as
+  // it would have before this tray existed. Not a new limitation Keep All
+  // introduces; see the report for this task.
+  function keepAllPendingCaptures(kind: GraphNodeKind, id: string) {
+    for (const item of getPendingCaptures(pendingCaptureQueue, kind, id)) {
+      keepPendingCapture(kind, id, item.id)
+    }
   }
 
   // Orchestrator decision (supersedes the §3.4 window.open plan this
@@ -3885,14 +3996,25 @@ function FileWorkspace({
     return positioned.id
   }
 
+  // Report 2026-11-10 bố cục review, point 4: dropping onto an existing
+  // image node used to REPLACE it outright (replaceReferenceWithReference)
+  // — fine for an intentional drop-pad gesture (the explicit-target path
+  // still had this as the obvious "put this picture here" action before
+  // this report), but destructive and unacceptable for the discovery
+  // anchor's passive "I saved this while browsing" captures, which never
+  // asked to overwrite the node they happened to be anchored to. Fixed for
+  // both callers the same way (not just the anchor/tray path) per the
+  // report's own "nhất quán nếu cùng hàm" — an image target now falls into
+  // the same create-a-new-linked-node branch every other kind already
+  // used, just positioned near the target via findOpenSlotNearAnchor
+  // (the same occupied-nodes-aware placement claimOpenSlot/
+  // claimOpenSlotInCanvas already use) instead of the old fixed +10/+8
+  // offset, so "Keep all" creating several nodes in one go doesn't stack
+  // them on top of each other. Placeholder stays a replace (filling an
+  // empty slot isn't destroying anything) — unchanged, per the report's
+  // own explicit exception for drop-pad onto a placeholder.
   function attachCaptureToGraphNode(reference: EvidenceImage, target: GraphNodeRef): string | null {
-    if (target.kind === 'image') {
-      const replacedId = replaceReferenceWithReference(target.id, reference, `Replaced reference with ${reference.title}`)
-      setActiveView('Canvas')
-      return replacedId
-    }
-
-    if (target.kind === 'placeholder') {
+    if (shouldReplaceCaptureTarget(target.kind)) {
       const attachedId = attachPlaceholderReference(target.id, reference)
       setActiveView('Canvas')
       return attachedId
@@ -3900,7 +4022,17 @@ function FileWorkspace({
 
     pushCanvasHistory()
     const timestamp = nowIso()
-    const positioned = positionReference(reference, { x: clamp(target.x + 10, 8, 92), y: clamp(target.y + 8, 8, 92) })
+    // claimOpenSlot's own ref: keepAllPendingCaptures calls this function
+    // once per queued item in a tight loop, all in the same tick, before
+    // any of them show up in `images` — without tracking claimed-but-not-
+    // yet-rendered spots the same way claimOpenSlot does, every item in
+    // that loop would resolve the same open slot and land on top of each
+    // other, the exact stacking bug this placement logic exists to avoid.
+    const occupied: PlacedPoint[] = [...ideas, ...images, ...palettes, ...diagrams, ...placeholders].map((node) => ({ x: node.x, y: node.y }))
+    occupied.push(...pendingPlacementsRef.current)
+    const slot = findOpenSlotNearAnchor({ anchor: { x: target.x, y: target.y }, occupied })
+    pendingPlacementsRef.current = [...pendingPlacementsRef.current, slot]
+    const positioned = positionReference(reference, slot)
     setImages((current) => [...current, positioned])
     setLinks((current) => [
       ...current,
@@ -3913,7 +4045,7 @@ function FileWorkspace({
         sourceKind: 'image',
         targetKind: target.kind,
         relation: target.kind === 'idea' ? 'supports' : 'related',
-        note: 'Browser capture dropped onto this node.',
+        note: target.kind === 'image' ? 'Browser capture saved while exploring this image.' : 'Browser capture dropped onto this node.',
         confidence: 0.62,
         createdAt: timestamp,
         updatedAt: timestamp,
@@ -7292,7 +7424,20 @@ function FileWorkspace({
   // DECISIONS.md bố cục #1: panel overlays the canvas like Library — topbar,
   // zoom, tool rail and dock retreat via --canvas-right-inset, already read
   // (with a 0px fallback) at 5 call sites in styles.css.
-  const canvasRightInset = isKiraPanelOpen ? kiraPanelWidth + 24 : 0
+  const kiraDockInset = isKiraPanelOpen ? kiraPanelWidth + 24 : 0
+  // bố cục 2026-11-10: the side-peek auto-opens for exactly one selected
+  // node, same guard renderNodeBelowStack applies internally — duplicated
+  // here (rather than threaded up as its own boolean) because this is the
+  // only other place that needs it, purely to size --canvas-right-inset.
+  const isSidePeekOpen = multiSelectedNodes.length === 0
+    && isNodeSelection(selection)
+    && !(sidePeekDismissedFor && sidePeekDismissedFor.kind === selection.type && sidePeekDismissedFor.id === selection.id)
+  // --canvas-right-inset now reserves room for the side-peek too, stacked
+  // to the left of the Kira dock (not under it) — the side-peek's own
+  // position (styles.css .node-details-sidepeek) uses --kira-dock-inset
+  // alone instead of this combined total, or it would double-count its own
+  // width against itself.
+  const canvasRightInset = kiraDockInset + (isSidePeekOpen ? sidePeekWidth + 24 : 0)
 
   // ---------------------------------------------------------------------
   // Kira right panel — state glue (docs/design/right-panel/DECISIONS.md).
@@ -7579,12 +7724,12 @@ function FileWorkspace({
           '--canvas-overlay-left-inset': `${canvasOverlayLeftInset}px`,
           '--canvas-overlay-shift': `${canvasOverlayShift}px`,
           '--canvas-right-inset': `${canvasRightInset}px`,
+          '--kira-dock-inset': `${kiraDockInset}px`,
         } as React.CSSProperties}
       >
         <WorkspaceChrome
           activeView={activeView}
           isLibraryCollapsed={isLibraryCollapsed}
-          isProjectSettingsOpen={isProjectSettingsOpen}
           isSettingsOpen={isSettingsOpen}
           isTauriRuntime={isTauriRuntime()}
           libraryPanelMode={libraryPanelMode}
@@ -7603,18 +7748,9 @@ function FileWorkspace({
           onLibraryPanelModeChange={setLibraryPanelMode}
           onOpenSettings={() => setIsSettingsOpen(true)}
           onToggleLibrary={() => setIsLibraryCollapsed((current) => !current)}
-          onToggleProjectSettings={() => setIsProjectSettingsOpen((current) => !current)}
           onWindowDrag={startWindowDrag}
           onWindowMaximize={toggleWindowMaximizeFromChrome}
         />
-        {isProjectSettingsOpen && (
-          <ProjectSettingsPopover
-            project={projectMetadata}
-            appearance={projectAppearance}
-            onProjectMetadataChange={updateProjectMetadata}
-            onProjectAppearanceChange={updateProjectAppearance}
-          />
-        )}
         {libraryPanelMountState.mounted && <EvidenceInbox
           allTags={libraryTags}
           browseMode={libraryBrowseMode}
@@ -7622,6 +7758,22 @@ function FileWorkspace({
           ideas={ideas}
           isCollapsed={!libraryPanelMountState.entered}
           images={visibleImages}
+          // bố cục 2026-11-10: Canvas Info moved off the topbar into this
+          // drawer's own "canvas" panel mode. Passed as a rendered node
+          // rather than raw project/appearance data so EvidenceInbox.tsx
+          // doesn't need ProjectMetadata/ProjectAppearance and the half
+          // dozen color-scheme helpers (projectAccentPresets,
+          // normalizeHexInput, ProjectColorSummary, ...) exported out of
+          // main.tsx just to re-render a popover's old content — the popover
+          // itself still owns that, just mounted here instead of floating.
+          canvasInfoContent={
+            <ProjectSettingsPopover
+              project={projectMetadata}
+              appearance={projectAppearance}
+              onProjectMetadataChange={updateProjectMetadata}
+              onProjectAppearanceChange={updateProjectAppearance}
+            />
+          }
           links={links}
           panelMode={libraryPanelMode}
           selectedTag={selectedTag}
@@ -7747,6 +7899,16 @@ function FileWorkspace({
             ) : (
               <GraphCanvas
                 visibleCanvasCenterRef={visibleCanvasCenterRef}
+                multiSelectedNodes={multiSelectedNodes}
+                setMultiSelectedNodes={setMultiSelectedNodes}
+                sidePeekDismissedFor={sidePeekDismissedFor}
+                setSidePeekDismissedFor={setSidePeekDismissedFor}
+                sidePeekWidth={sidePeekWidth}
+                setSidePeekWidth={setSidePeekWidth}
+                pendingCaptureQueue={pendingCaptureQueue}
+                onKeepPendingCapture={keepPendingCapture}
+                onDiscardPendingCapture={discardPendingCapture}
+                onKeepAllPendingCaptures={keepAllPendingCaptures}
                 ideas={ideas}
                 images={images}
                 palettes={palettes}
@@ -8551,8 +8713,11 @@ function OnboardingOverlay({
   )
 }
 
-// Anchored under the top bar's own trigger button rather than any node — this
-// is the one settings surface with no canvas card to attach a popover to.
+// bố cục 2026-11-10: used to float under its own topbar trigger button, with
+// no canvas card to attach a popover to; now mounted inline inside the
+// library drawer's own "canvas" panel mode (EvidenceInbox.tsx), which
+// supplies the positioning, scrolling and kira-uikit theme scope this no
+// longer needs to carry itself.
 function ProjectSettingsPopover({
   project,
   appearance,
@@ -8567,7 +8732,7 @@ function ProjectSettingsPopover({
   const [isProjectColorOpen, setIsProjectColorOpen] = useState(false)
   const lang = useLangStore((state) => state.lang)
   return (
-    <div className="project-settings-popover kira-uikit" onPointerDown={(event) => event.stopPropagation()} onContextMenu={(event) => event.preventDefault()}>
+    <div onPointerDown={(event) => event.stopPropagation()} onContextMenu={(event) => event.preventDefault()}>
       <section className="inspector-card project-file-card">
         <Input
           label={t('inspector.name', lang)}
@@ -8612,7 +8777,7 @@ function ProjectSettingsPopover({
       <section className="inspector-card project-file-card">
         <div className="section-heading">
           <Palette size={14} />
-          Color Scheme
+          {t('sidePeek.colorScheme.title', lang)}
         </div>
         <ProjectColorSummary
           appearance={appearance}
@@ -8807,6 +8972,16 @@ function GraphCanvas({
   onOpenKiraPanel,
   nodeProvenance,
   onOpenKiraPanelChanges,
+  multiSelectedNodes,
+  setMultiSelectedNodes,
+  sidePeekDismissedFor,
+  setSidePeekDismissedFor,
+  sidePeekWidth,
+  setSidePeekWidth,
+  pendingCaptureQueue,
+  onKeepPendingCapture,
+  onDiscardPendingCapture,
+  onKeepAllPendingCaptures,
 }: {
   // kira/placeNode.ts: written every render (see the effect near
   // visibleCanvasCenter below) so FileWorkspace's claimOpenSlot can read a
@@ -8926,6 +9101,25 @@ function GraphCanvas({
   // tab rather than the mockup's per-node popover (scope cut, see report).
   nodeProvenance: Record<string, AiNodeProvenance>
   onOpenKiraPanelChanges: () => void
+  // bố cục 2026-11-10: lifted to FileWorkspace, not GraphCanvas-local state,
+  // so FileWorkspace can compute --canvas-right-inset (needs the side-peek's
+  // open/width alongside the Kira dock's own) without GraphCanvas having to
+  // reach outside its own render. multiSelectedNodes used to be local here;
+  // moving it up changes nothing at any of its existing call sites below,
+  // since the destructured name stays the same.
+  multiSelectedNodes: CanvasNodeSelection[]
+  setMultiSelectedNodes: React.Dispatch<React.SetStateAction<CanvasNodeSelection[]>>
+  sidePeekDismissedFor: CanvasNodeSelection | null
+  setSidePeekDismissedFor: React.Dispatch<React.SetStateAction<CanvasNodeSelection | null>>
+  sidePeekWidth: number
+  setSidePeekWidth: (width: number) => void
+  // Cập nhật 2026-11-10 §C: the side-peek's "Explore" section's own tray —
+  // see kira/discoveryAnchor.ts's PendingCaptureQueue for why this is keyed
+  // by node rather than by the (shorter-lived) anchor.
+  pendingCaptureQueue: PendingCaptureQueue<EvidenceImage>
+  onKeepPendingCapture: (kind: GraphNodeKind, id: string, captureId: string) => void
+  onDiscardPendingCapture: (kind: GraphNodeKind, id: string, captureId: string) => void
+  onKeepAllPendingCaptures: (kind: GraphNodeKind, id: string) => void
 }) {
   const canvasRef = useRef<HTMLDivElement>(null)
   const draggingNodeRef = useRef<{
@@ -9004,56 +9198,53 @@ function GraphCanvas({
   const [organizeMode, setOrganizeMode] = useState<GraphOrganizeMode>('mindmap')
   const [isGraphToolsOpen, setIsGraphToolsOpen] = useState(false)
   const [arcMenu, setArcMenu] = useState<Pick<GraphNodeRef, 'kind' | 'id' | 'x' | 'y'> | null>(null)
-  const [multiSelectedNodes, setMultiSelectedNodes] = useState<CanvasNodeSelection[]>([])
   const [nodeContextMenu, setNodeContextMenu] = useState<{ x: number; y: number; nodes: CanvasNodeSelection[] } | null>(null)
   const [canvasContextMenu, setCanvasContextMenu] = useState<CanvasContextMenu | null>(null)
-  const [detailsPopoverNode, setDetailsPopoverNode] = useState<CanvasNodeSelection | null>(null)
   // The node card itself (`[data-node-kind][data-node-id]`, tabIndex 0) —
-  // focus returns here when the overlay closes, so keyboard/screen-reader
+  // focus returns here when the side-peek closes, so keyboard/screen-reader
   // users land back on the node instead of at the top of the document.
   // Always the card, never the small affordance that opened it (the
   // toolbar's Details button, a right-click menu item): those can move,
   // hide, or in the context-menu's case not exist as a DOM node by the
-  // time the overlay closes, while the card is the one stable landing
-  // spot every entry path shares. Shared by every close path (scrim
-  // click, X button, Escape/outside-click via useDismissableLayer) so
-  // none of them skip the restore.
+  // time the side-peek closes, while the card is the one stable landing
+  // spot every entry path shares.
   const detailsTriggerRef = useRef<HTMLElement | null>(null)
   function findNodeCardElement(kind: GraphNodeKind, id: string): HTMLElement | null {
     return document.querySelector<HTMLElement>(`[data-node-kind="${kind}"][data-node-id="${CSS.escape(id)}"]`)
   }
-  function closeDetailsPopover() {
-    setDetailsPopoverNode(null)
+  // bố cục 2026-11-10: the side-peek auto-opens for whatever single node is
+  // selected (guard already at the top of renderNodeBelowStack) — closing it
+  // is now "dismiss it for this one node, until the next selection", not
+  // "clear an independent open/closed flag". sidePeekDismissedFor is lifted
+  // to FileWorkspace only so --canvas-right-inset can be computed there
+  // alongside the Kira dock's own inset; every reference here behaves
+  // exactly as local state would.
+  function closeSidePeek() {
+    if (isNodeSelection(selected)) setSidePeekDismissedFor({ kind: selected.type, id: selected.id })
     detailsTriggerRef.current?.focus()
   }
-  // Direct Manipulation (DESIGN.md §2.1): the popover should visibly grow
-  // out of the node that opened it, not fade in as a disconnected centered
-  // dialog. A ref callback (not useLayoutEffect — this runs from inside
-  // renderNodeBelowStack, a plain helper fn called per node, not a
-  // component, so hooks aren't legal here) does a one-shot FLIP: read the
-  // trigger's on-screen rect, invert the popover to start there, then
-  // transition it back to its natural resting transform.
-  function applyNodeDetailsMorph(el: HTMLDivElement | null) {
-    if (!el || el.dataset.morphed === 'true') return
-    const origin = detailsTriggerRef.current?.getBoundingClientRect()
-    if (!origin || (origin.width === 0 && origin.height === 0)) return // no usable origin — CSS fallback animation plays instead
-    el.dataset.morphed = 'true'
-    el.style.animation = 'none'
-    const finalRect = el.getBoundingClientRect()
-    const scaleX = origin.width / finalRect.width
-    const scaleY = origin.height / finalRect.height
-    const translateX = origin.left + origin.width / 2 - (finalRect.left + finalRect.width / 2)
-    const translateY = origin.top + origin.height / 2 - (finalRect.top + finalRect.height / 2)
-    el.style.transition = 'none'
-    el.style.opacity = '0'
-    el.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scaleX}, ${scaleY})`
-    void el.offsetHeight // force reflow so the transition below animates from this starting state
-    el.style.transition = 'transform 240ms var(--ease-out-soft), opacity 160ms ease'
-    el.style.opacity = '1'
-    el.style.transform = 'none'
+  function startSidePeekResize(event: React.PointerEvent<HTMLDivElement>) {
+    event.preventDefault()
+    const startX = event.clientX
+    const startWidth = sidePeekWidth
+
+    function handlePointerMove(moveEvent: PointerEvent) {
+      // Dragged from the side-peek's own left edge: moving the pointer left
+      // (negative delta) grows it, same sign flip library drawer resize
+      // doesn't need since that handle sits on the opposite side.
+      setSidePeekWidth(clamp(startWidth - (moveEvent.clientX - startX), 280, 480))
+    }
+
+    function handlePointerUp() {
+      window.removeEventListener('pointermove', handlePointerMove)
+      window.removeEventListener('pointerup', handlePointerUp)
+    }
+
+    window.addEventListener('pointermove', handlePointerMove)
+    window.addEventListener('pointerup', handlePointerUp)
   }
-  // Only one Details popover can be open at a time, so one flat key is
-  // enough to track a drag-to-reorder gesture across its block modules.
+  // Only one side-peek can be open at a time, so one flat key is enough to
+  // track a drag-to-reorder gesture across its block modules.
   const [draggedBlockKey, setDraggedBlockKey] = useState<string | null>(null)
   // Which Details-popover sections are collapsed — a session-level UI
   // preference shared across every node (not per-node state), same as a
@@ -9378,11 +9569,25 @@ function GraphCanvas({
     () => onSelect({ type: 'project' }),
   )
 
-  useDismissableLayer(
-    Boolean(detailsPopoverNode) && !isSlashMenuOpen,
-    '.node-details-popover, .node-toolbar',
-    closeDetailsPopover,
-  )
+  // bố cục 2026-11-10: the side-peek is non-modal (library-drawer-panel
+  // pattern), so unlike the old node-details-popover, an outside click must
+  // NOT close it — clicking the Kira dock, a toolbar button, or anywhere
+  // else on the canvas should leave it open. Only Escape dismisses it
+  // explicitly; deselecting or multi-selecting already closes it via
+  // renderNodeBelowStack's own guard at the top of that function.
+  // isSlashMenuOpen keeps Escape from closing the whole panel out from
+  // under NodeRichEditor's own slash menu (same reason the old popover's
+  // dismiss layer gated on it).
+  useEffect(() => {
+    if (!isNodeSelection(selected) || multiSelectedNodes.length > 0 || isSlashMenuOpen) return
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key !== 'Escape') return
+      closeSidePeek()
+    }
+    document.addEventListener('keydown', handleKeyDown, true)
+    return () => document.removeEventListener('keydown', handleKeyDown, true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected, multiSelectedNodes, isSlashMenuOpen])
 
   useDismissableLayer(
     Boolean(frameDescriptionOpenId),
@@ -9391,7 +9596,10 @@ function GraphCanvas({
   )
 
   useEffect(() => {
-    setDetailsPopoverNode((current) => (current && isNodeSelection(selected) && current.kind === selected.type && current.id === selected.id ? current : null))
+    // "đóng tới lần chọn tiếp theo" (closed until the next selection): any
+    // selection change — a different node, or re-clicking the same one —
+    // clears a manual dismissal, letting the side-peek auto-open again.
+    setSidePeekDismissedFor(null)
     setFrameDescriptionOpenId((current) => (current && selected.type === 'frame' && selected.id === current ? current : null))
   }, [selected])
 
@@ -9911,14 +10119,16 @@ function GraphCanvas({
   }
 
   // Double-clicking anywhere on a node — including its caption text, which
-  // is read-only on the canvas face now — opens the node's overlay, the
+  // is read-only on the canvas face now — opens the node's side-peek, the
   // one place its content is actually editable. Same destination as the
   // (i) button, just reachable without hunting for a small icon first.
+  // Selecting already auto-opens the side-peek; this only has to clear a
+  // dismissal in case it was previously closed for this same node.
   function handleNodeDoubleClick(kind: GraphNodeKind, id: string, event: React.MouseEvent<HTMLElement>) {
     event.preventDefault()
     detailsTriggerRef.current = event.currentTarget
     onSelect({ type: kind, id } as Selection)
-    setDetailsPopoverNode({ kind, id })
+    setSidePeekDismissedFor(null)
   }
 
   function beginLinkFromArc(source: Pick<GraphNodeRef, 'kind' | 'id'>) {
@@ -10349,8 +10559,15 @@ function GraphCanvas({
     if (selected.type !== kind || selected.id !== node.id) return null
 
     const id = node.id
-    const isDetailsOpen = detailsPopoverNode?.kind === kind && detailsPopoverNode.id === id
+    // multiSelectedNodes/selected guards above already establish "exactly
+    // this node is selected, alone" — the only remaining question is
+    // whether it's been manually dismissed since that selection happened.
+    const isDetailsOpen = !(sidePeekDismissedFor && sidePeekDismissedFor.kind === kind && sidePeekDismissedFor.id === id)
     const nodeVersionRecords = nodeVersions.filter((version) => version.nodeId === id && version.nodeKind === kind).slice(0, 8)
+    // Cập nhật 2026-11-10 §C: "Explore" is image-only — the discovery anchor
+    // itself is only ever set from an image node (openPinterestSimilar's
+    // only call sites are all kind === 'image').
+    const pendingCaptures = kind === 'image' ? getPendingCaptures(pendingCaptureQueue, kind, id) : []
     const inlineChange = (patch: { title?: string; notes?: string; sourceUrl?: string }) => {
       if (kind === 'idea') onIdeaInlineChange(id, patch)
       else if (kind === 'image') onImageInlineChange(id, patch)
@@ -10410,11 +10627,12 @@ function GraphCanvas({
     const sourceUrlField = (
       <SourceField
         value={('sourceUrl' in node ? node.sourceUrl : '') ?? ''}
+        addLabel={t('sidePeek.source.add', lang)}
         onChange={(value) => inlineChange({ sourceUrl: value })}
       />
     )
 
-    const closeDetails = closeDetailsPopover
+    const closeDetails = closeSidePeek
     // Node near the canvas's left edge (same `x < 18` world-space threshold
     // as arcMenu's own is-edge-left, line ~12055): centering the toolbar
     // under the node bled its left half — the Ask Kira button, since it's
@@ -10510,6 +10728,10 @@ function GraphCanvas({
                 native button never reads. Still renders a real <button>
                 underneath (confirmed live — the existing `.node-toolbar
                 button` CSS keeps matching), so this is CSS-invisible. */}
+            {/* This toolbar only renders while !isDetailsOpen (see the stack's
+                own conditional below), so this button only ever needs to
+                open the side-peek, never toggle it closed — closing it is
+                the portal content's own Close button, below. */}
             <Tooltip title="Details" description="Notes, source, tags, history" delay={200}>
               <TooltipTrigger
                 aria-label="Details"
@@ -10518,7 +10740,7 @@ function GraphCanvas({
                   // not to this button — a small icon that a later layout
                   // change could move or hide out from under the restore.
                   detailsTriggerRef.current = findNodeCardElement(kind, id)
-                  setDetailsPopoverNode({ kind, id })
+                  setSidePeekDismissedFor(null)
                 }}
               >
                 <NoteIcon size={13} />
@@ -10545,15 +10767,26 @@ function GraphCanvas({
           </UiKitPortalHost>
         )}
         {isDetailsOpen && createPortal(
-          <div className="node-overlay-scrim" onClick={closeDetails}>
-            <div
-              className="node-details-popover"
-              role="dialog"
-              aria-modal="true"
-              aria-label={`${node.title || graphNodeKindLabel(kind)} details`}
-              onClick={(event) => event.stopPropagation()}
-              ref={applyNodeDetailsMorph}
-            >
+          // bố cục 2026-11-10: this used to be a centered modal popover
+          // (scrim + grow-from-node morph). It's now a fixed side-peek —
+          // .inspector's own already-defined panel (position/transition/
+          // opaque-material rules, symmetric to .library-drawer-panel,
+          // styles.css ~1348/1780/1807), non-modal like the library drawer:
+          // no scrim, no role="dialog", clicking the canvas elsewhere
+          // doesn't close it. node-details-sidepeek layers the node-specific
+          // bits (the resize handle, sitting to the left of the Kira dock).
+          <aside
+            className="inspector node-details-sidepeek"
+            // Inline style wins over .inspector's own static `width: 336px`
+            // regardless of selector specificity — this is what makes
+            // startSidePeekResize's drag actually resize the panel, not just
+            // the --canvas-right-inset reservation around it.
+            style={{ width: sidePeekWidth }}
+            aria-label={`${node.title || graphNodeKindLabel(kind)} details`}
+            onContextMenu={(event) => event.preventDefault()}
+          >
+            <div className="node-details-sidepeek-resize" aria-hidden="true" onPointerDown={startSidePeekResize} />
+            <div className="node-details-sidepeek-content">
               {/* Every action that used to live on the node face's toolbar —
                   add-new/AI actions plus the kind-specific ones — is
                   consolidated into this single icon row, so the node face
@@ -10721,24 +10954,39 @@ function GraphCanvas({
                 node={node}
                 collapsed={collapsedDetailSections.has('properties')}
                 onToggleCollapsed={() => toggleDetailSection('properties')}
+                updatedLabel={(relativeTime) => t('sidePeek.properties.updated', lang, { time: relativeTime })}
               />
             </div>
-            <NodeRichEditor
-              kind={kind}
-              nodeId={id}
-              content={node.content}
-              placeholder={kind === 'idea' ? "Type '/' to insert a block" : "Add a caption, or '/' to insert a block"}
-              overlayMode
-              autoFocus
-              onChange={onOverlayContentChange}
-              onAskKira={onAskKira}
-              onSlashMenuOpenChange={setIsSlashMenuOpen}
-            />
+            {/* Report 2026-11-10 bố cục review, point 2: the caption editor
+                below (NodeRichEditor's own min-height, tuned for an idea's
+                long-form text) read as a large empty gap on an image node
+                with no caption typed — the thing actually worth seeing
+                here is the image itself, which nothing showed at all. */}
+            {kind === 'image' && (
+              <img
+                className="node-details-image-preview"
+                src={(node as EvidenceImage).thumb}
+                alt=""
+              />
+            )}
+            <div className={kind === 'idea' ? 'node-details-idea-body' : undefined}>
+              <NodeRichEditor
+                kind={kind}
+                nodeId={id}
+                content={node.content}
+                placeholder={kind === 'idea' ? "Type '/' to insert a block" : "Add a caption, or '/' to insert a block"}
+                overlayMode
+                autoFocus
+                onChange={onOverlayContentChange}
+                onAskKira={onAskKira}
+                onSlashMenuOpenChange={setIsSlashMenuOpen}
+              />
+            </div>
             {kind === 'palette' && (
               <section className="block-module">
                 <SectionHeader
                   icon={<PaletteIcon size={14} />}
-                  title="Colors"
+                  title={t('sidePeek.section.colors', lang)}
                   collapsed={collapsedDetailSections.has('colors')}
                   onToggleCollapsed={() => toggleDetailSection('colors')}
                 />
@@ -10761,11 +11009,11 @@ function GraphCanvas({
                 palette, not the public caption). */}
             {kind !== 'idea' && (
               <TextAreaBase
-                aria-label="Notes"
+                aria-label={t('sidePeek.notes.aria', lang)}
                 className="node-notes-input"
                 rows={2}
                 size="sm"
-                placeholder="Notes..."
+                placeholder={t('sidePeek.notes.placeholder', lang)}
                 value={('notes' in node ? node.notes : '') ?? ''}
                 onChange={(event) => inlineChange({ notes: event.target.value })}
               />
@@ -10778,6 +11026,8 @@ function GraphCanvas({
                     return (
                       <div key="tags" className={draggedBlockKey === 'tags' ? 'reorderable-block is-dragging' : 'reorderable-block'} {...dropTargetProps('tags')}>
                         <TagBlock
+                          title={t('sidePeek.section.tags', lang)}
+                          suggestedLabel={t('sidePeek.tags.suggested', lang)}
                           image={image}
                           pinned={image.tagsPinned ?? false}
                           collapsed={collapsedDetailSections.has('tags')}
@@ -10805,6 +11055,7 @@ function GraphCanvas({
                     return (
                       <div key="palette" className={draggedBlockKey === 'palette' ? 'reorderable-block is-dragging' : 'reorderable-block'} {...dropTargetProps('palette')}>
                         <PaletteBlock
+                          title={t('sidePeek.section.palette', lang)}
                           image={image}
                           pinned={image.palettePinned ?? true}
                           collapsed={collapsedDetailSections.has('palette')}
@@ -10820,7 +11071,7 @@ function GraphCanvas({
                       <section className="block-module">
                         <SectionHeader
                           icon={<Link2 size={14} />}
-                          title="Source"
+                          title={t('sidePeek.section.source', lang)}
                           collapsed={collapsedDetailSections.has('source')}
                           onToggleCollapsed={() => toggleDetailSection('source')}
                           dragHandleProps={dragHandleProps('source')}
@@ -10835,7 +11086,7 @@ function GraphCanvas({
               <section className="block-module">
                 <SectionHeader
                   icon={<Link2 size={14} />}
-                  title="Source"
+                  title={t('sidePeek.section.source', lang)}
                   collapsed={collapsedDetailSections.has('source')}
                   onToggleCollapsed={() => toggleDetailSection('source')}
                 />
@@ -10862,6 +11113,76 @@ function GraphCanvas({
                 )}
               </section>
             )}
+            {/* Cập nhật 2026-11-10 §C: image-only, since the discovery
+                anchor is only ever set from an image node's "Find similar
+                on Pinterest". No live Pinterest results here — only images
+                the user explicitly saved themselves while that anchor was
+                active (ToS constraint already settled in the earlier
+                visual-explore report: no scraping, no calling Pinterest's
+                own endpoints). */}
+            {kind === 'image' && (
+              <section className="block-module">
+                <SectionHeader
+                  icon={<Search size={14} />}
+                  title={t('sidePeek.explore.title', lang)}
+                  collapsed={collapsedDetailSections.has('explore')}
+                  onToggleCollapsed={() => toggleDetailSection('explore')}
+                />
+                {!collapsedDetailSections.has('explore') && (
+                  <div className="node-details-section node-explore-section">
+                    <Tooltip
+                      title={t('canvas.node.pinterestSimilar.title', lang)}
+                      description={t('canvas.node.pinterestSimilar.description', lang)}
+                      delay={200}
+                    >
+                      <Button
+                        color="secondary"
+                        size="sm"
+                        aria-label={t('canvas.node.pinterestSimilar.title', lang)}
+                        onPress={() => onFindSimilarOnPinterest(kind, id, node as EvidenceImage)}
+                        iconLeading={<ExternalLink size={13} />}
+                      >
+                        {t('canvas.node.pinterestSimilar.title', lang)}
+                      </Button>
+                    </Tooltip>
+                    {pendingCaptures.length > 0 && (
+                      <div className="node-explore-tray">
+                        <div className="node-explore-tray-header">
+                          <span>{t('sidePeek.explore.pending', lang, { count: String(pendingCaptures.length) })}</span>
+                          {/* Report 2026-11-10 bố cục review, point 3: kira-controls
+                              hierarchy — Keep all is the one clearly-intentional
+                              bulk action (secondary/paper), Keep per-item is the
+                              same tier at a smaller size, Discard is quiet (no
+                              background until hover). color="tertiary" alone, as
+                              all three used before this fix, has no resting
+                              background in the kit's own classes — it depends on
+                              an ancestor plain-CSS reset the same way
+                              .node-details-actionbar button already supplies for
+                              the action bar above; this tray had none, so these
+                              fell through to the browser's native button
+                              chrome (measured ~2:1, read as disabled). */}
+                          <Button color="secondary" size="sm" onPress={() => onKeepAllPendingCaptures(kind, id)}>
+                            {t('sidePeek.explore.keepAll', lang)}
+                          </Button>
+                        </div>
+                        {pendingCaptures.map((pendingCapture) => (
+                          <div key={pendingCapture.id} className="node-explore-tray-item">
+                            <img src={pendingCapture.thumb} alt="" />
+                            <span className="node-explore-tray-item-title">{pendingCapture.title}</span>
+                            <Button color="secondary" size="xs" onPress={() => onKeepPendingCapture(kind, id, pendingCapture.id)}>
+                              {t('sidePeek.explore.keep', lang)}
+                            </Button>
+                            <Button className="node-explore-tray-discard" color="tertiary" size="xs" onPress={() => onDiscardPendingCapture(kind, id, pendingCapture.id)}>
+                              {t('sidePeek.explore.discard', lang)}
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </section>
+            )}
             {/* History used to be a second popover behind its own toolbar
                 toggle — one more floating layer to open/close for
                 information that belongs with everything else about this
@@ -10869,7 +11190,7 @@ function GraphCanvas({
             <section className="block-module">
               <SectionHeader
                 icon={<History size={14} />}
-                title="History"
+                title={t('sidePeek.section.history', lang)}
                 collapsed={collapsedDetailSections.has('history')}
                 onToggleCollapsed={() => toggleDetailSection('history')}
               />
@@ -10878,8 +11199,8 @@ function GraphCanvas({
               )}
             </section>
             </div>
-          </div>,
-          themedPortalTarget(),
+          </aside>,
+          workspacePortalTarget(),
         )}
       </div>
     )
@@ -12395,10 +12716,12 @@ function GraphCanvas({
                   // at least the clicked node (so a 1-node right-click and a
                   // multi-node one share the same `nodes` array) — clear it
                   // here or renderNodeBelowStack's own
-                  // `multiSelectedNodes.length > 0` guard keeps the popover
-                  // this is about to open from ever rendering.
+                  // `multiSelectedNodes.length > 0` guard keeps the side-peek
+                  // this is about to open from ever rendering. openNodeContextMenu
+                  // already selected this node, so the side-peek will auto-open;
+                  // this only has to clear a prior dismissal.
                   setMultiSelectedNodes([])
-                  setDetailsPopoverNode({ kind: nodeContextMenu.nodes[0].kind, id: nodeContextMenu.nodes[0].id })
+                  setSidePeekDismissedFor(null)
                   setNodeContextMenu(null)
                 }}
               >
@@ -13922,7 +14245,10 @@ function formatRelativeShort(iso: string): string {
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
-function buildPropertiesSummaryParts(node: Pick<Idea | EvidenceImage | PaletteNode | DiagramNode | PlaceholderNode, 'importance' | 'sourceUrl' | 'updatedAt'>): string[] {
+function buildPropertiesSummaryParts(
+  node: Pick<Idea | EvidenceImage | PaletteNode | DiagramNode | PlaceholderNode, 'importance' | 'sourceUrl' | 'updatedAt'>,
+  formatUpdated: (relativeTime: string) => string,
+): string[] {
   const parts: string[] = []
   if (node.sourceUrl) {
     const host = extractHostname(node.sourceUrl)
@@ -13931,7 +14257,7 @@ function buildPropertiesSummaryParts(node: Pick<Idea | EvidenceImage | PaletteNo
   if (typeof node.importance === 'number' && node.importance !== 1) parts.push(formatImportance(node.importance))
   if (node.updatedAt) {
     const relative = formatRelativeShort(node.updatedAt)
-    if (relative) parts.push(`Updated ${relative}`)
+    if (relative) parts.push(formatUpdated(relative))
   }
   return parts
 }
@@ -13943,9 +14269,11 @@ function buildPropertiesSummaryParts(node: Pick<Idea | EvidenceImage | PaletteNo
 // while editing, same as the title/properties row's own disclosure model.
 function SourceField({
   value,
+  addLabel,
   onChange,
 }: {
   value: string
+  addLabel: string
   onChange: (value: string) => void
 }) {
   const [isEditing, setIsEditing] = useState(false)
@@ -13959,7 +14287,7 @@ function SourceField({
     ) : (
       <button type="button" className="quiet-button sm source-add-button" onClick={() => setIsEditing(true)}>
         <Link2 size={12} aria-hidden="true" />
-        Add source
+        {addLabel}
       </button>
     )
   }
@@ -13991,6 +14319,7 @@ function NodeProperties({
   node,
   collapsed,
   onToggleCollapsed,
+  updatedLabel,
 }: {
   node: Pick<Idea | EvidenceImage | PaletteNode | DiagramNode | PlaceholderNode, 'importance' | 'createdAt' | 'addedAt' | 'updatedAt' | 'sourceUrl'> & {
     width?: number
@@ -14000,8 +14329,9 @@ function NodeProperties({
   }
   collapsed: boolean
   onToggleCollapsed: () => void
+  updatedLabel: (relativeTime: string) => string
 }) {
-  const summaryParts = buildPropertiesSummaryParts(node)
+  const summaryParts = buildPropertiesSummaryParts(node, updatedLabel)
   return (
     <div className="node-properties">
       <button type="button" className="node-properties-summary" onClick={onToggleCollapsed} aria-expanded={!collapsed}>
@@ -14868,6 +15198,18 @@ function themedPortalTarget(): Element {
   return document.querySelector('.app-shell') ?? document.documentElement
 }
 
+// The node-details side-peek needs to land as a positioned child of
+// `.workspace`, not `.app-shell`: `.library-drawer-panel`'s own `position:
+// absolute; top/left/bottom: var(--shell-card-inset)` resolves against
+// `.workspace` (the grid's row-2 cell, the one with `position: relative` —
+// `.app-shell` itself is just a static grid container, row 1 above it is
+// the tab strip), and `.inspector` is that same panel's right-edge mirror —
+// see styles.css ~1298. Portaling to `.app-shell` instead would place the
+// peek relative to the viewport, overlapping the tab strip above `.workspace`.
+function workspacePortalTarget(): Element {
+  return document.querySelector('.workspace') ?? themedPortalTarget()
+}
+
 function deleteDialogCopy(pendingDelete: PendingDelete) {
   if (pendingDelete.type === 'link') {
     return {
@@ -15187,6 +15529,8 @@ function isAiStatusError(status: string): boolean {
 }
 
 function TagBlock({
+  title,
+  suggestedLabel,
   image,
   pinned,
   collapsed,
@@ -15206,6 +15550,8 @@ function TagBlock({
   onTogglePinned,
   dragHandleProps,
 }: {
+  title: string
+  suggestedLabel: string
   image: EvidenceImage
   pinned: boolean
   collapsed: boolean
@@ -15243,7 +15589,7 @@ function TagBlock({
     <section className="block-module">
       <SectionHeader
         icon={<Tag size={14} />}
-        title="Tags"
+        title={title}
         collapsed={collapsed}
         onToggleCollapsed={onToggleCollapsed}
         dragHandleProps={dragHandleProps}
@@ -15334,7 +15680,7 @@ function TagBlock({
               the confirmed-tags row reads as just another tag — unclear
               it's pending and that clicking its label (not just the X)
               accepts it. */}
-          <span className="suggestion-label">Suggested tags: click to add</span>
+          <span className="suggestion-label">{suggestedLabel}</span>
           <div className="suggestion-chips">
           {image.suggestions.map((suggestion) => {
             const label = suggestionLabel(suggestion)
@@ -15370,6 +15716,7 @@ function TagBlock({
 // pin-toggleable block. Pinned renders the same swatch strip directly under
 // the thumbnail on the node face, at the thumbnail's own width.
 function PaletteBlock({
+  title,
   image,
   pinned,
   collapsed,
@@ -15377,6 +15724,7 @@ function PaletteBlock({
   onTogglePinned,
   dragHandleProps,
 }: {
+  title: string
   image: EvidenceImage
   pinned: boolean
   collapsed: boolean
@@ -15388,7 +15736,7 @@ function PaletteBlock({
     <section className="block-module">
       <SectionHeader
         icon={<PaletteIcon size={14} />}
-        title="Palette"
+        title={title}
         collapsed={collapsed}
         onToggleCollapsed={onToggleCollapsed}
         dragHandleProps={dragHandleProps}
