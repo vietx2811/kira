@@ -940,6 +940,45 @@ const UI_STRINGS: Record<string, { en: string; vi: string }> = {
   'sidePeek.notes.placeholder': { en: 'Notes...', vi: 'Ghi chú...' },
   'sidePeek.properties.updated': { en: 'Updated {time}', vi: 'Cập nhật {time}' },
   'sidePeek.colorScheme.title': { en: 'Color Scheme', vi: 'Bảng màu canvas' },
+  'sidePeek.tags.add': { en: 'Add', vi: 'Thêm' },
+  'sidePeek.capture.downloaded': { en: 'Downloaded capture image', vi: 'Đã tải ảnh về' },
+  'sidePeek.capture.downloadFailed': { en: "Couldn't download capture image, kept the original link", vi: 'Không tải được ảnh, đã giữ liên kết gốc' },
+  'sidePeek.action.replaceImage': { en: 'Replace image', vi: 'Thay ảnh' },
+  'sidePeek.action.findSimilar': { en: 'Find similar', vi: 'Tìm ảnh tương tự' },
+  'sidePeek.action.findingSimilar': { en: 'Finding similar…', vi: 'Đang tìm ảnh tương tự…' },
+  'sidePeek.action.cropImage': { en: 'Crop image', vi: 'Cắt ảnh' },
+  'sidePeek.action.extractPalette': { en: 'Extract palette', vi: 'Trích bảng màu' },
+  'sidePeek.action.attachImage': { en: 'Attach image', vi: 'Gắn ảnh' },
+  'sidePeek.action.addColor': { en: 'Add color', vi: 'Thêm màu' },
+  'sidePeek.action.rebalancePalette': { en: 'Rebalance palette', vi: 'Cân lại bảng màu' },
+  'sidePeek.action.rebalancing': { en: 'Rebalancing…', vi: 'Đang cân lại…' },
+  'sidePeek.action.aiIncludedShort': { en: 'Included in AI context', vi: 'Đang dùng cho AI' },
+  'sidePeek.action.aiExcludedShort': { en: 'Excluded from AI', vi: 'Đã loại khỏi AI' },
+  'sidePeek.action.aiIncludedAria': { en: 'Included in AI context, click to exclude', vi: 'Đang dùng cho AI, bấm để loại' },
+  'sidePeek.action.aiExcludedAria': { en: 'Excluded from AI, click to include', vi: 'Đã loại khỏi AI, bấm để dùng lại' },
+  'sidePeek.action.delete': { en: 'Delete', vi: 'Xoá' },
+  'sidePeek.action.deleteNode': { en: 'Delete node', vi: 'Xoá node' },
+  'sidePeek.title.aria': { en: 'Title', vi: 'Tên' },
+  'sidePeek.title.placeholder': { en: 'Untitled', vi: 'Chưa có tên' },
+  'sidePeek.caption.placeholder.idea': { en: "Type '/' to insert a block", vi: 'Gõ "/" để chèn khối' },
+  'sidePeek.caption.placeholder.default': { en: "Add a caption, or '/' to insert a block", vi: 'Thêm chú thích, hoặc gõ "/" để chèn khối' },
+  'sidePeek.section.diagramSource': { en: 'Diagram source', vi: 'Mã sơ đồ' },
+  'sidePeek.tags.ocr.run': { en: 'Read text from image (OCR)', vi: 'Đọc chữ trong ảnh (OCR)' },
+  'sidePeek.tags.ocr.running': { en: 'Reading text…', vi: 'Đang đọc chữ…' },
+  'sidePeek.tags.refine.run': { en: 'Refine tags with AI', vi: 'Tinh chỉnh thẻ bằng AI' },
+  'sidePeek.tags.refine.running': { en: 'Refining tags…', vi: 'Đang tinh chỉnh thẻ…' },
+  'sidePeek.tags.pin.show': { en: 'Show on node', vi: 'Hiện trên node' },
+  'sidePeek.tags.pin.pinned': { en: 'Always shown on node', vi: 'Luôn hiện trên node' },
+  'sidePeek.tags.pin.pinnedAria': { en: 'Always shown on node, click to hide', vi: 'Luôn hiện trên node, bấm để ẩn' },
+  'sidePeek.tags.pin.unpinnedAria': { en: 'Hidden on node, click to always show', vi: 'Đang ẩn trên node, bấm để luôn hiện' },
+  'sidePeek.tags.removeAria': { en: 'Remove {tag}', vi: 'Xoá thẻ {tag}' },
+  'sidePeek.tags.newAria': { en: 'New tag', vi: 'Thẻ mới' },
+  'sidePeek.tags.rejectAria': { en: 'Reject {tag}', vi: 'Bỏ gợi ý {tag}' },
+  'sidePeek.source.urlLabel': { en: 'Source URL', vi: 'Đường dẫn nguồn' },
+  'time.justNow': { en: 'Just now', vi: 'Vừa xong' },
+  'time.minutesAgo': { en: '{count}m ago', vi: '{count} phút trước' },
+  'time.hoursAgo': { en: '{count}h ago', vi: '{count} giờ trước' },
+  'time.daysAgo': { en: '{count}d ago', vi: '{count} ngày trước' },
   'library.empty.title': { en: 'No references yet', vi: 'Chưa có tư liệu tham khảo' },
   'library.empty.body': { en: 'Drag in images, paste a URL, or import a folder to start your moodboard.', vi: 'Kéo thả hình ảnh, dán URL, hoặc nhập một thư mục để bắt đầu moodboard.' },
   'library.empty.import': { en: 'Import images', vi: 'Nhập hình ảnh' },
@@ -3781,10 +3820,18 @@ function FileWorkspace({
     const reference = pending.find((item) => item.id === captureId)
     if (!reference) return
     setPendingCaptureQueue((current) => removePendingCapture(current, kind, id, (item) => item.id === captureId))
+    // Report 2026-11-11 follow-up: Keep/Keep all must not steal the
+    // side-peek away from the node the user is looking at — the whole
+    // point of a tray is to review several captures against the same
+    // anchor without losing your place after each one. select: false
+    // leaves `selected` (and so the open side-peek) on the anchor node;
+    // the appendReferences fallback below is the one case with no anchor
+    // node left to stay on (it was deleted), so selecting the new node
+    // there is the closest thing to "pick up where you left off".
     const target = resolveGraphNodeRef(id, ideas, images, palettes, diagrams, placeholders)
     let persistedId: string | null
     if (target) {
-      persistedId = attachCaptureToGraphNode(reference, target)
+      persistedId = attachCaptureToGraphNode(reference, target, { select: false })
     } else {
       appendReferences([reference], `Attached ${reference.title}`)
       persistedId = reference.id
@@ -3799,13 +3846,10 @@ function FileWorkspace({
     setPendingCaptureQueue((current) => removePendingCapture(current, kind, id, (item) => item.id === captureId))
   }
 
-  // Per captures' own queue order (oldest first): against an image-kind
-  // anchor, attachCaptureToGraphNode replaces that same node each time (the
-  // existing single-capture behavior this tray fronts, canvas-node-ux's own
-  // "replace target" semantics for an image target) — so only the LAST
-  // kept item ends up on the canvas when the anchor is an image, same as
-  // it would have before this tray existed. Not a new limitation Keep All
-  // introduces; see the report for this task.
+  // Per captures' own queue order (oldest first). Each item becomes its
+  // own new node linked to the anchor (attachCaptureToGraphNode no longer
+  // replaces an image target — see that function's own comment), so Keep
+  // all creates one node per queued capture, none of them selected.
   function keepAllPendingCaptures(kind: GraphNodeKind, id: string) {
     for (const item of getPendingCaptures(pendingCaptureQueue, kind, id)) {
       keepPendingCapture(kind, id, item.id)
@@ -3903,12 +3947,12 @@ function FileWorkspace({
               : image,
           ),
         )
-        if (!options.silent) setLibraryStatus('Downloaded capture image')
+        if (!options.silent) setLibraryStatus(t('sidePeek.capture.downloaded', lang))
         return
       }
-      if (!options.silent) setLibraryStatus("Couldn't download capture image, kept the original link")
+      if (!options.silent) setLibraryStatus(t('sidePeek.capture.downloadFailed', lang))
     } catch {
-      if (!options.silent) setLibraryStatus("Couldn't download capture image, kept the original link")
+      if (!options.silent) setLibraryStatus(t('sidePeek.capture.downloadFailed', lang))
     } finally {
       setImageDownloads((current) => {
         if (!current.has(imageId)) return current
@@ -4013,7 +4057,8 @@ function FileWorkspace({
   // them on top of each other. Placeholder stays a replace (filling an
   // empty slot isn't destroying anything) — unchanged, per the report's
   // own explicit exception for drop-pad onto a placeholder.
-  function attachCaptureToGraphNode(reference: EvidenceImage, target: GraphNodeRef): string | null {
+  function attachCaptureToGraphNode(reference: EvidenceImage, target: GraphNodeRef, options: { select?: boolean } = {}): string | null {
+    const select = options.select ?? true
     if (shouldReplaceCaptureTarget(target.kind)) {
       const attachedId = attachPlaceholderReference(target.id, reference)
       setActiveView('Canvas')
@@ -4051,7 +4096,7 @@ function FileWorkspace({
         updatedAt: timestamp,
       },
     ])
-    setSelection({ type: 'image', id: positioned.id })
+    if (select) setSelection({ type: 'image', id: positioned.id })
     setActiveView('Canvas')
     setLibraryStatus(`Attached ${positioned.title}`)
     return positioned.id
@@ -10628,6 +10673,7 @@ function GraphCanvas({
       <SourceField
         value={('sourceUrl' in node ? node.sourceUrl : '') ?? ''}
         addLabel={t('sidePeek.source.add', lang)}
+        urlLabel={t('sidePeek.source.urlLabel', lang)}
         onChange={(value) => inlineChange({ sourceUrl: value })}
       />
     )
@@ -10808,7 +10854,7 @@ function GraphCanvas({
               <div className="node-details-actionbar-left">
               {kind === 'image' && (
                 <>
-                  <label className="node-toolbar-file file-action" aria-label="Replace image" title="Replace image">
+                  <label className="node-toolbar-file file-action" aria-label={t('sidePeek.action.replaceImage', lang)} title={t('sidePeek.action.replaceImage', lang)}>
                     <ImagePlus size={13} />
                     <input
                       type="file"
@@ -10819,11 +10865,11 @@ function GraphCanvas({
                       }}
                     />
                   </label>
-                  <Tooltip title={findSimilarRunningId === id ? 'Finding similar…' : 'Find similar'} delay={200}>
+                  <Tooltip title={findSimilarRunningId === id ? t('sidePeek.action.findingSimilar', lang) : t('sidePeek.action.findSimilar', lang)} delay={200}>
                     <Button
                       color="tertiary"
                       size="sm"
-                      aria-label="Find similar"
+                      aria-label={t('sidePeek.action.findSimilar', lang)}
                       isDisabled={findSimilarRunningId === id}
                       onPress={() => void onReferenceFindSimilar(id)}
                       iconLeading={findSimilarRunningId === id ? <span className="ai-inline-spinner" aria-hidden="true" /> : <Search size={13} />}
@@ -10849,16 +10895,16 @@ function GraphCanvas({
                       iconLeading={<ExternalLink size={13} />}
                     />
                   </Tooltip>
-                  <Tooltip title="Crop" delay={200}>
-                    <Button color="tertiary" size="sm" aria-label="Crop image" onPress={() => onReferenceCrop(id)} iconLeading={<CropIcon size={13} />} />
+                  <Tooltip title={t('sidePeek.action.cropImage', lang)} delay={200}>
+                    <Button color="tertiary" size="sm" aria-label={t('sidePeek.action.cropImage', lang)} onPress={() => onReferenceCrop(id)} iconLeading={<CropIcon size={13} />} />
                   </Tooltip>
-                  <Tooltip title="Extract palette" delay={200}>
-                    <Button color="tertiary" size="sm" aria-label="Extract palette" onPress={() => onReferenceConvertToPalette(id)} iconLeading={<PaletteIcon size={13} />} />
+                  <Tooltip title={t('sidePeek.action.extractPalette', lang)} delay={200}>
+                    <Button color="tertiary" size="sm" aria-label={t('sidePeek.action.extractPalette', lang)} onPress={() => onReferenceConvertToPalette(id)} iconLeading={<PaletteIcon size={13} />} />
                   </Tooltip>
                 </>
               )}
               {kind === 'placeholder' && (
-                <label className="node-toolbar-file file-action" aria-label="Attach image" title="Attach image">
+                <label className="node-toolbar-file file-action" aria-label={t('sidePeek.action.attachImage', lang)} title={t('sidePeek.action.attachImage', lang)}>
                   <ImagePlus size={13} />
                   <input
                     type="file"
@@ -10872,14 +10918,14 @@ function GraphCanvas({
               )}
               {kind === 'palette' && (
                 <>
-                  <Tooltip title="Add color" delay={200}>
-                    <Button color="tertiary" size="sm" aria-label="Add color" onPress={() => onPaletteColorAdd(id)} iconLeading={<Plus size={13} />} />
+                  <Tooltip title={t('sidePeek.action.addColor', lang)} delay={200}>
+                    <Button color="tertiary" size="sm" aria-label={t('sidePeek.action.addColor', lang)} onPress={() => onPaletteColorAdd(id)} iconLeading={<Plus size={13} />} />
                   </Tooltip>
-                  <Tooltip title={paletteRegeneratingId === id ? 'Rebalancing…' : 'Rebalance'} delay={200}>
+                  <Tooltip title={paletteRegeneratingId === id ? t('sidePeek.action.rebalancing', lang) : t('sidePeek.action.rebalancePalette', lang)} delay={200}>
                     <Button
                       color="tertiary"
                       size="sm"
-                      aria-label="Rebalance palette"
+                      aria-label={t('sidePeek.action.rebalancePalette', lang)}
                       isDisabled={paletteRegeneratingId === id}
                       onPress={() => void onPaletteRegenerate(id, 'analogous')}
                       iconLeading={paletteRegeneratingId === id ? <span className="ai-inline-spinner" aria-hidden="true" /> : <Sparkles size={13} />}
@@ -10910,29 +10956,29 @@ function GraphCanvas({
                   needed at all. The one divider that's still a real group
                   boundary (AI-context+Delete vs Close) stays. */}
               <div className="node-details-actionbar-right">
-                <Tooltip title={node.aiExcluded ? 'Excluded from AI' : 'Included in AI context'} delay={200}>
+                <Tooltip title={node.aiExcluded ? t('sidePeek.action.aiExcludedShort', lang) : t('sidePeek.action.aiIncludedShort', lang)} delay={200}>
                   <Button
                     color="tertiary"
                     size="sm"
-                    aria-label={node.aiExcluded ? 'Excluded from AI, click to include' : 'Included in AI context, click to exclude'}
+                    aria-label={node.aiExcluded ? t('sidePeek.action.aiExcludedAria', lang) : t('sidePeek.action.aiIncludedAria', lang)}
                     className={node.aiExcluded ? 'is-active' : ''}
                     onPress={() => onToggleAiExcluded(kind, id)}
                     iconLeading={node.aiExcluded ? <EyeOff size={13} /> : <Eye size={13} />}
                   />
                 </Tooltip>
-                <Tooltip title="Delete" delay={200}>
+                <Tooltip title={t('sidePeek.action.delete', lang)} delay={200}>
                   <Button
                     color="tertiary"
                     size="sm"
-                    aria-label="Delete node"
+                    aria-label={t('sidePeek.action.deleteNode', lang)}
                     className="is-danger"
                     onPress={() => onDeleteNodes([{ kind, id }])}
                     iconLeading={<Trash2 size={13} />}
                   />
                 </Tooltip>
                 <span className="node-details-actionbar-sep" aria-hidden="true" />
-                <Tooltip title="Close" delay={200}>
-                  <Button color="tertiary" size="sm" aria-label="Close" className="node-details-close" onPress={closeDetails} iconLeading={<X size={13} />} />
+                <Tooltip title={t('sidePeek.close', lang)} delay={200}>
+                  <Button color="tertiary" size="sm" aria-label={t('sidePeek.close', lang)} className="node-details-close" onPress={closeDetails} iconLeading={<X size={13} />} />
                 </Tooltip>
               </div>
             </div>
@@ -10945,13 +10991,14 @@ function GraphCanvas({
               <input
                 type="text"
                 className="node-title-input"
-                aria-label="Title"
-                placeholder="Untitled"
+                aria-label={t('sidePeek.title.aria', lang)}
+                placeholder={t('sidePeek.title.placeholder', lang)}
                 value={node.title}
                 onChange={(event) => inlineChange({ title: event.target.value })}
               />
               <NodeProperties
                 node={node}
+                lang={lang}
                 collapsed={collapsedDetailSections.has('properties')}
                 onToggleCollapsed={() => toggleDetailSection('properties')}
                 updatedLabel={(relativeTime) => t('sidePeek.properties.updated', lang, { time: relativeTime })}
@@ -10974,7 +11021,7 @@ function GraphCanvas({
                 kind={kind}
                 nodeId={id}
                 content={node.content}
-                placeholder={kind === 'idea' ? "Type '/' to insert a block" : "Add a caption, or '/' to insert a block"}
+                placeholder={kind === 'idea' ? t('sidePeek.caption.placeholder.idea', lang) : t('sidePeek.caption.placeholder.default', lang)}
                 overlayMode
                 autoFocus
                 onChange={onOverlayContentChange}
@@ -11028,6 +11075,8 @@ function GraphCanvas({
                         <TagBlock
                           title={t('sidePeek.section.tags', lang)}
                           suggestedLabel={t('sidePeek.tags.suggested', lang)}
+                          addLabel={t('sidePeek.tags.add', lang)}
+                          lang={lang}
                           image={image}
                           pinned={image.tagsPinned ?? false}
                           collapsed={collapsedDetailSections.has('tags')}
@@ -11097,13 +11146,13 @@ function GraphCanvas({
               <section className="block-module">
                 <SectionHeader
                   icon={<FileText size={14} />}
-                  title="Diagram source"
+                  title={t('sidePeek.section.diagramSource', lang)}
                   collapsed={collapsedDetailSections.has('diagram-source')}
                   onToggleCollapsed={() => toggleDetailSection('diagram-source')}
                 />
                 {!collapsedDetailSections.has('diagram-source') && (
                   <TextAreaBase
-                    aria-label="Diagram source"
+                    aria-label={t('sidePeek.section.diagramSource', lang)}
                     className="diagram-source-input"
                     rows={8}
                     size="sm"
@@ -14232,21 +14281,22 @@ function extractHostname(url: string): string {
   }
 }
 
-function formatRelativeShort(iso: string): string {
+function formatRelativeShort(iso: string, lang: Lang): string {
   const elapsedMs = Date.now() - new Date(iso).getTime()
   if (!Number.isFinite(elapsedMs) || elapsedMs < 0) return ''
   const minutes = Math.floor(elapsedMs / 60_000)
-  if (minutes < 1) return 'Just now'
-  if (minutes < 60) return `${minutes}m ago`
+  if (minutes < 1) return t('time.justNow', lang)
+  if (minutes < 60) return t('time.minutesAgo', lang, { count: String(minutes) })
   const hours = Math.floor(minutes / 60)
-  if (hours < 24) return `${hours}h ago`
+  if (hours < 24) return t('time.hoursAgo', lang, { count: String(hours) })
   const days = Math.floor(hours / 24)
-  if (days < 30) return `${days}d ago`
-  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  if (days < 30) return t('time.daysAgo', lang, { count: String(days) })
+  return new Date(iso).toLocaleDateString(lang === 'vi' ? 'vi-VN' : 'en-US', { month: 'short', day: 'numeric' })
 }
 
 function buildPropertiesSummaryParts(
   node: Pick<Idea | EvidenceImage | PaletteNode | DiagramNode | PlaceholderNode, 'importance' | 'sourceUrl' | 'updatedAt'>,
+  lang: Lang,
   formatUpdated: (relativeTime: string) => string,
 ): string[] {
   const parts: string[] = []
@@ -14256,7 +14306,7 @@ function buildPropertiesSummaryParts(
   }
   if (typeof node.importance === 'number' && node.importance !== 1) parts.push(formatImportance(node.importance))
   if (node.updatedAt) {
-    const relative = formatRelativeShort(node.updatedAt)
+    const relative = formatRelativeShort(node.updatedAt, lang)
     if (relative) parts.push(formatUpdated(relative))
   }
   return parts
@@ -14270,10 +14320,12 @@ function buildPropertiesSummaryParts(
 function SourceField({
   value,
   addLabel,
+  urlLabel,
   onChange,
 }: {
   value: string
   addLabel: string
+  urlLabel: string
   onChange: (value: string) => void
 }) {
   const [isEditing, setIsEditing] = useState(false)
@@ -14294,10 +14346,10 @@ function SourceField({
   return (
     <InputBase
       autoFocus
-      aria-label="Source URL"
+      aria-label={urlLabel}
       size="sm"
       wrapperClassName="source-url-input"
-      placeholder="Source URL"
+      placeholder={urlLabel}
       value={value}
       onChange={(event) => onChange(event.target.value)}
       onBlur={() => setIsEditing(false)}
@@ -14317,6 +14369,7 @@ function SourceField({
 // previous version listed it in both places.
 function NodeProperties({
   node,
+  lang,
   collapsed,
   onToggleCollapsed,
   updatedLabel,
@@ -14327,11 +14380,12 @@ function NodeProperties({
     sizeBytes?: number
     mimeType?: string
   }
+  lang: Lang
   collapsed: boolean
   onToggleCollapsed: () => void
   updatedLabel: (relativeTime: string) => string
 }) {
-  const summaryParts = buildPropertiesSummaryParts(node, updatedLabel)
+  const summaryParts = buildPropertiesSummaryParts(node, lang, updatedLabel)
   return (
     <div className="node-properties">
       <button type="button" className="node-properties-summary" onClick={onToggleCollapsed} aria-expanded={!collapsed}>
@@ -15531,6 +15585,8 @@ function isAiStatusError(status: string): boolean {
 function TagBlock({
   title,
   suggestedLabel,
+  addLabel,
+  lang,
   image,
   pinned,
   collapsed,
@@ -15552,6 +15608,8 @@ function TagBlock({
 }: {
   title: string
   suggestedLabel: string
+  addLabel: string
+  lang: Lang
   image: EvidenceImage
   pinned: boolean
   collapsed: boolean
@@ -15596,12 +15654,12 @@ function TagBlock({
         tools={
           <span className="section-tools">
             {canRunOcr && (
-              <Tooltip title={isOcrRunning ? 'Reading text…' : 'Read text from image (OCR)'} delay={200}>
+              <Tooltip title={isOcrRunning ? t('sidePeek.tags.ocr.running', lang) : t('sidePeek.tags.ocr.run', lang)} delay={200}>
                 <Button
                   color="tertiary"
                   size="sm"
                   className="section-tool"
-                  aria-label={isOcrRunning ? 'Reading text…' : 'Read text from image (OCR)'}
+                  aria-label={isOcrRunning ? t('sidePeek.tags.ocr.running', lang) : t('sidePeek.tags.ocr.run', lang)}
                   isDisabled={isOcrRunning}
                   onPress={onRunOcr}
                   iconLeading={isOcrRunning ? <span className="ai-inline-spinner" aria-hidden="true" /> : <Sparkles size={12} />}
@@ -15609,24 +15667,24 @@ function TagBlock({
               </Tooltip>
             )}
             {canRefineTags && (
-              <Tooltip title={isRefiningTags ? 'Refining tags…' : 'Refine tags with AI'} delay={200}>
+              <Tooltip title={isRefiningTags ? t('sidePeek.tags.refine.running', lang) : t('sidePeek.tags.refine.run', lang)} delay={200}>
                 <Button
                   color="tertiary"
                   size="sm"
                   className="section-tool"
-                  aria-label={isRefiningTags ? 'Refining tags…' : 'Refine tags with AI'}
+                  aria-label={isRefiningTags ? t('sidePeek.tags.refine.running', lang) : t('sidePeek.tags.refine.run', lang)}
                   isDisabled={isRefiningTags}
                   onPress={onRefineTags}
                   iconLeading={isRefiningTags ? <span className="ai-inline-spinner" aria-hidden="true" /> : <Brain size={12} />}
                 />
               </Tooltip>
             )}
-            <Tooltip title={pinned ? 'Always shown on node' : 'Show on node'} delay={200}>
+            <Tooltip title={pinned ? t('sidePeek.tags.pin.pinned', lang) : t('sidePeek.tags.pin.show', lang)} delay={200}>
               <Button
                 color="tertiary"
                 size="sm"
                 className={pinned ? 'section-tool is-active' : 'section-tool'}
-                aria-label={pinned ? 'Always shown on node, click to hide' : 'Hidden on node, click to always show'}
+                aria-label={pinned ? t('sidePeek.tags.pin.pinnedAria', lang) : t('sidePeek.tags.pin.unpinnedAria', lang)}
                 onPress={onTogglePinned}
                 iconLeading={pinned ? <Eye size={12} /> : <EyeOff size={12} />}
               />
@@ -15639,7 +15697,7 @@ function TagBlock({
         {image.tags.map((tag) => (
           <span className="tag-chip" key={tag}>
             {tag}
-            <button type="button" aria-label={`Remove ${tag}`} onClick={() => onRemoveTag(tag)}>
+            <button type="button" aria-label={t('sidePeek.tags.removeAria', lang, { tag })} onClick={() => onRemoveTag(tag)}>
               <X size={11} />
             </button>
           </span>
@@ -15648,7 +15706,7 @@ function TagBlock({
           <input
             ref={draftRef}
             className="tag-chip-input"
-            aria-label="New tag"
+            aria-label={t('sidePeek.tags.newAria', lang)}
             value={draftTag}
             size={Math.max(4, draftTag.length + 1)}
             onChange={(event) => setDraftTag(event.target.value)}
@@ -15669,7 +15727,7 @@ function TagBlock({
         ) : (
           <button type="button" className="tag-chip tag-chip-add" onClick={() => setIsAdding(true)}>
             <Plus size={11} />
-            Add
+            {addLabel}
           </button>
         )}
       </div>
@@ -15691,7 +15749,7 @@ function TagBlock({
                   <span>{label}</span>
                   <small>{suggestionMeta(suggestion)}</small>
                 </button>
-                <button type="button" aria-label={`Reject ${label}`} onClick={() => onRejectSuggestion(label)}>
+                <button type="button" aria-label={t('sidePeek.tags.rejectAria', lang, { tag: label })} onClick={() => onRejectSuggestion(label)}>
                   <X size={11} />
                 </button>
               </span>
