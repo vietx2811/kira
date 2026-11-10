@@ -9234,6 +9234,44 @@ function GraphCanvas({
   const linkDragRef = useRef<Pick<GraphNodeRef, 'kind' | 'id'> | null>(null)
   const [linkDragPoint, setLinkDragPoint] = useState<{ x: number; y: number } | null>(null)
   const [graphTransform, setGraphTransform] = useState({ x: 0, y: 0, scale: 1 })
+  // Perf (docs/research/2026-09-21-canvas-performance-thresholds.md §2.1): a
+  // pan or wheel-zoom used to call setGraphTransform on every pointermove/wheel
+  // tick, so React reconciled the entire node/link tree at pointer-move
+  // frequency (measured 4ms + 0.29ms/node per render — 44 nodes was already the
+  // 60fps ceiling). During a live gesture the transform is now written straight
+  // onto .graph-viewport through graphViewportRef instead, and graphTransform
+  // (the committed React state) is only updated once the gesture ends.
+  // graphTransformRef always holds the CURRENT transform — mid-gesture or not —
+  // so any handler that needs "the transform right now" (starting a new pan,
+  // converting a pointer position to canvas percent, resizing a frame, finding
+  // the visible canvas center for a toolbar-created node) reads the ref, never
+  // the possibly-stale state. isLiveTransformRef gates the render: while true,
+  // the JSX below renders no `style.transform` at all (React then leaves
+  // whatever the ref-based writes already put there alone, instead of
+  // stomping it back to the last committed value on some unrelated re-render
+  // mid-gesture — canvas isn't the only state in this component).
+  const graphViewportRef = useRef<HTMLDivElement>(null)
+  const graphTransformRef = useRef(graphTransform)
+  const isLiveTransformRef = useRef(false)
+  const wheelFlushTimerRef = useRef(0)
+
+  function applyLiveTransform(next: { x: number; y: number; scale: number }) {
+    graphTransformRef.current = next
+    isLiveTransformRef.current = true
+    const node = graphViewportRef.current
+    if (node) node.style.transform = `translate(${next.x}px, ${next.y}px) scale(${next.scale})`
+  }
+
+  // The one path that writes graphTransform into React state. Also the one
+  // place that clears isLiveTransformRef, so the next render re-takes control
+  // of the style attribute — with the value the ref-based writes already
+  // applied, so nothing visibly jumps.
+  function commitGraphTransform(next: { x: number; y: number; scale: number }) {
+    window.clearTimeout(wheelFlushTimerRef.current)
+    isLiveTransformRef.current = false
+    graphTransformRef.current = next
+    setGraphTransform(next)
+  }
   const [isPanning, setIsPanning] = useState(false)
   const [graphMode, setGraphMode] = useState<GraphMode>('edit')
   const [graphScope, setGraphScope] = useState<GraphScope>('all')
@@ -9840,23 +9878,30 @@ function GraphCanvas({
     return () => document.removeEventListener('wheel', handleWheel, { capture: true })
   }, [onNodeImportanceChange, onSelect])
 
+  // Reads graphTransformRef, not the graphTransform state variable: during a
+  // live pan/wheel-zoom the state lags behind on purpose (see its
+  // declaration above), and a node drag, a click-to-place, or a reference
+  // drop can land inside that window (e.g. a trackpad's wheel-zoom momentum
+  // tailing off right as a drop happens) — the ref is always current.
   function pointerPercent(event: React.PointerEvent<HTMLElement>) {
     const rect = canvasRef.current?.getBoundingClientRect()
     if (!rect) return null
+    const transform = graphTransformRef.current
 
     return {
-      x: ((event.clientX - rect.left - graphTransform.x) / graphTransform.scale / rect.width) * 100,
-      y: ((event.clientY - rect.top - graphTransform.y) / graphTransform.scale / rect.height) * 100,
+      x: ((event.clientX - rect.left - transform.x) / transform.scale / rect.width) * 100,
+      y: ((event.clientY - rect.top - transform.y) / transform.scale / rect.height) * 100,
     }
   }
 
   function eventPercent(event: React.MouseEvent<Element>) {
     const rect = canvasRef.current?.getBoundingClientRect()
     if (!rect) return null
+    const transform = graphTransformRef.current
 
     return {
-      x: ((event.clientX - rect.left - graphTransform.x) / graphTransform.scale / rect.width) * 100,
-      y: ((event.clientY - rect.top - graphTransform.y) / graphTransform.scale / rect.height) * 100,
+      x: ((event.clientX - rect.left - transform.x) / transform.scale / rect.width) * 100,
+      y: ((event.clientY - rect.top - transform.y) / transform.scale / rect.height) * 100,
     }
   }
 
@@ -9883,7 +9928,13 @@ function GraphCanvas({
       canvasHeight: box.height,
       leftPanelInset,
       rightPanelInset,
-      graphTransform,
+      // The live ref, not the possibly-stale committed state: a toolbar
+      // node-creation click or keyboard shortcut can land mid-gesture (a
+      // trackpad's wheel-zoom momentum keeps sending events after the
+      // fingers lift), and "where the visible center is right now" should
+      // answer for the transform actually on screen, not the last one
+      // committed to React state.
+      graphTransform: graphTransformRef.current,
     })
   }
 
@@ -9915,10 +9966,11 @@ function GraphCanvas({
   function dragPercent(event: React.DragEvent<HTMLElement>) {
     const rect = canvasRef.current?.getBoundingClientRect()
     if (!rect) return null
+    const transform = graphTransformRef.current
 
     return {
-      x: clampWorld(((event.clientX - rect.left - graphTransform.x) / graphTransform.scale / rect.width) * 100),
-      y: clampWorld(((event.clientY - rect.top - graphTransform.y) / graphTransform.scale / rect.height) * 100),
+      x: clampWorld(((event.clientX - rect.left - transform.x) / transform.scale / rect.width) * 100),
+      y: clampWorld(((event.clientY - rect.top - transform.y) / transform.scale / rect.height) * 100),
     }
   }
 
@@ -10401,8 +10453,8 @@ function GraphCanvas({
     event.preventDefault()
     const rect = canvasRef.current?.getBoundingClientRect()
     if (!rect) return
-    const deltaWidthPercent = ((event.clientX - active.startX) / graphTransform.scale / rect.width) * 100 * 2
-    const deltaHeightPercent = ((event.clientY - active.startY) / graphTransform.scale / rect.height) * 100 * 2
+    const deltaWidthPercent = ((event.clientX - active.startX) / graphTransformRef.current.scale / rect.width) * 100 * 2
+    const deltaHeightPercent = ((event.clientY - active.startY) / graphTransformRef.current.scale / rect.height) * 100 * 2
     onFrameResize(active.id, {
       width: clamp(active.startWidth + deltaWidthPercent, 10, 90),
       height: clamp(active.startHeight + deltaHeightPercent, 8, 88),
@@ -11596,14 +11648,19 @@ function GraphCanvas({
   }
 
   function updateZoom(delta: number) {
-    setGraphTransform((current) => ({
+    // Reads the ref, not the possibly-stale committed state: a Cmd +/- press
+    // that lands mid-pan or mid-wheel-zoom (unlikely, but not impossible on a
+    // trackpad) must build on the live value, or the keyboard nudge would be
+    // silently overwritten the moment the gesture flushes.
+    const current = graphTransformRef.current
+    commitGraphTransform({
       ...current,
       // Zooming out used to bottom out at 0.65 — nowhere near far enough to
       // see a large board at once. It goes to 0.12 now that semantic zoom
       // (see zoomTier below) hides text at low scale instead of leaving it to
       // shrink into illegible pixels the way plain CSS scale would.
       scale: clamp(Number((current.scale + delta).toFixed(2)), 0.12, 1.8),
-    }))
+    })
   }
 
   // Fit every card into the visible part of the canvas (between the side
@@ -11616,10 +11673,16 @@ function GraphCanvas({
     const canvasBox = canvas.getBoundingClientRect()
     const cards = canvas.querySelectorAll<HTMLElement>('.graph-viewport [data-node-kind][data-node-id]')
     if (cards.length === 0 || canvasBox.width === 0) {
-      setGraphTransform({ x: 0, y: 0, scale: 1 })
+      commitGraphTransform({ x: 0, y: 0, scale: 1 })
       return
     }
-    const { x: tx, y: ty, scale } = graphTransform
+    // The cards' own getBoundingClientRect() already reflects whatever
+    // transform is actually painted right now, live gesture or not (a live
+    // gesture writes straight onto .graph-viewport's style) — so inverting
+    // that back to world coordinates must use the same live value, not the
+    // possibly-stale committed state, or the math would be off by whatever
+    // the gesture moved since the last commit.
+    const { x: tx, y: ty, scale } = graphTransformRef.current
     const cx = canvasBox.width / 2
     const cy = canvasBox.height / 2
     let minX = Infinity
@@ -11648,7 +11711,7 @@ function GraphCanvas({
     const targetY = (area.top + area.bottom) / 2
     const contentX = (minX + maxX) / 2
     const contentY = (minY + maxY) / 2
-    setGraphTransform({
+    commitGraphTransform({
       x: clamp(targetX - cx - nextScale * (contentX - cx), -2400, 2400),
       y: clamp(targetY - cy - nextScale * (contentY - cy), -1800, 1800),
       scale: Number(nextScale.toFixed(3)),
@@ -11709,8 +11772,8 @@ function GraphCanvas({
     panRef.current = {
       startX: event.clientX,
       startY: event.clientY,
-      originX: graphTransform.x,
-      originY: graphTransform.y,
+      originX: graphTransformRef.current.x,
+      originY: graphTransformRef.current.y,
     }
     setIsPanning(true)
   }
@@ -11719,16 +11782,21 @@ function GraphCanvas({
     const pan = panRef.current
     if (!pan) return
 
-    setGraphTransform((current) => ({
-      ...current,
+    applyLiveTransform({
+      ...graphTransformRef.current,
       x: clamp(pan.originX + event.clientX - pan.startX, -2400, 2400),
       y: clamp(pan.originY + event.clientY - pan.startY, -1800, 1800),
-    }))
+    })
   }
 
   function stopPan() {
     panRef.current = null
     setIsPanning(false)
+    // Only a real drag (movePan ran at least once) diverged the ref from the
+    // committed state; a plain click that fell into startPan's early-return
+    // branch never touched either, so committing here would just be a
+    // same-value re-render for nothing.
+    if (isLiveTransformRef.current) commitGraphTransform(graphTransformRef.current)
   }
 
   // Attached via a plain DOM listener (not React's onWheel) with { passive: false
@@ -11741,6 +11809,14 @@ function GraphCanvas({
     const canvas = canvasRef.current
     if (!canvas) return
 
+    // A wheel burst has no pointerup to flush on (trackpad momentum keeps
+    // sending events well after the fingers lift), so the live transform
+    // commits to state after this long a gap between events instead — short
+    // enough that the zoom%/semantic-zoom-tier lag it causes stays
+    // unnoticeable, long enough that a normal scroll/zoom gesture never
+    // triggers a mid-gesture commit (and the render that comes with it).
+    const WHEEL_FLUSH_DELAY_MS = 150
+
     function handleCanvasWheel(event: WheelEvent) {
       if (event.target instanceof Element && event.target.closest('input, textarea, select, .graph-tools-drawer, .node-context-menu, .canvas-context-menu, .node-arc-menu, .kira-dock')) return
       event.preventDefault()
@@ -11748,30 +11824,36 @@ function GraphCanvas({
       // which is anchored to the viewport and would be left pointing at nothing.
       setNodeContextMenu(null)
       setCanvasContextMenu(null)
+      const current = graphTransformRef.current
       if (event.ctrlKey || event.metaKey) {
         const rect = canvas!.getBoundingClientRect()
         const pointerX = event.clientX - rect.left
         const pointerY = event.clientY - rect.top
-        setGraphTransform((current) => {
-          const scale = clamp(Number((current.scale * Math.exp(-event.deltaY * 0.002)).toFixed(3)), 0.12, 1.8)
-          const ratio = scale / current.scale
-          return {
-            scale,
-            x: pointerX - (pointerX - current.x) * ratio,
-            y: pointerY - (pointerY - current.y) * ratio,
-          }
+        const scale = clamp(Number((current.scale * Math.exp(-event.deltaY * 0.002)).toFixed(3)), 0.12, 1.8)
+        const ratio = scale / current.scale
+        applyLiveTransform({
+          scale,
+          x: pointerX - (pointerX - current.x) * ratio,
+          y: pointerY - (pointerY - current.y) * ratio,
         })
-        return
+      } else {
+        applyLiveTransform({
+          ...current,
+          x: clamp(current.x - event.deltaX, -2400, 2400),
+          y: clamp(current.y - event.deltaY, -1800, 1800),
+        })
       }
-      setGraphTransform((current) => ({
-        ...current,
-        x: clamp(current.x - event.deltaX, -2400, 2400),
-        y: clamp(current.y - event.deltaY, -1800, 1800),
-      }))
+      window.clearTimeout(wheelFlushTimerRef.current)
+      wheelFlushTimerRef.current = window.setTimeout(() => {
+        if (isLiveTransformRef.current) commitGraphTransform(graphTransformRef.current)
+      }, WHEEL_FLUSH_DELAY_MS)
     }
 
     canvas.addEventListener('wheel', handleCanvasWheel, { passive: false })
-    return () => canvas.removeEventListener('wheel', handleCanvasWheel)
+    return () => {
+      canvas.removeEventListener('wheel', handleCanvasWheel)
+      window.clearTimeout(wheelFlushTimerRef.current)
+    }
   }, [])
 
   useEffect(() => {
@@ -11789,10 +11871,25 @@ function GraphCanvas({
     return () => observer.disconnect()
   }, [])
 
+  // Perf (docs/research/2026-09-21-canvas-performance-thresholds.md §2.2):
+  // --grid-hot-x/y used to be a plain (inherited) custom property, so writing
+  // it on .graph-canvas forced Chrome to recompute style for every descendant
+  // — 2 245ms of style recalc per 200 pointermoves at 608 nodes, for a value
+  // nothing but .graph-canvas::after's own mask-image reads. They're now
+  // registered `@property … inherits: false` in styles.css, which scopes the
+  // invalidation to the element itself. The round + skip-if-unchanged below is
+  // a cheap second cut: harmless without the CSS fix, close to free with it.
+  const lastGridHotspotRef = useRef({ x: NaN, y: NaN })
   function updateCanvasGridHotspot(event: React.PointerEvent<HTMLDivElement>) {
     const rect = event.currentTarget.getBoundingClientRect()
-    event.currentTarget.style.setProperty('--grid-hot-x', `${event.clientX - rect.left}px`)
-    event.currentTarget.style.setProperty('--grid-hot-y', `${event.clientY - rect.top}px`)
+    const x = Math.round(event.clientX - rect.left)
+    const y = Math.round(event.clientY - rect.top)
+    const last = lastGridHotspotRef.current
+    if (last.x === x && last.y === y) return
+    last.x = x
+    last.y = y
+    event.currentTarget.style.setProperty('--grid-hot-x', `${x}px`)
+    event.currentTarget.style.setProperty('--grid-hot-y', `${y}px`)
   }
 
   return (
@@ -12020,8 +12117,13 @@ function GraphCanvas({
           </section>
         )}
         <div
+          ref={graphViewportRef}
           className="graph-viewport"
-          style={{ transform: `translate(${graphTransform.x}px, ${graphTransform.y}px) scale(${graphTransform.scale})` }}
+          // While a pan/wheel gesture is live, this deliberately renders no
+          // `transform` at all — see graphViewportRef's declaration above —
+          // so an unrelated re-render elsewhere in this component can't stomp
+          // the ref-based write back to the last committed (stale) value.
+          style={isLiveTransformRef.current ? undefined : { transform: `translate(${graphTransform.x}px, ${graphTransform.y}px) scale(${graphTransform.scale})` }}
         >
           {frames.map((frame) => (
             <div
