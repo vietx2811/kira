@@ -884,7 +884,7 @@ fn rescue_legacy_fields_from_manifest(snapshot: &mut ProjectSnapshot, project_di
     }
 }
 
-fn ensure_project_dirs(project_dir: &PathBuf) -> Result<(), String> {
+fn ensure_project_dirs(project_dir: &Path) -> Result<(), String> {
     fs::create_dir_all(project_dir.join("images")).map_err(|error| error.to_string())?;
     fs::create_dir_all(project_dir.join("thumbs")).map_err(|error| error.to_string())?;
     fs::create_dir_all(project_dir.join("exports")).map_err(|error| error.to_string())?;
@@ -892,7 +892,7 @@ fn ensure_project_dirs(project_dir: &PathBuf) -> Result<(), String> {
 }
 
 fn export_text_to_exports(
-    project_dir: &PathBuf,
+    project_dir: &Path,
     filename: &str,
     contents: &str,
 ) -> Result<String, String> {
@@ -903,7 +903,7 @@ fn export_text_to_exports(
 }
 
 fn export_bytes_to_exports(
-    project_dir: &PathBuf,
+    project_dir: &Path,
     filename: &str,
     contents: &[u8],
 ) -> Result<String, String> {
@@ -4589,7 +4589,7 @@ fn analyze_image_bytes(bytes: &[u8]) -> Result<ImageAnalysis, String> {
         + u32::from(average_blue) * 114)
         / 1000;
     let mut palette_buckets = buckets.into_values().collect::<Vec<_>>();
-    palette_buckets.sort_by(|a, b| b.3.cmp(&a.3));
+    palette_buckets.sort_by_key(|bucket| std::cmp::Reverse(bucket.3));
     let palette = palette_buckets
         .into_iter()
         .take(3)
@@ -4725,7 +4725,7 @@ fn keyword_suggestions_from_text(text: &str) -> Vec<String> {
 
 fn tag_suggestions_from_model_output(text: &str) -> Vec<String> {
     let candidates = text
-        .split(|character: char| character == ',' || character == '\n' || character == ';')
+        .split([',', '\n', ';'])
         .map(|value| {
             value
                 .trim()
@@ -6661,11 +6661,11 @@ mod tests {
         let mut client = TcpStream::connect(addr).expect("connect");
         let split_at = request.find("\r\n\r\n").expect("header terminator") + 4;
         client
-            .write_all(request[..split_at].as_bytes())
+            .write_all(&request.as_bytes()[..split_at])
             .expect("write headers");
         thread::sleep(Duration::from_millis(20));
         client
-            .write_all(request[split_at..].as_bytes())
+            .write_all(&request.as_bytes()[split_at..])
             .expect("write body");
 
         let received = server.join().expect("server thread panicked");
