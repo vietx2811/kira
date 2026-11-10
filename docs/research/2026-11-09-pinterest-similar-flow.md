@@ -180,7 +180,9 @@ Cơ chế "neo khám phá" hiện tại (`discoveryAnchorRef`, `discoveryAnchorS
 
 Giả định cách đọc (2) đúng theo mạch các báo cáo trước; nếu đúng, còn một quyết định kiến trúc/thẩm mỹ chưa nên tự chọn:
 - **Mở rộng popover hiện có** (`.node-details-popover`) thêm một mục gập-mở mới (ví dụ "Gợi ý", cạnh mục "source") liệt kê các ảnh đang nằm trong neo khám phá — ít thay đổi nhất, giữ đúng pattern "popover neo tại node" dùng xuyên suốt app.
-- **Dựng một side-peek thật**, đóng cố định ở cạnh màn hình — pattern UI mới, chưa tồn tại ở bất kỳ màn nào khác trong KIRA. `CLAUDE.md` đã chốt "không đổi bố cục theo từng màn: app phải nhất quán"; một pattern mới nên qua Art Director khảo sát trước khi Worker code, không phải quyết định của Researcher hay chọn ngầm trong lúc triển khai.
+- **Dựng một side-peek thật**, đóng cố định ở cạnh màn hình. **Đính chính (cùng ngày, sau khi kiểm lại):** bản đầu của mục này ghi pattern này "chưa tồn tại ở màn nào khác" là sai. KIRA đã có một panel đóng cố định: `.library-drawer-panel` (`styles.css:1329`), thẻ nổi neo cạnh **trái**, rộng `var(--library-drawer-width, 320px)`, kéo đổi cỡ được qua `.library-resize-handle` (`styles.css:1548`), có animation mở/đóng. Một side-peek bên **phải** cho chi tiết node là bản đối xứng của pattern này, không phải pattern lạ. Phần chưa có là một panel *theo node đang chọn* (library là danh sách toàn dự án). Quyết định popover hay side-peek vẫn là chọn thẩm mỹ/bố cục, nên qua Art Director; nhưng chi phí hiện thực side-peek thấp hơn tôi ước lượng ban đầu vì đã có khuôn.
+
+Để giữ gọn: chọn "ảnh gợi ý" là các capture đang chờ duyệt trong lúc neo còn hiệu lực. Phía app chỉ cần đổi nhánh fallback trong `handleKiraCapture` từ "gắn thẳng lên canvas" sang "đẩy vào danh sách chờ của neo"; nút "Giữ" mới gọi `attachCaptureToGraphNode` như hiện nay. Logic thuần của neo nằm sẵn ở `kira/discoveryAnchor.ts`, có thể thêm kiểu danh sách chờ ở đó và test được riêng.
 
 ### D. Đề xuất (cho Orchestrator/user)
 
