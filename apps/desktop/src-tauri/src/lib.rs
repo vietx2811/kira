@@ -5025,7 +5025,17 @@ struct CaptureImageBytes {
 
 #[tauri::command]
 async fn fetch_capture_image(url: String) -> Result<CaptureImageBytes, String> {
-    fetch_capture_image_blocking(&url)
+    // research 2026-11-09-visual-explore: calling fetch_capture_image_blocking
+    // directly here used to build+drop a reqwest::blocking::Client while this
+    // async command's future was being polled on a tokio worker. Dropping
+    // that client panics ("Cannot drop a runtime in a context where blocking
+    // is not allowed"), and the panicked task never resolves or rejects the
+    // JS invoke() promise, so the download spinner hung forever. spawn_blocking
+    // runs the blocking client on tokio's dedicated blocking-thread pool
+    // instead, outside any worker's no-blocking context.
+    tauri::async_runtime::spawn_blocking(move || fetch_capture_image_blocking(&url))
+        .await
+        .map_err(|error| format!("fetch_capture_image task failed: {error}"))?
 }
 
 fn fetch_capture_image_blocking(url: &str) -> Result<CaptureImageBytes, String> {
@@ -6413,6 +6423,48 @@ mod tests {
             BASE64.decode(result.base64).expect("valid base64"),
             png_bytes
         );
+    }
+
+    // Guards research 2026-11-09-visual-explore's hang: fetch_capture_image
+    // used to build+drop a reqwest::blocking::Client inline inside the async
+    // command body. Tauri polls an async command's future as a task on its
+    // tokio runtime, so this test spawns the command the same way (not just
+    // calling fetch_capture_image_blocking on a plain thread) to reproduce
+    // that context. The blocking client panics with "Cannot drop a runtime
+    // in a context where blocking is not allowed" when dropped from a tokio
+    // worker — the panicked task never resolves or rejects the JS invoke()
+    // promise, so the download spinner hangs forever.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn fetch_capture_image_resolves_when_polled_on_a_tokio_runtime() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind ephemeral port");
+        let addr = listener.local_addr().expect("local addr");
+        let mut png = Cursor::new(Vec::new());
+        image::RgbaImage::from_pixel(1, 1, image::Rgba([10, 20, 30, 255]))
+            .write_to(&mut png, ImageFormat::Png)
+            .expect("write png fixture");
+        let png_bytes = png.into_inner();
+        let png_bytes_for_server = png_bytes.clone();
+
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("accept");
+            let mut buffer = [0_u8; 1024];
+            let _ = stream.read(&mut buffer);
+            let mut response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: image/png\r\nContent-Length: {}\r\n\r\n",
+                png_bytes_for_server.len()
+            )
+            .into_bytes();
+            response.extend_from_slice(&png_bytes_for_server);
+            let _ = stream.write_all(&response);
+        });
+
+        let url = format!("http://{addr}/ok.png");
+        let result = tokio::spawn(fetch_capture_image(url))
+            .await
+            .expect("command task must not panic");
+        server.join().expect("server thread panicked");
+        let result = result.expect("expected a successful fetch");
+        assert_eq!(result.mime, "image/png");
     }
 
     #[test]
