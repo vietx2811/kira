@@ -814,6 +814,11 @@ const UI_STRINGS: Record<string, { en: string; vi: string }> = {
   'idea.status.strong': { en: 'Idea strength: strong', vi: 'Độ chín ý tưởng: mạnh' },
   'idea.status.forming': { en: 'Idea strength: forming', vi: 'Độ chín ý tưởng: đang hình thành' },
   'idea.status.thin': { en: 'Idea strength: thin', vi: 'Độ chín ý tưởng: còn mỏng' },
+  // Short form for the library row subtitle: the full idea.status.* strings
+  // above read as a sentence and are too long for that one-line slot.
+  'idea.status.short.strong': { en: 'Strong', vi: 'Mạnh' },
+  'idea.status.short.forming': { en: 'Forming', vi: 'Đang hình thành' },
+  'idea.status.short.thin': { en: 'Thin', vi: 'Còn mỏng' },
   'lang.label': { en: 'Language', vi: 'Ngôn ngữ' },
   'lang.hint': { en: 'Translates navigation, library, and Kira chat. Settings, outline, and slides stay in English for now.', vi: 'Dịch điều hướng, thư viện, và trò chuyện với Kira. Cài đặt, dàn ý, và trình chiếu vẫn dùng tiếng Anh.' },
   'inspector.title': { en: 'Inspector', vi: 'Chi tiết' },

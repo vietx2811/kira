@@ -558,7 +558,10 @@ export function EvidenceInbox({
               <Lightbulb size={15} />
               <span>
                 <strong>{idea.title}</strong>
-                <small>{idea.status} · {idea.content}</small>
+                <small>
+                  {t(`idea.status.short.${idea.status}`)}
+                  {idea.content.trim() ? ` · ${idea.content}` : ''}
+                </small>
               </span>
             </button>
           ))}
