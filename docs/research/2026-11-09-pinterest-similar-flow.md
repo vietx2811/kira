@@ -138,3 +138,55 @@ Vì vậy: **không cần sửa `src-tauri/src/lib.rs`**. `open_system_target` (
 2. **Chốt thời lượng neo khám phá** và liệu neo có cần hiển thị cho user biết (vd một chip nhỏ "Đang gắn vào: <tên node>" đâu đó) hay hoàn toàn ngầm.
 3. **Xác nhận hành vi `window.open`** trong app native thật (build debug theo mục Gotcha của `CLAUDE.md`) trước khi bất kỳ ai code hoá §3.4, vì toàn bộ phần "mở trình duyệt mặc định, không phải webview" hiện là suy luận.
 4. Nếu Worker nhận việc này: làm phần neo khám phá (§3.2) trước, vì nó độc lập với nút UI và tự nó đã sửa đúng khoảng trống "hover-save không bao giờ nối node" — có giá trị ngay cả trước khi nút Pinterest tồn tại.
+
+## Cập nhật 2026-11-10
+
+**Người yêu cầu:** user, trực tiếp qua chat (không qua Orchestrator).
+
+**Bối cảnh:** toàn bộ §3 ở trên **đã được Worker/UI-UX hiện thực và nằm trên `main`** từ lúc viết cập nhật này (xác nhận bằng `git log`, commit mới nhất liên quan `64c3e9d` "fix: Pinterest find-similar discoverability", chuỗi commit từ `6ffdc55` "feat: Pinterest 'find similar' discovery anchor and toolbar button" trở đi). Người dùng đưa thêm 3 ý tưởng để tinh chỉnh một tính năng **đang chạy**, không phải một tính năng giả định — nên phần này đối chiếu từng ý với code hiện tại trên `main`, không suy diễn từ báo cáo cũ nữa.
+
+**Commit đã kiểm chứng cho mục `[Code]` ở phần này:** `00d9198` (nhánh `researcher/pinterest-similar-followup`, tạo từ `main`).
+
+### A. Mục "Connections" trong Settings, điều hướng login khi chưa kết nối
+
+**Hiện trạng `[Code]`:** nút "Tìm tương tự trên Pinterest" gọi `openExternalPinterestUrl` → Tauri command `open_external_url` (`lib.rs:4233`), bọc qua `validate_pinterest_url` (`lib.rs:4209`) chỉ để chặn URL không phải `pinterest.com`/subdomain — **không có bước nào đọc hay ghi trạng thái đăng nhập**. Lệnh native này gọi ra trình duyệt hệ thống của macOS (tiến trình hoàn toàn khác KIRA, cookie jar riêng); KIRA không có cách nào đọc được trạng thái đăng nhập Pinterest trong trình duyệt đó. Settings hiện tại (`main.tsx` quanh `aiProviders`/`withDefaultAiProviders`, dòng 2509) chỉ có khái niệm "connection" cho **model AI** (`kira.noProvider`, `kira.panel.emptyNoProviderBody` — dòng 917/932), không có mục "Connections" cho dịch vụ ngoài nào khác; không có gì để gắn một dòng Pinterest vào.
+
+**Vì sao "điều hướng login khi chưa kết nối" khó làm đúng nghĩa:**
+- Pinterest **đã tự làm việc này** — báo cáo gốc §1.1 `[Trực tiếp]` xác nhận phiên không đăng nhập bị chặn bằng hộp "Welcome to Pinterest" ngay khi tương tác (gõ tìm kiếm, bấm thẻ, hay chỉ cuộn), không có nút đóng. Mở link Pinterest khi chưa đăng nhập tự động dẫn tới đúng màn hình đó, không cần KIRA làm thêm gì.
+- Thứ duy nhất **có thể** biết trạng thái đăng nhập thật là extension, khi nó đang chạy trong một tab `pinterest.com` (đọc DOM: có nút "Log in" hay có avatar). Đây là trạng thái "lần cuối extension thấy", không phải trạng thái tức thời — vẫn có thể sai ngay khi user đăng xuất ở trình duyệt hệ thống mà không mở lại tab đó.
+
+**Đề xuất, xếp theo chi phí tăng dần — Orchestrator/user chọn:**
+1. **Không làm gì** — để Pinterest tự chặn và tự hiện form login (đang đúng vậy). Chi phí 0, đã hoạt động.
+2. **Gợi ý tĩnh**: thêm một dòng chú thích nhỏ cạnh nút hoặc trong tooltip ("Nếu Pinterest yêu cầu đăng nhập, hãy đăng nhập trong tab vừa mở rồi quay lại tìm") — không cần biết trạng thái thật, chỉ set kỳ vọng trước khi mở tab.
+3. **Mục "Connections" thật trong Settings** (status "đã kết nối"/"chưa rõ"): cần thêm một message type mới ở extension (content script trên `pinterest.com` phát hiện trạng thái đăng nhập, báo về app qua bridge hiện có giữa extension và app), lưu "lần cuối thấy" kèm mốc thời gian trong settings. Đây là tính năng mới thật sự, không phải tinh chỉnh nhỏ — cần Orchestrator xếp lịch riêng, không gộp miễn phí vào việc đang có.
+
+Không đề xuất (3) làm ngay; (1) đã đủ dùng, (2) là tinh chỉnh rẻ nếu muốn làm liền.
+
+### B. Luồng tìm kiếm theo Pin ID của ảnh đã lưu
+
+**Đã hiện thực đầy đủ `[Code]`, không cần việc gì thêm:** `apps/desktop/src/kira/pinterestSimilar.ts` có `isPinterestPinUrl()` kiểm cả `hostname` (`pinterest.com` hoặc subdomain) và `pathname.startsWith('/pin/')`, và hàm phân giải pin-URL **đọc cả hai trường** `source` (URL trang Pin, do capture extension ghi) và `sourceUrl` (URL ảnh CDN) — đúng khoảng trống mà chính file này ghi lại đã sửa ("Bug this fixes" trong docstring đầu file): bản cũ chỉ nhìn `sourceUrl` nên một ảnh capture từ Pin luôn rơi về tìm theo tag thay vì mở lại đúng Pin. `buildPinterestSimilarUrl` (`main.tsx:16173`) dùng kết quả này để quyết định mở đúng trang Pin hay trang tìm theo tag. Nút đã lên cả toolbar node, menu chuột phải, thanh Details, và luồng chọn nhiều ảnh (commit `64c3e9d`).
+
+Ý của user ("một số ảnh lấy về có thể có id trên Pinterest nên có thể thành một luồng tìm kiếm riêng") là đúng và **đã chính là cách code hiện tại hoạt động** — không có việc tồn đọng ở mục này.
+
+### C. Side-peek khi chọn ảnh: panel sửa thông tin + khu vực ảnh gợi ý bên dưới
+
+**Hiện trạng `[Code]`:** chọn một node hiện ra `.node-details-popover` (`main.tsx:10545`) — một **popover neo tại chính node** trên canvas, đóng/mở bằng `closeDetails`, có các mục gập mở qua `collapsedDetailSections` (`properties`, `colors`, `tags`, `palette`, `source`, `history` — dòng 9057, 10717-10871). Đây đã là "panel sửa thông tin khi chọn ảnh" mà user mô tả, chỉ khác về vị trí: **popover nổi cạnh node**, không phải một panel đóng cố định ở cạnh màn hình (side-peek thật, kiểu Figma/Linear). Mục "source" trong popover này đang chỉ có một ô nhập URL nguồn (`sourceUrlField`, dòng 10405-10408), không có khu vực liệt kê ảnh nào khác.
+
+Cơ chế "neo khám phá" hiện tại (`discoveryAnchorRef`, `discoveryAnchorState` — dòng 2633-2634) khi còn hiệu lực sẽ gắn capture mới **thẳng vào canvas cạnh node nguồn** qua `attachCaptureToGraphNode`, không đưa vào bất kỳ khu vực xem-trước/duyệt nào trước đó — chip `discovery-anchor-chip` (dòng 7676) chỉ báo "đang gắn vào node nào", không hiển thị danh sách ảnh đã lưu.
+
+**Hai cách đọc ý "khu vực hiển thị kết quả, ảnh gợi ý bên dưới" — cần user xác nhận là ý (2), không phải ý (1):**
+1. *Kết quả tìm kiếm trực tiếp từ Pinterest* (API/scrape live, hiện ngay trong app) — đây đúng con đường đã bị bác ở báo cáo gốc `2026-11-09-visual-explore.md` vì vi phạm điều khoản Pinterest (KIRA không được tự gọi endpoint nội bộ hay parse trang kết quả). **Không nên làm theo hướng này.**
+2. *Khu vực "inbox" cho đúng những ảnh user tự lưu trong lúc đang neo khám phá* (hover-Save/`Alt+Shift+K` trong khi `discoveryAnchorState` còn hiệu lực) — hiện vào một tray để user duyệt/giữ/bỏ **trước khi** nó chính thức thành node trên canvas, thay vì tự động `attachCaptureToGraphNode` ngay như hiện tại. Đây là một tinh chỉnh hợp lý của §3.2, và đúng mô hình an toàn đã chốt (mọi ảnh trong tray đều do user tự tay lưu, KIRA không tự lấy gì).
+
+Giả định cách đọc (2) đúng theo mạch các báo cáo trước; nếu đúng, còn một quyết định kiến trúc/thẩm mỹ chưa nên tự chọn:
+- **Mở rộng popover hiện có** (`.node-details-popover`) thêm một mục gập-mở mới (ví dụ "Gợi ý", cạnh mục "source") liệt kê các ảnh đang nằm trong neo khám phá — ít thay đổi nhất, giữ đúng pattern "popover neo tại node" dùng xuyên suốt app.
+- **Dựng một side-peek thật**, đóng cố định ở cạnh màn hình. **Đính chính (cùng ngày, sau khi kiểm lại):** bản đầu của mục này ghi pattern này "chưa tồn tại ở màn nào khác" là sai. KIRA đã có một panel đóng cố định: `.library-drawer-panel` (`styles.css:1329`), thẻ nổi neo cạnh **trái**, rộng `var(--library-drawer-width, 320px)`, kéo đổi cỡ được qua `.library-resize-handle` (`styles.css:1548`), có animation mở/đóng. Một side-peek bên **phải** cho chi tiết node là bản đối xứng của pattern này, không phải pattern lạ. Phần chưa có là một panel *theo node đang chọn* (library là danh sách toàn dự án). Quyết định popover hay side-peek vẫn là chọn thẩm mỹ/bố cục, nên qua Art Director; nhưng chi phí hiện thực side-peek thấp hơn tôi ước lượng ban đầu vì đã có khuôn.
+
+Để giữ gọn: chọn "ảnh gợi ý" là các capture đang chờ duyệt trong lúc neo còn hiệu lực. Phía app chỉ cần đổi nhánh fallback trong `handleKiraCapture` từ "gắn thẳng lên canvas" sang "đẩy vào danh sách chờ của neo"; nút "Giữ" mới gọi `attachCaptureToGraphNode` như hiện nay. Logic thuần của neo nằm sẵn ở `kira/discoveryAnchor.ts`, có thể thêm kiểu danh sách chờ ở đó và test được riêng.
+
+### D. Đề xuất (cho Orchestrator/user)
+
+1. Xác nhận cách đọc (2) ở mục C là đúng ý (tray cho ảnh user tự lưu, không phải kết quả API live) — nếu không, dừng ở đây vì cách đọc (1) nằm ngoài phạm vi ToS đã chốt.
+2. Nếu đúng ý (2): giao Art Director một khảo sát ngắn — mở rộng `.node-details-popover` hiện có hay cần một side-peek mới — trước khi Worker code, theo đúng quy trình đã chốt cho quyết định thẩm mỹ gốc.
+3. Mục A: mặc định giữ nguyên (Pinterest tự chặn đăng nhập), chỉ thêm gợi ý tĩnh (phương án 2) nếu Orchestrator thấy đáng; mục "Connections" thật (phương án 3) là việc mới, cần ước lượng riêng trước khi nhận.
+4. Mục B không cần việc gì thêm — đã xong, chỉ ghi lại để xác nhận với user rằng ý đó khớp code hiện tại.
